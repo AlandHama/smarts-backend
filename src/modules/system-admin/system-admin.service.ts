@@ -28,7 +28,10 @@ export class SystemAdminService implements OnModuleInit {
   async onModuleInit() {
     const username = process.env.SYSTEM_ADMIN_USERNAME?.trim()
     const password = process.env.SYSTEM_ADMIN_PASSWORD
-    if (!username && !password) return
+    if (!username && !password) {
+      this.logger.warn("System admin bootstrap skipped: SYSTEM_ADMIN_USERNAME and SYSTEM_ADMIN_PASSWORD are not configured")
+      return
+    }
     if (!username || !password) throw new Error("SYSTEM_ADMIN_USERNAME and SYSTEM_ADMIN_PASSWORD must be configured together")
 
     const email = process.env.SYSTEM_ADMIN_EMAIL?.trim() || `${username.toLowerCase()}@system-admin.local`
@@ -53,7 +56,7 @@ export class SystemAdminService implements OnModuleInit {
     const passwordHash = user?.passwordHash ?? await this.getDummyPasswordHash()
     const passwordMatches = await HashHelper.compare(dto.password, passwordHash)
     if (!user || !passwordMatches) {
-      this.logger.warn(`System admin login rejected (userFound=${Boolean(user)}, passwordMatch=${passwordMatches}, admin=${user?.isSystemAdmin ?? false})`)
+      this.logger.warn(`System admin login rejected (userFound=${Boolean(user)}, passwordMatch=${passwordMatches}, admin=${user?.isSystemAdmin ?? false}, configuredIdentity=${this.matchesConfiguredBootstrapIdentity(dto.identifier)}, configuredPassword=${this.matchesConfiguredBootstrapPassword(dto.password)})`)
       throw new UnauthorizedException("Invalid administrator credentials")
     }
     if (!user.isSystemAdmin) {
@@ -182,17 +185,22 @@ export class SystemAdminService implements OnModuleInit {
   }
 
   private matchesConfiguredBootstrapCredentials(dto: SystemAdminLoginDto) {
+    return this.matchesConfiguredBootstrapIdentity(dto.identifier) && this.matchesConfiguredBootstrapPassword(dto.password)
+  }
+
+  private matchesConfiguredBootstrapIdentity(identifier: string) {
     const configuredUsername = process.env.SYSTEM_ADMIN_USERNAME?.trim().toLowerCase()
     const configuredEmail = process.env.SYSTEM_ADMIN_EMAIL?.trim().toLowerCase()
-    const configuredPassword = process.env.SYSTEM_ADMIN_PASSWORD
-    const normalizedIdentifier = dto.identifier.trim().toLowerCase()
+    const normalizedIdentifier = identifier.trim().toLowerCase()
     return Boolean(
       configuredUsername &&
       configuredEmail &&
-      configuredPassword &&
-      dto.password === configuredPassword &&
       (normalizedIdentifier === configuredUsername || normalizedIdentifier === configuredEmail),
     )
+  }
+
+  private matchesConfiguredBootstrapPassword(password: string) {
+    return Boolean(process.env.SYSTEM_ADMIN_PASSWORD && password === process.env.SYSTEM_ADMIN_PASSWORD)
   }
 
   private getConfiguredBootstrapInput(password: string): EnsureSystemAdminInput {

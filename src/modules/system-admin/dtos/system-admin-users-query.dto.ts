@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger"
 import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator"
-import { Type } from "class-transformer"
+import { Transform, Type } from "class-transformer"
 
 export enum AdminUserStatusFilter {
   Active = "ACTIVE",
@@ -17,6 +17,7 @@ export class SystemAdminUsersQueryDto {
 
   @ApiPropertyOptional({ enum: AdminUserStatusFilter })
   @IsOptional()
+  @Transform(({ value }) => value === "" ? undefined : value)
   @IsEnum(AdminUserStatusFilter)
   readonly status?: AdminUserStatusFilter
 
