@@ -1,11 +1,11 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common"
 import { JwtService } from "@nestjs/jwt"
-import { Prisma } from "@prisma/client"
 import { randomUUID } from "node:crypto"
 
 import { HashHelper } from "../../../common/helpers/hash.helper"
-import { PrismaService } from "../../../prisma.service"
 import { SessionsService } from "../../admin/access/sessions/sessions.service"
+import { CreateSessionTransaction, SessionCreateData } from "../../admin/access/sessions/transactions/create-session-transaction"
+import { RotateSessionTransaction } from "../../admin/access/sessions/transactions/rotate-session-transaction"
 import { UsersService } from "../../admin/access/users/users.service"
 import { getAuthConfig } from "../auth.config"
 import { TOKEN_TYPE } from "../constants"
@@ -19,9 +19,10 @@ export class TokenService {
 
   constructor(
     private readonly jwtService: JwtService,
-    private readonly prisma: PrismaService,
     private readonly sessionsService: SessionsService,
     private readonly usersService: UsersService,
+    private readonly createSessionTransaction: CreateSessionTransaction,
+    private readonly rotateSessionTransaction: RotateSessionTransaction,
   ) {}
 
   async generateAuthToken(user: { id: string; username: string }, request?: any, isMobile = false): Promise<TokenDto> {
@@ -32,29 +33,18 @@ export class TokenService {
     const payload = this.verify(refreshToken, TokenType.RefreshToken)
     if (payload.tokenUse !== TokenType.RefreshToken) throw new UnauthorizedException("Invalid refresh token")
 
-    return this.prisma.$transaction(async (tx) => {
-      const session = await tx.session.findFirst({
-        where: {
-          userId: payload.userId,
-          tokenId: payload.tokenId,
-          sessionStatus: "ACTIVE",
-          expiresAt: { gt: new Date() },
-        },
-      })
-      if (!session || !(await HashHelper.compare(refreshToken, session.refreshTokenHash))) {
-        throw new UnauthorizedException("Invalid refresh token")
-      }
-
-      const user = await tx.user.findUnique({ where: { id: payload.userId } })
-      if (!user || user.status !== "ACTIVE") throw new UnauthorizedException("Invalid refresh token")
-
-      const terminated = await tx.session.updateMany({
-        where: { id: session.id, sessionStatus: "ACTIVE" },
-        data: { sessionStatus: "TERMINATED" },
-      })
-      if (terminated.count !== 1) throw new UnauthorizedException("Refresh token was already used")
-      return this.createTokenPair(user, request, isMobile, tx)
+    const replacement = await this.createTokenPairData(
+      { id: payload.userId, username: payload.username },
+      request,
+      isMobile,
+    )
+    await this.rotateSessionTransaction.run({
+      userId: payload.userId,
+      tokenId: payload.tokenId,
+      refreshToken,
+      replacement: replacement.session,
     })
+    return replacement.token
   }
 
   verifyAccessToken(token: string): JwtPayload {
@@ -90,8 +80,17 @@ export class TokenService {
     user: { id: string; username: string },
     request: any,
     isMobile: boolean,
-    transaction?: Prisma.TransactionClient,
   ): Promise<TokenDto> {
+    const pair = await this.createTokenPairData(user, request, isMobile)
+    await this.createSessionTransaction.run(pair.session)
+    return pair.token
+  }
+
+  private async createTokenPairData(
+    user: { id: string; username: string },
+    request: any,
+    isMobile: boolean,
+  ): Promise<{ token: TokenDto; session: SessionCreateData }> {
     const tokenId = randomUUID()
     const payload = { sub: user.id, userId: user.id, username: user.username, tokenId }
     const accessToken = this.jwtService.sign({ ...payload, tokenUse: TokenType.AccessToken }, {
@@ -107,9 +106,15 @@ export class TokenService {
     const headers = request?.headers ?? {}
     const raw = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 500) || undefined : undefined
     const expiresAt = new Date(Date.now() + this.config.refreshExpiresInSeconds * 1000)
-    const client = transaction ?? this.prisma
-    await client.session.create({
-      data: {
+    return {
+      token: {
+        tokenType: TOKEN_TYPE,
+        accessToken,
+        accessTokenExpires: this.config.accessExpiresInSeconds,
+        refreshToken,
+        refreshTokenExpires: this.config.refreshExpiresInSeconds,
+      },
+      session: {
         userId: user.id,
         tokenId,
         refreshTokenHash: await HashHelper.encrypt(refreshToken),
@@ -121,14 +126,6 @@ export class TokenService {
         deviceName: raw(headers["device-name"]) ?? (isMobile ? "Mobile Device" : "Browser"),
         location: raw(headers.location),
       },
-    })
-
-    return {
-      tokenType: TOKEN_TYPE,
-      accessToken,
-      accessTokenExpires: this.config.accessExpiresInSeconds,
-      refreshToken,
-      refreshTokenExpires: this.config.refreshExpiresInSeconds,
     }
   }
 }

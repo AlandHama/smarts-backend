@@ -19,6 +19,11 @@ token and login flow, while `modules/admin/access/users` and
 IDs throughout, bcrypt password hashes, active-session checks on every bearer
 request, and one-time refresh-token rotation.
 
+All authentication mutations are isolated in `transactions/` classes. User
+creation, password changes, session creation, refresh rotation, logout, session
+revocation, and activity timestamps run through Prisma transactions; services
+coordinate those transactions and keep queries/read mapping separate.
+
 ## What's in here
 
 | File | Why it exists |
@@ -26,6 +31,7 @@ request, and one-time refresh-token rotation.
 | `src/main.ts` | Bootstrap: validation pipe, shutdown hooks, binds `PORT` |
 | `src/prisma.service.ts` | Prisma client as an injectable, connected on module init |
 | `src/modules/auth` | Login, registration, JWT strategy, tokens, sessions, and password changes |
+| `src/modules/players` | Player profile, public profile, stats, and trusted progression methods |
 | `src/notes.controller.ts` | `GET /notes`, `POST /notes` (authenticated) |
 | `src/health.controller.ts` | `/` and `/health` — the latter runs `SELECT 1` |
 | `railway.json` | Pre-deploy migration, health check, restart policy |
@@ -38,8 +44,9 @@ Four details worth knowing:
   retries the migration only on Prisma's `P1001`, the error that means Postgres
   is not accepting connections yet — the state a project is in on its very first
   deploy. Railway does not retry a failed pre-deploy command on its own.
-- **`whitelist: true` on the validation pipe** strips properties the DTO does not
-  declare, so a request cannot smuggle extra fields into a create call.
+- **`whitelist: true` and `forbidNonWhitelisted: true`** reject properties the
+  DTO does not declare, so clients cannot smuggle game-stat fields into profile
+  updates.
 - **`enableShutdownHooks()`.** Railway sends `SIGTERM` before replacing a
   container; without this, in-flight requests are cut off on every deploy.
 - **The lockfile is committed.** Run `npm audit --audit-level=high` after
@@ -55,10 +62,15 @@ Four details worth knowing:
 | POST | `/notes` | Creates a note from `{"body": "..."}` (authenticated) |
 
 Authentication endpoints are `POST /auth/register`, `POST /auth/login`,
-`POST /auth/token/refresh`, `POST /auth/token/validate`, `GET /auth/me`,
-`POST /auth/logout`, `GET /auth/sessions`, `DELETE /auth/sessions/:tokenId`,
+`POST /auth/refresh` (also `/auth/token/refresh`), `POST /auth/token/validate`,
+`GET /auth/me`, `POST /auth/logout`, `POST /auth/logout-all`, `GET /auth/sessions`, `DELETE /auth/sessions/:sessionId`,
 and `POST /auth/password`. Send access tokens as
 `Authorization: Bearer <accessToken>`.
+
+Player endpoints are `GET /players/me`, `GET /players/:userId`, and
+`PATCH /players/me`. Registration creates the player profile and statistics with
+level 1, XP 0, and ELO 1000. XP, ELO, and statistics are returned as server
+authority data and have no public write endpoints.
 
 Interactive Swagger documentation is available at `/docs` when the app is
 running. The raw OpenAPI document is available at `/docs-json`.

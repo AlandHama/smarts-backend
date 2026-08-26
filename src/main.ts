@@ -10,8 +10,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule)
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle("NestJS Railway Starter API")
-    .setDescription("API documentation for the NestJS + Prisma starter.")
+    .setTitle("Smarts NestJs Backend API")
+    .setDescription("API documentation for the NestJS Smarts")
     .setVersion("1.0")
     .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "JWT" }, "access-token")
     .build()
@@ -22,7 +22,11 @@ async function bootstrap() {
 
   // whitelist strips properties the DTO does not declare, so a request cannot
   // smuggle extra fields into a create call.
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }))
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }))
 
   // Finish in-flight requests when the container is replaced instead of dropping them.
   app.enableShutdownHooks()

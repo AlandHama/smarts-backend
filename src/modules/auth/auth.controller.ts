@@ -33,6 +33,7 @@ export class AuthController {
   }
 
   @SkipAuth()
+  @Post("refresh")
   @Post("token/refresh")
   @ApiOperation({ summary: "Rotate a refresh token and issue a new token pair" })
   refresh(@Body() dto: RefreshTokenRequestDto, @Req() request: any) {
@@ -61,6 +62,14 @@ export class AuthController {
     return { message: "Logged out successfully" }
   }
 
+  @Post("logout-all")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Terminate all sessions for the authenticated user" })
+  async logoutAll(@CurrentUser() user: UserResponseDto) {
+    await this.sessionsService.terminateAllForUser(user.id)
+    return { message: "All sessions terminated" }
+  }
+
   @Get("sessions")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List the authenticated user's sessions" })
@@ -68,11 +77,11 @@ export class AuthController {
     return this.sessionsService.listForUser(user.id) as Promise<SessionResponseDto[]>
   }
 
-  @Delete("sessions/:tokenId")
+  @Delete("sessions/:sessionId")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Terminate one of the authenticated user's sessions" })
-  revokeSession(@CurrentUser() user: UserResponseDto, @Param("tokenId") tokenId: string) {
-    return this.sessionsService.terminateByTokenId(user.id, tokenId).then(() => ({ message: "Session terminated" }))
+  revokeSession(@CurrentUser() user: UserResponseDto, @Param("sessionId") sessionId: string) {
+    return this.sessionsService.terminateById(user.id, sessionId).then(() => ({ message: "Session terminated" }))
   }
 
   @Post("password")

@@ -1,35 +1,48 @@
 import { ApiProperty } from "@nestjs/swagger"
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from "class-validator"
+import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator"
 
 export class RegisterRequestDto {
   @ApiProperty({ example: "admin" })
   @IsString()
   @IsNotEmpty()
-  @MinLength(4)
-  @MaxLength(100)
+  @MinLength(3)
+  @MaxLength(50)
   readonly username!: string
 
-  @ApiProperty({ example: "ChangeMe123!", minLength: 8 })
+  @ApiProperty({ example: "ChangeMe123!", minLength: 6 })
   @IsString()
-  @MinLength(8)
+  @MinLength(6)
   @MaxLength(128)
   readonly password!: string
 
-  @ApiProperty({ example: "Ada" })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  readonly firstName!: string
-
-  @ApiProperty({ example: "Lovelace" })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  readonly lastName!: string
-
-  @ApiProperty({ example: "ada@example.com", required: false })
-  @IsOptional()
+  @ApiProperty({ example: "player@example.com" })
   @IsEmail()
+  @IsNotEmpty()
   @MaxLength(255)
-  readonly email?: string
+  readonly email!: string
+
+  @ApiProperty({ example: "Player123" })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(2)
+  @MaxLength(50)
+  readonly displayName!: string
+
+  @ApiProperty({ example: "IQ", required: false, minLength: 2, maxLength: 2 })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z]{2}$/)
+  readonly countryCode?: string
+
+  @ApiProperty({ example: "Ada", required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  readonly firstName?: string
+
+  @ApiProperty({ example: "Lovelace", required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  readonly lastName?: string
 }

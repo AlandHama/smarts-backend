@@ -22,6 +22,9 @@ export class HealthController {
         "POST /auth/login",
         "POST /auth/token/refresh",
         "GET /auth/me",
+        "GET /players/me",
+        "GET /players/:userId",
+        "PATCH /players/me",
         "GET /notes (authenticated)",
       ],
     }

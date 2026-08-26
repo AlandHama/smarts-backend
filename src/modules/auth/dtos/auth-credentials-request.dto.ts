@@ -1,12 +1,17 @@
 import { ApiProperty } from "@nestjs/swagger"
-import { IsNotEmpty, IsString, MaxLength } from "class-validator"
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator"
 
 export class AuthCredentialsRequestDto {
-  @ApiProperty({ example: "admin" })
+  @ApiProperty({ example: "player123", required: false })
   @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  readonly username!: string
+  @IsOptional()
+  @MaxLength(50)
+  readonly username?: string
+
+  @ApiProperty({ example: "player@example.com", required: false })
+  @IsEmail()
+  @IsOptional()
+  readonly email?: string
 
   @ApiProperty({ example: "ChangeMe123!" })
   @IsString()

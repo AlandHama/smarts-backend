@@ -4,12 +4,16 @@ import { Request } from "express"
 import { ExtractJwt, Strategy } from "passport-jwt"
 
 import { PrismaService } from "../../prisma.service"
+import { SessionsService } from "../admin/access/sessions/sessions.service"
 import { getAuthConfig } from "./auth.config"
 import type { JwtPayload } from "./dtos/jwt-payload.dto"
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sessionsService: SessionsService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -45,10 +49,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (user.status === "BANNED") throw new UnauthorizedException("User is banned")
     if (user.status !== "ACTIVE") throw new UnauthorizedException("User is inactive")
 
-    await this.prisma.session.update({
-      where: { id: session.id },
-      data: { lastActiveTimestamp: new Date() },
-    })
+    await this.sessionsService.updateLastActive(session.id)
 
     ;(request as Request & { authPayload: JwtPayload }).authPayload = payload
     return {

@@ -1,46 +1,42 @@
-import { ConflictException, Injectable } from "@nestjs/common"
-import { Prisma } from "@prisma/client"
+import { Injectable } from "@nestjs/common"
 
-import { HashHelper } from "../../../../common/helpers/hash.helper"
 import { PrismaService } from "../../../../prisma.service"
 import { RegisterRequestDto } from "../../../auth/dtos/register-request.dto"
+import { CreateUserTransaction } from "./transactions/create-user-transaction"
+import { UpdateUserLastOnlineTransaction } from "./transactions/update-user-last-online-transaction"
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly createUserTransaction: CreateUserTransaction,
+    private readonly updateUserLastOnlineTransaction: UpdateUserLastOnlineTransaction,
+  ) {}
 
   findByUsername(username: string) {
     return this.prisma.user.findUnique({ where: { username: username.trim().toLowerCase() } })
+  }
+
+  findByIdentifier(identifier: string) {
+    const normalized = identifier.trim().toLowerCase()
+    return this.prisma.user.findFirst({
+      where: { OR: [{ username: normalized }, { email: normalized }] },
+    })
   }
 
   findById(id: string) {
     return this.prisma.user.findUnique({ where: { id } })
   }
 
-  async create(registerDto: RegisterRequestDto) {
-    try {
-      return await this.prisma.user.create({
-        data: {
-          username: registerDto.username.trim().toLowerCase(),
-          passwordHash: await HashHelper.encrypt(registerDto.password),
-          firstName: registerDto.firstName.trim(),
-          lastName: registerDto.lastName.trim(),
-          email: registerDto.email?.trim().toLowerCase(),
-        },
-      })
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new ConflictException("Username or email is already registered")
-      }
-      throw error
-    }
+  create(registerDto: RegisterRequestDto) {
+    return this.createUserTransaction.run(registerDto)
   }
 
-  updatePassword(id: string, passwordHash: string) {
-    return this.prisma.user.update({ where: { id }, data: { passwordHash } })
+  updateLastOnline(userId: string) {
+    return this.updateUserLastOnlineTransaction.run(userId)
   }
 
-  toResponse(user: { id: string; username: string; firstName: string; lastName: string; email: string | null; status: string }) {
+  toResponse(user: { id: string; username: string; firstName: string | null; lastName: string | null; email: string | null; status: string }) {
     return {
       id: user.id,
       username: user.username,

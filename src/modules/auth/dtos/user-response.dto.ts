@@ -7,11 +7,11 @@ export class UserResponseDto {
   @ApiProperty()
   username!: string
 
-  @ApiProperty()
-  firstName!: string
+  @ApiProperty({ required: false, nullable: true })
+  firstName!: string | null
 
-  @ApiProperty()
-  lastName!: string
+  @ApiProperty({ required: false, nullable: true })
+  lastName!: string | null
 
   @ApiProperty({ required: false, nullable: true })
   email!: string | null
