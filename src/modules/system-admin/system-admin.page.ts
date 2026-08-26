@@ -87,8 +87,8 @@ export const SYSTEM_ADMIN_PAGE = String.raw`<!doctype html>
       <p class="muted">Sign in with a system administrator account to manage player access.</p>
       <div id="login-error" class="error hidden"></div>
       <form id="login-form">
-        <div class="field"><label for="identifier">Username or email</label><input id="identifier" autocomplete="username" required></div>
-        <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required></div>
+        <div class="field"><label for="identifier">Username or email</label><input id="identifier" name="identifier" autocomplete="username" required></div>
+        <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
         <button class="primary" style="width:100%;margin-top:8px" type="submit">Sign in to console</button>
       </form>
     </div>
