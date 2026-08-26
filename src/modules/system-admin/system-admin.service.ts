@@ -8,7 +8,7 @@ import { UsersService } from "../admin/access/users/users.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
 import { SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserStatusDto } from "./dtos"
 import { DeleteUserTransaction } from "./transactions/delete-user-transaction"
-import { EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin-transaction"
+import { EnsureSystemAdminInput, EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin-transaction"
 import { UpdateUserStatusTransaction } from "./transactions/update-user-status-transaction"
 
 @Injectable()
@@ -42,10 +42,20 @@ export class SystemAdminService implements OnModuleInit {
   }
 
   async login(dto: SystemAdminLoginDto, request: any) {
-    const user = await this.usersService.findByIdentifier(dto.identifier)
+    let user = await this.usersService.findByIdentifier(dto.identifier)
+    if (!user && this.matchesConfiguredBootstrapCredentials(dto)) {
+      await this.ensureSystemAdminTransaction.run(this.getConfiguredBootstrapInput(dto.password))
+      user = await this.usersService.findByIdentifier(dto.identifier)
+    }
     const passwordHash = user?.passwordHash ?? await this.getDummyPasswordHash()
     const passwordMatches = await HashHelper.compare(dto.password, passwordHash)
-    if (!user || !user.isSystemAdmin || !passwordMatches) throw new UnauthorizedException("Invalid administrator credentials")
+    if (!user || !passwordMatches) throw new UnauthorizedException("Invalid administrator credentials")
+    if (!user.isSystemAdmin) {
+      if (!this.matchesConfiguredBootstrapAccount(user.username, user.email, dto.identifier)) {
+        throw new UnauthorizedException("Invalid administrator credentials")
+      }
+      await this.ensureSystemAdminTransaction.run(this.getPromotionInput(user, dto.password))
+    }
     if (user.status !== UserStatus.ACTIVE) throw new UnauthorizedException("Administrator account is not active")
     return this.authService.login({ username: user.username, password: dto.password }, request)
   }
@@ -152,5 +162,55 @@ export class SystemAdminService implements OnModuleInit {
   private async getDummyPasswordHash() {
     this.dummyPasswordHash ??= await HashHelper.encrypt("constant-time-invalid-password")
     return this.dummyPasswordHash
+  }
+
+  private matchesConfiguredBootstrapAccount(username: string, email: string | null, identifier: string) {
+    const configuredUsername = process.env.SYSTEM_ADMIN_USERNAME?.trim().toLowerCase()
+    const configuredEmail = process.env.SYSTEM_ADMIN_EMAIL?.trim().toLowerCase()
+    const normalizedIdentifier = identifier.trim().toLowerCase()
+    return Boolean(
+      process.env.SYSTEM_ADMIN_PASSWORD &&
+      (normalizedIdentifier === configuredUsername || normalizedIdentifier === configuredEmail) &&
+      (username === configuredUsername || (email && email === configuredEmail)),
+    )
+  }
+
+  private matchesConfiguredBootstrapCredentials(dto: SystemAdminLoginDto) {
+    const configuredUsername = process.env.SYSTEM_ADMIN_USERNAME?.trim().toLowerCase()
+    const configuredEmail = process.env.SYSTEM_ADMIN_EMAIL?.trim().toLowerCase()
+    const configuredPassword = process.env.SYSTEM_ADMIN_PASSWORD
+    const normalizedIdentifier = dto.identifier.trim().toLowerCase()
+    return Boolean(
+      configuredUsername &&
+      configuredEmail &&
+      configuredPassword &&
+      dto.password === configuredPassword &&
+      (normalizedIdentifier === configuredUsername || normalizedIdentifier === configuredEmail),
+    )
+  }
+
+  private getConfiguredBootstrapInput(password: string): EnsureSystemAdminInput {
+    const username = process.env.SYSTEM_ADMIN_USERNAME!.trim()
+    const email = process.env.SYSTEM_ADMIN_EMAIL!.trim()
+    return {
+      username,
+      password,
+      email,
+      displayName: process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || "System Administrator",
+      countryCode: process.env.SYSTEM_ADMIN_COUNTRY_CODE?.trim(),
+      lookupEmail: email,
+    }
+  }
+
+  private getPromotionInput(user: { username: string; email: string | null }, password: string): EnsureSystemAdminInput {
+    const email = user.email ?? process.env.SYSTEM_ADMIN_EMAIL?.trim() ?? `${user.username}@system-admin.local`
+    return {
+      username: user.username,
+      password,
+      email,
+      displayName: process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || user.username,
+      countryCode: process.env.SYSTEM_ADMIN_COUNTRY_CODE?.trim(),
+      lookupEmail: user.email ?? email,
+    }
   }
 }
