@@ -3,6 +3,11 @@
 A NestJS 11 API on Prisma 7 and Postgres, with Nexa-style UUID authentication,
 session-backed access tokens, and refresh-token rotation.
 
+It also includes a single-service system administrator console at
+`/system-admin`. The console is bundled into Nest, uses the same access-token
+and refresh-token session system, and provides a Material-style responsive UI
+for user listing, registration, activation, banning, and deletion.
+
 ## Why this exists
 
 The NestJS template on Railway declares three variables with empty values —
@@ -32,6 +37,7 @@ coordinate those transactions and keep queries/read mapping separate.
 | `src/prisma.service.ts` | Prisma client as an injectable, connected on module init |
 | `src/modules/auth` | Login, registration, JWT strategy, tokens, sessions, and password changes |
 | `src/modules/players` | Player profile, public profile, stats, and trusted progression methods |
+| `src/modules/system-admin` | Protected system administrator API and bundled `/system-admin` web console |
 | `src/notes.controller.ts` | `GET /notes`, `POST /notes` (authenticated) |
 | `src/health.controller.ts` | `/` and `/health` — the latter runs `SELECT 1` |
 | `railway.json` | Pre-deploy migration, health check, restart policy |
@@ -72,6 +78,14 @@ Player endpoints are `GET /players/me`, `GET /players/:userId`, and
 level 1, XP 0, and ELO 1000. XP, ELO, and statistics are returned as server
 authority data and have no public write endpoints.
 
+The system administrator console is available at `/system-admin`. Its API
+requires a JWT from a user with `isSystemAdmin = true` and exposes overview
+counts, paginated/searchable users, player registration, status changes, and
+permanent deletion. Banning or deactivating a user terminates all active
+sessions in the same transaction; deleting a user cascades their profile,
+stats, and sessions. The current administrator cannot ban or delete itself,
+and the last active administrator cannot be deleted.
+
 Interactive Swagger documentation is available at `/docs` when the app is
 running. The raw OpenAPI document is available at `/docs-json`.
 
@@ -95,6 +109,10 @@ npm run dev
 | `JWT_REFRESH_SECRET` | production | HMAC secret for refresh tokens |
 | `JWT_ACCESS_EXPIRES_IN` | no | Defaults to `15m` |
 | `JWT_REFRESH_EXPIRES_IN` | no | Defaults to `30d` |
+| `SYSTEM_ADMIN_USERNAME` | no | On first boot, creates or promotes this username to system admin when paired with the password |
+| `SYSTEM_ADMIN_PASSWORD` | no | Initial system-admin password; never overwrites an existing account password |
+| `SYSTEM_ADMIN_EMAIL` | no | Initial system-admin email; defaults to a local placeholder |
+| `SYSTEM_ADMIN_DISPLAY_NAME` | no | Initial system-admin display name |
 
 ## License
 

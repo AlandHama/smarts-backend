@@ -18,4 +18,7 @@ export class UserResponseDto {
 
   @ApiProperty({ enum: ["ACTIVE", "INACTIVE", "BANNED"] })
   status!: string
+
+  @ApiProperty()
+  isSystemAdmin!: boolean
 }

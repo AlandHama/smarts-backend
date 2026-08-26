@@ -1,8 +1,7 @@
 import { Injectable } from "@nestjs/common"
 
 import { PrismaService } from "../../../../prisma.service"
-import { RegisterRequestDto } from "../../../auth/dtos/register-request.dto"
-import { CreateUserTransaction } from "./transactions/create-user-transaction"
+import { CreateUserInput, CreateUserTransaction } from "./transactions/create-user-transaction"
 import { UpdateUserLastOnlineTransaction } from "./transactions/update-user-last-online-transaction"
 
 @Injectable()
@@ -28,7 +27,7 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id } })
   }
 
-  create(registerDto: RegisterRequestDto) {
+  create(registerDto: CreateUserInput) {
     return this.createUserTransaction.run(registerDto)
   }
 
@@ -36,7 +35,7 @@ export class UsersService {
     return this.updateUserLastOnlineTransaction.run(userId)
   }
 
-  toResponse(user: { id: string; username: string; firstName: string | null; lastName: string | null; email: string | null; status: string }) {
+  toResponse(user: { id: string; username: string; firstName: string | null; lastName: string | null; email: string | null; status: string; isSystemAdmin?: boolean }) {
     return {
       id: user.id,
       username: user.username,
@@ -44,6 +43,7 @@ export class UsersService {
       lastName: user.lastName,
       email: user.email,
       status: user.status,
+      isSystemAdmin: user.isSystemAdmin ?? false,
     }
   }
 }

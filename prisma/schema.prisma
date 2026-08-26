@@ -31,6 +31,7 @@ model User {
   lastName     String?    @db.VarChar(100)
   email        String?    @unique @db.VarChar(255)
   status       UserStatus @default(ACTIVE)
+  isSystemAdmin Boolean    @default(false)
   firebaseUid  String?    @unique @db.VarChar(255)
   lootLockerPlayerId String? @unique @db.VarChar(255)
   lastOnline   DateTime?

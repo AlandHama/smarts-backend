@@ -25,6 +25,7 @@ export class HealthController {
         "GET /players/me",
         "GET /players/:userId",
         "PATCH /players/me",
+        "GET /system-admin (system administrator console)",
         "GET /notes (authenticated)",
       ],
     }

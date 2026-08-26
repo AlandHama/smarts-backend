@@ -6,13 +6,15 @@ import { PrismaTransaction } from "../../../../../common/helpers/prisma-transact
 import { PrismaService } from "../../../../../prisma.service"
 import { RegisterRequestDto } from "../../../../auth/dtos/register-request.dto"
 
+export type CreateUserInput = RegisterRequestDto & { isSystemAdmin?: boolean }
+
 @Injectable()
-export class CreateUserTransaction extends PrismaTransaction<RegisterRequestDto, any> {
+export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, any> {
   constructor(prisma: PrismaService) {
     super(prisma)
   }
 
-  protected async execute(dto: RegisterRequestDto, transaction: Prisma.TransactionClient) {
+  protected async execute(dto: CreateUserInput, transaction: Prisma.TransactionClient) {
     try {
       return await transaction.user.create({
         data: {
@@ -21,6 +23,7 @@ export class CreateUserTransaction extends PrismaTransaction<RegisterRequestDto,
           firstName: dto.firstName?.trim() || null,
           lastName: dto.lastName?.trim() || null,
           email: dto.email.trim().toLowerCase(),
+          isSystemAdmin: dto.isSystemAdmin ?? false,
           profile: {
             create: {
               displayName: dto.displayName.trim(),
