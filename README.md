@@ -1,7 +1,7 @@
 # NestJs Backend For Smarts
 
-A NestJS 11 API on Prisma 7 and Postgres, with nothing to fill in before it
-deploys.
+A NestJS 11 API on Prisma 7 and Postgres, with Nexa-style UUID authentication,
+session-backed access tokens, and refresh-token rotation.
 
 ## Why this exists
 
@@ -13,10 +13,11 @@ two JWT secrets, for a starter you have not seen run yet. Its `FRONTEND_URL`
 also defaults to `localhost:3000`, which is wrong for every deployment. Fewer
 than one in ten come up.
 
-This one deploys with no questions. It has no auth and no email, because a
-generic starter that ships neither should not be asking for their secrets — add
-`@nestjs/jwt` and a mail provider when you actually need them, and the variables
-with them.
+The authentication module follows the Nexa layering: `modules/auth` owns the
+token and login flow, while `modules/admin/access/users` and
+`modules/admin/access/sessions` own user and session persistence. It uses UUID
+IDs throughout, bcrypt password hashes, active-session checks on every bearer
+request, and one-time refresh-token rotation.
 
 ## What's in here
 
@@ -24,10 +25,11 @@ with them.
 |------|---------------|
 | `src/main.ts` | Bootstrap: validation pipe, shutdown hooks, binds `PORT` |
 | `src/prisma.service.ts` | Prisma client as an injectable, connected on module init |
-| `src/notes.controller.ts` | `GET /notes`, `POST /notes` |
+| `src/modules/auth` | Login, registration, JWT strategy, tokens, sessions, and password changes |
+| `src/notes.controller.ts` | `GET /notes`, `POST /notes` (authenticated) |
 | `src/health.controller.ts` | `/` and `/health` — the latter runs `SELECT 1` |
 | `railway.json` | Pre-deploy migration, health check, restart policy |
-| `package-lock.json` | Committed, audited clean |
+| `package-lock.json` | Committed dependency lockfile |
 
 Four details worth knowing:
 
@@ -40,10 +42,8 @@ Four details worth knowing:
   declare, so a request cannot smuggle extra fields into a create call.
 - **`enableShutdownHooks()`.** Railway sends `SIGTERM` before replacing a
   container; without this, in-flight requests are cut off on every deploy.
-- **The lockfile is audited clean.** `@nestjs/cli` pulls a vulnerable
-  `brace-expansion` through its webpack plugin, and Railway refuses to build when
-  the committed lockfile carries a HIGH advisory, so `package.json` overrides it
-  forward. Check with `npm audit --audit-level=high` before pushing.
+- **The lockfile is committed.** Run `npm audit --audit-level=high` after
+  dependency updates and before pushing a deployment.
 
 ## Endpoints
 
@@ -51,8 +51,14 @@ Four details worth knowing:
 |--------|------|------|
 | GET | `/` | Lists the endpoints |
 | GET | `/health` | Runs `SELECT 1`; reports degraded when Postgres is unreachable |
-| GET | `/notes` | Last 100 notes, newest first |
-| POST | `/notes` | Creates a note from `{"body": "..."}` |
+| GET | `/notes` | Last 100 notes, newest first (authenticated) |
+| POST | `/notes` | Creates a note from `{"body": "..."}` (authenticated) |
+
+Authentication endpoints are `POST /auth/register`, `POST /auth/login`,
+`POST /auth/token/refresh`, `POST /auth/token/validate`, `GET /auth/me`,
+`POST /auth/logout`, `GET /auth/sessions`, `DELETE /auth/sessions/:tokenId`,
+and `POST /auth/password`. Send access tokens as
+`Authorization: Bearer <accessToken>`.
 
 Interactive Swagger documentation is available at `/docs` when the app is
 running. The raw OpenAPI document is available at `/docs-json`.
@@ -72,6 +78,11 @@ npm run dev
 |----------|----------|---------|
 | `DATABASE_URL` | yes | Postgres connection string |
 | `PORT` | no | Defaults to 8080 |
+| `JWT_SECRET` | fallback | Shared signing secret fallback; prefer separate secrets in production |
+| `JWT_ACCESS_SECRET` | production | HMAC secret for access tokens |
+| `JWT_REFRESH_SECRET` | production | HMAC secret for refresh tokens |
+| `JWT_ACCESS_EXPIRES_IN` | no | Defaults to `15m` |
+| `JWT_REFRESH_EXPIRES_IN` | no | Defaults to `30d` |
 
 ## License
 

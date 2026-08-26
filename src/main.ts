@@ -13,6 +13,7 @@ async function bootstrap() {
     .setTitle("NestJS Railway Starter API")
     .setDescription("API documentation for the NestJS + Prisma starter.")
     .setVersion("1.0")
+    .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "JWT" }, "access-token")
     .build()
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig)
   SwaggerModule.setup("docs", app, swaggerDocument, {
