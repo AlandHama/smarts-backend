@@ -1,4 +1,4 @@
-# NestJS starter for Railway
+# NestJs Backend For Smarts
 
 A NestJS 11 API on Prisma 7 and Postgres, with nothing to fill in before it
 deploys.
