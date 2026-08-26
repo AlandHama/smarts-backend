@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, OnModuleInit, UnauthorizedException } from "@nestjs/common"
+import { Injectable, Logger, NotFoundException, OnModuleInit, UnauthorizedException } from "@nestjs/common"
 import { Prisma, UserStatus } from "@prisma/client"
 
 import { HashHelper } from "../../common/helpers/hash.helper"
@@ -13,6 +13,7 @@ import { UpdateUserStatusTransaction } from "./transactions/update-user-status-t
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
+  private readonly logger = new Logger(SystemAdminService.name)
   private dummyPasswordHash?: string
 
   constructor(
@@ -32,13 +33,15 @@ export class SystemAdminService implements OnModuleInit {
 
     const email = process.env.SYSTEM_ADMIN_EMAIL?.trim() || `${username.toLowerCase()}@system-admin.local`
     const displayName = process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || "System Administrator"
-    await this.ensureSystemAdminTransaction.run({
+    const result = await this.ensureSystemAdminTransaction.run({
       username,
       password,
       email,
       displayName,
       countryCode: process.env.SYSTEM_ADMIN_COUNTRY_CODE?.trim(),
+      resetPassword: process.env.SYSTEM_ADMIN_RESET_PASSWORD?.trim().toLowerCase() === "true",
     })
+    this.logger.log(`System admin bootstrap completed (${result.created ? "created" : "verified"})`)
   }
 
   async login(dto: SystemAdminLoginDto, request: any) {
@@ -49,7 +52,10 @@ export class SystemAdminService implements OnModuleInit {
     }
     const passwordHash = user?.passwordHash ?? await this.getDummyPasswordHash()
     const passwordMatches = await HashHelper.compare(dto.password, passwordHash)
-    if (!user || !passwordMatches) throw new UnauthorizedException("Invalid administrator credentials")
+    if (!user || !passwordMatches) {
+      this.logger.warn(`System admin login rejected (userFound=${Boolean(user)}, passwordMatch=${passwordMatches}, admin=${user?.isSystemAdmin ?? false})`)
+      throw new UnauthorizedException("Invalid administrator credentials")
+    }
     if (!user.isSystemAdmin) {
       if (!this.matchesConfiguredBootstrapAccount(user.username, user.email, dto.identifier)) {
         throw new UnauthorizedException("Invalid administrator credentials")

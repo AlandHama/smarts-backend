@@ -111,6 +111,7 @@ npm run dev
 | `JWT_REFRESH_EXPIRES_IN` | no | Defaults to `30d` |
 | `SYSTEM_ADMIN_USERNAME` | no | On first boot or first valid configured login, creates or promotes this username to system admin when paired with the password |
 | `SYSTEM_ADMIN_PASSWORD` | no | Initial system-admin password; never overwrites an existing account password |
+| `SYSTEM_ADMIN_RESET_PASSWORD` | no | Set to `true` for one recovery deploy to replace the configured admin account password, then remove it |
 | `SYSTEM_ADMIN_EMAIL` | no | Initial system-admin email; defaults to a local placeholder |
 | `SYSTEM_ADMIN_DISPLAY_NAME` | no | Initial system-admin display name |
 

@@ -6,7 +6,7 @@ import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { CreateUserInput } from "../../admin/access/users/transactions/create-user-transaction"
 
-export type EnsureSystemAdminInput = CreateUserInput & { lookupEmail?: string }
+export type EnsureSystemAdminInput = CreateUserInput & { lookupEmail?: string; resetPassword?: boolean }
 
 @Injectable()
 export class EnsureSystemAdminTransaction extends PrismaTransaction<EnsureSystemAdminInput, { created: boolean }> {
@@ -23,7 +23,18 @@ export class EnsureSystemAdminTransaction extends PrismaTransaction<EnsureSystem
     })
     if (existing) {
       if (!existing.isSystemAdmin) {
-        await transaction.user.update({ where: { id: existing.id }, data: { isSystemAdmin: true } })
+        await transaction.user.update({
+          where: { id: existing.id },
+          data: {
+            isSystemAdmin: true,
+            ...(dto.resetPassword ? { passwordHash: await HashHelper.encrypt(dto.password) } : {}),
+          },
+        })
+      } else if (dto.resetPassword) {
+        await transaction.user.update({
+          where: { id: existing.id },
+          data: { passwordHash: await HashHelper.encrypt(dto.password) },
+        })
       }
       return { created: false }
     }
