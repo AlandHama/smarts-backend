@@ -1,12 +1,16 @@
 import { Controller, Get, HttpCode } from "@nestjs/common"
+import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger"
 
 import { PrismaService } from "./prisma.service"
 
 @Controller()
+@ApiTags("health")
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
+  @ApiOperation({ summary: "Get API information" })
+  @ApiResponse({ status: 200, description: "Returns the available API endpoints." })
   index() {
     return {
       message: "NestJS + Prisma on Railway",
@@ -18,6 +22,8 @@ export class HealthController {
   // reports unhealthy rather than looking fine and failing on the first request.
   @Get("health")
   @HttpCode(200)
+  @ApiOperation({ summary: "Check API and database health" })
+  @ApiResponse({ status: 200, description: "Returns the current API and database status." })
   async health() {
     try {
       await this.prisma.$queryRaw`SELECT 1`

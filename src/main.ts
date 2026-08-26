@@ -2,11 +2,22 @@ import "reflect-metadata"
 
 import { ValidationPipe } from "@nestjs/common"
 import { NestFactory } from "@nestjs/core"
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger"
 
 import { AppModule } from "./app.module"
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule)
+
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle("NestJS Railway Starter API")
+    .setDescription("API documentation for the NestJS + Prisma starter.")
+    .setVersion("1.0")
+    .build()
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig)
+  SwaggerModule.setup("docs", app, swaggerDocument, {
+    jsonDocumentUrl: "docs-json",
+  })
 
   // whitelist strips properties the DTO does not declare, so a request cannot
   // smuggle extra fields into a create call.

@@ -54,6 +54,9 @@ Four details worth knowing:
 | GET | `/notes` | Last 100 notes, newest first |
 | POST | `/notes` | Creates a note from `{"body": "..."}` |
 
+Interactive Swagger documentation is available at `/docs` when the app is
+running. The raw OpenAPI document is available at `/docs-json`.
+
 ## Run locally
 
 ```bash
