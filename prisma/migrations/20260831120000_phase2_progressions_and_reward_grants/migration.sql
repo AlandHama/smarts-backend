@@ -171,4 +171,3 @@ SELECT id, 1, 0, CASE WHEN "key" = 'main' THEN 'Beginner' ELSE 'Unranked' END, C
 FROM "ProgressionDefinition"
 WHERE "key" IN ('main', 'elo')
   AND NOT EXISTS (SELECT 1 FROM "ProgressionTier" tier WHERE tier."progressionId" = "ProgressionDefinition"."id");
-

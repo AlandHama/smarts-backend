@@ -12,9 +12,10 @@ import { ResetUserPasswordTransaction } from "./transactions/reset-user-password
 import { UpdateUserProfileTransaction } from "./transactions/update-user-profile-transaction"
 import { UpdateUserStatusTransaction } from "./transactions/update-user-status-transaction"
 import { ProgressionModule } from "../progression/progression.module"
+import { EconomyModule } from "../economy/economy.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,

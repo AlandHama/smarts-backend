@@ -9,12 +9,16 @@
   },
   "scripts": {
     "dev": "nest start --watch",
-    "build": "prisma generate && nest build",
+    "build": "prisma generate && nest build && next build system-admin-web",
     "migrate": "prisma migrate deploy",
     "migrate:dev": "prisma migrate dev",
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^6.4.7",
+    "@mui/material": "^6.4.8",
     "@nestjs/common": "^11.1.28",
     "@nestjs/core": "^11.1.28",
     "@nestjs/jwt": "^11.0.2",
@@ -26,9 +30,12 @@
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "next": "^15.5.9",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.22.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },

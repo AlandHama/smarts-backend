@@ -1,27 +1,20 @@
-import { Body, Controller, Delete, Get, Header, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common"
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common"
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { SkipAuth } from "../../common/decorators/skip-auth.decorator"
 import { UserResponseDto } from "../auth/dtos/user-response.dto"
-import { SYSTEM_ADMIN_PAGE } from "./system-admin.page"
 import { SystemAdminGuard } from "./system-admin.guard"
 import { SystemAdminService } from "./system-admin.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
 import { ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
+import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
 export class SystemAdminController {
   constructor(private readonly systemAdminService: SystemAdminService) {}
-
-  @SkipAuth()
-  @Get()
-  @Header("Content-Type", "text/html; charset=utf-8")
-  page() {
-    return SYSTEM_ADMIN_PAGE
-  }
 
   @SkipAuth()
   @Post("api/auth/login")
@@ -170,4 +163,40 @@ export class SystemAdminController {
   @Post("api/users/:userId/progressions/:key/reset")
   @ApiBearerAuth("access-token")
   resetProgression(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string, @Body() dto: ResetProgressionDto) { return this.systemAdminService.resetProgression(userId, key, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/economy/currencies")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List all currency definitions and wallet usage" })
+  currencies() { return this.systemAdminService.listCurrencies() }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/economy/currencies")
+  @ApiBearerAuth("access-token")
+  createCurrency(@Body() dto: CreateCurrencyDto) { return this.systemAdminService.createCurrency(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/economy/currencies/:currencyId")
+  @ApiBearerAuth("access-token")
+  updateCurrency(@Param("currencyId", ParseUUIDPipe) currencyId: string, @Body() dto: UpdateCurrencyDto) { return this.systemAdminService.updateCurrency(currencyId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/users/:userId/wallet")
+  @ApiBearerAuth("access-token")
+  getWallet(@Param("userId", ParseUUIDPipe) userId: string) { return this.systemAdminService.getAdminWallet(userId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/wallet/credit")
+  @ApiBearerAuth("access-token")
+  creditWallet(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto, @Body() dto: WalletMutationDto) { return this.systemAdminService.creditWallet(userId, dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/wallet/debit")
+  @ApiBearerAuth("access-token")
+  debitWallet(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto, @Body() dto: WalletMutationDto) { return this.systemAdminService.debitWallet(userId, dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/wallet/reverse")
+  @ApiBearerAuth("access-token")
+  reverseWallet(@Param("userId", ParseUUIDPipe) userId: string, @Body() dto: ReverseWalletDto) { return this.systemAdminService.reverseWallet(userId, dto) }
 }

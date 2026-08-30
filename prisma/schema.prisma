@@ -369,6 +369,7 @@ model WalletTransaction {
   sourceType      WalletTransactionSourceType
   sourceId        String                    @db.VarChar(255)
   grantKey        String?                   @unique @db.VarChar(255)
+  idempotencyKeyId String?                  @db.Uuid
   metadata        Json?
   createdAt       DateTime                  @default(now())
   wallet          Wallet                    @relation(fields: [walletId], references: [id], onDelete: Cascade)
@@ -376,4 +377,5 @@ model WalletTransaction {
 
   @@index([walletId, currencyId, createdAt])
   @@index([sourceType, sourceId])
+  @@index([idempotencyKeyId])
 }

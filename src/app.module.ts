@@ -7,9 +7,10 @@ import { AuthModule } from "./modules/auth/auth.module"
 import { PlayersModule } from "./modules/players/players.module"
 import { SystemAdminModule } from "./modules/system-admin/system-admin.module"
 import { ProgressionModule } from "./modules/progression/progression.module"
+import { EconomyModule } from "./modules/economy/economy.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, PlayersModule, ProgressionModule, SystemAdminModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, PlayersModule, ProgressionModule, SystemAdminModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

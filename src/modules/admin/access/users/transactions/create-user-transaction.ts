@@ -5,12 +5,13 @@ import { HashHelper } from "../../../../../common/helpers/hash.helper"
 import { PrismaTransaction } from "../../../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../../../prisma.service"
 import { RegisterRequestDto } from "../../../../auth/dtos/register-request.dto"
+import { CreditWalletTransaction } from "../../../../economy/transactions/credit-wallet-transaction"
 
 export type CreateUserInput = RegisterRequestDto & { isSystemAdmin?: boolean }
 
 @Injectable()
 export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, any> {
-  constructor(prisma: PrismaService) {
+  constructor(prisma: PrismaService, private readonly creditWalletTransaction: CreditWalletTransaction) {
     super(prisma)
   }
 
@@ -38,7 +39,7 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
       const incompleteProgression = progressions.find((progression) => !progression.tiers.length)
       if (incompleteProgression) throw new InternalServerErrorException("An active progression has no tiers configured")
 
-      return await transaction.user.create({
+      const user = await transaction.user.create({
         data: {
           username: dto.username.trim().toLowerCase(),
           passwordHash: await HashHelper.encrypt(dto.password),
@@ -90,6 +91,19 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
           },
         },
       })
+      const signupAmountText = process.env.SIGNUP_MCN_AMOUNT?.trim() || "1500"
+      if (!/^\d+$/.test(signupAmountText)) throw new InternalServerErrorException("SIGNUP_MCN_AMOUNT must be a non-negative integer")
+      const signupAmount = BigInt(signupAmountText)
+      if (signupAmount > 0n) {
+        await this.creditWalletTransaction.runWithinTransaction({
+          userId: user.id,
+          currencyCode: "MCN",
+          amount: signupAmount,
+          sourceId: `signup:${user.id}`,
+          sourceType: "SIGNUP",
+        }, transaction)
+      }
+      return user
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         throw new ConflictException("Username or email is already registered")

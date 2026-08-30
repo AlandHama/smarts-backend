@@ -8,6 +8,12 @@ It also includes a single-service system administrator console at
 and refresh-token session system, and provides a Material-style responsive UI
 for user listing, registration, activation, banning, and deletion.
 
+The console also manages progression definitions, tiers, rewards, currency
+definitions, player wallet adjustments, ledger reversals, and reconciliation.
+The wallet is server-owned: balances are stored as integer `BIGINT` units and
+every credit, debit, signup grant, and correction is an append-only ledger
+transaction.
+
 ## Why this exists
 
 The NestJS template on Railway declares three variables with empty values —
@@ -78,6 +84,11 @@ Player endpoints are `GET /players/me`, `GET /players/:userId`, and
 level 1, XP 0, and ELO 1000. XP, ELO, and statistics are returned as server
 authority data and have no public write endpoints.
 
+Economy endpoints are `GET /wallet`, `GET /wallet/transactions`, and
+`GET /currencies`. Wallet writes are protected server operations and are
+available to progression, match, purchase, and administration transactions;
+the public API never accepts an arbitrary wallet ID or balance update.
+
 The system administrator console is available at `/system-admin`. Its API
 requires a JWT from a user with `isSystemAdmin = true` and exposes overview
 counts, paginated/searchable users, player registration, status changes, and
@@ -114,6 +125,7 @@ npm run dev
 | `SYSTEM_ADMIN_RESET_PASSWORD` | no | Set to `true` for one recovery deploy to replace the configured admin account password, then remove it |
 | `SYSTEM_ADMIN_EMAIL` | no | Initial system-admin email; defaults to a local placeholder |
 | `SYSTEM_ADMIN_DISPLAY_NAME` | no | Initial system-admin display name |
+| `SIGNUP_MCN_AMOUNT` | no | Server-side MCN signup grant in integer units; defaults to `1500` |
 
 ## License
 

@@ -14,6 +14,11 @@ import { UpdateUserProfileTransaction } from "./transactions/update-user-profile
 import { UpdateUserStatusTransaction } from "./transactions/update-user-status-transaction"
 import { ProgressionService } from "../progression/progression.service"
 import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
+import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
+import { WalletService } from "../economy/wallet.service"
+import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-transaction"
+import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
+import { ReverseWalletTransaction } from "../economy/transactions/reverse-wallet-transaction"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -30,6 +35,10 @@ export class SystemAdminService implements OnModuleInit {
     private readonly updateUserProfileTransaction: UpdateUserProfileTransaction,
     private readonly resetUserPasswordTransaction: ResetUserPasswordTransaction,
     private readonly progressionService: ProgressionService,
+    private readonly walletService: WalletService,
+    private readonly creditWalletTransaction: CreditWalletTransaction,
+    private readonly debitWalletTransaction: DebitWalletTransaction,
+    private readonly reverseWalletTransaction: ReverseWalletTransaction,
   ) {}
 
   async onModuleInit() {
@@ -171,6 +180,13 @@ export class SystemAdminService implements OnModuleInit {
   deleteProgressionReward(id: string) { return this.progressionService.deleteReward(id) }
   awardProgression(userId: string, key: string, dto: AwardProgressionPointsDto) { return this.progressionService.awardAdmin(userId, key, BigInt(dto.amount), dto.sourceId, dto.metadata) }
   resetProgression(userId: string, key: string, dto: ResetProgressionDto) { return this.progressionService.resetAdmin(userId, key, dto.sourceId) }
+  listCurrencies() { return this.walletService.listCurrencies(true) }
+  createCurrency(dto: CreateCurrencyDto) { return this.walletService.createCurrency(dto) }
+  updateCurrency(id: string, dto: UpdateCurrencyDto) { return this.walletService.updateCurrency(id, dto) }
+  getAdminWallet(userId: string) { return this.walletService.getAdminWallet(userId) }
+  creditWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.creditWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", metadata: { ...(dto.metadata ?? {}), actorId } }) }
+  debitWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.debitWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", metadata: { ...(dto.metadata ?? {}), actorId } }) }
+  reverseWallet(userId: string, dto: ReverseWalletDto) { return this.reverseWalletTransaction.run({ userId, ledgerId: dto.ledgerId, originalGrantKey: dto.originalGrantKey, sourceId: dto.sourceId }) }
 
   private async getUser(userId: string, detailed = false) {
     const user = await this.prisma.user.findUnique({

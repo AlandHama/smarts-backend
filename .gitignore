@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .env
+system-admin-web/.next/
+system-admin-web/out/

@@ -1,0 +1,14 @@
+:root {
+  --admin-background: #0b1020;
+  --admin-surface: #121a2c;
+  --admin-surface-raised: #18233a;
+  --admin-border: rgba(148, 163, 184, 0.18);
+  --admin-muted: #91a0b8;
+  --admin-primary: #8b7dff;
+}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body { margin: 0; background: var(--admin-background); }
+button, input, select, textarea { font: inherit; }
+

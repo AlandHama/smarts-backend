@@ -1,0 +1,103 @@
+export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'BANNED';
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  status: UserStatus;
+  isSystemAdmin: boolean;
+  createdAt: string;
+  lastOnline: string | null;
+  _count?: { sessions: number };
+  profile: { displayName: string; avatarUrl: string | null; countryCode: string | null; bio?: string | null; level: number; xp: string; elo: number } | null;
+  stats: { gamesPlayed: number; wins: number; losses: number; draws: number; currentWinStreak: number; highestWinStreak: number; highestElo: number; totalScore: string } | null;
+  wallet?: WalletSummary;
+  progressions?: PlayerProgression[];
+  sessions?: SessionSummary[];
+}
+
+export interface WalletSummary {
+  id: string;
+  status: string;
+  balances: WalletBalance[];
+}
+
+export interface WalletBalance {
+  id?: string;
+  amount: string;
+  currency: { code: string; name: string; kind?: string };
+}
+
+export interface WalletLedgerEntry {
+  id: string;
+  direction: 'CREDIT' | 'DEBIT' | 'REVERSAL';
+  amount: string;
+  balanceBefore: string;
+  balanceAfter: string;
+  sourceType: string;
+  sourceId: string;
+  grantKey: string | null;
+  createdAt: string;
+  currency: { code: string; name: string };
+}
+
+export interface PlayerProgression {
+  id: string;
+  points: string;
+  step: number;
+  previousThreshold: string;
+  nextThreshold: string | null;
+  progression: { key: string; name: string; kind: string; active: boolean };
+}
+
+export interface SessionSummary {
+  id: string;
+  sessionStatus: string;
+  isMobileSession: boolean;
+  deviceName: string | null;
+  deviceInfo: string | null;
+  ipAddress: string | null;
+  lastActiveTimestamp: string;
+}
+
+export interface RewardDefinition {
+  id: string;
+  rewardType: string;
+  amount: string | null;
+  targetKey: string | null;
+  targetProgression: { key: string; name: string } | null;
+  currency: { code: string; name: string } | null;
+}
+
+export interface ProgressionTier {
+  id: string;
+  step: number;
+  pointsThreshold: string;
+  name: string | null;
+  rewards: RewardDefinition[];
+}
+
+export interface ProgressionDefinition {
+  id: string;
+  key: string;
+  name: string;
+  kind: string;
+  active: boolean;
+  allowNegative: boolean;
+  resetPolicy: string;
+  tiers: ProgressionTier[];
+}
+
+export interface CurrencyDefinition {
+  id: string;
+  code: string;
+  name: string;
+  kind: string;
+  precision: number;
+  active: boolean;
+  _count?: { balances: number; transactions: number };
+}
+
+export interface OverviewMetrics { totalUsers: number; activeUsers: number; bannedUsers: number; activeAdmins: number; activeSessions: number; }
