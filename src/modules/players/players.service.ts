@@ -30,10 +30,19 @@ export class PlayersService {
         status: true,
         profile: true,
         stats: true,
+        wallet: {
+          select: {
+            status: true,
+            balances: {
+              select: { amount: true, currency: { select: { code: true } } },
+              orderBy: { currency: { code: "asc" } },
+            },
+          },
+        },
       },
     })
     if (!player) throw new NotFoundException("Player not found")
-    if (!player.profile || !player.stats) throw new NotFoundException("Player profile is not initialized")
+    if (!player.profile || !player.stats || !player.wallet) throw new NotFoundException("Player profile is not initialized")
     return this.toCurrentResponse(player)
   }
 
@@ -88,8 +97,12 @@ export class PlayersService {
     status: string
     profile: Prisma.UserGetPayload<{ select: { profile: true } }>["profile"]
     stats: Prisma.UserGetPayload<{ select: { stats: true } }>["stats"]
+    wallet: {
+      status: string
+      balances: Array<{ amount: bigint; currency: { code: string } }>
+    } | null
   }): PlayerResponseDto {
-    if (!player.profile || !player.stats) throw new NotFoundException("Player profile is not initialized")
+    if (!player.profile || !player.stats || !player.wallet) throw new NotFoundException("Player profile is not initialized")
     return {
       id: player.id,
       username: player.username,
@@ -97,6 +110,13 @@ export class PlayersService {
       status: player.status,
       profile: this.toProfileResponse(player.profile),
       stats: this.toStatsResponse(player.stats),
+      wallet: {
+        status: player.wallet.status,
+        balances: player.wallet.balances.map((balance) => ({
+          code: balance.currency.code,
+          amount: balance.amount.toString(),
+        })),
+      },
     }
   }
 

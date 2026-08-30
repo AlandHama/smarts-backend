@@ -6,9 +6,11 @@ import { PrismaService } from "../../prisma.service"
 import { AuthService } from "../auth/services/auth.service"
 import { UsersService } from "../admin/access/users/users.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserStatusDto } from "./dtos"
+import { ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { DeleteUserTransaction } from "./transactions/delete-user-transaction"
 import { EnsureSystemAdminInput, EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin-transaction"
+import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction"
+import { UpdateUserProfileTransaction } from "./transactions/update-user-profile-transaction"
 import { UpdateUserStatusTransaction } from "./transactions/update-user-status-transaction"
 
 @Injectable()
@@ -23,6 +25,8 @@ export class SystemAdminService implements OnModuleInit {
     private readonly ensureSystemAdminTransaction: EnsureSystemAdminTransaction,
     private readonly updateUserStatusTransaction: UpdateUserStatusTransaction,
     private readonly deleteUserTransaction: DeleteUserTransaction,
+    private readonly updateUserProfileTransaction: UpdateUserProfileTransaction,
+    private readonly resetUserPasswordTransaction: ResetUserPasswordTransaction,
   ) {}
 
   async onModuleInit() {
@@ -34,7 +38,7 @@ export class SystemAdminService implements OnModuleInit {
     }
     if (!username || !password) throw new Error("SYSTEM_ADMIN_USERNAME and SYSTEM_ADMIN_PASSWORD must be configured together")
 
-    const email = process.env.SYSTEM_ADMIN_EMAIL?.trim() || `${username.toLowerCase()}@system-admin.local`
+    const email = this.configuredAdminEmail(username)
     const displayName = process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || "System Administrator"
     const result = await this.ensureSystemAdminTransaction.run({
       username,
@@ -101,7 +105,7 @@ export class SystemAdminService implements OnModuleInit {
           createdAt: true,
           lastOnline: true,
           profile: { select: { displayName: true, avatarUrl: true, level: true, xp: true, elo: true } },
-          stats: { select: { gamesPlayed: true, wins: true, losses: true, draws: true, totalScore: true } },
+          stats: { select: { gamesPlayed: true, wins: true, losses: true, draws: true, currentWinStreak: true, highestWinStreak: true, highestElo: true, totalScore: true } },
           _count: { select: { sessions: true } },
         },
       }),
@@ -129,6 +133,20 @@ export class SystemAdminService implements OnModuleInit {
     return this.getUser(user.id)
   }
 
+  getUserDetails(userId: string) {
+    return this.getUser(userId, true)
+  }
+
+  async updateUserProfile(userId: string, actorId: string, dto: UpdateUserProfileDto) {
+    await this.updateUserProfileTransaction.run({ userId, actorId, dto })
+    return this.getUser(userId, true)
+  }
+
+  async resetUserPassword(userId: string, actorId: string, dto: ResetUserPasswordDto) {
+    await this.resetUserPasswordTransaction.run({ userId, actorId, password: dto.password })
+    return { message: "Password reset and all active sessions terminated" }
+  }
+
   updateStatus(userId: string, actorId: string, dto: UpdateUserStatusDto) {
     return this.updateUserStatusTransaction.run({ userId, actorId, status: dto.status })
   }
@@ -138,7 +156,7 @@ export class SystemAdminService implements OnModuleInit {
     return { message: "User deleted" }
   }
 
-  private async getUser(userId: string) {
+  private async getUser(userId: string, detailed = false) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -152,8 +170,40 @@ export class SystemAdminService implements OnModuleInit {
         createdAt: true,
         lastOnline: true,
         profile: { select: { displayName: true, avatarUrl: true, level: true, xp: true, elo: true } },
-        stats: { select: { gamesPlayed: true, wins: true, losses: true, draws: true, totalScore: true } },
+        stats: { select: { gamesPlayed: true, wins: true, losses: true, draws: true, currentWinStreak: true, highestWinStreak: true, highestElo: true, totalScore: true } },
         _count: { select: { sessions: true } },
+        ...(detailed ? {
+          wallet: {
+            select: {
+              id: true,
+              status: true,
+              balances: {
+                select: {
+                  id: true,
+                  amount: true,
+                  currency: { select: { code: true, name: true, kind: true } },
+                },
+              },
+            },
+          },
+          sessions: {
+            orderBy: { lastActiveTimestamp: "desc" },
+            take: 100,
+            select: {
+              id: true,
+              sessionStatus: true,
+              isMobileSession: true,
+              clientVersion: true,
+              deviceInfo: true,
+              deviceName: true,
+              ipAddress: true,
+              location: true,
+              loginTimestamp: true,
+              lastActiveTimestamp: true,
+              expiresAt: true,
+            },
+          },
+        } : {}),
       },
     })
     if (!user) throw new NotFoundException("User not found")
@@ -161,11 +211,21 @@ export class SystemAdminService implements OnModuleInit {
   }
 
   private serializeUser(user: any) {
-    return {
+    const serialized = {
       ...user,
       profile: user.profile ? { ...user.profile, xp: user.profile.xp.toString() } : null,
       stats: user.stats ? { ...user.stats, totalScore: user.stats.totalScore.toString() } : null,
     }
+    if (user.wallet) {
+      serialized.wallet = {
+        ...user.wallet,
+        balances: user.wallet.balances.map((balance: any) => ({
+          ...balance,
+          amount: balance.amount.toString(),
+        })),
+      }
+    }
+    return serialized
   }
 
   private async getDummyPasswordHash() {
@@ -175,7 +235,7 @@ export class SystemAdminService implements OnModuleInit {
 
   private matchesConfiguredBootstrapAccount(username: string, email: string | null, identifier: string) {
     const configuredUsername = process.env.SYSTEM_ADMIN_USERNAME?.trim().toLowerCase()
-    const configuredEmail = process.env.SYSTEM_ADMIN_EMAIL?.trim().toLowerCase()
+    const configuredEmail = this.configuredAdminEmail(configuredUsername ?? "").toLowerCase()
     const normalizedIdentifier = identifier.trim().toLowerCase()
     return Boolean(
       process.env.SYSTEM_ADMIN_PASSWORD &&
@@ -190,11 +250,10 @@ export class SystemAdminService implements OnModuleInit {
 
   private matchesConfiguredBootstrapIdentity(identifier: string) {
     const configuredUsername = process.env.SYSTEM_ADMIN_USERNAME?.trim().toLowerCase()
-    const configuredEmail = process.env.SYSTEM_ADMIN_EMAIL?.trim().toLowerCase()
+    const configuredEmail = this.configuredAdminEmail(configuredUsername ?? "").toLowerCase()
     const normalizedIdentifier = identifier.trim().toLowerCase()
     return Boolean(
       configuredUsername &&
-      configuredEmail &&
       (normalizedIdentifier === configuredUsername || normalizedIdentifier === configuredEmail),
     )
   }
@@ -205,7 +264,7 @@ export class SystemAdminService implements OnModuleInit {
 
   private getConfiguredBootstrapInput(password: string): EnsureSystemAdminInput {
     const username = process.env.SYSTEM_ADMIN_USERNAME!.trim()
-    const email = process.env.SYSTEM_ADMIN_EMAIL!.trim()
+    const email = this.configuredAdminEmail(username)
     return {
       username,
       password,
@@ -226,5 +285,9 @@ export class SystemAdminService implements OnModuleInit {
       countryCode: process.env.SYSTEM_ADMIN_COUNTRY_CODE?.trim(),
       lookupEmail: user.email ?? email,
     }
+  }
+
+  private configuredAdminEmail(username: string) {
+    return process.env.SYSTEM_ADMIN_EMAIL?.trim() || `${username.trim().toLowerCase()}@system-admin.local`
   }
 }

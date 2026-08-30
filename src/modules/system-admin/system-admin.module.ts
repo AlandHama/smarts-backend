@@ -8,11 +8,21 @@ import { SystemAdminService } from "./system-admin.service"
 import { SystemAdminGuard } from "./system-admin.guard"
 import { DeleteUserTransaction } from "./transactions/delete-user-transaction"
 import { EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin-transaction"
+import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction"
+import { UpdateUserProfileTransaction } from "./transactions/update-user-profile-transaction"
 import { UpdateUserStatusTransaction } from "./transactions/update-user-status-transaction"
 
 @Module({
   imports: [DatabaseModule, AuthModule, UsersModule],
   controllers: [SystemAdminController],
-  providers: [SystemAdminService, SystemAdminGuard, DeleteUserTransaction, EnsureSystemAdminTransaction, UpdateUserStatusTransaction],
+  providers: [
+    SystemAdminService,
+    SystemAdminGuard,
+    DeleteUserTransaction,
+    EnsureSystemAdminTransaction,
+    ResetUserPasswordTransaction,
+    UpdateUserProfileTransaction,
+    UpdateUserStatusTransaction,
+  ],
 })
 export class SystemAdminModule {}

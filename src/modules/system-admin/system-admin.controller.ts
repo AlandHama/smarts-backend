@@ -8,7 +8,7 @@ import { SYSTEM_ADMIN_PAGE } from "./system-admin.page"
 import { SystemAdminGuard } from "./system-admin.guard"
 import { SystemAdminService } from "./system-admin.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserStatusDto } from "./dtos"
+import { ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -52,6 +52,38 @@ export class SystemAdminController {
   @ApiOperation({ summary: "Create a player account from the admin console" })
   createUser(@Body() dto: RegisterRequestDto) {
     return this.systemAdminService.createUser(dto)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/users/:userId")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "View a complete player account, wallet, and session summary" })
+  getUser(@Param("userId", ParseUUIDPipe) userId: string) {
+    return this.systemAdminService.getUserDetails(userId)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/users/:userId/profile")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Edit account and player profile settings" })
+  updateProfile(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentUser() admin: UserResponseDto,
+    @Body() dto: UpdateUserProfileDto,
+  ) {
+    return this.systemAdminService.updateUserProfile(userId, admin.id, dto)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/reset-password")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Reset a player's password and terminate active sessions" })
+  resetPassword(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentUser() admin: UserResponseDto,
+    @Body() dto: ResetUserPasswordDto,
+  ) {
+    return this.systemAdminService.resetUserPassword(userId, admin.id, dto)
   }
 
   @UseGuards(SystemAdminGuard)

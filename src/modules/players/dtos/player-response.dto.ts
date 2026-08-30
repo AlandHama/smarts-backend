@@ -49,6 +49,22 @@ export class PlayerStatsResponseDto {
   totalScore!: string
 }
 
+export class PlayerWalletBalanceResponseDto {
+  @ApiProperty({ example: "MCN" })
+  code!: string
+
+  @ApiProperty({ example: "0", description: "Balance represented as a decimal string" })
+  amount!: string
+}
+
+export class PlayerWalletResponseDto {
+  @ApiProperty({ enum: ["ACTIVE", "LOCKED", "CLOSED"] })
+  status!: string
+
+  @ApiProperty({ type: () => [PlayerWalletBalanceResponseDto] })
+  balances!: PlayerWalletBalanceResponseDto[]
+}
+
 export class PublicPlayerStatsResponseDto {
   @ApiProperty()
   gamesPlayed!: number
@@ -90,6 +106,9 @@ export class PlayerResponseDto {
 
   @ApiProperty({ type: () => PlayerStatsResponseDto })
   stats!: PlayerStatsResponseDto
+
+  @ApiProperty({ type: () => PlayerWalletResponseDto })
+  wallet!: PlayerWalletResponseDto
 }
 
 export class PublicPlayerResponseDto {

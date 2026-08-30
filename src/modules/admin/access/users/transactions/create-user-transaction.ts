@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from "@nestjs/common"
+import { ConflictException, Injectable, InternalServerErrorException } from "@nestjs/common"
 import { Prisma } from "@prisma/client"
 
 import { HashHelper } from "../../../../../common/helpers/hash.helper"
@@ -16,6 +16,15 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
 
   protected async execute(dto: CreateUserInput, transaction: Prisma.TransactionClient) {
     try {
+      const currencies = await transaction.currencyDefinition.findMany({
+        where: { code: { in: ["MCN", "GLD"] }, active: true },
+        select: { id: true, code: true },
+      })
+      const currencyIds = new Map(currencies.map((currency) => [currency.code, currency.id]))
+      if (!currencyIds.has("MCN") || !currencyIds.has("GLD")) {
+        throw new InternalServerErrorException("Default currencies are not configured")
+      }
+
       return await transaction.user.create({
         data: {
           username: dto.username.trim().toLowerCase(),
@@ -43,6 +52,18 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
               highestWinStreak: 0,
               highestElo: 1000,
               totalScore: 0n,
+            },
+          },
+          wallet: {
+            create: {
+              walletType: "PLAYER",
+              status: "ACTIVE",
+              balances: {
+                create: [
+                  { currencyId: currencyIds.get("MCN")!, amount: 0n },
+                  { currencyId: currencyIds.get("GLD")!, amount: 0n },
+                ],
+              },
             },
           },
         },

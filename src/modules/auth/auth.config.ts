@@ -21,15 +21,19 @@ export function getAuthConfig(): AuthConfig {
     (process.env.ENVIRONMENT ?? process.env.NODE_ENV ?? "development").toLowerCase() === "production"
       ? "PRODUCTION"
       : "DEVELOPMENT"
-  const fallbackSecret =
+  const sharedSecret =
     process.env.JWT_SECRET ??
-    process.env.JWT_ACCESS_SECRET ??
     process.env[`TOKEN_SECRET_${environmentSuffix}`] ??
-    process.env.TOKEN_SECRET ??
-    (environmentSuffix === "PRODUCTION" ? undefined : "local-development-only-secret-change-me")
+    process.env.TOKEN_SECRET
+  const developmentFallback = environmentSuffix === "PRODUCTION" ? undefined : "local-development-only-secret-change-me"
+  const accessSecret = process.env.JWT_ACCESS_SECRET ?? sharedSecret ?? developmentFallback
+  const refreshSecret = process.env.JWT_REFRESH_SECRET ?? sharedSecret ?? developmentFallback
 
-  if (!fallbackSecret) {
-    throw new Error("JWT_SECRET (or JWT_ACCESS_SECRET) must be set in production")
+  if (environmentSuffix === "PRODUCTION" && (!accessSecret || !refreshSecret)) {
+    throw new Error("JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be set separately in production")
+  }
+  if (!accessSecret || !refreshSecret) {
+    throw new Error("JWT authentication secrets are not configured")
   }
 
   const accessExpiresIn =
@@ -44,8 +48,8 @@ export function getAuthConfig(): AuthConfig {
     "30d"
 
   return {
-    accessSecret: process.env.JWT_ACCESS_SECRET ?? fallbackSecret,
-    refreshSecret: process.env.JWT_REFRESH_SECRET ?? fallbackSecret,
+    accessSecret,
+    refreshSecret,
     accessExpiresIn,
     refreshExpiresIn,
     accessExpiresInSeconds: durationToSeconds(accessExpiresIn),

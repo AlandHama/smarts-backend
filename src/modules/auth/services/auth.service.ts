@@ -37,6 +37,7 @@ export class AuthService {
   async register(dto: RegisterRequestDto, request: any): Promise<LoginResponseDto> {
     const user = await this.usersService.create(dto)
     const token = await this.tokenService.generateAuthToken(user, request, this.isMobile(request))
+    await this.usersService.updateLastOnline(user.id)
     return { token, user: this.usersService.toResponse(user) }
   }
 
