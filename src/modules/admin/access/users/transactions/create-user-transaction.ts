@@ -24,6 +24,19 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
       if (!currencyIds.has("MCN") || !currencyIds.has("GLD")) {
         throw new InternalServerErrorException("Default currencies are not configured")
       }
+      const progressions = await transaction.progressionDefinition.findMany({
+        where: { active: true },
+        select: {
+          id: true,
+          tiers: {
+            orderBy: { step: "asc" },
+            take: 2,
+            select: { step: true, pointsThreshold: true },
+          },
+        },
+      })
+      const incompleteProgression = progressions.find((progression) => !progression.tiers.length)
+      if (incompleteProgression) throw new InternalServerErrorException("An active progression has no tiers configured")
 
       return await transaction.user.create({
         data: {
@@ -65,6 +78,15 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
                 ],
               },
             },
+          },
+          progressions: {
+            create: progressions.map((progression) => ({
+              progressionId: progression.id,
+              points: 0n,
+              step: progression.tiers[0].step,
+              previousThreshold: progression.tiers[0].pointsThreshold,
+              nextThreshold: progression.tiers[1]?.pointsThreshold ?? null,
+            })),
           },
         },
       })

@@ -9,6 +9,7 @@ import { SystemAdminGuard } from "./system-admin.guard"
 import { SystemAdminService } from "./system-admin.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
 import { ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -105,4 +106,68 @@ export class SystemAdminController {
   deleteUser(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto) {
     return this.systemAdminService.deleteUser(userId, admin.id)
   }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/progressions")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List progression definitions, tiers, and configured rewards" })
+  progressions(@Query("includeInactive") includeInactive?: string) {
+    return this.systemAdminService.listProgressions(includeInactive === "true")
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/progressions")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Create a progression definition" })
+  createProgression(@Body() dto: CreateProgressionDto) { return this.systemAdminService.createProgression(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/progressions/:progressionId")
+  @ApiBearerAuth("access-token")
+  getProgression(@Param("progressionId", ParseUUIDPipe) progressionId: string) { return this.systemAdminService.getProgression(progressionId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/progressions/:progressionId")
+  @ApiBearerAuth("access-token")
+  updateProgression(@Param("progressionId", ParseUUIDPipe) progressionId: string, @Body() dto: UpdateProgressionDto) { return this.systemAdminService.updateProgression(progressionId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/progressions/:progressionId/tiers")
+  @ApiBearerAuth("access-token")
+  createProgressionTier(@Param("progressionId", ParseUUIDPipe) progressionId: string, @Body() dto: CreateProgressionTierDto) { return this.systemAdminService.createProgressionTier(progressionId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/progression-tiers/:tierId")
+  @ApiBearerAuth("access-token")
+  updateProgressionTier(@Param("tierId", ParseUUIDPipe) tierId: string, @Body() dto: UpdateProgressionTierDto) { return this.systemAdminService.updateProgressionTier(tierId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/progression-tiers/:tierId")
+  @ApiBearerAuth("access-token")
+  deleteProgressionTier(@Param("tierId", ParseUUIDPipe) tierId: string) { return this.systemAdminService.deleteProgressionTier(tierId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/progression-tiers/:tierId/rewards")
+  @ApiBearerAuth("access-token")
+  createProgressionReward(@Param("tierId", ParseUUIDPipe) tierId: string, @Body() dto: CreateProgressionRewardDto) { return this.systemAdminService.createProgressionReward(tierId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/progression-rewards/:rewardId")
+  @ApiBearerAuth("access-token")
+  updateProgressionReward(@Param("rewardId", ParseUUIDPipe) rewardId: string, @Body() dto: UpdateProgressionRewardDto) { return this.systemAdminService.updateProgressionReward(rewardId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/progression-rewards/:rewardId")
+  @ApiBearerAuth("access-token")
+  deleteProgressionReward(@Param("rewardId", ParseUUIDPipe) rewardId: string) { return this.systemAdminService.deleteProgressionReward(rewardId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/progressions/:key/award")
+  @ApiBearerAuth("access-token")
+  awardProgression(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string, @Body() dto: AwardProgressionPointsDto) { return this.systemAdminService.awardProgression(userId, key, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/progressions/:key/reset")
+  @ApiBearerAuth("access-token")
+  resetProgression(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string, @Body() dto: ResetProgressionDto) { return this.systemAdminService.resetProgression(userId, key, dto) }
 }

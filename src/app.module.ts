@@ -6,9 +6,10 @@ import { NotesController } from "./notes.controller"
 import { AuthModule } from "./modules/auth/auth.module"
 import { PlayersModule } from "./modules/players/players.module"
 import { SystemAdminModule } from "./modules/system-admin/system-admin.module"
+import { ProgressionModule } from "./modules/progression/progression.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, PlayersModule, SystemAdminModule],
+  imports: [DatabaseModule, AuthModule, PlayersModule, ProgressionModule, SystemAdminModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

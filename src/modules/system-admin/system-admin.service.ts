@@ -12,6 +12,8 @@ import { EnsureSystemAdminInput, EnsureSystemAdminTransaction } from "./transact
 import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction"
 import { UpdateUserProfileTransaction } from "./transactions/update-user-profile-transaction"
 import { UpdateUserStatusTransaction } from "./transactions/update-user-status-transaction"
+import { ProgressionService } from "../progression/progression.service"
+import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -27,6 +29,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly deleteUserTransaction: DeleteUserTransaction,
     private readonly updateUserProfileTransaction: UpdateUserProfileTransaction,
     private readonly resetUserPasswordTransaction: ResetUserPasswordTransaction,
+    private readonly progressionService: ProgressionService,
   ) {}
 
   async onModuleInit() {
@@ -156,6 +159,19 @@ export class SystemAdminService implements OnModuleInit {
     return { message: "User deleted" }
   }
 
+  listProgressions(includeInactive = false) { return this.progressionService.listDefinitions(includeInactive) }
+  getProgression(id: string) { return this.progressionService.getDefinition(id) }
+  createProgression(dto: CreateProgressionDto) { return this.progressionService.createDefinition(dto) }
+  updateProgression(id: string, dto: UpdateProgressionDto) { return this.progressionService.updateDefinition(id, dto) }
+  createProgressionTier(progressionId: string, dto: CreateProgressionTierDto) { return this.progressionService.createTier(progressionId, dto) }
+  updateProgressionTier(id: string, dto: UpdateProgressionTierDto) { return this.progressionService.updateTier(id, dto) }
+  deleteProgressionTier(id: string) { return this.progressionService.deleteTier(id) }
+  createProgressionReward(tierId: string, dto: CreateProgressionRewardDto) { return this.progressionService.createReward(tierId, dto) }
+  updateProgressionReward(id: string, dto: UpdateProgressionRewardDto) { return this.progressionService.updateReward(id, dto) }
+  deleteProgressionReward(id: string) { return this.progressionService.deleteReward(id) }
+  awardProgression(userId: string, key: string, dto: AwardProgressionPointsDto) { return this.progressionService.awardAdmin(userId, key, BigInt(dto.amount), dto.sourceId, dto.metadata) }
+  resetProgression(userId: string, key: string, dto: ResetProgressionDto) { return this.progressionService.resetAdmin(userId, key, dto.sourceId) }
+
   private async getUser(userId: string, detailed = false) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -203,6 +219,19 @@ export class SystemAdminService implements OnModuleInit {
               expiresAt: true,
             },
           },
+          progressions: {
+            orderBy: { progression: { key: "asc" } },
+            take: 100,
+            select: {
+              id: true,
+              points: true,
+              step: true,
+              previousThreshold: true,
+              nextThreshold: true,
+              lastLevelUpAt: true,
+              progression: { select: { key: true, name: true, kind: true, active: true } },
+            },
+          },
         } : {}),
       },
     })
@@ -224,6 +253,14 @@ export class SystemAdminService implements OnModuleInit {
           amount: balance.amount.toString(),
         })),
       }
+    }
+    if (user.progressions) {
+      serialized.progressions = user.progressions.map((row: any) => ({
+        ...row,
+        points: row.points.toString(),
+        previousThreshold: row.previousThreshold.toString(),
+        nextThreshold: row.nextThreshold?.toString() ?? null,
+      }))
     }
     return serialized
   }

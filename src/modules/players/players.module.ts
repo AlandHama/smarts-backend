@@ -6,11 +6,12 @@ import { AddXpTransaction } from "./transactions/add-xp-transaction"
 import { RecordResultTransaction } from "./transactions/record-result-transaction"
 import { UpdateEloTransaction } from "./transactions/update-elo-transaction"
 import { UpdateProfileTransaction } from "./transactions/update-profile-transaction"
+import { ProgressionModule } from "../progression/progression.module"
 import { PlayersController } from "./players.controller"
 import { PlayersService } from "./players.service"
 
 @Module({
-  imports: [DatabaseModule, UsersModule],
+  imports: [DatabaseModule, UsersModule, ProgressionModule],
   controllers: [PlayersController],
   providers: [
     PlayersService,
