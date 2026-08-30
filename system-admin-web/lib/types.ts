@@ -100,4 +100,49 @@ export interface CurrencyDefinition {
   _count?: { balances: number; transactions: number };
 }
 
+export interface LeaderboardSeason {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  status: 'SCHEDULED' | 'ACTIVE' | 'CLOSED';
+  resetAt?: string | null;
+}
+
+export interface LeaderboardDefinition {
+  id: string;
+  key: string;
+  name: string;
+  memberType: 'PLAYER' | 'COUNTRY' | 'GENERIC';
+  period: 'ALL_TIME' | 'WEEKLY' | 'MONTHLY' | 'SEASONAL';
+  direction: 'ASCENDING' | 'DESCENDING';
+  writePolicy: 'SERVER_ONLY' | 'AUTHENTICATED_COMMAND';
+  active: boolean;
+  seasons?: LeaderboardSeason[];
+  _count?: { seasons: number; entries: number };
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  memberKey: string;
+  playerId: string | null;
+  score: string;
+  rank: string | number;
+  player: { username: string; displayName: string | null; avatarUrl: string | null; countryCode: string | null } | null;
+}
+
+export interface TopPlayer {
+  rank: number;
+  playerId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  countryCode: string | null;
+  points?: string;
+  amount?: string;
+  score?: string;
+  step?: number;
+  progression?: { key: string; name: string };
+  currency?: { code: string; name: string };
+}
+
 export interface OverviewMetrics { totalUsers: number; activeUsers: number; bannedUsers: number; activeAdmins: number; activeSessions: number; }

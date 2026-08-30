@@ -7,6 +7,7 @@ import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import MonetizationOnRoundedIcon from '@mui/icons-material/MonetizationOnRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
+import LeaderboardRoundedIcon from '@mui/icons-material/LeaderboardRounded';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -20,13 +21,14 @@ import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 
-export type AdminView = 'overview' | 'players' | 'progressions' | 'economy';
+export type AdminView = 'overview' | 'players' | 'progressions' | 'economy' | 'leaderboards';
 
 const navigation = [
   { key: 'overview' as const, label: 'Overview', icon: <DashboardRoundedIcon /> },
   { key: 'players' as const, label: 'Players', icon: <GroupRoundedIcon /> },
   { key: 'progressions' as const, label: 'Progressions', icon: <SettingsSuggestRoundedIcon /> },
   { key: 'economy' as const, label: 'Economy', icon: <MonetizationOnRoundedIcon /> },
+  { key: 'leaderboards' as const, label: 'Leaderboards', icon: <LeaderboardRoundedIcon /> },
 ];
 
 export function AdminShell({ view, onViewChange, onLogout, adminName, children }: { view: AdminView; onViewChange: (view: AdminView) => void; onLogout: () => void; adminName: string; children: ReactNode }) {
@@ -55,4 +57,3 @@ export function AdminShell({ view, onViewChange, onLogout, adminName, children }
     </Box>
   </Box>;
 }
-

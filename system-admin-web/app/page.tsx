@@ -6,10 +6,11 @@ import CssBaseline from '@mui/material/CssBaseline';
 import ThemeProvider from '@mui/material/styles/ThemeProvider';
 
 import { AdminShell, type AdminView } from '../components/AdminShell';
-import { EconomyView } from '../components/EconomyView';
+import { CurrencyTopPlayersPanel, EconomyView } from '../components/EconomyView';
 import { LoginView } from '../components/LoginView';
 import { OverviewView } from '../components/OverviewView';
-import { ProgressionsView } from '../components/ProgressionsView';
+import { ProgressionTopPlayersPanel, ProgressionsView } from '../components/ProgressionsView';
+import { LeaderboardView, SeasonManagerPanel } from '../components/LeaderboardView';
 import { UsersView } from '../components/UsersView';
 import { api, clearSession, hasSession, login } from '../lib/api';
 import { adminTheme } from '../lib/theme';
@@ -30,5 +31,5 @@ export default function AdminPage() {
   };
   const signOut = () => { clearSession(); setAdmin(null); setView('overview'); };
 
-  return <ThemeProvider theme={adminTheme}><CssBaseline />{checking ? null : !admin ? <LoginView onLogin={signIn} /> : <AdminShell view={view} onViewChange={setView} onLogout={signOut} adminName={admin.username || admin.email || 'Administrator'}>{view === 'overview' && <OverviewView onNavigate={setView} />}{view === 'players' && <UsersView />}{view === 'progressions' && <ProgressionsView />}{view === 'economy' && <EconomyView />}</AdminShell>}</ThemeProvider>;
+  return <ThemeProvider theme={adminTheme}><CssBaseline />{checking ? null : !admin ? <LoginView onLogin={signIn} /> : <AdminShell view={view} onViewChange={setView} onLogout={signOut} adminName={admin.username || admin.email || 'Administrator'}>{view === 'overview' && <OverviewView onNavigate={setView} />}{view === 'players' && <UsersView />}{view === 'progressions' && <><ProgressionsView /><ProgressionTopPlayersPanel /></>}{view === 'economy' && <><EconomyView /><CurrencyTopPlayersPanel /></>}{view === 'leaderboards' && <><LeaderboardView /><SeasonManagerPanel /></>}</AdminShell>}</ThemeProvider>;
 }

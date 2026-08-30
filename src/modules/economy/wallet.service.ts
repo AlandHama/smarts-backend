@@ -39,6 +39,18 @@ export class WalletService {
     return this.serialize({ id: wallet.id, status: wallet.status, balances: wallet.balances, transactions: wallet.transactions, reconciliation: wallet.balances.map((balance) => ({ currencyCode: balance.currency.code, balance: balance.amount, ledgerTotal: totals.find((total) => total.currencyId === balance.currencyId)?.total ?? 0n, matches: balance.amount === (totals.find((total) => total.currencyId === balance.currencyId)?.total ?? 0n) })) })
   }
 
+  async topBalances(currencyCode: string, limit = 10) {
+    const currency = await this.prisma.currencyDefinition.findUnique({ where: { code: currencyCode.trim().toUpperCase() }, select: { id: true, code: true, name: true } })
+    if (!currency) throw new NotFoundException("Currency definition not found")
+    const rows = await this.prisma.walletBalance.findMany({ where: { currencyId: currency.id, wallet: { user: { status: "ACTIVE" } } }, orderBy: [{ amount: "desc" }, { updatedAt: "asc" }, { walletId: "asc" }], take: Math.min(Math.max(limit, 1), 100), select: { amount: true, wallet: { select: { userId: true, user: { select: { username: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true } } } } } } } })
+    let rank = 0
+    let previousAmount: bigint | undefined
+    return this.serialize(rows.map((row, index) => {
+      if (previousAmount === undefined || row.amount !== previousAmount) rank = index + 1
+      previousAmount = row.amount
+      return { rank, playerId: row.wallet.userId, username: row.wallet.user.username, displayName: row.wallet.user.profile?.displayName ?? row.wallet.user.username, avatarUrl: row.wallet.user.profile?.avatarUrl ?? null, countryCode: row.wallet.user.profile?.countryCode ?? null, amount: row.amount, currency: { code: currency.code, name: currency.name } }
+    }))
+  }
+
   private serialize<T>(value: T): T { return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) as T }
 }
-

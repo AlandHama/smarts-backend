@@ -10,6 +10,9 @@ for user listing, registration, activation, banning, and deletion.
 
 The console also manages progression definitions, tiers, rewards, currency
 definitions, player wallet adjustments, ledger reversals, and reconciliation.
+It includes leaderboard definitions, UTC season scheduling/closing, score-event
+rebuilds, administrator corrections, and top-player panels for progression,
+currency, and leaderboard sections.
 The wallet is server-owned: balances are stored as integer `BIGINT` units and
 every credit, debit, signup grant, and correction is an append-only ledger
 transaction.
@@ -88,6 +91,14 @@ Economy endpoints are `GET /wallet`, `GET /wallet/transactions`, and
 `GET /currencies`. Wallet writes are protected server operations and are
 available to progression, match, purchase, and administration transactions;
 the public API never accepts an arbitrary wallet ID or balance update.
+
+Leaderboard endpoints are `GET /leaderboards`, `GET /leaderboards/:key`, and
+`POST /leaderboards/:key/members`. The four initial boards are
+`countryweekly`, `countrymonthly`, `players_weekly`, and `players_monthly`.
+Ranks use `RANK()` over the current UTC season: equal scores share a rank, and
+`updatedAt` then `memberKey` only determines deterministic display order.
+Score changes are server commands recorded in `LeaderboardScoreEvent`; mobile
+must never submit a replacement total.
 
 The system administrator console is available at `/system-admin`. Its API
 requires a JWT from a user with `isSystemAdmin = true` and exposes overview

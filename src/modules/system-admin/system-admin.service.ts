@@ -19,6 +19,8 @@ import { WalletService } from "../economy/wallet.service"
 import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-transaction"
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
 import { ReverseWalletTransaction } from "../economy/transactions/reverse-wallet-transaction"
+import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
+import { LeaderboardService } from "../leaderboard/leaderboard.service"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -39,6 +41,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly creditWalletTransaction: CreditWalletTransaction,
     private readonly debitWalletTransaction: DebitWalletTransaction,
     private readonly reverseWalletTransaction: ReverseWalletTransaction,
+    private readonly leaderboardService: LeaderboardService,
   ) {}
 
   async onModuleInit() {
@@ -187,6 +190,16 @@ export class SystemAdminService implements OnModuleInit {
   creditWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.creditWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", metadata: { ...(dto.metadata ?? {}), actorId } }) }
   debitWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.debitWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", metadata: { ...(dto.metadata ?? {}), actorId } }) }
   reverseWallet(userId: string, dto: ReverseWalletDto) { return this.reverseWalletTransaction.run({ userId, ledgerId: dto.ledgerId, originalGrantKey: dto.originalGrantKey, sourceId: dto.sourceId }) }
+  listLeaderboards(includeInactive = false) { return this.leaderboardService.listDefinitions(includeInactive) }
+  createLeaderboard(dto: CreateLeaderboardDto) { return this.leaderboardService.createDefinition(dto) }
+  updateLeaderboard(id: string, dto: UpdateLeaderboardDto) { return this.leaderboardService.updateDefinition(id, dto) }
+  createLeaderboardSeason(id: string, dto: CreateLeaderboardSeasonDto) { return this.leaderboardService.createSeason(id, dto) }
+  closeLeaderboardSeason(id: string) { return this.leaderboardService.closeSeason(id) }
+  applyLeaderboardScore(key: string, dto: ApplyLeaderboardScoreDto, actorId: string) { return this.leaderboardService.applyScore({ leaderboardKey: key, playerId: dto.playerId, memberKey: dto.memberKey, delta: BigInt(dto.delta), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", metadata: { ...(dto.metadata ?? {}), actorId } }) }
+  topLeaderboardPlayers(key: string, limit: number) { return this.leaderboardService.topForAdmin(key, limit) }
+  rebuildLeaderboard(key: string) { return this.leaderboardService.rebuild(key) }
+  topProgressionPlayers(key: string, limit: number) { return this.progressionService.topPlayers(key, limit) }
+  topCurrencyPlayers(code: string, limit: number) { return this.walletService.topBalances(code, limit) }
 
   private async getUser(userId: string, detailed = false) {
     const user = await this.prisma.user.findUnique({

@@ -10,6 +10,7 @@ import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
 import { ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
 import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
+import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -199,4 +200,56 @@ export class SystemAdminController {
   @Post("api/users/:userId/wallet/reverse")
   @ApiBearerAuth("access-token")
   reverseWallet(@Param("userId", ParseUUIDPipe) userId: string, @Body() dto: ReverseWalletDto) { return this.systemAdminService.reverseWallet(userId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/leaderboards")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List leaderboard definitions and active seasons" })
+  leaderboards(@Query("includeInactive") includeInactive?: string) { return this.systemAdminService.listLeaderboards(includeInactive === "true") }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/leaderboards")
+  @ApiBearerAuth("access-token")
+  createLeaderboard(@Body() dto: CreateLeaderboardDto) { return this.systemAdminService.createLeaderboard(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/leaderboards/:leaderboardId")
+  @ApiBearerAuth("access-token")
+  updateLeaderboard(@Param("leaderboardId", ParseUUIDPipe) leaderboardId: string, @Body() dto: UpdateLeaderboardDto) { return this.systemAdminService.updateLeaderboard(leaderboardId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/leaderboards/:leaderboardId/seasons")
+  @ApiBearerAuth("access-token")
+  createLeaderboardSeason(@Param("leaderboardId", ParseUUIDPipe) leaderboardId: string, @Body() dto: CreateLeaderboardSeasonDto) { return this.systemAdminService.createLeaderboardSeason(leaderboardId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/leaderboard-seasons/:seasonId/close")
+  @ApiBearerAuth("access-token")
+  closeLeaderboardSeason(@Param("seasonId", ParseUUIDPipe) seasonId: string) { return this.systemAdminService.closeLeaderboardSeason(seasonId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/leaderboards/:key/score")
+  @ApiBearerAuth("access-token")
+  applyLeaderboardScore(@Param("key") key: string, @Body() dto: ApplyLeaderboardScoreDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.applyLeaderboardScore(key, dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/leaderboards/:key/top-players")
+  @ApiBearerAuth("access-token")
+  leaderboardTopPlayers(@Param("key") key: string, @Query("limit") limit?: string) { return this.systemAdminService.topLeaderboardPlayers(key, limit ? Number(limit) : 10) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/leaderboards/:key/rebuild")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Rebuild leaderboard projections from immutable score events" })
+  rebuildLeaderboard(@Param("key") key: string) { return this.systemAdminService.rebuildLeaderboard(key) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/progressions/:progressionKey/top-players")
+  @ApiBearerAuth("access-token")
+  progressionTopPlayers(@Param("progressionKey") key: string, @Query("limit") limit?: string) { return this.systemAdminService.topProgressionPlayers(key, limit ? Number(limit) : 10) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/economy/currencies/:currencyCode/top-players")
+  @ApiBearerAuth("access-token")
+  currencyTopPlayers(@Param("currencyCode") code: string, @Query("limit") limit?: string) { return this.systemAdminService.topCurrencyPlayers(code, limit ? Number(limit) : 10) }
 }

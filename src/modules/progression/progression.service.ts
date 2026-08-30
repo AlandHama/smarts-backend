@@ -93,6 +93,19 @@ export class ProgressionService {
     return this.resetTransaction.run({ userId, progressionKey, sourceId })
   }
 
+  async topPlayers(key: string, limit = 10) {
+    const progression = await this.prisma.progressionDefinition.findUnique({ where: { key: key.trim().toLowerCase() }, select: { id: true, key: true, name: true } })
+    if (!progression) throw new NotFoundException("Progression definition not found")
+    const rows = await this.prisma.playerProgression.findMany({ where: { progressionId: progression.id, user: { status: "ACTIVE" } }, orderBy: [{ points: "desc" }, { updatedAt: "asc" }, { userId: "asc" }], take: Math.min(Math.max(limit, 1), 100), select: { userId: true, points: true, step: true, user: { select: { username: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true } } } } } })
+    let rank = 0
+    let previousPoints: bigint | undefined
+    return this.serialize(rows.map((row, index) => {
+      if (previousPoints === undefined || row.points !== previousPoints) rank = index + 1
+      previousPoints = row.points
+      return { rank, playerId: row.userId, username: row.user.username, displayName: row.user.profile?.displayName ?? row.user.username, avatarUrl: row.user.profile?.avatarUrl ?? null, countryCode: row.user.profile?.countryCode ?? null, points: row.points, step: row.step, progression: { key: progression.key, name: progression.name } }
+    }))
+  }
+
   private serialize<T>(value: T): T {
     return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) as T
   }

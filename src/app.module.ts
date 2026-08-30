@@ -8,9 +8,10 @@ import { PlayersModule } from "./modules/players/players.module"
 import { SystemAdminModule } from "./modules/system-admin/system-admin.module"
 import { ProgressionModule } from "./modules/progression/progression.module"
 import { EconomyModule } from "./modules/economy/economy.module"
+import { LeaderboardModule } from "./modules/leaderboard/leaderboard.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, PlayersModule, ProgressionModule, SystemAdminModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, PlayersModule, ProgressionModule, SystemAdminModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

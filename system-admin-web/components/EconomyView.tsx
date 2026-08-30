@@ -29,7 +29,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
 import { api } from '../lib/api';
-import type { CurrencyDefinition } from '../lib/types';
+import type { CurrencyDefinition, TopPlayer } from '../lib/types';
 
 const valueOf = (form: HTMLFormElement, name: string) => String((form.elements.namedItem(name) as HTMLInputElement)?.value ?? '').trim();
 
@@ -69,3 +69,5 @@ export function EconomyView() {
     {dialogOpen && <CurrencyDialog item={selected} onClose={() => setDialogOpen(false)} onSaved={() => { setDialogOpen(false); load(); }} />}
   </Stack>;
 }
+
+export function CurrencyTopPlayersPanel() { const [items, setItems] = useState<CurrencyDefinition[]>([]); const [code, setCode] = useState(''); const [players, setPlayers] = useState<TopPlayer[]>([]); useEffect(() => { api<CurrencyDefinition[]>('/economy/currencies').then((currencies) => { setItems(currencies); if (currencies[0]) setCode(currencies[0].code); }).catch(() => setItems([])); }, []); useEffect(() => { if (code) api<TopPlayer[]>(`/economy/currencies/${code}/top-players?limit=10`).then(setPlayers).catch(() => setPlayers([])); }, [code]); const current = items.find((item) => item.code === code); return <Card><Stack spacing={2} sx={{ p: { xs: 2.5, md: 3 } }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2}><Box><Typography variant="h6" fontWeight={800}>Top wallet holders</Typography><Typography variant="body2" color="text.secondary">Players with the highest server-owned balance.</Typography></Box><Select size="small" value={code} onChange={(event) => setCode(event.target.value)} sx={{ minWidth: 190 }}>{items.map((item) => <MenuItem key={item.code} value={item.code}>{item.code} · {item.name}</MenuItem>)}</Select></Stack><Divider />{current && <Box sx={{ overflowX: 'auto' }}><Table size="small"><TableHead><TableRow><TableCell>Rank</TableCell><TableCell>Player</TableCell><TableCell>Balance</TableCell><TableCell>Country</TableCell></TableRow></TableHead><TableBody>{players.length ? players.map((player) => <TableRow key={player.playerId}><TableCell>#{player.rank}</TableCell><TableCell><Typography fontWeight={700}>{player.displayName}</Typography><Typography variant="caption" color="text.secondary">{player.username}</Typography></TableCell><TableCell>{player.amount} {player.currency?.code}</TableCell><TableCell>{player.countryCode || '—'}</TableCell></TableRow>) : <TableRow><TableCell colSpan={4} align="center" sx={{ py: 4 }}><Typography color="text.secondary">No wallet balances yet.</Typography></TableCell></TableRow>}</TableBody></Table></Box>}</Stack></Card>; }

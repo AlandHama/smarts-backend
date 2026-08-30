@@ -99,6 +99,41 @@ enum IdempotencyStatus {
   FAILED
 }
 
+enum LeaderboardMemberType {
+  PLAYER
+  COUNTRY
+  GENERIC
+}
+
+enum LeaderboardPeriod {
+  ALL_TIME
+  WEEKLY
+  MONTHLY
+  SEASONAL
+}
+
+enum LeaderboardDirection {
+  DESCENDING
+  ASCENDING
+}
+
+enum LeaderboardWritePolicy {
+  SERVER_ONLY
+  AUTHENTICATED_COMMAND
+}
+
+enum LeaderboardSeasonStatus {
+  SCHEDULED
+  ACTIVE
+  CLOSED
+}
+
+enum LeaderboardScoreSourceType {
+  MATCH
+  ADMIN
+  SYSTEM
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   username     String     @unique @db.VarChar(50)
@@ -119,6 +154,8 @@ model User {
   idempotencyKeys   IdempotencyKey[]
   progressionEvents ProgressionEvent[]
   rewardGrants      RewardGrant[]
+  leaderboardEntries LeaderboardEntry[]
+  leaderboardScoreEvents LeaderboardScoreEvent[] @relation("LeaderboardScoreEventPlayer")
 }
 
 model Session {
@@ -376,6 +413,84 @@ model WalletTransaction {
   currency        CurrencyDefinition        @relation(fields: [currencyId], references: [id], onDelete: Restrict)
 
   @@index([walletId, currencyId, createdAt])
+  @@index([sourceType, sourceId])
+  @@index([idempotencyKeyId])
+}
+
+model Leaderboard {
+  id          String                   @id @default(uuid()) @db.Uuid
+  key         String                   @unique @db.VarChar(80)
+  name        String                   @db.VarChar(120)
+  memberType  LeaderboardMemberType
+  period      LeaderboardPeriod
+  direction   LeaderboardDirection     @default(DESCENDING)
+  writePolicy LeaderboardWritePolicy   @default(SERVER_ONLY)
+  active      Boolean                  @default(true)
+  metadata    Json?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  seasons     LeaderboardSeason[]
+  entries     LeaderboardEntry[]
+  scoreEvents LeaderboardScoreEvent[]
+}
+
+model LeaderboardSeason {
+  id            String                  @id @default(uuid()) @db.Uuid
+  leaderboardId String                  @db.Uuid
+  startsAt      DateTime
+  endsAt        DateTime
+  status        LeaderboardSeasonStatus  @default(SCHEDULED)
+  resetAt       DateTime?
+  createdAt     DateTime                @default(now())
+  leaderboard   Leaderboard             @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  entries       LeaderboardEntry[]
+  scoreEvents   LeaderboardScoreEvent[]
+
+  @@unique([leaderboardId, startsAt])
+  @@index([leaderboardId, status, startsAt, endsAt])
+}
+
+model LeaderboardEntry {
+  id            String             @id @default(uuid()) @db.Uuid
+  leaderboardId String             @db.Uuid
+  seasonId      String             @db.Uuid
+  playerId      String?            @db.Uuid
+  memberKey     String             @db.VarChar(128)
+  score         BigInt             @default(0)
+  metadata      Json?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  leaderboard   Leaderboard        @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  season        LeaderboardSeason  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  player        User?              @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  scoreEvents   LeaderboardScoreEvent[]
+
+  @@unique([leaderboardId, seasonId, memberKey])
+  @@index([leaderboardId, seasonId, score])
+  @@index([playerId])
+}
+
+model LeaderboardScoreEvent {
+  id              String                       @id @default(uuid()) @db.Uuid
+  entryId         String?                      @db.Uuid
+  leaderboardId   String                       @db.Uuid
+  seasonId        String                       @db.Uuid
+  memberKey       String                       @db.VarChar(128)
+  playerId        String?                      @db.Uuid
+  delta           BigInt
+  scoreBefore     BigInt
+  scoreAfter      BigInt
+  sourceType      LeaderboardScoreSourceType
+  sourceId        String                       @db.VarChar(255)
+  idempotencyKeyId String?                     @db.Uuid
+  createdAt       DateTime                     @default(now())
+  entry           LeaderboardEntry?            @relation(fields: [entryId], references: [id], onDelete: SetNull)
+  leaderboard     Leaderboard                  @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  season          LeaderboardSeason            @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  player          User?                        @relation("LeaderboardScoreEventPlayer", fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@unique([entryId, sourceType, sourceId])
+  @@index([entryId, createdAt])
   @@index([sourceType, sourceId])
   @@index([idempotencyKeyId])
 }
