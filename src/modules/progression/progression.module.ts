@@ -30,7 +30,6 @@ import { UpdateProgressionTransaction } from "./transactions/update-progression-
     AwardProgressionPointsTransaction,
     ResetPlayerProgressionTransaction,
   ],
-  exports: [ProgressionService],
+  exports: [ProgressionService, AwardProgressionPointsTransaction],
 })
 export class ProgressionModule {}
-

@@ -11,6 +11,7 @@ import { ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, Up
 import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
 import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
+import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -252,4 +253,27 @@ export class SystemAdminController {
   @Get("api/economy/currencies/:currencyCode/top-players")
   @ApiBearerAuth("access-token")
   currencyTopPlayers(@Param("currencyCode") code: string, @Query("limit") limit?: string) { return this.systemAdminService.topCurrencyPlayers(code, limit ? Number(limit) : 10) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/game-config")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List versioned game definitions and reward configuration" })
+  gameConfigs() { return this.systemAdminService.listGameConfigs() }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/game-config/:gameKey")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Update a game reward/match policy and increment its version" })
+  updateGameConfig(@Param("gameKey") gameKey: string, @Body() dto: UpdateGameConfigDto) { return this.systemAdminService.updateGameConfig(gameKey, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/game-content")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Add server-owned game content with a hidden answer key" })
+  createGameContent(@Body() dto: CreateGameContentDto) { return this.systemAdminService.createGameContent(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/game-config/:gameKey/content")
+  @ApiBearerAuth("access-token")
+  listGameContent(@Param("gameKey") gameKey: string) { return this.systemAdminService.listGameContent(gameKey) }
 }

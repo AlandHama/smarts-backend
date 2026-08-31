@@ -134,6 +134,53 @@ enum LeaderboardScoreSourceType {
   SYSTEM
 }
 
+enum GameMode {
+  SINGLE_PLAYER
+  BOT
+  RANKED
+  CASUAL
+}
+
+enum MatchStatus {
+  CREATED
+  STARTED
+  FINISHED
+  REVIEW
+  CANCELLED
+  SETTLED
+}
+
+enum MatchParticipantType {
+  PLAYER
+  BOT
+}
+
+enum MatchParticipantResult {
+  PENDING
+  WIN
+  LOSS
+  DRAW
+  COMPLETED
+  FORFEIT
+}
+
+enum MatchEventType {
+  READY
+  HEARTBEAT
+  ANSWER
+  SCORE_UPDATE
+  FINISH
+  LEAVE
+  FORFEIT
+}
+
+enum OutboxEventStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   username     String     @unique @db.VarChar(50)
@@ -156,6 +203,9 @@ model User {
   rewardGrants      RewardGrant[]
   leaderboardEntries LeaderboardEntry[]
   leaderboardScoreEvents LeaderboardScoreEvent[] @relation("LeaderboardScoreEventPlayer")
+  createdMatches Match[] @relation("MatchCreatedBy")
+  matchParticipants MatchParticipant[]
+  gameStats PlayerGameStats[]
 }
 
 model Session {
@@ -271,6 +321,7 @@ model IdempotencyKey {
   createdAt    DateTime         @default(now())
   completedAt  DateTime?
   user         User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  matchSettlement MatchSettlement?
 
   @@unique([scope, key])
   @@index([userId, scope])
@@ -493,4 +544,220 @@ model LeaderboardScoreEvent {
   @@index([entryId, createdAt])
   @@index([sourceType, sourceId])
   @@index([idempotencyKeyId])
+}
+
+model GameDefinition {
+  id          String       @id @default(uuid()) @db.Uuid
+  key         String       @unique @db.VarChar(64)
+  name        String       @db.VarChar(120)
+  active      Boolean      @default(true)
+  modePolicy  Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  configs     GameConfig[]
+  matches     Match[]
+  content     GameContentItem[]
+  gameStats   PlayerGameStats[]
+}
+
+model GameConfig {
+  id                         String         @id @default(uuid()) @db.Uuid
+  gameDefinitionId           String         @db.Uuid
+  version                    Int            @default(1)
+  active                     Boolean        @default(true)
+  mainProgressionKey         String         @db.VarChar(64)
+  eloProgressionKey          String         @db.VarChar(64)
+  rewardCurrencyCode         String         @db.VarChar(32)
+  scoreMultiplierForXp       Decimal        @db.Decimal(20, 8)
+  maxEloDelta                Int
+  soloEloScoreDivisor        Int
+  soloEloMaxDelta             Int
+  winnerBaseReward            BigInt
+  loserBaseReward             BigInt
+  drawReward                  BigInt
+  scoreRewardDivisor          Int
+  scoreRewardCap              BigInt
+  winnerRewardBonusMax        BigInt
+  loserRewardBonusMax         BigInt
+  multiplayerRewardReference  BigInt
+  correctAnswerPoints         Json
+  wrongAnswerPenaltyPercent   Int
+  maxAnswerTimeSeconds        Int
+  maxMatchDurationSeconds     Int
+  maxQuestions                Int
+  rankingEnabled              Boolean        @default(false)
+  rankingEloMultiplier        Decimal        @db.Decimal(20, 8)
+  rankingLevelMultiplier      Decimal        @db.Decimal(20, 8)
+  rankingCoinMultiplier       Decimal        @db.Decimal(20, 8)
+  settings                    Json?
+  createdAt                   DateTime       @default(now())
+  updatedAt                   DateTime       @updatedAt
+  gameDefinition              GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
+  matches                    Match[]
+
+  @@unique([gameDefinitionId, version])
+  @@index([gameDefinitionId, active, version])
+}
+
+model Match {
+  id                String         @id @default(uuid()) @db.Uuid
+  gameDefinitionId  String         @db.Uuid
+  gameConfigId      String         @db.Uuid
+  mode              GameMode
+  status            MatchStatus    @default(CREATED)
+  serverNonce       String         @unique @db.VarChar(128)
+  startedAt         DateTime?
+  endedAt           DateTime?
+  settledAt         DateTime?
+  createdByUserId   String         @db.Uuid
+  metadata          Json?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  gameDefinition    GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  gameConfig        GameConfig     @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
+  createdBy         User           @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  participants      MatchParticipant[]
+  events            MatchEvent[]
+  settlement        MatchSettlement?
+  assignments       MatchContentAssignment[]
+
+  @@index([status, createdAt])
+  @@index([createdByUserId, status])
+}
+
+model MatchParticipant {
+  id                String                  @id @default(uuid()) @db.Uuid
+  matchId           String                  @db.Uuid
+  userId            String?                 @db.Uuid
+  participantType   MatchParticipantType
+  finalScore        Int?
+  answeredCount     Int                     @default(0)
+  result            MatchParticipantResult  @default(PENDING)
+  submittedAt      DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  match             Match                   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user              User?                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  events            MatchEvent[]
+  assignments       MatchContentAssignment[]
+  winnerSettlement  MatchSettlement?        @relation("MatchSettlementWinner")
+
+  @@unique([matchId, userId])
+  @@index([matchId, result])
+  @@index([userId, createdAt])
+}
+
+model MatchEvent {
+  id                String         @id @default(uuid()) @db.Uuid
+  matchId           String         @db.Uuid
+  participantId     String         @db.Uuid
+  sequence          Int
+  eventType         MatchEventType
+  clientEventId     String         @db.VarChar(128)
+  payload           Json?
+  clientOccurredAt  DateTime?
+  serverReceivedAt  DateTime       @default(now())
+  accepted          Boolean        @default(false)
+  rejectionReason   String?        @db.VarChar(160)
+  match             Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participant       MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, participantId, clientEventId])
+  @@unique([matchId, participantId, sequence])
+  @@index([matchId, participantId, serverReceivedAt])
+}
+
+model MatchSettlement {
+  id                    String             @id @default(uuid()) @db.Uuid
+  matchId               String             @unique @db.Uuid
+  policyVersion         String             @db.VarChar(32)
+  winnerParticipantId   String?            @unique @db.Uuid
+  settlementJson        Json
+  idempotencyKeyId      String             @unique @db.Uuid
+  createdAt             DateTime           @default(now())
+  match                 Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  winnerParticipant     MatchParticipant?  @relation("MatchSettlementWinner", fields: [winnerParticipantId], references: [id], onDelete: SetNull)
+  idempotencyKey        IdempotencyKey     @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
+}
+
+model GameContentItem {
+  id              String          @id @default(uuid()) @db.Uuid
+  gameDefinitionId String         @db.Uuid
+  version         Int             @default(1)
+  contentType     String          @db.VarChar(40)
+  prompt          Json
+  options         Json
+  difficulty      Int             @default(1)
+  category        String?         @db.VarChar(80)
+  answerHash      String          @db.Char(64)
+  answerIndex     Int
+  active          Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  gameDefinition  GameDefinition  @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
+  assignments     MatchContentAssignment[]
+
+  @@index([gameDefinitionId, active, version])
+}
+
+model MatchContentAssignment {
+  id              String          @id @default(uuid()) @db.Uuid
+  matchId         String          @db.Uuid
+  participantId   String          @db.Uuid
+  contentItemId   String          @db.Uuid
+  position        Int
+  assignmentTokenHash String      @db.Char(64)
+  servedAt        DateTime        @default(now())
+  expiresAt       DateTime?
+  answeredAt      DateTime?
+  createdAt       DateTime        @default(now())
+  match           Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participant     MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  contentItem     GameContentItem  @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
+
+  @@unique([matchId, participantId, position])
+  @@index([participantId, contentItemId])
+  @@index([matchId, participantId, answeredAt])
+}
+
+model PlayerGameStats {
+  id              String         @id @default(uuid()) @db.Uuid
+  userId          String         @db.Uuid
+  gameDefinitionId String        @db.Uuid
+  gamesPlayed     Int            @default(0)
+  wins            Int            @default(0)
+  losses          Int            @default(0)
+  draws           Int            @default(0)
+  forfeits        Int            @default(0)
+  totalCorrect    Int            @default(0)
+  totalQuestions  Int            @default(0)
+  totalTimeMs     BigInt         @default(0)
+  totalScore      BigInt         @default(0)
+  bestScore       BigInt         @default(0)
+  lastPlayedAt    DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameDefinition  GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gameDefinitionId])
+  @@index([gameDefinitionId, totalScore])
+}
+
+model OutboxEvent {
+  id            String           @id @default(uuid()) @db.Uuid
+  eventType     String           @db.VarChar(120)
+  aggregateType String           @db.VarChar(80)
+  aggregateId   String           @db.Uuid
+  payload       Json
+  status        OutboxEventStatus @default(PENDING)
+  attempts      Int              @default(0)
+  availableAt   DateTime         @default(now())
+  processedAt   DateTime?
+  lastError     String?          @db.Text
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([status, availableAt])
+  @@index([aggregateType, aggregateId])
 }

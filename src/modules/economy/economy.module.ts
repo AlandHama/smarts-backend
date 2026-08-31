@@ -16,4 +16,3 @@ import { UpdateCurrencyTransaction } from "./transactions/update-currency-transa
   exports: [WalletService, CreditWalletTransaction, DebitWalletTransaction, ReverseWalletTransaction],
 })
 export class EconomyModule {}
-

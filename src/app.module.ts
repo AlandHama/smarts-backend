@@ -9,9 +9,11 @@ import { SystemAdminModule } from "./modules/system-admin/system-admin.module"
 import { ProgressionModule } from "./modules/progression/progression.module"
 import { EconomyModule } from "./modules/economy/economy.module"
 import { LeaderboardModule } from "./modules/leaderboard/leaderboard.module"
+import { GameModule } from "./modules/game/game.module"
+import { MatchesModule } from "./modules/matches/matches.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, PlayersModule, ProgressionModule, SystemAdminModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, PlayersModule, ProgressionModule, SystemAdminModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

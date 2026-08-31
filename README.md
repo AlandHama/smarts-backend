@@ -13,6 +13,9 @@ definitions, player wallet adjustments, ledger reversals, and reconciliation.
 It includes leaderboard definitions, UTC season scheduling/closing, score-event
 rebuilds, administrator corrections, and top-player panels for progression,
 currency, and leaderboard sections.
+Phase 5 adds server-owned game definitions, immutable game-policy versions,
+server-issued challenge assignments, verified match events, atomic settlement,
+rebuildable per-game statistics, and a post-commit outbox event.
 The wallet is server-owned: balances are stored as integer `BIGINT` units and
 every credit, debit, signup grant, and correction is an append-only ledger
 transaction.
@@ -100,6 +103,14 @@ Ranks use `RANK()` over the current UTC season: equal scores share a rank, and
 Score changes are server commands recorded in `LeaderboardScoreEvent`; mobile
 must never submit a replacement total.
 
+Game endpoints are `GET /game-definitions`, `GET /game-definitions/:key`,
+`GET /game-definitions/:key/content`, `POST /matches`,
+`GET /matches/:matchId`, `POST /matches/:matchId/events`,
+`POST /matches/:matchId/complete`, and `GET /matches/:matchId/settlement`.
+Answer events require a server-issued assignment token; arbitrary client score
+updates are rejected. Matches without verified answers enter `REVIEW` and do
+not receive competitive rewards.
+
 The system administrator console is available at `/system-admin`. Its API
 requires a JWT from a user with `isSystemAdmin = true` and exposes overview
 counts, paginated/searchable users, player registration, status changes, and
@@ -107,6 +118,9 @@ permanent deletion. Banning or deactivating a user terminates all active
 sessions in the same transaction; deleting a user cascades their profile,
 stats, and sessions. The current administrator cannot ban or delete itself,
 and the last active administrator cannot be deleted.
+The Game config section edits scoring, timing, ELO caps, reward formulas,
+progression/currency references, and ranking multipliers. Each save creates a
+new version, so in-progress matches continue using their original policy.
 
 Interactive Swagger documentation is available at `/docs` when the app is
 running. The raw OpenAPI document is available at `/docs-json`.

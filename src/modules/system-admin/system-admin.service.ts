@@ -21,6 +21,8 @@ import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-tra
 import { ReverseWalletTransaction } from "../economy/transactions/reverse-wallet-transaction"
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
 import { LeaderboardService } from "../leaderboard/leaderboard.service"
+import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
+import { GameService } from "../game/game.service"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -42,6 +44,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly debitWalletTransaction: DebitWalletTransaction,
     private readonly reverseWalletTransaction: ReverseWalletTransaction,
     private readonly leaderboardService: LeaderboardService,
+    private readonly gameService: GameService,
   ) {}
 
   async onModuleInit() {
@@ -200,6 +203,10 @@ export class SystemAdminService implements OnModuleInit {
   rebuildLeaderboard(key: string) { return this.leaderboardService.rebuild(key) }
   topProgressionPlayers(key: string, limit: number) { return this.progressionService.topPlayers(key, limit) }
   topCurrencyPlayers(code: string, limit: number) { return this.walletService.topBalances(code, limit) }
+  listGameConfigs() { return this.gameService.listAdminDefinitions() }
+  updateGameConfig(key: string, dto: UpdateGameConfigDto) { return this.gameService.updateConfig(key, dto) }
+  createGameContent(dto: CreateGameContentDto) { return this.gameService.createContent(dto) }
+  listGameContent(key: string) { return this.gameService.listContent(key, true) }
 
   private async getUser(userId: string, detailed = false) {
     const user = await this.prisma.user.findUnique({

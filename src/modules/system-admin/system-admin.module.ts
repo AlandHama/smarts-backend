@@ -14,9 +14,10 @@ import { UpdateUserStatusTransaction } from "./transactions/update-user-status-t
 import { ProgressionModule } from "../progression/progression.module"
 import { EconomyModule } from "../economy/economy.module"
 import { LeaderboardModule } from "../leaderboard/leaderboard.module"
+import { GameModule } from "../game/game.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,

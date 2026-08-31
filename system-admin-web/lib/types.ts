@@ -130,6 +130,44 @@ export interface LeaderboardEntry {
   player: { username: string; displayName: string | null; avatarUrl: string | null; countryCode: string | null } | null;
 }
 
+export interface GameConfigRecord {
+  id: string;
+  key: string;
+  name: string;
+  active: boolean;
+  config: {
+    id: string;
+    version: number;
+    active: boolean;
+    mainProgressionKey: string;
+    eloProgressionKey: string;
+    rewardCurrencyCode: string;
+    scoreMultiplierForXp: string;
+    maxEloDelta: number;
+    soloEloScoreDivisor: number;
+    soloEloMaxDelta: number;
+    winnerBaseReward: string;
+    loserBaseReward: string;
+    drawReward: string;
+    scoreRewardDivisor: number;
+    scoreRewardCap: string;
+    winnerRewardBonusMax: string;
+    loserRewardBonusMax: string;
+    multiplayerRewardReference: string;
+    correctAnswerPoints: Record<string, number>;
+    wrongAnswerPenaltyPercent: number;
+    maxAnswerTimeSeconds: number;
+    maxMatchDurationSeconds: number;
+    maxQuestions: number;
+    rankingEnabled: boolean;
+    rankingEloMultiplier: string;
+    rankingLevelMultiplier: string;
+    rankingCoinMultiplier: string;
+    settings: Record<string, unknown> | null;
+  } | null;
+  _count?: { matches: number; content: number };
+}
+
 export interface TopPlayer {
   rank: number;
   playerId: string;
