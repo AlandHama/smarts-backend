@@ -22,6 +22,7 @@ export interface WalletSummary {
   id: string;
   status: string;
   balances: WalletBalance[];
+  transactions?: WalletLedgerEntry[];
 }
 
 export interface WalletBalance {
@@ -55,10 +56,12 @@ export interface PlayerProgression {
 export interface SessionSummary {
   id: string;
   sessionStatus: string;
+  expiresAt: string;
   isMobileSession: boolean;
   deviceName: string | null;
   deviceInfo: string | null;
   ipAddress: string | null;
+  location: string | null;
   lastActiveTimestamp: string;
 }
 
@@ -190,6 +193,47 @@ export interface CommerceCatalogItem { id: string; catalogId: string; key: strin
 export interface CommerceCatalog { id: string; key: string; name: string; description: string | null; active: boolean; items: CommerceCatalogItem[] }
 export interface CommerceInventoryItem { id: string; instanceId: string; userId: string; quantity: number; acquisitionSource: string; sourceId: string; createdAt: string; user: { username: string; email: string | null; profile: { displayName: string } | null }; assetDefinition: { key: string; name: string; imageUrl: string | null; ownershipPolicy: string }; assetVariation: { key: string; name: string | null } | null }
 export interface CommercePurchase { id: string; status: string; totalAmount: string; createdAt: string; completedAt: string | null; user: { username: string; email: string | null; profile: { displayName: string } | null }; currency: { code: string; name: string }; lines: Array<{ itemKeySnapshot: string; itemNameSnapshot: string; quantity: number; totalAmount: string }> }
+
+export interface Player360Data {
+  user: AdminUser;
+  inventory: Array<{
+    id: string;
+    instanceId: string;
+    quantity: number;
+    acquisitionSource: string;
+    sourceId: string;
+    rentalExpiresAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+    assetDefinition: { id: string; key: string; name: string; assetType: string; ownershipPolicy: string; imageUrl: string | null };
+    assetVariation: { id: string; key: string; name: string | null; imageUrl: string | null } | null;
+  }>;
+  entitlements: Array<{
+    id: string;
+    entitlementKey: string;
+    status: string;
+    sourceType: string;
+    sourceId: string;
+    expiresAt: string | null;
+    createdAt: string;
+    assetDefinition: { key: string; name: string; imageUrl: string | null } | null;
+  }>;
+  purchases: Array<{
+    id: string;
+    status: string;
+    totalAmount: string;
+    createdAt: string;
+    completedAt: string | null;
+    currency: { code: string; name: string };
+    lines: Array<{ id: string; itemKeySnapshot: string; itemNameSnapshot: string; quantity: number; unitAmount: string; totalAmount: string; createdAt: string; catalogItem: { key: string; name: string; imageUrl: string | null } | null }>;
+  }>;
+  leaderboardEntries: Array<{ id: string; memberKey: string; score: string; createdAt: string; updatedAt: string; leaderboard: { key: string; name: string; period: string; direction: string }; season: { id: string; status: string; startsAt: string; endsAt: string } }>;
+  leaderboardScoreEvents: Array<{ id: string; delta: string; scoreBefore: string; scoreAfter: string; sourceType: string; sourceId: string; createdAt: string; leaderboard: { key: string; name: string }; season: { id: string; status: string } }>;
+  progressionEvents: Array<{ id: string; delta: string; balanceBefore: string; balanceAfter: string; sourceType: string; sourceId: string; createdAt: string; progression: { key: string; name: string; kind: string } }>;
+  rewardGrants: Array<{ id: string; sourceType: string; sourceId: string; rewardType: string; grantKey: string; amount: string | null; targetKey: string | null; status: string; createdAt: string; currency: { code: string; name: string } | null; progressionDefinition: { key: string; name: string } | null }>;
+  gameStats: Array<{ id: string; gamesPlayed: number; wins: number; losses: number; draws: number; forfeits: number; totalCorrect: number; totalQuestions: number; totalTimeMs: string; totalScore: string; bestScore: string; lastPlayedAt: string | null; gameDefinition: { key: string; name: string } }>;
+  matches: Array<{ id: string; finalScore: number | null; answeredCount: number; result: string; submittedAt: string | null; createdAt: string; match: { id: string; mode: string; status: string; startedAt: string | null; endedAt: string | null; settledAt: string | null; createdAt: string; gameDefinition: { key: string; name: string } } }>;
+}
 
 export interface AdminSession {
   id: string;

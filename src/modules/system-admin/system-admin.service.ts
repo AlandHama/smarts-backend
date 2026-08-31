@@ -226,6 +226,25 @@ export class SystemAdminService implements OnModuleInit {
     return this.getUser(userId, true)
   }
 
+  async getPlayer360(userId: string) {
+    const user = await this.getUser(userId, true)
+    const [inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches] = await this.prisma.$transaction([
+      this.prisma.inventoryItem.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: { select: { id: true, key: true, name: true, assetType: true, ownershipPolicy: true, imageUrl: true } }, assetVariation: { select: { id: true, key: true, name: true, imageUrl: true } } } }),
+      this.prisma.entitlement.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: { select: { key: true, name: true, imageUrl: true } } } }),
+      this.prisma.purchase.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { currency: { select: { code: true, name: true } }, lines: { orderBy: { createdAt: "asc" }, include: { catalogItem: { select: { key: true, name: true, imageUrl: true } } } } } }),
+      this.prisma.leaderboardEntry.findMany({ where: { playerId: userId }, orderBy: { updatedAt: "desc" }, take: 200, include: { leaderboard: { select: { key: true, name: true, period: true, direction: true } }, season: { select: { id: true, status: true, startsAt: true, endsAt: true } } } }),
+      this.prisma.leaderboardScoreEvent.findMany({ where: { playerId: userId }, orderBy: { createdAt: "desc" }, take: 200, include: { leaderboard: { select: { key: true, name: true } }, season: { select: { id: true, status: true } } } }),
+      this.prisma.progressionEvent.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { progression: { select: { key: true, name: true, kind: true } } } }),
+      this.prisma.rewardGrant.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { currency: { select: { code: true, name: true } }, progressionDefinition: { select: { key: true, name: true } } } }),
+      this.prisma.playerGameStats.findMany({ where: { userId }, orderBy: { lastPlayedAt: "desc" }, take: 100, include: { gameDefinition: { select: { key: true, name: true } } } }),
+      this.prisma.matchParticipant.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { match: { select: { id: true, mode: true, status: true, startedAt: true, endedAt: true, settledAt: true, createdAt: true, gameDefinition: { select: { key: true, name: true } } } } } }),
+    ])
+    const walletTransactions = user.wallet
+      ? await this.prisma.walletTransaction.findMany({ where: { walletId: user.wallet.id }, orderBy: { createdAt: "desc" }, take: 500, include: { currency: { select: { code: true, name: true, kind: true } } } })
+      : []
+    return this.serialize({ user: { ...user, wallet: user.wallet ? { ...user.wallet, transactions: walletTransactions } : null }, inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches })
+  }
+
   async updateUserProfile(userId: string, actorId: string, dto: UpdateUserProfileDto) {
     await this.updateUserProfileTransaction.run({ userId, actorId, dto })
     return this.getUser(userId, true)
@@ -383,6 +402,10 @@ export class SystemAdminService implements OnModuleInit {
       }))
     }
     return serialized
+  }
+
+  private serialize<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) as T
   }
 
   private async getDummyPasswordHash() {

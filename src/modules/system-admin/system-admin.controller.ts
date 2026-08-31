@@ -76,6 +76,14 @@ export class SystemAdminController {
   }
 
   @UseGuards(SystemAdminGuard)
+  @Get("api/users/:userId/360")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "View the complete Player 360 account workspace" })
+  getPlayer360(@Param("userId", ParseUUIDPipe) userId: string) {
+    return this.systemAdminService.getPlayer360(userId)
+  }
+
+  @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "View a complete player account, wallet, and session summary" })

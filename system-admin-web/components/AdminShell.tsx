@@ -24,7 +24,7 @@ import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 
-export type AdminView = 'overview' | 'players' | 'sessions' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config';
+export type AdminView = 'overview' | 'players' | 'player360' | 'sessions' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config';
 
 const navigation = [
   { key: 'overview' as const, label: 'Overview', icon: <DashboardRoundedIcon /> },
@@ -49,7 +49,7 @@ export function AdminShell({ view, onViewChange, onLogout, adminName, children }
     <Box sx={{ flex: 1 }} />
     <Button startIcon={<LogoutRoundedIcon />} onClick={onLogout} color="inherit" sx={{ justifyContent: 'flex-start', px: 1.5, color: 'text.secondary' }}>Sign out</Button>
   </Box>;
-  const title = navigation.find((item) => item.key === view)?.label ?? 'Overview';
+  const title = view === 'player360' ? 'Player 360' : navigation.find((item) => item.key === view)?.label ?? 'Overview';
   return <Box sx={{ minHeight: '100vh', display: 'flex', background: 'radial-gradient(circle at 75% -15%, rgba(72,82,159,.45), transparent 32%), #0b1020' }}>
     <Box component="nav" sx={{ display: { xs: 'none', md: 'block' }, width: 260, flexShrink: 0, borderRight: '1px solid rgba(148,163,184,.12)' }}><Box sx={{ position: 'fixed', width: 260, height: '100vh' }}>{drawer}</Box></Box>
     <Drawer variant="temporary" open={mobileOpen} onClose={() => setMobileOpen(false)} sx={{ display: { xs: 'block', md: 'none' }, '& .MuiDrawer-paper': { bgcolor: 'background.paper' } }}>{drawer}</Drawer>
