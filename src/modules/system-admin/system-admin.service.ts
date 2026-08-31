@@ -6,7 +6,7 @@ import { PrismaService } from "../../prisma.service"
 import { AuthService } from "../auth/services/auth.service"
 import { UsersService } from "../admin/access/users/users.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { AdminSessionStatusFilter, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { DeleteUserTransaction } from "./transactions/delete-user-transaction"
 import { EnsureSystemAdminInput, EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin-transaction"
 import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction"
@@ -23,6 +23,7 @@ import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeason
 import { LeaderboardService } from "../leaderboard/leaderboard.service"
 import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
 import { GameService } from "../game/game.service"
+import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -45,6 +46,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly reverseWalletTransaction: ReverseWalletTransaction,
     private readonly leaderboardService: LeaderboardService,
     private readonly gameService: GameService,
+    private readonly terminateAdminSessionTransaction: TerminateAdminSessionTransaction,
   ) {}
 
   async onModuleInit() {
@@ -154,6 +156,67 @@ export class SystemAdminService implements OnModuleInit {
   async createAdmin(dto: RegisterAdminDto) {
     const user = await this.usersService.create({ ...dto, isSystemAdmin: true })
     return this.getUser(user.id)
+  }
+
+  async listSessions(query: SystemAdminSessionsQueryDto) {
+    const page = query.page || 1
+    const limit = query.limit || 50
+    const search = query.search?.trim()
+    const now = new Date()
+    const statusWhere: Prisma.SessionWhereInput = query.status === AdminSessionStatusFilter.Active
+      ? { sessionStatus: "ACTIVE", expiresAt: { gt: now } }
+      : query.status === AdminSessionStatusFilter.Expired
+        ? { sessionStatus: "ACTIVE", expiresAt: { lte: now } }
+        : query.status === AdminSessionStatusFilter.Terminated
+          ? { sessionStatus: "TERMINATED" }
+          : {}
+    const where: Prisma.SessionWhereInput = {
+      ...statusWhere,
+      ...(search ? {
+        OR: [
+          { user: { username: { contains: search.toLowerCase(), mode: "insensitive" } } },
+          { user: { email: { contains: search.toLowerCase(), mode: "insensitive" } } },
+          { deviceName: { contains: search, mode: "insensitive" } },
+          { deviceInfo: { contains: search, mode: "insensitive" } },
+          { ipAddress: { contains: search, mode: "insensitive" } },
+          { location: { contains: search, mode: "insensitive" } },
+        ],
+      } : {}),
+    }
+    const [total, sessions] = await this.prisma.$transaction([
+      this.prisma.session.count({ where }),
+      this.prisma.session.findMany({
+        where,
+        orderBy: { lastActiveTimestamp: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          sessionStatus: true,
+          isMobileSession: true,
+          clientVersion: true,
+          deviceName: true,
+          deviceInfo: true,
+          ipAddress: true,
+          location: true,
+          loginTimestamp: true,
+          lastActiveTimestamp: true,
+          expiresAt: true,
+          user: { select: { id: true, username: true, email: true, isSystemAdmin: true, profile: { select: { displayName: true } } } },
+        },
+      }),
+    ])
+    return {
+      items: sessions.map((session) => ({
+        ...session,
+        effectiveStatus: session.sessionStatus === "ACTIVE" && session.expiresAt <= now ? "EXPIRED" : session.sessionStatus,
+      })),
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    }
+  }
+
+  terminateSession(sessionId: string, actorId: string) {
+    return this.terminateAdminSessionTransaction.run({ sessionId, actorId })
   }
 
   getUserDetails(userId: string) {

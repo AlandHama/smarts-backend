@@ -184,3 +184,19 @@ export interface TopPlayer {
 }
 
 export interface OverviewMetrics { totalUsers: number; activeUsers: number; bannedUsers: number; activeAdmins: number; activeSessions: number; }
+
+export interface AdminSession {
+  id: string;
+  sessionStatus: 'ACTIVE' | 'TERMINATED';
+  effectiveStatus: 'ACTIVE' | 'EXPIRED' | 'TERMINATED';
+  isMobileSession: boolean;
+  clientVersion: string | null;
+  deviceName: string | null;
+  deviceInfo: string | null;
+  ipAddress: string | null;
+  location: string | null;
+  loginTimestamp: string;
+  lastActiveTimestamp: string;
+  expiresAt: string;
+  user: { id: string; username: string; email: string | null; isSystemAdmin: boolean; profile: { displayName: string } | null };
+}

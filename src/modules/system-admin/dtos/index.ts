@@ -1,5 +1,6 @@
 export * from "./system-admin-login.dto"
 export * from "./system-admin-users-query.dto"
+export * from "./system-admin-sessions-query.dto"
 export * from "./register-admin.dto"
 export * from "./update-user-status.dto"
 export * from "./update-user-profile.dto"

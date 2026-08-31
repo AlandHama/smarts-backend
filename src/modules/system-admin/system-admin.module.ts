@@ -11,6 +11,7 @@ import { EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin
 import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction"
 import { UpdateUserProfileTransaction } from "./transactions/update-user-profile-transaction"
 import { UpdateUserStatusTransaction } from "./transactions/update-user-status-transaction"
+import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction"
 import { ProgressionModule } from "../progression/progression.module"
 import { EconomyModule } from "../economy/economy.module"
 import { LeaderboardModule } from "../leaderboard/leaderboard.module"
@@ -27,6 +28,7 @@ import { GameModule } from "../game/game.module"
     ResetUserPasswordTransaction,
     UpdateUserProfileTransaction,
     UpdateUserStatusTransaction,
+    TerminateAdminSessionTransaction,
   ],
 })
 export class SystemAdminModule {}

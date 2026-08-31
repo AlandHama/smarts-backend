@@ -13,6 +13,7 @@ import { ProgressionTopPlayersPanel, ProgressionsView } from '../components/Prog
 import { LeaderboardView, SeasonManagerPanel } from '../components/LeaderboardView';
 import { GameConfigView } from '../components/GameConfigView';
 import { UsersView } from '../components/UsersView';
+import { SessionsView } from '../components/SessionsView';
 import { api, clearSession, hasSession, login } from '../lib/api';
 import { adminTheme } from '../lib/theme';
 
@@ -32,5 +33,5 @@ export default function AdminPage() {
   };
   const signOut = () => { clearSession(); setAdmin(null); setView('overview'); };
 
-  return <ThemeProvider theme={adminTheme}><CssBaseline />{checking ? null : !admin ? <LoginView onLogin={signIn} /> : <AdminShell view={view} onViewChange={setView} onLogout={signOut} adminName={admin.username || admin.email || 'Administrator'}>{view === 'overview' && <OverviewView onNavigate={setView} />}{view === 'players' && <UsersView />}{view === 'progressions' && <><ProgressionsView /><ProgressionTopPlayersPanel /></>}{view === 'economy' && <><EconomyView /><CurrencyTopPlayersPanel /></>}{view === 'leaderboards' && <><LeaderboardView /><SeasonManagerPanel /></>}{view === 'game-config' && <GameConfigView />}</AdminShell>}</ThemeProvider>;
+  return <ThemeProvider theme={adminTheme}><CssBaseline />{checking ? null : !admin ? <LoginView onLogin={signIn} /> : <AdminShell view={view} onViewChange={setView} onLogout={signOut} adminName={admin.username || admin.email || 'Administrator'}>{view === 'overview' && <OverviewView onNavigate={setView} />}{view === 'players' && <UsersView />}{view === 'sessions' && <SessionsView />}{view === 'progressions' && <><ProgressionsView /><ProgressionTopPlayersPanel /></>}{view === 'economy' && <><EconomyView /><CurrencyTopPlayersPanel /></>}{view === 'leaderboards' && <><LeaderboardView /><SeasonManagerPanel /></>}{view === 'game-config' && <GameConfigView />}</AdminShell>}</ThemeProvider>;
 }

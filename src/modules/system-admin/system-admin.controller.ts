@@ -7,7 +7,7 @@ import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { SystemAdminGuard } from "./system-admin.guard"
 import { SystemAdminService } from "./system-admin.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
 import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
@@ -56,6 +56,22 @@ export class SystemAdminController {
   @ApiOperation({ summary: "Create an active system administrator account" })
   createAdmin(@Body() dto: RegisterAdminDto) {
     return this.systemAdminService.createAdmin(dto)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/sessions")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List player and administrator session history" })
+  sessions(@Query() query: SystemAdminSessionsQueryDto) {
+    return this.systemAdminService.listSessions(query)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/sessions/:sessionId")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Terminate an active player or administrator session" })
+  terminateSession(@Param("sessionId", ParseUUIDPipe) sessionId: string, @CurrentUser() admin: UserResponseDto) {
+    return this.systemAdminService.terminateSession(sessionId, admin.id)
   }
 
   @UseGuards(SystemAdminGuard)
