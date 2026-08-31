@@ -1,13 +1,13 @@
 -- Phase 5: server-authoritative game matches, versioned reward configuration,
 -- accepted event history, settlement proofs, stats projections, and outbox rows.
-CREATE TYPE "GameMode" AS ENUM ('SINGLE_PLAYER', 'BOT', 'RANKED', 'CASUAL');
-CREATE TYPE "MatchStatus" AS ENUM ('CREATED', 'STARTED', 'FINISHED', 'REVIEW', 'CANCELLED', 'SETTLED');
-CREATE TYPE "MatchParticipantType" AS ENUM ('PLAYER', 'BOT');
-CREATE TYPE "MatchParticipantResult" AS ENUM ('PENDING', 'WIN', 'LOSS', 'DRAW', 'COMPLETED', 'FORFEIT');
-CREATE TYPE "MatchEventType" AS ENUM ('READY', 'HEARTBEAT', 'ANSWER', 'SCORE_UPDATE', 'FINISH', 'LEAVE', 'FORFEIT');
-CREATE TYPE "OutboxEventStatus" AS ENUM ('PENDING', 'PROCESSING', 'PUBLISHED', 'FAILED');
+DO $$ BEGIN CREATE TYPE "GameMode" AS ENUM ('SINGLE_PLAYER', 'BOT', 'RANKED', 'CASUAL'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "MatchStatus" AS ENUM ('CREATED', 'STARTED', 'FINISHED', 'REVIEW', 'CANCELLED', 'SETTLED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "MatchParticipantType" AS ENUM ('PLAYER', 'BOT'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "MatchParticipantResult" AS ENUM ('PENDING', 'WIN', 'LOSS', 'DRAW', 'COMPLETED', 'FORFEIT'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "MatchEventType" AS ENUM ('READY', 'HEARTBEAT', 'ANSWER', 'SCORE_UPDATE', 'FINISH', 'LEAVE', 'FORFEIT'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "OutboxEventStatus" AS ENUM ('PENDING', 'PROCESSING', 'PUBLISHED', 'FAILED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TABLE "GameDefinition" (
+CREATE TABLE IF NOT EXISTS "GameDefinition" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "key" VARCHAR(64) NOT NULL,
     "name" VARCHAR(120) NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE "GameDefinition" (
     CONSTRAINT "GameDefinition_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "GameConfig" (
+CREATE TABLE IF NOT EXISTS "GameConfig" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "gameDefinitionId" UUID NOT NULL,
     "version" INTEGER NOT NULL DEFAULT 1,
@@ -53,7 +53,7 @@ CREATE TABLE "GameConfig" (
     CONSTRAINT "GameConfig_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "Match" (
+CREATE TABLE IF NOT EXISTS "Match" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "gameDefinitionId" UUID NOT NULL,
     "gameConfigId" UUID NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE "Match" (
     CONSTRAINT "Match_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "MatchParticipant" (
+CREATE TABLE IF NOT EXISTS "MatchParticipant" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "matchId" UUID NOT NULL,
     "userId" UUID,
@@ -84,7 +84,7 @@ CREATE TABLE "MatchParticipant" (
     CONSTRAINT "MatchParticipant_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "MatchEvent" (
+CREATE TABLE IF NOT EXISTS "MatchEvent" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "matchId" UUID NOT NULL,
     "participantId" UUID NOT NULL,
@@ -99,7 +99,7 @@ CREATE TABLE "MatchEvent" (
     CONSTRAINT "MatchEvent_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "MatchSettlement" (
+CREATE TABLE IF NOT EXISTS "MatchSettlement" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "matchId" UUID NOT NULL,
     "policyVersion" VARCHAR(32) NOT NULL,
@@ -110,7 +110,7 @@ CREATE TABLE "MatchSettlement" (
     CONSTRAINT "MatchSettlement_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "GameContentItem" (
+CREATE TABLE IF NOT EXISTS "GameContentItem" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "gameDefinitionId" UUID NOT NULL,
     "version" INTEGER NOT NULL DEFAULT 1,
@@ -127,7 +127,7 @@ CREATE TABLE "GameContentItem" (
     CONSTRAINT "GameContentItem_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "MatchContentAssignment" (
+CREATE TABLE IF NOT EXISTS "MatchContentAssignment" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "matchId" UUID NOT NULL,
     "participantId" UUID NOT NULL,
@@ -141,7 +141,7 @@ CREATE TABLE "MatchContentAssignment" (
     CONSTRAINT "MatchContentAssignment_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "PlayerGameStats" (
+CREATE TABLE IF NOT EXISTS "PlayerGameStats" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "userId" UUID NOT NULL,
     "gameDefinitionId" UUID NOT NULL,
@@ -161,7 +161,7 @@ CREATE TABLE "PlayerGameStats" (
     CONSTRAINT "PlayerGameStats_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "OutboxEvent" (
+CREATE TABLE IF NOT EXISTS "OutboxEvent" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "eventType" VARCHAR(120) NOT NULL,
     "aggregateType" VARCHAR(80) NOT NULL,
@@ -177,29 +177,29 @@ CREATE TABLE "OutboxEvent" (
     CONSTRAINT "OutboxEvent_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "GameDefinition_key_key" ON "GameDefinition"("key");
-CREATE UNIQUE INDEX "GameConfig_gameDefinitionId_version_key" ON "GameConfig"("gameDefinitionId", "version");
-CREATE UNIQUE INDEX "GameConfig_one_active_per_game_key" ON "GameConfig"("gameDefinitionId") WHERE "active" = true;
-CREATE UNIQUE INDEX "Match_serverNonce_key" ON "Match"("serverNonce");
-CREATE UNIQUE INDEX "MatchParticipant_matchId_userId_key" ON "MatchParticipant"("matchId", "userId");
-CREATE UNIQUE INDEX "MatchEvent_matchId_participantId_clientEventId_key" ON "MatchEvent"("matchId", "participantId", "clientEventId");
-CREATE UNIQUE INDEX "MatchEvent_matchId_participantId_sequence_key" ON "MatchEvent"("matchId", "participantId", "sequence");
-CREATE UNIQUE INDEX "MatchSettlement_matchId_key" ON "MatchSettlement"("matchId");
-CREATE UNIQUE INDEX "MatchSettlement_winnerParticipantId_key" ON "MatchSettlement"("winnerParticipantId");
-CREATE UNIQUE INDEX "MatchSettlement_idempotencyKeyId_key" ON "MatchSettlement"("idempotencyKeyId");
-CREATE UNIQUE INDEX "MatchContentAssignment_matchId_participantId_position_key" ON "MatchContentAssignment"("matchId", "participantId", "position");
-CREATE INDEX "MatchContentAssignment_participantId_contentItemId_idx" ON "MatchContentAssignment"("participantId", "contentItemId");
-CREATE UNIQUE INDEX "PlayerGameStats_userId_gameDefinitionId_key" ON "PlayerGameStats"("userId", "gameDefinitionId");
-CREATE INDEX "Match_status_createdAt_idx" ON "Match"("status", "createdAt");
-CREATE INDEX "Match_createdByUserId_status_idx" ON "Match"("createdByUserId", "status");
-CREATE INDEX "MatchParticipant_matchId_result_idx" ON "MatchParticipant"("matchId", "result");
-CREATE INDEX "MatchParticipant_userId_createdAt_idx" ON "MatchParticipant"("userId", "createdAt");
-CREATE INDEX "MatchEvent_matchId_participantId_serverReceivedAt_idx" ON "MatchEvent"("matchId", "participantId", "serverReceivedAt");
-CREATE INDEX "GameContentItem_gameDefinitionId_active_version_idx" ON "GameContentItem"("gameDefinitionId", "active", "version");
-CREATE INDEX "MatchContentAssignment_matchId_participantId_answeredAt_idx" ON "MatchContentAssignment"("matchId", "participantId", "answeredAt");
-CREATE INDEX "PlayerGameStats_gameDefinitionId_totalScore_idx" ON "PlayerGameStats"("gameDefinitionId", "totalScore");
-CREATE INDEX "OutboxEvent_status_availableAt_idx" ON "OutboxEvent"("status", "availableAt");
-CREATE INDEX "OutboxEvent_aggregateType_aggregateId_idx" ON "OutboxEvent"("aggregateType", "aggregateId");
+CREATE UNIQUE INDEX IF NOT EXISTS "GameDefinition_key_key" ON "GameDefinition"("key");
+CREATE UNIQUE INDEX IF NOT EXISTS "GameConfig_gameDefinitionId_version_key" ON "GameConfig"("gameDefinitionId", "version");
+CREATE UNIQUE INDEX IF NOT EXISTS "GameConfig_one_active_per_game_key" ON "GameConfig"("gameDefinitionId") WHERE "active" = true;
+CREATE UNIQUE INDEX IF NOT EXISTS "Match_serverNonce_key" ON "Match"("serverNonce");
+CREATE UNIQUE INDEX IF NOT EXISTS "MatchParticipant_matchId_userId_key" ON "MatchParticipant"("matchId", "userId");
+CREATE UNIQUE INDEX IF NOT EXISTS "MatchEvent_matchId_participantId_clientEventId_key" ON "MatchEvent"("matchId", "participantId", "clientEventId");
+CREATE UNIQUE INDEX IF NOT EXISTS "MatchEvent_matchId_participantId_sequence_key" ON "MatchEvent"("matchId", "participantId", "sequence");
+CREATE UNIQUE INDEX IF NOT EXISTS "MatchSettlement_matchId_key" ON "MatchSettlement"("matchId");
+CREATE UNIQUE INDEX IF NOT EXISTS "MatchSettlement_winnerParticipantId_key" ON "MatchSettlement"("winnerParticipantId");
+CREATE UNIQUE INDEX IF NOT EXISTS "MatchSettlement_idempotencyKeyId_key" ON "MatchSettlement"("idempotencyKeyId");
+CREATE UNIQUE INDEX IF NOT EXISTS "MatchContentAssignment_matchId_participantId_position_key" ON "MatchContentAssignment"("matchId", "participantId", "position");
+CREATE INDEX IF NOT EXISTS "MatchContentAssignment_participantId_contentItemId_idx" ON "MatchContentAssignment"("participantId", "contentItemId");
+CREATE UNIQUE INDEX IF NOT EXISTS "PlayerGameStats_userId_gameDefinitionId_key" ON "PlayerGameStats"("userId", "gameDefinitionId");
+CREATE INDEX IF NOT EXISTS "Match_status_createdAt_idx" ON "Match"("status", "createdAt");
+CREATE INDEX IF NOT EXISTS "Match_createdByUserId_status_idx" ON "Match"("createdByUserId", "status");
+CREATE INDEX IF NOT EXISTS "MatchParticipant_matchId_result_idx" ON "MatchParticipant"("matchId", "result");
+CREATE INDEX IF NOT EXISTS "MatchParticipant_userId_createdAt_idx" ON "MatchParticipant"("userId", "createdAt");
+CREATE INDEX IF NOT EXISTS "MatchEvent_matchId_participantId_serverReceivedAt_idx" ON "MatchEvent"("matchId", "participantId", "serverReceivedAt");
+CREATE INDEX IF NOT EXISTS "GameContentItem_gameDefinitionId_active_version_idx" ON "GameContentItem"("gameDefinitionId", "active", "version");
+CREATE INDEX IF NOT EXISTS "MatchContentAssignment_matchId_participantId_answeredAt_idx" ON "MatchContentAssignment"("matchId", "participantId", "answeredAt");
+CREATE INDEX IF NOT EXISTS "PlayerGameStats_gameDefinitionId_totalScore_idx" ON "PlayerGameStats"("gameDefinitionId", "totalScore");
+CREATE INDEX IF NOT EXISTS "OutboxEvent_status_availableAt_idx" ON "OutboxEvent"("status", "availableAt");
+CREATE INDEX IF NOT EXISTS "OutboxEvent_aggregateType_aggregateId_idx" ON "OutboxEvent"("aggregateType", "aggregateId");
 
 -- Repair guards for installations where the Phase 4 tables exist but one of
 -- their Prisma-generated unique indexes was not created successfully. These
@@ -209,23 +209,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS "LeaderboardEntry_leaderboardId_seasonId_membe
 CREATE UNIQUE INDEX IF NOT EXISTS "IdempotencyKey_scope_key_key"
   ON "IdempotencyKey"("scope", "key");
 
-ALTER TABLE "GameConfig" ADD CONSTRAINT "GameConfig_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "Match" ADD CONSTRAINT "Match_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "Match" ADD CONSTRAINT "Match_gameConfigId_fkey" FOREIGN KEY ("gameConfigId") REFERENCES "GameConfig"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "Match" ADD CONSTRAINT "Match_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "MatchParticipant" ADD CONSTRAINT "MatchParticipant_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchParticipant" ADD CONSTRAINT "MatchParticipant_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "MatchEvent" ADD CONSTRAINT "MatchEvent_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchEvent" ADD CONSTRAINT "MatchEvent_participantId_fkey" FOREIGN KEY ("participantId") REFERENCES "MatchParticipant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchSettlement" ADD CONSTRAINT "MatchSettlement_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchSettlement" ADD CONSTRAINT "MatchSettlement_winnerParticipantId_fkey" FOREIGN KEY ("winnerParticipantId") REFERENCES "MatchParticipant"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "MatchSettlement" ADD CONSTRAINT "MatchSettlement_idempotencyKeyId_fkey" FOREIGN KEY ("idempotencyKeyId") REFERENCES "IdempotencyKey"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "GameContentItem" ADD CONSTRAINT "GameContentItem_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchContentAssignment" ADD CONSTRAINT "MatchContentAssignment_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchContentAssignment" ADD CONSTRAINT "MatchContentAssignment_participantId_fkey" FOREIGN KEY ("participantId") REFERENCES "MatchParticipant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchContentAssignment" ADD CONSTRAINT "MatchContentAssignment_contentItemId_fkey" FOREIGN KEY ("contentItemId") REFERENCES "GameContentItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "PlayerGameStats" ADD CONSTRAINT "PlayerGameStats_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "PlayerGameStats" ADD CONSTRAINT "PlayerGameStats_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN ALTER TABLE "GameConfig" ADD CONSTRAINT "GameConfig_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "Match" ADD CONSTRAINT "Match_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "Match" ADD CONSTRAINT "Match_gameConfigId_fkey" FOREIGN KEY ("gameConfigId") REFERENCES "GameConfig"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "Match" ADD CONSTRAINT "Match_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchParticipant" ADD CONSTRAINT "MatchParticipant_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchParticipant" ADD CONSTRAINT "MatchParticipant_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchEvent" ADD CONSTRAINT "MatchEvent_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchEvent" ADD CONSTRAINT "MatchEvent_participantId_fkey" FOREIGN KEY ("participantId") REFERENCES "MatchParticipant"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchSettlement" ADD CONSTRAINT "MatchSettlement_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchSettlement" ADD CONSTRAINT "MatchSettlement_winnerParticipantId_fkey" FOREIGN KEY ("winnerParticipantId") REFERENCES "MatchParticipant"("id") ON DELETE SET NULL ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchSettlement" ADD CONSTRAINT "MatchSettlement_idempotencyKeyId_fkey" FOREIGN KEY ("idempotencyKeyId") REFERENCES "IdempotencyKey"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "GameContentItem" ADD CONSTRAINT "GameContentItem_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchContentAssignment" ADD CONSTRAINT "MatchContentAssignment_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchContentAssignment" ADD CONSTRAINT "MatchContentAssignment_participantId_fkey" FOREIGN KEY ("participantId") REFERENCES "MatchParticipant"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "MatchContentAssignment" ADD CONSTRAINT "MatchContentAssignment_contentItemId_fkey" FOREIGN KEY ("contentItemId") REFERENCES "GameContentItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "PlayerGameStats" ADD CONSTRAINT "PlayerGameStats_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "PlayerGameStats" ADD CONSTRAINT "PlayerGameStats_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 INSERT INTO "GameDefinition" ("key", "name", "active", "updatedAt") VALUES
   ('trivia', 'Trivia', true, CURRENT_TIMESTAMP),
