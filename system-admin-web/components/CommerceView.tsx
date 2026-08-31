@@ -44,6 +44,14 @@ const field = (form: HTMLFormElement, name: string) =>
   String(
     (form.elements.namedItem(name) as HTMLInputElement)?.value ?? "",
   ).trim();
+const stableKey = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9:_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 100);
 const json = (value: string, label: string) => {
   try {
     return value.trim() ? JSON.parse(value) : undefined;
@@ -78,7 +86,7 @@ function AssetDialog({
             const form = event.currentTarget;
             setError("");
             const payload = {
-              key: field(form, "key"),
+              key: stableKey(field(form, "key")),
               name: field(form, "name"),
               assetType: field(form, "assetType"),
               ownershipPolicy: field(form, "ownershipPolicy"),
@@ -88,7 +96,6 @@ function AssetDialog({
               imageUrls: field(form, "imageUrls")
                 ? json(field(form, "imageUrls"), "Image URLs")
                 : undefined,
-              active: true,
             };
             await api(
               asset ? `/commerce/assets/${asset.id}` : "/commerce/assets",
@@ -113,6 +120,7 @@ function AssetDialog({
                   label="Stable asset key"
                   defaultValue={asset?.key ?? ""}
                   placeholder="avatar:gold-crown"
+                  helperText="Spaces are converted to hyphens, for example Steam Gift → steam-gift."
                   fullWidth
                   required
                   disabled={Boolean(asset)}
@@ -224,7 +232,7 @@ function CatalogDialog({
           try {
             setError("");
             const payload = {
-              key: field(form, "key"),
+              key: stableKey(field(form, "key")),
               name: field(form, "name"),
               description: field(form, "description") || undefined,
               active: true,
@@ -362,6 +370,7 @@ function ItemDialog({
                   label="Stable item key"
                   defaultValue={item?.key ?? ""}
                   placeholder="gold-crown-bundle"
+                  helperText="Spaces are converted to hyphens, for example Gold Crown → gold-crown."
                   fullWidth
                   required
                   disabled={Boolean(item)}
