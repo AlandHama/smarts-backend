@@ -6,7 +6,7 @@ import { PrismaService } from "../../prisma.service"
 import { AuthService } from "../auth/services/auth.service"
 import { UsersService } from "../admin/access/users/users.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { DeleteUserTransaction } from "./transactions/delete-user-transaction"
 import { EnsureSystemAdminInput, EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin-transaction"
 import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction"
@@ -148,6 +148,11 @@ export class SystemAdminService implements OnModuleInit {
 
   async createUser(dto: RegisterRequestDto) {
     const user = await this.usersService.create(dto)
+    return this.getUser(user.id)
+  }
+
+  async createAdmin(dto: RegisterAdminDto) {
+    const user = await this.usersService.create({ ...dto, isSystemAdmin: true })
     return this.getUser(user.id)
   }
 

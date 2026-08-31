@@ -7,7 +7,7 @@ import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { SystemAdminGuard } from "./system-admin.guard"
 import { SystemAdminService } from "./system-admin.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
 import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
@@ -48,6 +48,14 @@ export class SystemAdminController {
   @ApiOperation({ summary: "Create a player account from the admin console" })
   createUser(@Body() dto: RegisterRequestDto) {
     return this.systemAdminService.createUser(dto)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/admins")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Create an active system administrator account" })
+  createAdmin(@Body() dto: RegisterAdminDto) {
+    return this.systemAdminService.createAdmin(dto)
   }
 
   @UseGuards(SystemAdminGuard)
