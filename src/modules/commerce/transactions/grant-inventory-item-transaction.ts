@@ -24,7 +24,10 @@ export class GrantInventoryItemTransaction extends PrismaTransaction<InventoryMu
     if (idem.requestHash !== requestHash) throw new BadRequestException("The source id was already used for another inventory grant")
     if (idem.status === "COMPLETED" && idem.responseJson) return idem.responseJson
     const stackKey = asset.ownershipPolicy === "STACKABLE" ? `${input.userId}:${asset.id}:${variation?.id ?? "base"}` : null
-    if (stackKey) await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${stackKey}))`
+    // pg_advisory_xact_lock returns PostgreSQL's `void` type. Use executeRaw
+    // for this command so Prisma's pg adapter does not try to deserialize that
+    // void result as a query column.
+    if (stackKey) await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${stackKey}))`
     const existing = stackKey ? await transaction.inventoryItem.findFirst({ where: { stackKey } }) : null
     const row = existing
       ? await transaction.inventoryItem.update({ where: { id: existing.id }, data: { quantity: { increment: input.quantity }, sourceId: input.sourceId, metadata: input.metadata as Prisma.InputJsonValue | undefined } })

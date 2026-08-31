@@ -23,7 +23,9 @@ export class RevokeInventoryItemTransaction extends PrismaTransaction<RevokeInve
     if (idem.requestHash !== requestHash) throw new BadRequestException("The source id was already used for another inventory revoke")
     if (idem.status === "COMPLETED" && idem.responseJson) return idem.responseJson
     const stackKey = asset.ownershipPolicy === "STACKABLE" ? `${input.userId}:${asset.id}:${variation?.id ?? "base"}` : null
-    if (stackKey) await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${stackKey}))`
+    // pg_advisory_xact_lock returns PostgreSQL's `void` type; this is a
+    // command, so executeRaw avoids Prisma deserializing a void result.
+    if (stackKey) await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${stackKey}))`
     const row = stackKey ? await transaction.inventoryItem.findFirst({ where: { stackKey } }) : await transaction.inventoryItem.findFirst({ where: { userId: input.userId, assetDefinitionId: asset.id, assetVariationId: variation?.id ?? null }, orderBy: { createdAt: "asc" } })
     if (!row || row.quantity < input.quantity) throw new BadRequestException("Player does not own enough of this asset")
     const updated = row.quantity === input.quantity
