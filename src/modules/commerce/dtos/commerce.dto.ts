@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger"
+import { Type } from "class-transformer"
 import { ArrayMaxSize, IsArray, IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from "class-validator"
 
 import { AssetOwnershipPolicy, AssetType, CatalogRewardType, InventoryAcquisitionSource } from "@prisma/client"
@@ -71,8 +72,8 @@ export class PurchaseDto {
 export class InventoryQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsString() userId?: string
   @ApiPropertyOptional() @IsOptional() @IsString() search?: string
-  @ApiPropertyOptional({ default: 1 }) @IsOptional() @IsInt() @Min(1) page?: number
-  @ApiPropertyOptional({ default: 25 }) @IsOptional() @IsInt() @Min(1) @Max(100) limit?: number
+  @ApiPropertyOptional({ default: 1 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number
+  @ApiPropertyOptional({ default: 25 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number
 }
 
 export class InventoryMutationDto {

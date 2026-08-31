@@ -654,13 +654,7 @@ export function CommerceView() {
   const load = async () => {
     try {
       setError("");
-      const [
-        catalogRows,
-        assetRows,
-        inventoryRows,
-        purchaseRows,
-        currencyRows,
-      ] = await Promise.all([
+      const results = await Promise.allSettled([
         api<CommerceCatalog[]>("/commerce/catalogs"),
         api<CommerceAsset[]>("/commerce/assets"),
         api<{ items: CommerceInventoryItem[] }>(
@@ -669,11 +663,20 @@ export function CommerceView() {
         api<CommercePurchase[]>("/commerce/purchases"),
         api<CurrencyDefinition[]>("/economy/currencies"),
       ]);
-      setCatalogs(catalogRows);
-      setAssets(assetRows);
-      setInventory(inventoryRows.items);
-      setPurchases(purchaseRows);
-      setCurrencies(currencyRows);
+
+      const errors: string[] = [];
+      const [catalogResult, assetResult, inventoryResult, purchaseResult, currencyResult] = results;
+      if (catalogResult.status === "fulfilled") setCatalogs(catalogResult.value);
+      else errors.push(catalogResult.reason instanceof Error ? catalogResult.reason.message : "Unable to load catalogs");
+      if (assetResult.status === "fulfilled") setAssets(assetResult.value);
+      else errors.push(assetResult.reason instanceof Error ? assetResult.reason.message : "Unable to load assets");
+      if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value.items);
+      else errors.push(inventoryResult.reason instanceof Error ? inventoryResult.reason.message : "Unable to load inventory");
+      if (purchaseResult.status === "fulfilled") setPurchases(purchaseResult.value);
+      else errors.push(purchaseResult.reason instanceof Error ? purchaseResult.reason.message : "Unable to load purchases");
+      if (currencyResult.status === "fulfilled") setCurrencies(currencyResult.value);
+      else errors.push(currencyResult.reason instanceof Error ? currencyResult.reason.message : "Unable to load currencies");
+      setError(errors.join(" · "));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load commerce data");
     }
