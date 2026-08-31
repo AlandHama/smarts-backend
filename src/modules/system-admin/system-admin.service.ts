@@ -24,6 +24,8 @@ import { LeaderboardService } from "../leaderboard/leaderboard.service"
 import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
 import { GameService } from "../game/game.service"
 import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction"
+import { CommerceService } from "../commerce/commerce.service"
+import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -47,6 +49,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly leaderboardService: LeaderboardService,
     private readonly gameService: GameService,
     private readonly terminateAdminSessionTransaction: TerminateAdminSessionTransaction,
+    private readonly commerceService: CommerceService,
   ) {}
 
   async onModuleInit() {
@@ -275,6 +278,19 @@ export class SystemAdminService implements OnModuleInit {
   updateGameConfig(key: string, dto: UpdateGameConfigDto) { return this.gameService.updateConfig(key, dto) }
   createGameContent(dto: CreateGameContentDto) { return this.gameService.createContent(dto) }
   listGameContent(key: string) { return this.gameService.listContent(key, true) }
+  listCommerceCatalogs() { return this.commerceService.listCatalogs(true) }
+  createCommerceCatalog(dto: CreateCatalogDto) { return this.commerceService.createCatalog(dto) }
+  updateCommerceCatalog(id: string, dto: UpdateCatalogDto) { return this.commerceService.updateCatalog(id, dto) }
+  listCommerceAssets() { return this.commerceService.listAssets(true) }
+  createCommerceAsset(dto: CreateAssetDto) { return this.commerceService.createAsset(dto) }
+  updateCommerceAsset(id: string, dto: UpdateAssetDto) { return this.commerceService.updateAsset(id, dto) }
+  createCommerceItem(dto: CreateCatalogItemDto) { return this.commerceService.createCatalogItem(dto) }
+  updateCommerceItem(id: string, dto: UpdateCatalogItemDto) { return this.commerceService.updateCatalogItem(id, dto) }
+  listCommerceInventory(query: InventoryQueryDto) { return this.commerceService.listInventory(query) }
+  listCommercePurchases(userId?: string) { return this.commerceService.listPurchases(userId) }
+  grantCommerceInventory(userId: string, dto: InventoryMutationDto, actorId: string) { return this.commerceService.grantInventory(userId, dto, actorId) }
+  revokeCommerceInventory(userId: string, dto: InventoryMutationDto, actorId: string) { return this.commerceService.revokeInventory(userId, dto, actorId) }
+  playerEntitlements(userId: string) { return this.commerceService.listPlayerEntitlements(userId) }
 
   private async getUser(userId: string, detailed = false) {
     const user = await this.prisma.user.findUnique({

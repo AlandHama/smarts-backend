@@ -16,9 +16,10 @@ import { ProgressionModule } from "../progression/progression.module"
 import { EconomyModule } from "../economy/economy.module"
 import { LeaderboardModule } from "../leaderboard/leaderboard.module"
 import { GameModule } from "../game/game.module"
+import { CommerceModule } from "../commerce/commerce.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,

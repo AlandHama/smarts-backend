@@ -11,9 +11,10 @@ import { EconomyModule } from "./modules/economy/economy.module"
 import { LeaderboardModule } from "./modules/leaderboard/leaderboard.module"
 import { GameModule } from "./modules/game/game.module"
 import { MatchesModule } from "./modules/matches/matches.module"
+import { CommerceModule } from "./modules/commerce/commerce.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, PlayersModule, ProgressionModule, SystemAdminModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, PlayersModule, ProgressionModule, CommerceModule, SystemAdminModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

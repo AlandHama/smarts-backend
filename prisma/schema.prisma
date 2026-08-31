@@ -181,6 +181,51 @@ enum OutboxEventStatus {
   FAILED
 }
 
+enum AssetType {
+  COSMETIC
+  CONSUMABLE
+  CHARACTER
+  SKIN
+  BOOSTER
+  BUNDLE
+  OTHER
+}
+
+enum AssetOwnershipPolicy {
+  STACKABLE
+  UNIQUE
+}
+
+enum InventoryAcquisitionSource {
+  PURCHASE
+  PROGRESSION
+  ADMIN
+  MATCH
+  SIGNUP
+  SYSTEM
+}
+
+enum CatalogRewardType {
+  ASSET
+  CURRENCY
+  PROGRESSION_POINTS
+  PROGRESSION_RESET
+  ENTITLEMENT
+}
+
+enum PurchaseStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum EntitlementStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   username     String     @unique @db.VarChar(50)
@@ -206,6 +251,9 @@ model User {
   createdMatches Match[] @relation("MatchCreatedBy")
   matchParticipants MatchParticipant[]
   gameStats PlayerGameStats[]
+  inventoryItems InventoryItem[]
+  purchases Purchase[]
+  entitlements Entitlement[]
 }
 
 model Session {
@@ -281,6 +329,221 @@ model CurrencyDefinition {
   tierRewards  ProgressionTierReward[]
   rewardGrants RewardGrant[]
   transactions WalletTransaction[]
+  catalogPrices CatalogPrice[]
+  catalogRewards CatalogReward[]
+  purchases Purchase[]
+}
+
+model AssetDefinition {
+  id               String               @id @default(uuid()) @db.Uuid
+  key              String               @unique @db.VarChar(100)
+  name             String               @db.VarChar(120)
+  description      String?              @db.Text
+  assetType        AssetType
+  ownershipPolicy  AssetOwnershipPolicy @default(STACKABLE)
+  imageUrl         String?              @db.Text
+  imageAlt         String?              @db.VarChar(160)
+  imageUrls        Json?
+  active           Boolean              @default(true)
+  metadata         Json?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  variations       AssetVariation[]
+  inventoryItems   InventoryItem[]
+  catalogItems     CatalogItem[]
+  rewards          CatalogReward[]
+  entitlements     Entitlement[]
+
+  @@index([active, assetType])
+}
+
+model AssetVariation {
+  id             String          @id @default(uuid()) @db.Uuid
+  assetDefinitionId String       @db.Uuid
+  key            String          @db.VarChar(100)
+  name           String?         @db.VarChar(120)
+  imageUrl       String?         @db.Text
+  imageAlt       String?         @db.VarChar(160)
+  imageUrls      Json?
+  active         Boolean         @default(true)
+  metadata       Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  assetDefinition AssetDefinition @relation(fields: [assetDefinitionId], references: [id], onDelete: Cascade)
+  inventoryItems InventoryItem[]
+  rewards        CatalogReward[]
+
+  @@unique([assetDefinitionId, key])
+  @@index([assetDefinitionId, active])
+}
+
+model Catalog {
+  id          String        @id @default(uuid()) @db.Uuid
+  key         String        @unique @db.VarChar(80)
+  name        String        @db.VarChar(120)
+  description String?       @db.Text
+  active      Boolean       @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  items       CatalogItem[]
+
+  @@index([active, startsAt, endsAt])
+}
+
+model CatalogItem {
+  id              String           @id @default(uuid()) @db.Uuid
+  catalogId       String           @db.Uuid
+  key             String           @db.VarChar(100)
+  name            String           @db.VarChar(120)
+  description     String?          @db.Text
+  assetDefinitionId String?        @db.Uuid
+  imageUrl        String?          @db.Text
+  imageAlt        String?          @db.VarChar(160)
+  imageUrls       Json?
+  purchasable     Boolean          @default(true)
+  active          Boolean          @default(true)
+  startsAt        DateTime?
+  endsAt          DateTime?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  catalog         Catalog          @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  assetDefinition AssetDefinition? @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  prices          CatalogPrice[]
+  rewards         CatalogReward[]
+  purchaseLines   PurchaseLine[]
+
+  @@unique([catalogId, key])
+  @@index([catalogId, active, startsAt, endsAt])
+  @@index([assetDefinitionId])
+}
+
+model CatalogPrice {
+  id           String             @id @default(uuid()) @db.Uuid
+  catalogItemId String            @db.Uuid
+  currencyId   String             @db.Uuid
+  amount       BigInt
+  active       Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  catalogItem  CatalogItem        @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  currency     CurrencyDefinition @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+
+  @@unique([catalogItemId, currencyId])
+  @@index([currencyId, active])
+}
+
+model CatalogReward {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  catalogItemId        String                 @db.Uuid
+  rewardType           CatalogRewardType
+  assetDefinitionId    String?                @db.Uuid
+  assetVariationId     String?                @db.Uuid
+  currencyId           String?                @db.Uuid
+  progressionDefinitionId String?             @db.Uuid
+  targetKey            String?                @db.VarChar(120)
+  amount               BigInt?
+  quantity             Int                    @default(1)
+  sortOrder            Int                    @default(0)
+  metadata             Json?
+  createdAt            DateTime               @default(now())
+  catalogItem          CatalogItem            @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  assetDefinition     AssetDefinition?       @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  assetVariation      AssetVariation?        @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
+  currency             CurrencyDefinition?    @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  progressionDefinition ProgressionDefinition? @relation(fields: [progressionDefinitionId], references: [id], onDelete: Restrict)
+
+  @@index([catalogItemId, sortOrder])
+  @@index([assetDefinitionId])
+  @@index([progressionDefinitionId])
+}
+
+model InventoryItem {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  instanceId          String                    @unique @default(uuid()) @db.Uuid
+  stackKey            String?
+  userId              String                    @db.Uuid
+  assetDefinitionId   String                    @db.Uuid
+  assetVariationId    String?                   @db.Uuid
+  quantity            Int                       @default(1)
+  acquisitionSource   InventoryAcquisitionSource
+  sourceId            String                    @db.VarChar(255)
+  rentalExpiresAt     DateTime?
+  metadata            Json?
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  user                User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetDefinition     AssetDefinition           @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  assetVariation      AssetVariation?           @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([userId, assetDefinitionId, assetVariationId])
+  @@index([sourceId])
+}
+
+model Purchase {
+  id                 String         @id @default(uuid()) @db.Uuid
+  userId             String         @db.Uuid
+  status             PurchaseStatus @default(PENDING)
+  currencyId         String         @db.Uuid
+  totalAmount        BigInt
+  idempotencyKeyId   String         @unique @db.Uuid
+  provider           String?        @db.VarChar(40)
+  providerReference  String?        @unique @db.VarChar(255)
+  failureReason      String?        @db.Text
+  metadata           Json?
+  completedAt        DateTime?
+  refundedAt         DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency           CurrencyDefinition @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  idempotencyKey     IdempotencyKey @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
+  lines              PurchaseLine[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model PurchaseLine {
+  id             String      @id @default(uuid()) @db.Uuid
+  purchaseId     String      @db.Uuid
+  catalogItemId  String?     @db.Uuid
+  itemKeySnapshot String     @db.VarChar(100)
+  itemNameSnapshot String    @db.VarChar(120)
+  quantity       Int
+  unitAmount     BigInt
+  totalAmount    BigInt
+  rewardSnapshot Json
+  createdAt      DateTime    @default(now())
+  purchase       Purchase    @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  catalogItem    CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseId])
+  @@index([catalogItemId])
+}
+
+model Entitlement {
+  id             String             @id @default(uuid()) @db.Uuid
+  userId         String             @db.Uuid
+  entitlementKey String             @db.VarChar(160)
+  assetDefinitionId String?         @db.Uuid
+  status         EntitlementStatus  @default(ACTIVE)
+  sourceType     String             @db.VarChar(40)
+  sourceId       String             @db.VarChar(255)
+  expiresAt      DateTime?
+  metadata       Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetDefinition AssetDefinition?  @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, entitlementKey])
+  @@index([userId, status, expiresAt])
+  @@index([assetDefinitionId])
 }
 
 model Wallet {
@@ -322,6 +585,7 @@ model IdempotencyKey {
   completedAt  DateTime?
   user         User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
   matchSettlement MatchSettlement?
+  purchase       Purchase?
 
   @@unique([scope, key])
   @@index([userId, scope])
@@ -343,6 +607,7 @@ model ProgressionDefinition {
   rewards       ProgressionTierReward[] @relation("TargetProgression")
   events        ProgressionEvent[]
   grants        RewardGrant[]
+  catalogRewards CatalogReward[]
 }
 
 model ProgressionTier {

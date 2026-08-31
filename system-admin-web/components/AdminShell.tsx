@@ -9,6 +9,7 @@ import MonetizationOnRoundedIcon from '@mui/icons-material/MonetizationOnRounded
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
 import LeaderboardRoundedIcon from '@mui/icons-material/LeaderboardRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import Box from '@mui/material/Box';
@@ -23,7 +24,7 @@ import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 
-export type AdminView = 'overview' | 'players' | 'sessions' | 'progressions' | 'economy' | 'leaderboards' | 'game-config';
+export type AdminView = 'overview' | 'players' | 'sessions' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config';
 
 const navigation = [
   { key: 'overview' as const, label: 'Overview', icon: <DashboardRoundedIcon /> },
@@ -31,6 +32,7 @@ const navigation = [
   { key: 'sessions' as const, label: 'Sessions', icon: <DevicesRoundedIcon /> },
   { key: 'progressions' as const, label: 'Progressions', icon: <SettingsSuggestRoundedIcon /> },
   { key: 'economy' as const, label: 'Economy', icon: <MonetizationOnRoundedIcon /> },
+  { key: 'commerce' as const, label: 'Commerce', icon: <StorefrontRoundedIcon /> },
   { key: 'leaderboards' as const, label: 'Leaderboards', icon: <LeaderboardRoundedIcon /> },
   { key: 'game-config' as const, label: 'Game config', icon: <TuneRoundedIcon /> },
 ];

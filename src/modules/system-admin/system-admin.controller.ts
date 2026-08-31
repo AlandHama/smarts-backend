@@ -12,6 +12,7 @@ import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewar
 import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
 import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
+import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -300,4 +301,69 @@ export class SystemAdminController {
   @Get("api/game-config/:gameKey/content")
   @ApiBearerAuth("access-token")
   listGameContent(@Param("gameKey") gameKey: string) { return this.systemAdminService.listGameContent(gameKey) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/commerce/catalogs")
+  @ApiBearerAuth("access-token")
+  commerceCatalogs() { return this.systemAdminService.listCommerceCatalogs() }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/commerce/catalogs")
+  @ApiBearerAuth("access-token")
+  createCommerceCatalog(@Body() dto: CreateCatalogDto) { return this.systemAdminService.createCommerceCatalog(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/commerce/catalogs/:catalogId")
+  @ApiBearerAuth("access-token")
+  updateCommerceCatalog(@Param("catalogId", ParseUUIDPipe) catalogId: string, @Body() dto: UpdateCatalogDto) { return this.systemAdminService.updateCommerceCatalog(catalogId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/commerce/assets")
+  @ApiBearerAuth("access-token")
+  commerceAssets() { return this.systemAdminService.listCommerceAssets() }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/commerce/assets")
+  @ApiBearerAuth("access-token")
+  createCommerceAsset(@Body() dto: CreateAssetDto) { return this.systemAdminService.createCommerceAsset(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/commerce/assets/:assetId")
+  @ApiBearerAuth("access-token")
+  updateCommerceAsset(@Param("assetId", ParseUUIDPipe) assetId: string, @Body() dto: UpdateAssetDto) { return this.systemAdminService.updateCommerceAsset(assetId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/commerce/items")
+  @ApiBearerAuth("access-token")
+  createCommerceItem(@Body() dto: CreateCatalogItemDto) { return this.systemAdminService.createCommerceItem(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/commerce/items/:itemId")
+  @ApiBearerAuth("access-token")
+  updateCommerceItem(@Param("itemId", ParseUUIDPipe) itemId: string, @Body() dto: UpdateCatalogItemDto) { return this.systemAdminService.updateCommerceItem(itemId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/commerce/inventory")
+  @ApiBearerAuth("access-token")
+  commerceInventory(@Query() query: InventoryQueryDto) { return this.systemAdminService.listCommerceInventory(query) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/commerce/purchases")
+  @ApiBearerAuth("access-token")
+  commercePurchases(@Query("userId") userId?: string) { return this.systemAdminService.listCommercePurchases(userId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/users/:userId/commerce/entitlements")
+  @ApiBearerAuth("access-token")
+  commerceEntitlements(@Param("userId", ParseUUIDPipe) userId: string) { return this.systemAdminService.playerEntitlements(userId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/commerce/inventory/grant")
+  @ApiBearerAuth("access-token")
+  grantCommerceInventory(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto, @Body() dto: InventoryMutationDto) { return this.systemAdminService.grantCommerceInventory(userId, dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/commerce/inventory/revoke")
+  @ApiBearerAuth("access-token")
+  revokeCommerceInventory(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto, @Body() dto: InventoryMutationDto) { return this.systemAdminService.revokeCommerceInventory(userId, dto, admin.id) }
 }
