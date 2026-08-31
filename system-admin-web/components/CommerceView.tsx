@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import ShoppingBagRoundedIcon from "@mui/icons-material/ShoppingBagRounded";
 import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
@@ -38,6 +39,7 @@ import type {
   CommerceInventoryItem,
   CommercePurchase,
   CurrencyDefinition,
+  ProgressionDefinition,
 } from "../lib/types";
 
 const field = (form: HTMLFormElement, name: string) =>
@@ -52,6 +54,8 @@ const stableKey = (value: string) =>
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 100);
+const isPositiveInteger = (value: string) =>
+  /^\d+$/.test(value) && value.replace(/^0+/, "").length > 0;
 const json = (value: string, label: string) => {
   try {
     return value.trim() ? JSON.parse(value) : undefined;
@@ -304,11 +308,40 @@ function CatalogDialog({
   );
 }
 
+type CatalogPriceForm = {
+  currencyCode: string;
+  amount: string;
+  active: boolean;
+};
+
+type CatalogRewardForm = {
+  rewardType: string;
+  assetKey: string;
+  variationKey: string;
+  currencyCode: string;
+  progressionKey: string;
+  targetKey: string;
+  amount: string;
+  quantity: string;
+};
+
+const emptyReward = (rewardType = "ASSET"): CatalogRewardForm => ({
+  rewardType,
+  assetKey: "",
+  variationKey: "",
+  currencyCode: "",
+  progressionKey: "",
+  targetKey: "",
+  amount: "",
+  quantity: "1",
+});
+
 function ItemDialog({
   item,
   catalogs,
   assets,
   currencies,
+  progressions,
   onClose,
   onSaved,
 }: {
@@ -316,18 +349,41 @@ function ItemDialog({
   catalogs: CommerceCatalog[];
   assets: CommerceAsset[];
   currencies: CurrencyDefinition[];
+  progressions: ProgressionDefinition[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [error, setError] = useState("");
-  const defaultPrices =
+  const defaultPrices: CatalogPriceForm[] =
     item?.prices.map((price) => ({
       currencyCode: price.currency.code,
       amount: price.amount,
+      active: price.active,
     })) ??
     (currencies[0]
-      ? [{ currencyCode: currencies[0].code, amount: "100" }]
+      ? [{ currencyCode: currencies[0].code, amount: "100", active: true }]
       : []);
+  const defaultRewards: CatalogRewardForm[] =
+    item?.rewards.map((reward) => ({
+      rewardType: reward.rewardType,
+      assetKey: reward.assetDefinition?.key ?? "",
+      variationKey: reward.assetVariation?.key ?? "",
+      currencyCode: reward.currency?.code ?? "",
+      progressionKey: reward.progressionDefinition?.key ?? "",
+      targetKey: reward.targetKey ?? "",
+      amount: reward.amount ?? "",
+      quantity: String(reward.quantity ?? 1),
+    })) ?? [];
+  const [prices, setPrices] = useState<CatalogPriceForm[]>(defaultPrices);
+  const [rewards, setRewards] =
+    useState<CatalogRewardForm[]>(defaultRewards);
+  const updateReward = (index: number, patch: Partial<CatalogRewardForm>) => {
+    setRewards((current) =>
+      current.map((reward, currentIndex) =>
+        currentIndex === index ? { ...reward, ...patch } : reward,
+      ),
+    );
+  };
   return (
     <Dialog open fullWidth maxWidth="lg" onClose={onClose}>
       <DialogTitle>
@@ -343,20 +399,71 @@ function ItemDialog({
           const form = event.currentTarget;
           try {
             setError("");
-            const prices = json(field(form, "prices"), "Prices");
-            if (!Array.isArray(prices) || !prices.length)
+            if (!prices.length)
               throw new Error("At least one price is required");
-            const rewards = json(field(form, "rewards"), "Rewards");
+            const normalizedPrices = prices.map((price) => {
+              const amount = price.amount.trim();
+              if (
+                !price.currencyCode ||
+                !isPositiveInteger(amount)
+              ) {
+                throw new Error(
+                  "Each price needs a currency and a positive integer amount in minor units.",
+                );
+              }
+              return {
+                currencyCode: price.currencyCode,
+                amount,
+                active: price.active,
+              };
+            });
+            const normalizedRewards = rewards.map((reward, index) => {
+              const payload: Record<string, unknown> = {
+                rewardType: reward.rewardType,
+                quantity: Number(reward.quantity || "1"),
+                sortOrder: index,
+              };
+              if (!Number.isInteger(payload.quantity) || Number(payload.quantity) < 1) {
+                throw new Error("Reward quantities must be positive whole numbers.");
+              }
+              if (reward.rewardType === "ASSET") {
+                if (!reward.assetKey) throw new Error("Select an asset for every asset reward.");
+                payload.assetKey = reward.assetKey;
+                if (reward.variationKey) payload.variationKey = reward.variationKey;
+              } else if (reward.rewardType === "CURRENCY") {
+                if (!reward.currencyCode) throw new Error("Select a currency for every currency reward.");
+                if (!isPositiveInteger(reward.amount)) {
+                  throw new Error("Currency rewards need a positive integer amount.");
+                }
+                payload.currencyCode = reward.currencyCode;
+                payload.amount = reward.amount;
+              } else if (reward.rewardType === "PROGRESSION_POINTS") {
+                if (!reward.progressionKey) throw new Error("Select a progression for every points reward.");
+                if (!isPositiveInteger(reward.amount)) {
+                  throw new Error("Progression rewards need a positive integer amount.");
+                }
+                payload.progressionKey = reward.progressionKey;
+                payload.amount = reward.amount;
+              } else if (reward.rewardType === "PROGRESSION_RESET") {
+                if (!reward.progressionKey) throw new Error("Select a progression for every reset reward.");
+                payload.progressionKey = reward.progressionKey;
+              } else if (reward.rewardType === "ENTITLEMENT") {
+                if (!reward.targetKey.trim()) throw new Error("Enter an entitlement key.");
+                payload.targetKey = stableKey(reward.targetKey);
+                if (reward.assetKey) payload.assetKey = reward.assetKey;
+              }
+              return payload;
+            });
             const payload = {
               ...(item ? {} : { catalogId: field(form, "catalogId") }),
-              key: field(form, "key"),
+              key: stableKey(field(form, "key")),
               name: field(form, "name"),
               assetKey: field(form, "assetKey") || undefined,
               description: field(form, "description") || undefined,
               imageUrl: field(form, "imageUrl") || undefined,
               imageAlt: field(form, "imageAlt") || undefined,
-              prices,
-              rewards: rewards ?? [],
+              prices: normalizedPrices,
+              rewards: normalizedRewards,
               active: true,
               purchasable: true,
             };
@@ -448,44 +555,289 @@ function ItemDialog({
                   fullWidth
                 />
               </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
-                  name="prices"
-                  label="Prices (JSON)"
-                  defaultValue={JSON.stringify(defaultPrices, null, 2)}
-                  multiline
-                  minRows={6}
-                  fullWidth
-                  helperText="Amounts are integer minor units, e.g. MCN 500."
-                />
+              <Grid size={12}>
+                <Stack spacing={1.5}>
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    justifyContent="space-between"
+                    alignItems={{ sm: "center" }}
+                    spacing={1}
+                  >
+                    <Box>
+                      <Typography fontWeight={800}>Prices</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Add one or more currencies. Amounts use integer minor units.
+                      </Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      startIcon={<AddRoundedIcon />}
+                      onClick={() =>
+                        setPrices((current) => [
+                          ...current,
+                          {
+                            currencyCode: currencies[0]?.code ?? "",
+                            amount: "",
+                            active: true,
+                          },
+                        ])
+                      }
+                    >
+                      Add price
+                    </Button>
+                  </Stack>
+                  {prices.map((price, index) => (
+                    <Card key={`price-${index}`} variant="outlined" sx={{ p: 1.5 }}>
+                      <Grid container spacing={1.5} alignItems="center">
+                        <Grid size={{ xs: 12, sm: 5 }}>
+                          <Select
+                            value={price.currencyCode}
+                            onChange={(event) =>
+                              setPrices((current) =>
+                                current.map((entry, currentIndex) =>
+                                  currentIndex === index
+                                    ? { ...entry, currencyCode: event.target.value }
+                                    : entry,
+                                ),
+                              )
+                            }
+                            fullWidth
+                            size="small"
+                            displayEmpty
+                          >
+                            <MenuItem value="" disabled>Select currency</MenuItem>
+                            {currencies.map((currency) => (
+                              <MenuItem key={currency.id} value={currency.code}>
+                                {currency.name} · {currency.code}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 4 }}>
+                          <TextField
+                            label="Amount (minor units)"
+                            value={price.amount}
+                            onChange={(event) =>
+                              setPrices((current) =>
+                                current.map((entry, currentIndex) =>
+                                  currentIndex === index
+                                    ? { ...entry, amount: event.target.value }
+                                    : entry,
+                                ),
+                              )
+                            }
+                            type="number"
+                            inputProps={{ min: 1, step: 1 }}
+                            fullWidth
+                            size="small"
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 9, sm: 2 }}>
+                          <Select
+                            value={price.active ? "active" : "inactive"}
+                            onChange={(event) =>
+                              setPrices((current) =>
+                                current.map((entry, currentIndex) =>
+                                  currentIndex === index
+                                    ? { ...entry, active: event.target.value === "active" }
+                                    : entry,
+                                ),
+                              )
+                            }
+                            fullWidth
+                            size="small"
+                          >
+                            <MenuItem value="active">Active</MenuItem>
+                            <MenuItem value="inactive">Inactive</MenuItem>
+                          </Select>
+                        </Grid>
+                        <Grid size={{ xs: 3, sm: 1 }}>
+                          <Button
+                            color="error"
+                            onClick={() => setPrices((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                            aria-label="Remove price"
+                            fullWidth
+                          >
+                            <DeleteOutlineRoundedIcon />
+                          </Button>
+                        </Grid>
+                      </Grid>
+                    </Card>
+                  ))}
+                </Stack>
               </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
-                  name="rewards"
-                  label="Rewards (JSON)"
-                  defaultValue={
-                    item
-                      ? JSON.stringify(
-                          item.rewards.map((reward) => ({
-                            rewardType: reward.rewardType,
-                            assetKey: reward.assetDefinition?.key,
-                            currencyCode: reward.currency?.code,
-                            progressionKey: reward.progressionDefinition?.key,
-                            targetKey: reward.targetKey,
-                            amount: reward.amount,
-                            quantity: reward.quantity,
-                            sortOrder: 0,
-                          })),
-                          null,
-                          2,
-                        )
-                      : "[]"
-                  }
-                  multiline
-                  minRows={6}
-                  fullWidth
-                  helperText="ASSET, CURRENCY, PROGRESSION_POINTS, PROGRESSION_RESET, or ENTITLEMENT."
-                />
+              <Grid size={12}>
+                <Stack spacing={1.5}>
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    justifyContent="space-between"
+                    alignItems={{ sm: "center" }}
+                    spacing={1}
+                  >
+                    <Box>
+                      <Typography fontWeight={800}>Rewards</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Configure the server-granted bundle without editing JSON.
+                      </Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      startIcon={<AddRoundedIcon />}
+                      onClick={() => setRewards((current) => [...current, emptyReward()])}
+                    >
+                      Add reward
+                    </Button>
+                  </Stack>
+                  {rewards.length === 0 && (
+                    <Typography variant="body2" color="text.secondary">
+                      No rewards configured. Add one if this listing grants a bonus.
+                    </Typography>
+                  )}
+                  {rewards.map((reward, index) => {
+                    const selectedAsset = assets.find((asset) => asset.key === reward.assetKey);
+                    return (
+                      <Card key={`reward-${index}`} variant="outlined" sx={{ p: 1.5 }}>
+                        <Grid container spacing={1.5} alignItems="center">
+                          <Grid size={{ xs: 12, sm: 4 }}>
+                            <Select
+                              value={reward.rewardType}
+                              onChange={(event) => updateReward(index, { ...emptyReward(event.target.value) })}
+                              fullWidth
+                              size="small"
+                            >
+                              <MenuItem value="ASSET">Asset</MenuItem>
+                              <MenuItem value="CURRENCY">Currency</MenuItem>
+                              <MenuItem value="PROGRESSION_POINTS">Progression points</MenuItem>
+                              <MenuItem value="PROGRESSION_RESET">Progression reset</MenuItem>
+                              <MenuItem value="ENTITLEMENT">Entitlement</MenuItem>
+                            </Select>
+                          </Grid>
+                          {(reward.rewardType === "ASSET" || reward.rewardType === "ENTITLEMENT") && (
+                            <Grid size={{ xs: 12, sm: 4 }}>
+                              <Select
+                                value={reward.assetKey}
+                                onChange={(event) => updateReward(index, { assetKey: event.target.value, variationKey: "" })}
+                                fullWidth
+                                size="small"
+                                displayEmpty
+                              >
+                                <MenuItem value="">
+                                  {reward.rewardType === "ASSET" ? "Select asset" : "Optional linked asset"}
+                                </MenuItem>
+                                {assets.map((asset) => (
+                                  <MenuItem key={asset.id} value={asset.key}>
+                                    {asset.name} · {asset.key}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </Grid>
+                          )}
+                          {reward.rewardType === "ASSET" && selectedAsset?.variations?.length ? (
+                            <Grid size={{ xs: 12, sm: 4 }}>
+                              <Select
+                                value={reward.variationKey}
+                                onChange={(event) => updateReward(index, { variationKey: event.target.value })}
+                                fullWidth
+                                size="small"
+                                displayEmpty
+                              >
+                                <MenuItem value="">Base asset</MenuItem>
+                                {selectedAsset.variations.map((variation) => (
+                                  <MenuItem key={variation.id} value={variation.key}>
+                                    {variation.name || variation.key}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </Grid>
+                          ) : null}
+                          {reward.rewardType === "CURRENCY" && (
+                            <Grid size={{ xs: 12, sm: 4 }}>
+                              <Select
+                                value={reward.currencyCode}
+                                onChange={(event) => updateReward(index, { currencyCode: event.target.value })}
+                                fullWidth
+                                size="small"
+                                displayEmpty
+                              >
+                                <MenuItem value="" disabled>Select currency</MenuItem>
+                                {currencies.map((currency) => (
+                                  <MenuItem key={currency.id} value={currency.code}>
+                                    {currency.name} · {currency.code}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </Grid>
+                          )}
+                          {(reward.rewardType === "PROGRESSION_POINTS" || reward.rewardType === "PROGRESSION_RESET") && (
+                            <Grid size={{ xs: 12, sm: 4 }}>
+                              <Select
+                                value={reward.progressionKey}
+                                onChange={(event) => updateReward(index, { progressionKey: event.target.value })}
+                                fullWidth
+                                size="small"
+                                displayEmpty
+                              >
+                                <MenuItem value="" disabled>Select progression</MenuItem>
+                                {progressions.map((progression) => (
+                                  <MenuItem key={progression.id} value={progression.key}>
+                                    {progression.name} · {progression.key}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </Grid>
+                          )}
+                          {reward.rewardType === "ENTITLEMENT" && (
+                            <Grid size={{ xs: 12, sm: 4 }}>
+                              <TextField
+                                label="Entitlement key"
+                                value={reward.targetKey}
+                                onChange={(event) => updateReward(index, { targetKey: event.target.value })}
+                                fullWidth
+                                size="small"
+                              />
+                            </Grid>
+                          )}
+                          {(reward.rewardType === "CURRENCY" || reward.rewardType === "PROGRESSION_POINTS") && (
+                            <Grid size={{ xs: 12, sm: 4 }}>
+                              <TextField
+                                label={reward.rewardType === "CURRENCY" ? "Amount" : "Points"}
+                                value={reward.amount}
+                                onChange={(event) => updateReward(index, { amount: event.target.value })}
+                                type="number"
+                                inputProps={{ min: 1, step: 1 }}
+                                fullWidth
+                                size="small"
+                              />
+                            </Grid>
+                          )}
+                          {reward.rewardType === "ASSET" && (
+                            <Grid size={{ xs: 12, sm: 4 }}>
+                              <TextField
+                                label="Quantity"
+                                value={reward.quantity}
+                                onChange={(event) => updateReward(index, { quantity: event.target.value })}
+                                type="number"
+                                inputProps={{ min: 1, step: 1 }}
+                                fullWidth
+                                size="small"
+                              />
+                            </Grid>
+                          )}
+                          <Grid size={{ xs: 12, sm: 1 }}>
+                            <Button
+                              color="error"
+                              onClick={() => setRewards((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                              aria-label="Remove reward"
+                              fullWidth
+                            >
+                              <DeleteOutlineRoundedIcon />
+                            </Button>
+                          </Grid>
+                        </Grid>
+                      </Card>
+                    );
+                  })}
+                </Stack>
               </Grid>
             </Grid>
           </Stack>
@@ -629,6 +981,7 @@ export function CommerceView() {
   const [inventory, setInventory] = useState<CommerceInventoryItem[]>([]);
   const [purchases, setPurchases] = useState<CommercePurchase[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyDefinition[]>([]);
+  const [progressions, setProgressions] = useState<ProgressionDefinition[]>([]);
   const [catalogDialog, setCatalogDialog] = useState<
     CommerceCatalog | null | false
   >(false);
@@ -662,10 +1015,11 @@ export function CommerceView() {
         ),
         api<CommercePurchase[]>("/commerce/purchases"),
         api<CurrencyDefinition[]>("/economy/currencies"),
+        api<ProgressionDefinition[]>("/progressions?includeInactive=true"),
       ]);
 
       const errors: string[] = [];
-      const [catalogResult, assetResult, inventoryResult, purchaseResult, currencyResult] = results;
+      const [catalogResult, assetResult, inventoryResult, purchaseResult, currencyResult, progressionResult] = results;
       if (catalogResult.status === "fulfilled") setCatalogs(catalogResult.value);
       else errors.push(catalogResult.reason instanceof Error ? catalogResult.reason.message : "Unable to load catalogs");
       if (assetResult.status === "fulfilled") setAssets(assetResult.value);
@@ -676,6 +1030,8 @@ export function CommerceView() {
       else errors.push(purchaseResult.reason instanceof Error ? purchaseResult.reason.message : "Unable to load purchases");
       if (currencyResult.status === "fulfilled") setCurrencies(currencyResult.value);
       else errors.push(currencyResult.reason instanceof Error ? currencyResult.reason.message : "Unable to load currencies");
+      if (progressionResult.status === "fulfilled") setProgressions(progressionResult.value);
+      else errors.push(progressionResult.reason instanceof Error ? progressionResult.reason.message : "Unable to load progressions");
       setError(errors.join(" · "));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load commerce data");
@@ -1109,6 +1465,7 @@ export function CommerceView() {
           catalogs={catalogs}
           assets={assets}
           currencies={currencies}
+          progressions={progressions}
           onClose={() => setItemDialog(false)}
           onSaved={closeAndReload}
         />
