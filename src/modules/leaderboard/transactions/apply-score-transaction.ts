@@ -40,13 +40,38 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
     if (!season) throw new ConflictException("The leaderboard has no active season")
 
     const member = await this.resolveMember(transaction, board.memberType, input)
-    const scope = `leaderboard-score:${board.id}:${season.id}:${member.memberKey}`
+    // IdempotencyKey.scope is limited to 100 characters. UUIDs for the board,
+    // season, and member do not fit when concatenated, and that previously
+    // caused the admin score endpoint to fail before it could write a score.
+    // The source id is the caller's idempotency identity, so the board scope
+    // is sufficient and deliberately keeps the value bounded.
+    const scope = `leaderboard-score:${board.id}`
     const requestHash = createHash("sha256").update(JSON.stringify({ boardId: board.id, seasonId: season.id, memberKey: member.memberKey, delta: input.delta.toString(), sourceId, sourceType: input.sourceType, metadata: input.metadata ?? null })).digest("hex")
-    const idempotency = await transaction.idempotencyKey.upsert({ where: { scope_key: { scope, key: sourceId } }, create: { scope, key: sourceId, requestHash, status: "PROCESSING" }, update: {} })
+    let idempotency = await transaction.idempotencyKey.findUnique({ where: { scope_key: { scope, key: sourceId } } })
+    if (!idempotency) {
+      try {
+        idempotency = await transaction.idempotencyKey.create({ data: { scope, key: sourceId, requestHash, status: "PROCESSING" } })
+      } catch (error) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error
+        idempotency = await transaction.idempotencyKey.findUniqueOrThrow({ where: { scope_key: { scope, key: sourceId } } })
+      }
+    }
     if (idempotency.requestHash !== requestHash) throw new ConflictException("The source id was already used for a different leaderboard score")
     if (idempotency.status === "COMPLETED" && idempotency.responseJson) return idempotency.responseJson
 
-    let entry = await transaction.leaderboardEntry.upsert({ where: { leaderboardId_seasonId_memberKey: { leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey } }, create: { leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey, playerId: member.playerId, score: 0n, metadata: member.metadata as Prisma.InputJsonValue | undefined }, update: {} })
+    // Do not rely on Prisma's generated ON CONFLICT target here. Older
+    // Railway installations may have the Phase 4 table but be missing its
+    // generated unique index; the repair migration restores it, while this
+    // read/create path keeps the endpoint recoverable during rollout.
+    let entry = await transaction.leaderboardEntry.findUnique({ where: { leaderboardId_seasonId_memberKey: { leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey } } })
+    if (!entry) {
+      try {
+        entry = await transaction.leaderboardEntry.create({ data: { leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey, playerId: member.playerId, score: 0n, metadata: member.metadata as Prisma.InputJsonValue | undefined } })
+      } catch (error) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error
+        entry = await transaction.leaderboardEntry.findUniqueOrThrow({ where: { leaderboardId_seasonId_memberKey: { leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey } } })
+      }
+    }
     await transaction.$queryRaw`SELECT "id" FROM "LeaderboardEntry" WHERE "id" = ${entry.id} FOR UPDATE`
     entry = await transaction.leaderboardEntry.findUniqueOrThrow({ where: { id: entry.id } })
     const existingEvent = await transaction.leaderboardScoreEvent.findFirst({ where: { entryId: entry.id, sourceType: input.sourceType, sourceId } })

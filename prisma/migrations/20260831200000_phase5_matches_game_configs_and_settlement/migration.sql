@@ -201,6 +201,14 @@ CREATE INDEX "PlayerGameStats_gameDefinitionId_totalScore_idx" ON "PlayerGameSta
 CREATE INDEX "OutboxEvent_status_availableAt_idx" ON "OutboxEvent"("status", "availableAt");
 CREATE INDEX "OutboxEvent_aggregateType_aggregateId_idx" ON "OutboxEvent"("aggregateType", "aggregateId");
 
+-- Repair guards for installations where the Phase 4 tables exist but one of
+-- their Prisma-generated unique indexes was not created successfully. These
+-- indexes are also required by the leaderboard upsert/rebuild paths.
+CREATE UNIQUE INDEX IF NOT EXISTS "LeaderboardEntry_leaderboardId_seasonId_memberKey_key"
+  ON "LeaderboardEntry"("leaderboardId", "seasonId", "memberKey");
+CREATE UNIQUE INDEX IF NOT EXISTS "IdempotencyKey_scope_key_key"
+  ON "IdempotencyKey"("scope", "key");
+
 ALTER TABLE "GameConfig" ADD CONSTRAINT "GameConfig_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "Match" ADD CONSTRAINT "Match_gameDefinitionId_fkey" FOREIGN KEY ("gameDefinitionId") REFERENCES "GameDefinition"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "Match" ADD CONSTRAINT "Match_gameConfigId_fkey" FOREIGN KEY ("gameConfigId") REFERENCES "GameConfig"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -233,5 +241,8 @@ ON CONFLICT ("key") DO NOTHING;
 
 INSERT INTO "GameConfig" ("gameDefinitionId", "mainProgressionKey", "eloProgressionKey", "rewardCurrencyCode", "scoreMultiplierForXp", "maxEloDelta", "soloEloScoreDivisor", "soloEloMaxDelta", "winnerBaseReward", "loserBaseReward", "drawReward", "scoreRewardDivisor", "scoreRewardCap", "winnerRewardBonusMax", "loserRewardBonusMax", "multiplayerRewardReference", "correctAnswerPoints", "wrongAnswerPenaltyPercent", "maxAnswerTimeSeconds", "maxMatchDurationSeconds", "maxQuestions", "rankingEloMultiplier", "rankingLevelMultiplier", "rankingCoinMultiplier", "settings", "updatedAt")
 SELECT "id", 'main', 'elo', 'MCN', 1.0, 500, 100, 200, 300, 100, 250, 10, 200, 200, 100, 1000, '{"1":100,"2":120,"3":150,"4":180,"5":200}'::jsonb, 50, 30, 30, 10, 1.5, 1.5, 1.5, '{"leaderboardKeys":{"playerWeekly":"players_weekly","playerMonthly":"players_monthly","countryWeekly":"countryweekly","countryMonthly":"countrymonthly"}}'::jsonb, CURRENT_TIMESTAMP
-FROM "GameDefinition"
-ON CONFLICT ("gameDefinitionId") DO NOTHING;
+FROM "GameDefinition" definition
+WHERE NOT EXISTS (
+  SELECT 1 FROM "GameConfig" config
+  WHERE config."gameDefinitionId" = definition."id" AND config."version" = 1
+);

@@ -22,6 +22,19 @@ while :; do
 
   printf '%s\n' "$output" >&2
 
+  # The first Phase 5 migration shipped with an invalid conflict target for
+  # versioned GameConfig rows. PostgreSQL rolls that migration back, but
+  # Prisma keeps its failed marker and refuses every later deploy until it is
+  # explicitly resolved. Recover only this known, transactional failure; all
+  # other migration-content errors remain fatal.
+  if printf '%s' "$output" | grep -q '20260831200000_phase5_matches_game_configs_and_settlement' \
+    && (printf '%s' "$output" | grep -q '42P10' || printf '%s' "$output" | grep -q 'P3009'); then
+    echo "resolving the known rolled-back Phase 5 migration failure" >&2
+    npx prisma migrate resolve --rolled-back 20260831200000_phase5_matches_game_configs_and_settlement
+    attempt=$((attempt + 1))
+    continue
+  fi
+
   if ! printf '%s' "$output" | grep -q 'P1001'; then
     exit 1
   fi
