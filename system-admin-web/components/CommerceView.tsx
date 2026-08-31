@@ -30,6 +30,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { api } from "../lib/api";
+import { UserSelector, type SelectableUser } from "./UserSelector";
 import type {
   CommerceAsset,
   CommerceCatalog,
@@ -498,6 +499,7 @@ function InventoryDialog({
   onSaved: () => void;
 }) {
   const [error, setError] = useState("");
+  const [selectedUser, setSelectedUser] = useState<SelectableUser | null>(null);
   return (
     <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
       <DialogTitle>
@@ -509,7 +511,9 @@ function InventoryDialog({
           const form = event.currentTarget;
           try {
             setError("");
-            const userId = field(form, "userId");
+            if (!selectedUser)
+              throw new Error("Select a player before continuing");
+            const userId = selectedUser.id;
             await api(`/users/${userId}/commerce/inventory/${action}`, {
               method: "POST",
               body: JSON.stringify({
@@ -532,12 +536,12 @@ function InventoryDialog({
         <DialogContent>
           <Stack spacing={2}>
             {error && <Typography color="error.main">{error}</Typography>}
-            <TextField
-              name="userId"
-              label="Player UUID"
-              defaultValue={initial?.userId ?? ""}
-              fullWidth
+            <UserSelector
+              value={selectedUser}
+              onChange={setSelectedUser}
+              initialUserId={initial?.userId}
               required
+              label="Player"
             />
             <Select
               name="assetKey"
@@ -616,7 +620,12 @@ export function CommerceView() {
   const [inventoryDialog, setInventoryDialog] = useState<
     | {
         action: "grant" | "revoke";
-        initial?: { userId?: string; assetKey?: string; variationKey?: string; quantity?: number };
+        initial?: {
+          userId?: string;
+          assetKey?: string;
+          variationKey?: string;
+          quantity?: number;
+        };
       }
     | false
   >(false);
@@ -974,7 +983,8 @@ export function CommerceView() {
                             initial: {
                               userId: row.userId,
                               assetKey: row.assetDefinition.key,
-                              variationKey: row.assetVariation?.key || undefined,
+                              variationKey:
+                                row.assetVariation?.key || undefined,
                               quantity: row.quantity,
                             },
                           })
