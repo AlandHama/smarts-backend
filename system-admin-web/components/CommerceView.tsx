@@ -62,10 +62,12 @@ const json = (value: string, label: string) => {
 
 function AssetDialog({
   asset,
+  assets,
   onClose,
   onSaved,
 }: {
   asset?: CommerceAsset;
+  assets: CommerceAsset[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -85,8 +87,18 @@ function AssetDialog({
           try {
             const form = event.currentTarget;
             setError("");
+            const key = stableKey(field(form, "key"));
+            const duplicate = assets.find(
+              (candidate) =>
+                candidate.id !== asset?.id && candidate.key === key,
+            );
+            if (duplicate) {
+              throw new Error(
+                `An asset with the key "${key}" already exists. Choose a different stable key or edit "${duplicate.name}".`,
+              );
+            }
             const payload = {
-              key: stableKey(field(form, "key")),
+              key,
               name: field(form, "name"),
               assetType: field(form, "assetType"),
               ownershipPolicy: field(form, "ownershipPolicy"),
@@ -1083,6 +1095,7 @@ export function CommerceView() {
       {assetDialog !== false && (
         <AssetDialog
           asset={assetDialog || undefined}
+          assets={assets}
           onClose={() => setAssetDialog(false)}
           onSaved={closeAndReload}
         />
