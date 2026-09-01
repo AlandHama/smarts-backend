@@ -56,6 +56,12 @@ export class SystemAdminController {
   listFriends(@Query() query: AdminFriendsQueryDto) { return this.systemAdminService.listFriends(query) }
 
   @UseGuards(SystemAdminGuard)
+  @Post("api/friends/:userId/:friendId")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Create an accepted friendship between two players" })
+  makeFriends(@Param("userId", ParseUUIDPipe) userId: string, @Param("friendId", ParseUUIDPipe) friendId: string) { return this.systemAdminService.makeFriends(userId, friendId) }
+
+  @UseGuards(SystemAdminGuard)
   @Delete("api/friends/:userId/:friendId")
   @ApiBearerAuth("access-token")
   removeFriend(@Param("userId", ParseUUIDPipe) userId: string, @Param("friendId", ParseUUIDPipe) friendId: string) { return this.systemAdminService.removeFriend(userId, friendId) }

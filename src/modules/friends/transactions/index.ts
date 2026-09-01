@@ -1,6 +1,7 @@
 export * from "./accept-friend-request-transaction"
 export * from "./block-player-transaction"
 export * from "./create-friend-request-transaction"
+export * from "./create-friendship-transaction"
 export * from "./heartbeat-presence-transaction"
 export * from "./remove-friendship-transaction"
 export * from "./respond-friend-request-transaction"

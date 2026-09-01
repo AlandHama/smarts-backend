@@ -6,6 +6,7 @@ import { AdminFriendsQueryDto, FriendsQueryDto, PlayerLookupQueryDto } from "./d
 import { AcceptFriendRequestTransaction } from "./transactions/accept-friend-request-transaction"
 import { BlockPlayerTransaction } from "./transactions/block-player-transaction"
 import { CreateFriendRequestTransaction } from "./transactions/create-friend-request-transaction"
+import { CreateFriendshipTransaction } from "./transactions/create-friendship-transaction"
 import { HeartbeatPresenceTransaction } from "./transactions/heartbeat-presence-transaction"
 import { RemoveFriendshipTransaction } from "./transactions/remove-friendship-transaction"
 import { RespondFriendRequestTransaction } from "./transactions/respond-friend-request-transaction"
@@ -18,6 +19,7 @@ export class FriendsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly createFriendRequestTransaction: CreateFriendRequestTransaction,
+    private readonly createFriendshipTransaction: CreateFriendshipTransaction,
     private readonly acceptFriendRequestTransaction: AcceptFriendRequestTransaction,
     private readonly respondFriendRequestTransaction: RespondFriendRequestTransaction,
     private readonly removeFriendshipTransaction: RemoveFriendshipTransaction,
@@ -46,6 +48,7 @@ export class FriendsService {
   }
 
   requestFriend(requesterId: string, addresseeId: string) { return this.createFriendRequestTransaction.run({ requesterId, addresseeId }).then(() => ({ message: "Friend request sent" })) }
+  makeFriends(userId: string, friendId: string) { return this.createFriendshipTransaction.run({ userId, friendId }) }
   acceptFriendRequest(actorId: string, requesterId: string) { return this.acceptFriendRequestTransaction.run({ actorId, requesterId, addresseeId: actorId }).then(() => ({ message: "Friend request accepted" })) }
   declineFriendRequest(actorId: string, requesterId: string) { return this.respondFriendRequestTransaction.run({ actorId, requesterId, addresseeId: actorId, response: "DECLINED" }).then(() => ({ message: "Friend request declined" })) }
   cancelFriendRequest(actorId: string, addresseeId: string) { return this.respondFriendRequestTransaction.run({ actorId, requesterId: actorId, addresseeId, response: "CANCELED" }).then(() => ({ message: "Friend request canceled" })) }

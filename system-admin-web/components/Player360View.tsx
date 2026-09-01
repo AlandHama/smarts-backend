@@ -41,6 +41,7 @@ import Typography from '@mui/material/Typography';
 import { api } from '../lib/api';
 import type { Player360Data } from '../lib/types';
 import { PlayerDetailsDialog } from './PlayerDetailsDialog';
+import { AdminFriendDialog } from './AdminFriendDialog';
 import { PlayerFileUploadDialog, PlayerStorageDialog, type StorageEntry } from './PlayerStorageDialogs';
 
 const date = (value?: string | null) => value ? new Date(value).toLocaleString() : '—';
@@ -65,6 +66,7 @@ export function Player360View({ userId, onBack }: { userId: string; onBack: () =
   const [storageEntry, setStorageEntry] = useState<StorageEntry | undefined>(undefined);
   const [storageDialogOpen, setStorageDialogOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [friendsDialogOpen, setFriendsDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   const load = async () => {
@@ -128,6 +130,7 @@ export function Player360View({ userId, onBack }: { userId: string; onBack: () =
         <Button variant="outlined" startIcon={<EditRoundedIcon />} onClick={() => openEditor()}>Edit profile</Button>
         <Button variant="outlined" startIcon={<AccountBalanceWalletRoundedIcon />} onClick={() => openEditor(2)}>Adjust wallet</Button>
         <Button variant="outlined" startIcon={<TrendingUpRoundedIcon />} onClick={() => openEditor(1)}>Adjust progression</Button>
+        <Button variant="outlined" startIcon={<GroupRoundedIcon />} onClick={() => setFriendsDialogOpen(true)}>Manage friends</Button>
         <Button variant="outlined" color={user.status === 'ACTIVE' ? 'error' : 'success'} startIcon={user.status === 'ACTIVE' ? <LockRoundedIcon /> : <LockOpenRoundedIcon />} disabled={actionLoading} onClick={toggleStatus}>{user.status === 'ACTIVE' ? 'Ban account' : 'Activate account'}</Button>
       </Stack>
     </Stack>
@@ -195,6 +198,7 @@ export function Player360View({ userId, onBack }: { userId: string; onBack: () =
     <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ md: 'center' }} sx={{ pb: 2 }}><Typography variant="caption" color="text.secondary">Showing up to 200 recent records per activity stream. UUID: {user.id}</Typography><Button startIcon={<ArrowBackRoundedIcon />} onClick={onBack}>Back to players</Button></Stack>
     {storageDialogOpen && <PlayerStorageDialog userId={user.id} entry={storageEntry} onClose={() => setStorageDialogOpen(false)} onSaved={() => { setStorageDialogOpen(false); void load(); }} />}
     {uploadOpen && <PlayerFileUploadDialog userId={user.id} onClose={() => setUploadOpen(false)} onSaved={() => { setUploadOpen(false); void load(); }} />}
+    {friendsDialogOpen && <AdminFriendDialog fixedUser={{ id: user.id, username: user.username, email: user.email, profile: user.profile ? { displayName: user.profile.displayName } : null }} existingFriends={data.friends.map((friend) => ({ id: friend.playerId, name: friend.name }))} onClose={() => setFriendsDialogOpen(false)} onSaved={() => { setFriendsDialogOpen(false); void load(); }} />}
     {editing && <PlayerDetailsDialog user={user} initialTab={editingTab} onClose={() => setEditing(false)} onSaved={load} onRegistered={() => undefined} />}
   </Stack>;
 }

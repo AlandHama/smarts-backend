@@ -333,6 +333,7 @@ export class SystemAdminService implements OnModuleInit {
   listFeedback(query: FeedbackQueryDto) { return this.storageService.listFeedback(query) }
   updateFeedback(id: string, dto: UpdateFeedbackDto, adminId: string) { return this.storageService.updateFeedback(id, dto, adminId) }
   listFriends(query: AdminFriendsQueryDto) { return this.friendsService.adminList(query) }
+  makeFriends(userId: string, friendId: string) { return this.friendsService.makeFriends(userId, friendId) }
   removeFriend(userId: string, friendId: string) { return this.friendsService.removeFriend(userId, friendId) }
   blockFriend(userId: string, friendId: string) { return this.friendsService.blockPlayer(userId, friendId) }
   unblockFriend(userId: string, friendId: string) { return this.friendsService.unblockPlayer(userId, friendId) }

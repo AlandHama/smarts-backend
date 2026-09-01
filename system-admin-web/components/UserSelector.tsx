@@ -23,12 +23,14 @@ export function UserSelector({
   initialUserId,
   label = "Select player",
   required = false,
+  disabled = false,
 }: {
   value: SelectableUser | null;
   onChange: (user: SelectableUser | null) => void;
   initialUserId?: string;
   label?: string;
   required?: boolean;
+  disabled?: boolean;
 }) {
   const [options, setOptions] = useState<SelectableUser[]>(
     value ? [value] : [],
@@ -63,6 +65,7 @@ export function UserSelector({
   return (
     <Autocomplete
       fullWidth
+      disabled={disabled}
       options={options}
       value={value}
       loading={loading}

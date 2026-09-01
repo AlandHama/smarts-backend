@@ -33,6 +33,14 @@ export default function AdminPage() {
     api<any>('/overview').then(() => setAdmin({ username: 'Administrator' })).catch(() => clearSession()).finally(() => setChecking(false));
   }, []);
 
+  useEffect(() => {
+    if (!admin) return;
+    const heartbeat = () => { void api('/presence/heartbeat').catch(() => undefined); };
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 2 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [admin]);
+
   const signIn = async (identifier: string, password: string) => {
     const response = await login(identifier, password);
     setAdmin(response.user);
