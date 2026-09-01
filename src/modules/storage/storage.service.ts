@@ -54,7 +54,7 @@ export class StorageService {
         visibility,
         metadata: actorId ? { actorId } : undefined,
       } })
-      return this.serialize({ ...stored, url: visibility === StoredFileVisibility.PUBLIC ? this.publicUrl(key) : await this.downloadUrl(stored.id, userId, true) })
+      return this.serialize({ ...stored, url: visibility === StoredFileVisibility.PUBLIC ? this.stablePublicFileUrl(stored.id) : await this.downloadUrl(stored.id, userId, true) })
     } catch (error) {
       await this.deleteObject(key).catch(() => undefined)
       throw error
@@ -65,8 +65,29 @@ export class StorageService {
     const file = await this.prisma.storedFile.findFirst({ where: { id: fileId, status: StoredFileStatus.ACTIVE } })
     if (!file) throw new NotFoundException("File not found")
     if (!allowAdmin && file.userId !== userId) throw new NotFoundException("File not found")
-    if (file.visibility === StoredFileVisibility.PUBLIC) return this.publicUrl(file.objectKey)
     return getSignedUrl(this.clientForStorage(), new GetObjectCommand({ Bucket: this.required("S3_BUCKET"), Key: file.objectKey }), { expiresIn: 900 })
+  }
+
+  async publicDownloadUrl(fileId: string) {
+    const file = await this.prisma.storedFile.findFirst({ where: { id: fileId, status: StoredFileStatus.ACTIVE, visibility: StoredFileVisibility.PUBLIC } })
+    if (!file) throw new NotFoundException("Public file not found")
+    return getSignedUrl(this.clientForStorage(), new GetObjectCommand({ Bucket: this.required("S3_BUCKET"), Key: file.objectKey }), { expiresIn: 900 })
+  }
+
+  stablePublicFileUrl(fileId: string) {
+    const configuredBase = process.env.PUBLIC_API_URL?.trim() || (process.env.RAILWAY_PUBLIC_DOMAIN?.trim() ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN.trim()}` : "")
+    return `${configuredBase.replace(/\/$/, "")}/storage/public-files/${fileId}`
+  }
+
+  async normalizePublicImageUrls<T>(value: T): Promise<T> {
+    const files = await this.prisma.storedFile.findMany({ where: { status: StoredFileStatus.ACTIVE, visibility: StoredFileVisibility.PUBLIC }, select: { id: true, objectKey: true }, take: 5000 })
+    const replacements = new Map(files.map((file) => [this.publicUrl(file.objectKey), this.stablePublicFileUrl(file.id)]))
+    const visit = (item: unknown): unknown => {
+      if (Array.isArray(item)) return item.map(visit)
+      if (!item || typeof item !== "object") return item
+      return Object.fromEntries(Object.entries(item).map(([key, child]) => [key, (key === "imageUrl" && typeof child === "string" ? replacements.get(child) ?? child : key === "imageUrls" && Array.isArray(child) ? child.map((url) => typeof url === "string" ? replacements.get(url) ?? url : url) : visit(child))]))
+    }
+    return visit(value) as T
   }
 
   async delete(fileId: string, userId?: string, allowAdmin = false) {

@@ -156,7 +156,8 @@ npm run dev
 | `S3_BUCKET` | Phase 7 | Bucket used for player and commerce files |
 | `S3_ACCESS_KEY_ID` | Phase 7 | Storage access key; configure only in Railway variables |
 | `S3_SECRET_ACCESS_KEY` | Phase 7 | Storage secret; configure only in Railway variables |
-| `S3_PUBLIC_BASE_URL` | recommended | Public base URL for immutable catalog/profile images; defaults to endpoint/bucket |
+| `S3_PUBLIC_BASE_URL` | optional | Only use if the bucket is intentionally public; private buckets are supported |
+| `PUBLIC_API_URL` | recommended | Absolute Railway API URL used for stable public media links, for example `https://api-production-xxxx.up.railway.app` |
 
 Phase 7 storage uses organized object keys such as `player-avatar/{userId}/{uuid}.png`,
 `commerce-asset/admin/{uuid}.png`, and `catalog-item/admin/{uuid}.png`. Private

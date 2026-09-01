@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, Req, UploadedFile, UseInterceptors } from "@nestjs/common"
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, Redirect, UploadedFile, UseInterceptors } from "@nestjs/common"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
+import { SkipAuth } from "../../common/decorators/skip-auth.decorator"
 import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { CreateFeedbackDto, PublicStorageLookupDto, UpdatePlayerStorageDto, UploadFileDto } from "./dtos/storage.dto"
 import { StorageService } from "./storage.service"
@@ -43,6 +44,11 @@ export class StorageController {
 
   @Delete("players/me/files/:fileId")
   deletePlayerFile(@Param("fileId", ParseUUIDPipe) fileId: string, @CurrentUser() user: UserResponseDto) { return this.storage.delete(fileId, user.id) }
+
+  @Get("storage/public-files/:fileId")
+  @SkipAuth()
+  @Redirect()
+  async publicFile(@Param("fileId", ParseUUIDPipe) fileId: string) { return { url: await this.storage.publicDownloadUrl(fileId) } }
 
   @Get("feedback/categories")
   categories(@Query("entity") entity?: string) { return this.storage.feedbackCategories(entity as any) }

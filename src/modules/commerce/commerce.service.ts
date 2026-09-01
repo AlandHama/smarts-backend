@@ -7,6 +7,7 @@ import { CreateCatalogItemTransaction } from "./transactions/create-catalog-item
 import { CreatePurchaseTransaction } from "./transactions/create-purchase-transaction"
 import { GrantInventoryItemTransaction } from "./transactions/grant-inventory-item-transaction"
 import { RevokeInventoryItemTransaction } from "./transactions/revoke-inventory-item-transaction"
+import { StorageService } from "../storage/storage.service"
 
 @Injectable()
 export class CommerceService {
@@ -16,16 +17,17 @@ export class CommerceService {
     private readonly createPurchaseTransaction: CreatePurchaseTransaction,
     private readonly grantInventoryTransaction: GrantInventoryItemTransaction,
     private readonly revokeInventoryTransaction: RevokeInventoryItemTransaction,
+    private readonly storageService: StorageService,
   ) {}
 
   async listCatalog(key: string, includeInactive = false) {
     const now = new Date()
     const catalog = await this.prisma.catalog.findUnique({ where: { key: key.trim().toLowerCase() }, include: { items: { where: includeInactive ? undefined : { active: true, purchasable: true, AND: [{ OR: [{ startsAt: null }, { startsAt: { lte: now } }] }, { OR: [{ endsAt: null }, { endsAt: { gt: now } }] }] }, orderBy: { name: "asc" }, take: 500, include: this.itemInclude() } } })
     if (!catalog || (!includeInactive && (!catalog.active || !this.isAvailable(catalog.startsAt, catalog.endsAt)))) throw new NotFoundException("Catalog not found")
-    return this.serialize(catalog)
+    return this.storageService.normalizePublicImageUrls(this.serialize(catalog))
   }
 
-  listCatalogs(includeInactive = false) { return this.prisma.catalog.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { key: "asc" }, take: 100, include: { items: { orderBy: { name: "asc" }, take: 500, include: this.itemInclude() } } }).then((value) => this.serialize(value)) }
+  listCatalogs(includeInactive = false) { return this.prisma.catalog.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { key: "asc" }, take: 100, include: { items: { orderBy: { name: "asc" }, take: 500, include: this.itemInclude() } } }).then((value) => this.storageService.normalizePublicImageUrls(this.serialize(value))) }
 
   async createCatalog(dto: CreateCatalogDto) {
     return this.prisma.$transaction(async (tx) => this.serialize(await tx.catalog.create({ data: { key: dto.key.trim().toLowerCase(), name: dto.name.trim(), description: dto.description, active: dto.active ?? true, startsAt: this.date(dto.startsAt), endsAt: this.date(dto.endsAt), metadata: dto.metadata as Prisma.InputJsonValue | undefined } })))
@@ -35,7 +37,7 @@ export class CommerceService {
     return this.prisma.$transaction(async (tx) => this.serialize(await tx.catalog.update({ where: { id }, data: { ...(dto.key === undefined ? {} : { key: dto.key.trim().toLowerCase() }), ...(dto.name === undefined ? {} : { name: dto.name.trim() }), ...(dto.description === undefined ? {} : { description: dto.description }), ...(dto.active === undefined ? {} : { active: dto.active }), ...(dto.startsAt === undefined ? {} : { startsAt: this.date(dto.startsAt) }), ...(dto.endsAt === undefined ? {} : { endsAt: this.date(dto.endsAt) }), ...(dto.metadata === undefined ? {} : { metadata: dto.metadata as Prisma.InputJsonValue }) } })))
   }
 
-  async listAssets(includeInactive = true) { return this.prisma.assetDefinition.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { key: "asc" }, take: 500, include: { variations: { orderBy: { key: "asc" }, take: 100 } } }).then((value) => this.serialize(value)) }
+  async listAssets(includeInactive = true) { return this.prisma.assetDefinition.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { key: "asc" }, take: 500, include: { variations: { orderBy: { key: "asc" }, take: 100 } } }).then((value) => this.storageService.normalizePublicImageUrls(this.serialize(value))) }
 
   async createAsset(dto: CreateAssetDto) {
     const key = this.assetKey(dto.key)

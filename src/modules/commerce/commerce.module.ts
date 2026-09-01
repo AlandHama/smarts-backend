@@ -4,6 +4,7 @@ import { DatabaseModule } from "../../database/database.module"
 import { EconomyModule } from "../economy/economy.module"
 import { ProgressionModule } from "../progression/progression.module"
 import { AuthModule } from "../auth/auth.module"
+import { StorageModule } from "../storage/storage.module"
 import { CommerceController } from "./commerce.controller"
 import { CommerceService } from "./commerce.service"
 import { CreateCatalogItemTransaction } from "./transactions/create-catalog-item-transaction"
@@ -12,7 +13,7 @@ import { GrantInventoryItemTransaction } from "./transactions/grant-inventory-it
 import { RevokeInventoryItemTransaction } from "./transactions/revoke-inventory-item-transaction"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, ProgressionModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, ProgressionModule, StorageModule],
   controllers: [CommerceController],
   providers: [CommerceService, CreateCatalogItemTransaction, CreatePurchaseTransaction, GrantInventoryItemTransaction, RevokeInventoryItemTransaction],
   exports: [CommerceService, CreateCatalogItemTransaction, CreatePurchaseTransaction, GrantInventoryItemTransaction, RevokeInventoryItemTransaction],
