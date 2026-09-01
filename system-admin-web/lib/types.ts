@@ -236,6 +236,10 @@ export interface Player360Data {
   storageItems: Array<{ id: string; key: string; value: string; visibility: string; valueType: string; version: number; updatedAt: string }>;
   files: Array<{ id: string; objectKey: string; originalName: string; contentType: string; byteSize: string; checksum: string | null; purpose: string; visibility: string; status: string; createdAt: string; deletedAt: string | null }>;
   feedback: Array<{ id: string; entity: string; description: string; status: string; adminNote: string | null; createdAt: string; category: { key: string; name: string } }>;
+  friends: Array<{ id: string; playerId: string; username: string; name: string; online: boolean; lastSeen: string | null; acceptedAt: string; avatarUrl: string | null }>;
+  incomingRequests: Array<{ id: string; playerId: string; username: string; name: string; createdAt: string }>;
+  outgoingRequests: Array<{ id: string; playerId: string; username: string; name: string; createdAt: string }>;
+  presence: { online: boolean; lastSeenAt: string | null; lastHeartbeatAt: string | null };
 }
 
 export interface AdminSession {

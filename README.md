@@ -167,6 +167,16 @@ GitHub. The mobile storage contract is `GET/POST /players/me/storage`, file
 uploads are `POST /players/me/files`, and feedback is `GET
 /feedback/categories/:entity` plus `POST /feedback`.
 
+Phase 8 social APIs are `GET /friends`, `GET /friends/incoming`,
+`GET /friends/outgoing`, `GET /friends/lookup`, and the request, accept,
+decline, cancel, remove, block, and unblock routes under `/friends`. Presence
+is server-owned: the mobile client sends `POST /presence/heartbeat`, reads
+`GET /presence/me`, and may read a friend's coarse presence through
+`GET /players/:userId/presence`. Online state is derived from the most recent
+server timestamp, not from player storage or a client-supplied time. The
+default online window is five minutes and can be changed with
+`PRESENCE_ONLINE_WINDOW_SECONDS` (30–3600 seconds).
+
 ## License
 
 MIT

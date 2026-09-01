@@ -18,9 +18,10 @@ import { LeaderboardModule } from "../leaderboard/leaderboard.module"
 import { GameModule } from "../game/game.module"
 import { CommerceModule } from "../commerce/commerce.module"
 import { StorageModule } from "../storage/storage.module"
+import { FriendsModule } from "../friends/friends.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,

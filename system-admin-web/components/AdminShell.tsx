@@ -13,6 +13,7 @@ import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import ForumRoundedIcon from '@mui/icons-material/ForumRounded';
 import FolderCopyRoundedIcon from '@mui/icons-material/FolderCopyRounded';
+import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -26,12 +27,13 @@ import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 
-export type AdminView = 'overview' | 'players' | 'player360' | 'sessions' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config' | 'storage' | 'feedback';
+export type AdminView = 'overview' | 'players' | 'player360' | 'sessions' | 'friends' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config' | 'storage' | 'feedback';
 
 const navigation = [
   { key: 'overview' as const, label: 'Overview', icon: <DashboardRoundedIcon /> },
   { key: 'players' as const, label: 'Players', icon: <GroupRoundedIcon /> },
   { key: 'sessions' as const, label: 'Sessions', icon: <DevicesRoundedIcon /> },
+  { key: 'friends' as const, label: 'Friends & presence', icon: <PeopleAltRoundedIcon /> },
   { key: 'progressions' as const, label: 'Progressions', icon: <SettingsSuggestRoundedIcon /> },
   { key: 'economy' as const, label: 'Economy', icon: <MonetizationOnRoundedIcon /> },
   { key: 'commerce' as const, label: 'Commerce', icon: <StorefrontRoundedIcon /> },

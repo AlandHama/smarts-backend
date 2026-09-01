@@ -29,6 +29,8 @@ import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutati
 import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UpdatePlayerStorageDto, UploadFileDto } from "../storage/dtos"
 import { StorageService } from "../storage/storage.service"
 import type { UploadedImage } from "../storage/types"
+import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
+import { FriendsService } from "../friends/friends.service"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -54,6 +56,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly terminateAdminSessionTransaction: TerminateAdminSessionTransaction,
     private readonly commerceService: CommerceService,
     private readonly storageService: StorageService,
+    private readonly friendsService: FriendsService,
   ) {}
 
   async onModuleInit() {
@@ -249,7 +252,8 @@ export class SystemAdminService implements OnModuleInit {
     const walletTransactions = user.wallet
       ? await this.prisma.walletTransaction.findMany({ where: { walletId: user.wallet.id }, orderBy: { createdAt: "desc" }, take: 500, include: { currency: { select: { code: true, name: true, kind: true } } } })
       : []
-    return this.serialize({ user: { ...user, wallet: user.wallet ? { ...user.wallet, transactions: walletTransactions } : null }, inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback })
+    const social = await this.friendsService.player360Social(userId)
+    return this.serialize({ user: { ...user, wallet: user.wallet ? { ...user.wallet, transactions: walletTransactions } : null }, inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback, ...social })
   }
 
   async updateUserProfile(userId: string, actorId: string, dto: UpdateUserProfileDto) {
@@ -328,6 +332,10 @@ export class SystemAdminService implements OnModuleInit {
   deleteFile(fileId: string) { return this.storageService.delete(fileId, undefined, true) }
   listFeedback(query: FeedbackQueryDto) { return this.storageService.listFeedback(query) }
   updateFeedback(id: string, dto: UpdateFeedbackDto, adminId: string) { return this.storageService.updateFeedback(id, dto, adminId) }
+  listFriends(query: AdminFriendsQueryDto) { return this.friendsService.adminList(query) }
+  removeFriend(userId: string, friendId: string) { return this.friendsService.removeFriend(userId, friendId) }
+  blockFriend(userId: string, friendId: string) { return this.friendsService.blockPlayer(userId, friendId) }
+  unblockFriend(userId: string, friendId: string) { return this.friendsService.unblockPlayer(userId, friendId) }
 
   private async getUser(userId: string, detailed = false) {
     const user = await this.prisma.user.findUnique({

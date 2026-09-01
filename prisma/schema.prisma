@@ -261,6 +261,13 @@ enum PlayerStorageValueType {
   URL
 }
 
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELED
+}
+
 model User {
   id                     String                  @id @default(uuid()) @db.Uuid
   username               String                  @unique @db.VarChar(50)
@@ -292,6 +299,13 @@ model User {
   storageItems           PlayerStorageItem[]
   files                  StoredFile[]
   feedback               PlayerFeedback[]
+  friendRequestsSent     FriendRequest[] @relation("FriendRequestRequester")
+  friendRequestsReceived FriendRequest[] @relation("FriendRequestAddressee")
+  friendships             Friendship[] @relation("FriendshipUser")
+  friendsOf               Friendship[] @relation("FriendshipFriend")
+  blocksCreated           FriendBlock[] @relation("FriendBlocker")
+  blockedBy               FriendBlock[] @relation("FriendBlocked")
+  presence                Presence?
 }
 
 model Session {
@@ -316,6 +330,61 @@ model Session {
   @@index([userId, tokenId])
   @@index([userId, sessionStatus])
   @@index([expiresAt])
+}
+
+model Presence {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @db.Uuid
+  lastHeartbeatAt  DateTime
+  lastSeenAt       DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([lastHeartbeatAt])
+  @@index([lastSeenAt])
+}
+
+model FriendRequest {
+  id           String             @id @default(uuid()) @db.Uuid
+  requesterId  String             @db.Uuid
+  addresseeId  String             @db.Uuid
+  status       FriendRequestStatus @default(PENDING)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  respondedAt  DateTime?
+  requester    User               @relation("FriendRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee    User               @relation("FriendRequestAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status, createdAt])
+  @@index([requesterId, status, createdAt])
+}
+
+model Friendship {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  friendId    String   @db.Uuid
+  acceptedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  user        User     @relation("FriendshipUser", fields: [userId], references: [id], onDelete: Cascade)
+  friend      User     @relation("FriendshipFriend", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@index([friendId])
+  @@index([userId, acceptedAt])
+}
+
+model FriendBlock {
+  id         String   @id @default(uuid()) @db.Uuid
+  blockerId  String   @db.Uuid
+  blockedId  String   @db.Uuid
+  createdAt  DateTime @default(now())
+  blocker    User     @relation("FriendBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked    User     @relation("FriendBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
 }
 
 model PlayerProfile {

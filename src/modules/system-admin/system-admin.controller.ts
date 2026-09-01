@@ -16,6 +16,7 @@ import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
 import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
 import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UpdatePlayerStorageDto, UploadFileDto } from "../storage/dtos"
 import type { UploadedImage } from "../storage/types"
+import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -47,6 +48,27 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List player storage entries and uploaded files" })
   listStorage(@Query() query: SystemAdminStorageQueryDto) { return this.systemAdminService.listStorage(query) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/friends")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List friendships, requests, and online presence" })
+  listFriends(@Query() query: AdminFriendsQueryDto) { return this.systemAdminService.listFriends(query) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/friends/:userId/:friendId")
+  @ApiBearerAuth("access-token")
+  removeFriend(@Param("userId", ParseUUIDPipe) userId: string, @Param("friendId", ParseUUIDPipe) friendId: string) { return this.systemAdminService.removeFriend(userId, friendId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/friends/:userId/:friendId/block")
+  @ApiBearerAuth("access-token")
+  blockFriend(@Param("userId", ParseUUIDPipe) userId: string, @Param("friendId", ParseUUIDPipe) friendId: string) { return this.systemAdminService.blockFriend(userId, friendId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/friends/:userId/:friendId/block")
+  @ApiBearerAuth("access-token")
+  unblockFriend(@Param("userId", ParseUUIDPipe) userId: string, @Param("friendId", ParseUUIDPipe) friendId: string) { return this.systemAdminService.unblockFriend(userId, friendId) }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/feedback")
