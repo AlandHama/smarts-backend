@@ -12,6 +12,7 @@ import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import ForumRoundedIcon from '@mui/icons-material/ForumRounded';
+import FolderCopyRoundedIcon from '@mui/icons-material/FolderCopyRounded';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -25,7 +26,7 @@ import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 
-export type AdminView = 'overview' | 'players' | 'player360' | 'sessions' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config' | 'feedback';
+export type AdminView = 'overview' | 'players' | 'player360' | 'sessions' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config' | 'storage' | 'feedback';
 
 const navigation = [
   { key: 'overview' as const, label: 'Overview', icon: <DashboardRoundedIcon /> },
@@ -34,6 +35,7 @@ const navigation = [
   { key: 'progressions' as const, label: 'Progressions', icon: <SettingsSuggestRoundedIcon /> },
   { key: 'economy' as const, label: 'Economy', icon: <MonetizationOnRoundedIcon /> },
   { key: 'commerce' as const, label: 'Commerce', icon: <StorefrontRoundedIcon /> },
+  { key: 'storage' as const, label: 'Storage & files', icon: <FolderCopyRoundedIcon /> },
   { key: 'leaderboards' as const, label: 'Leaderboards', icon: <LeaderboardRoundedIcon /> },
   { key: 'game-config' as const, label: 'Game config', icon: <TuneRoundedIcon /> },
   { key: 'feedback' as const, label: 'Feedback', icon: <ForumRoundedIcon /> },

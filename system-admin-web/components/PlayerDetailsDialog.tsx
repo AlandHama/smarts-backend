@@ -30,10 +30,10 @@ import type { AdminUser, WalletLedgerEntry } from '../lib/types';
 
 const valueOf = (form: HTMLFormElement, name: string) => String((form.elements.namedItem(name) as HTMLInputElement)?.value ?? '').trim();
 
-export function PlayerDetailsDialog({ user, registrationRole = 'PLAYER', onClose, onSaved, onRegistered }: { user: AdminUser | null; registrationRole?: 'PLAYER' | 'ADMIN'; onClose: () => void; onSaved: () => void; onRegistered: () => void }) {
+export function PlayerDetailsDialog({ user, registrationRole = 'PLAYER', initialTab = 0, onClose, onSaved, onRegistered }: { user: AdminUser | null; registrationRole?: 'PLAYER' | 'ADMIN'; initialTab?: number; onClose: () => void; onSaved: () => void; onRegistered: () => void }) {
   const [details, setDetails] = useState<AdminUser | null>(user);
   const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState(initialTab);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);

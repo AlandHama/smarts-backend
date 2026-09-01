@@ -26,7 +26,7 @@ import { GameService } from "../game/game.service"
 import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction"
 import { CommerceService } from "../commerce/commerce.service"
 import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
-import { FeedbackQueryDto, UpdateFeedbackDto, UploadFileDto } from "../storage/dtos"
+import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UpdatePlayerStorageDto, UploadFileDto } from "../storage/dtos"
 import { StorageService } from "../storage/storage.service"
 import type { UploadedImage } from "../storage/types"
 
@@ -318,6 +318,12 @@ export class SystemAdminService implements OnModuleInit {
   revokeCommerceInventory(userId: string, dto: InventoryMutationDto, actorId: string) { return this.commerceService.revokeInventory(userId, dto, actorId) }
   playerEntitlements(userId: string) { return this.commerceService.listPlayerEntitlements(userId) }
   uploadFile(file: UploadedImage | undefined, dto: UploadFileDto, actorId: string) { return this.storageService.upload(file, dto, undefined, actorId) }
+  listStorage(query: SystemAdminStorageQueryDto) { return this.storageService.listAdminStorage(query) }
+  updatePlayerStorage(userId: string, dto: UpdatePlayerStorageDto) { return this.storageService.updateStorage(userId, dto.payload) }
+  deletePlayerStorage(userId: string, key: string) { return this.storageService.deleteStorage(userId, key) }
+  uploadPlayerFile(file: UploadedImage | undefined, userId: string, dto: UploadFileDto, actorId: string) { return this.storageService.upload(file, dto, userId, actorId) }
+  playerFileUrl(fileId: string, userId: string) { return this.storageService.downloadUrl(fileId, userId, true) }
+  deletePlayerFile(fileId: string, userId: string) { return this.storageService.delete(fileId, userId, true) }
   fileUrl(fileId: string) { return this.storageService.downloadUrl(fileId, undefined, true) }
   deleteFile(fileId: string) { return this.storageService.delete(fileId, undefined, true) }
   listFeedback(query: FeedbackQueryDto) { return this.storageService.listFeedback(query) }

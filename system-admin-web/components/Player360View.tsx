@@ -19,6 +19,8 @@ import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import LockOpenRoundedIcon from '@mui/icons-material/LockOpenRounded';
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
 import FeedbackRoundedIcon from '@mui/icons-material/FeedbackRounded';
+import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
@@ -38,6 +40,7 @@ import Typography from '@mui/material/Typography';
 import { api } from '../lib/api';
 import type { Player360Data } from '../lib/types';
 import { PlayerDetailsDialog } from './PlayerDetailsDialog';
+import { PlayerFileUploadDialog, PlayerStorageDialog, type StorageEntry } from './PlayerStorageDialogs';
 
 const date = (value?: string | null) => value ? new Date(value).toLocaleString() : '—';
 const shortDate = (value?: string | null) => value ? new Date(value).toLocaleDateString() : '—';
@@ -57,6 +60,10 @@ export function Player360View({ userId, onBack }: { userId: string; onBack: () =
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [editingTab, setEditingTab] = useState(0);
+  const [storageEntry, setStorageEntry] = useState<StorageEntry | undefined>(undefined);
+  const [storageDialogOpen, setStorageDialogOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   const load = async () => {
@@ -91,6 +98,18 @@ export function Player360View({ userId, onBack }: { userId: string; onBack: () =
       setActionLoading(false);
     }
   };
+  const openEditor = (tab = 0) => { setEditingTab(tab); setEditing(true); };
+  const deleteStorageEntry = async (key: string) => {
+    if (!window.confirm(`Delete storage entry ${key}?`)) return;
+    try { await api(`/users/${userId}/storage/${encodeURIComponent(key)}`, { method: 'DELETE' }); await load(); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to delete storage entry'); }
+  };
+  const deleteFile = async (fileId: string, name: string) => {
+    if (!window.confirm(`Delete ${name}?`)) return;
+    try { await api(`/users/${userId}/files/${fileId}`, { method: 'DELETE' }); await load(); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to delete file'); }
+  };
+  const openFile = async (fileId: string) => {
+    try { const body = await api<{ url: string }>(`/users/${userId}/files/${fileId}/url`); window.open(body.url, '_blank', 'noopener,noreferrer'); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to open file'); }
+  };
 
   if (loading && !data) return <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 420 }}><CircularProgress /></Stack>;
   if (!data) return <Stack spacing={2}><Button startIcon={<ArrowBackRoundedIcon />} onClick={onBack}>Back to players</Button><Typography color="error.main">{error || 'Player not found'}</Typography></Stack>;
@@ -105,7 +124,9 @@ export function Player360View({ userId, onBack }: { userId: string; onBack: () =
         <Box><Typography variant="overline" color="text.secondary" sx={{ letterSpacing: '.14em' }}>PLAYER 360</Typography><Typography variant="h4" fontWeight={850}>Complete player workspace</Typography><Typography color="text.secondary">One operational view of identity, progression, economy, commerce, competition, and activity.</Typography></Box>
       </Stack>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-        <Button variant="outlined" startIcon={<EditRoundedIcon />} onClick={() => setEditing(true)}>Edit profile</Button>
+        <Button variant="outlined" startIcon={<EditRoundedIcon />} onClick={() => openEditor()}>Edit profile</Button>
+        <Button variant="outlined" startIcon={<AccountBalanceWalletRoundedIcon />} onClick={() => openEditor(2)}>Adjust wallet</Button>
+        <Button variant="outlined" startIcon={<TrendingUpRoundedIcon />} onClick={() => openEditor(1)}>Adjust progression</Button>
         <Button variant="outlined" color={user.status === 'ACTIVE' ? 'error' : 'success'} startIcon={user.status === 'ACTIVE' ? <LockRoundedIcon /> : <LockOpenRoundedIcon />} disabled={actionLoading} onClick={toggleStatus}>{user.status === 'ACTIVE' ? 'Ban account' : 'Activate account'}</Button>
       </Stack>
     </Stack>
@@ -139,7 +160,9 @@ export function Player360View({ userId, onBack }: { userId: string; onBack: () =
       <Grid size={{ xs: 12, lg: 6 }}><Section icon={<FeedbackRoundedIcon />} title="Feedback and reports" description="Player-submitted feedback with moderation status and category context."><Box sx={{ p: { xs: 2, md: 3 } }}><Stack spacing={1.5}>{data.feedback.map((item) => <Box key={item.id} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(148,163,184,.06)' }}><Stack direction="row" justifyContent="space-between" spacing={1}><Typography fontWeight={750}>{item.category.name}</Typography><Chip size="small" label={item.status} color={item.status === 'RESOLVED' ? 'success' : 'warning'} /></Stack><Typography variant="body2" sx={{ mt: .7 }}>{item.description}</Typography><Typography variant="caption" color="text.secondary">{item.entity} · {date(item.createdAt)}</Typography></Box>)}{!data.feedback.length && <Typography color="text.secondary">No feedback submitted.</Typography>}</Stack></Box></Section></Grid>
     </Grid>
 
-    <Section icon={<TrendingUpRoundedIcon />} title="Progressions" description="Every progression balance, current step, threshold, and level-up state assigned to this player."><Box sx={{ p: { xs: 2, md: 3 } }}><Grid container spacing={2}>{(user.progressions || []).map((row) => <Grid key={row.id} size={{ xs: 12, sm: 6, lg: 4 }}><Card variant="outlined" sx={{ p: 2, height: '100%', bgcolor: 'rgba(139,125,255,.06)' }}><Stack direction="row" justifyContent="space-between" spacing={1}><Box><Typography fontWeight={800}>{row.progression.name}</Typography><Typography variant="caption" color="text.secondary">{row.progression.key} · {row.progression.kind}</Typography></Box><Chip size="small" color="primary" label={`Step ${row.step}`} /></Stack><Typography variant="h5" fontWeight={850} sx={{ mt: 2 }}>{row.points} <Typography component="span" color="text.secondary" variant="body2">points</Typography></Typography><Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>Next threshold: {row.nextThreshold ?? 'MAX'}</Typography></Card></Grid>)}{!user.progressions?.length && <Grid size={12}><Typography color="text.secondary">No progression records yet.</Typography></Grid>}</Grid></Box></Section>
+    <Section icon={<StorageRoundedIcon />} title="Storage operations" description="Player 360 is an operational workspace: edit allowlisted storage, upload files, and remove stale references." action={<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}><Button size="small" startIcon={<CloudUploadRoundedIcon />} variant="outlined" onClick={() => setUploadOpen(true)}>Upload file</Button><Button size="small" variant="contained" onClick={() => { setStorageEntry(undefined); setStorageDialogOpen(true); }}>Add entry</Button></Stack>}><Box sx={{ p: { xs: 2, md: 3 } }}><Stack spacing={1.2}>{data.storageItems.map((item) => <Stack key={item.id} direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(148,163,184,.06)' }}><Box><Typography fontWeight={750}>{item.key}</Typography><Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>{item.value}</Typography><Typography variant="caption" color="text.secondary">{item.valueType} · {item.visibility} · v{item.version} · {date(item.updatedAt)}</Typography></Box><Stack direction="row" spacing={.5}><Button size="small" onClick={() => { setStorageEntry(item); setStorageDialogOpen(true); }}>Edit</Button><IconButton size="small" color="error" onClick={() => deleteStorageEntry(item.key)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Stack></Stack>)}{!data.storageItems.length && <Typography color="text.secondary">No storage entries.</Typography>}<Divider sx={{ my: 1 }} /><Typography variant="subtitle2" color="text.secondary">Uploaded files</Typography>{data.files.map((file) => <Stack key={file.id} direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} sx={{ p: 1.2, borderRadius: 2, bgcolor: 'rgba(148,163,184,.04)' }}><Box><Typography variant="body2" fontWeight={700}>{file.originalName}</Typography><Typography variant="caption" color="text.secondary">{file.purpose} · {file.contentType} · {file.byteSize} bytes · {file.visibility}</Typography></Box><Stack direction="row" spacing={.5}><Button size="small" onClick={() => openFile(file.id)}>Open</Button><IconButton size="small" color="error" onClick={() => deleteFile(file.id, file.originalName)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Stack></Stack>)}{!data.files.length && <Typography color="text.secondary">No uploaded files.</Typography>}</Stack></Box></Section>
+
+    <Section icon={<TrendingUpRoundedIcon />} title="Progressions" description="Every progression balance, current step, threshold, and level-up state assigned to this player." action={<Button size="small" variant="outlined" onClick={() => openEditor(1)}>Adjust progression</Button>}><Box sx={{ p: { xs: 2, md: 3 } }}><Grid container spacing={2}>{(user.progressions || []).map((row) => <Grid key={row.id} size={{ xs: 12, sm: 6, lg: 4 }}><Card variant="outlined" sx={{ p: 2, height: '100%', bgcolor: 'rgba(139,125,255,.06)' }}><Stack direction="row" justifyContent="space-between" spacing={1}><Box><Typography fontWeight={800}>{row.progression.name}</Typography><Typography variant="caption" color="text.secondary">{row.progression.key} · {row.progression.kind}</Typography></Box><Chip size="small" color="primary" label={`Step ${row.step}`} /></Stack><Typography variant="h5" fontWeight={850} sx={{ mt: 2 }}>{row.points} <Typography component="span" color="text.secondary" variant="body2">points</Typography></Typography><Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>Next threshold: {row.nextThreshold ?? 'MAX'}</Typography></Card></Grid>)}{!user.progressions?.length && <Grid size={12}><Typography color="text.secondary">No progression records yet.</Typography></Grid>}</Grid></Box></Section>
 
     <Section icon={<EmojiEventsRoundedIcon />} title="Leaderboard standings" description="Current authoritative entries and recent score activity for this player."><Box sx={{ overflowX: 'auto' }}><Table><TableHead><TableRow><TableCell>Leaderboard</TableCell><TableCell>Period</TableCell><TableCell>Score</TableCell><TableCell>Season</TableCell><TableCell>Updated</TableCell></TableRow></TableHead><TableBody>{leaderboardEntries.map((entry) => <TableRow key={entry.id}><TableCell><Typography fontWeight={750}>{entry.leaderboard.name}</Typography><Typography variant="caption" color="text.secondary">{entry.leaderboard.key}</Typography></TableCell><TableCell>{entry.leaderboard.period}</TableCell><TableCell><Typography fontWeight={800}>{entry.score}</Typography></TableCell><TableCell><Chip size="small" label={entry.season.status} color={entry.season.status === 'ACTIVE' ? 'success' : 'default'} /></TableCell><TableCell>{date(entry.updatedAt)}</TableCell></TableRow>)}{!leaderboardEntries.length && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 4 }}><Typography color="text.secondary">This player has no leaderboard entries yet.</Typography></TableCell></TableRow>}</TableBody></Table></Box></Section>
 
@@ -167,6 +190,8 @@ export function Player360View({ userId, onBack }: { userId: string; onBack: () =
     <Section icon={<CalendarTodayRoundedIcon />} title="Match history" description="Recent matches involving this player, including result and final score."><Box sx={{ overflowX: 'auto' }}><Table><TableHead><TableRow><TableCell>Game</TableCell><TableCell>Mode</TableCell><TableCell>Result</TableCell><TableCell>Score</TableCell><TableCell>Status</TableCell><TableCell>Played</TableCell></TableRow></TableHead><TableBody>{data.matches.map((match) => <TableRow key={match.id}><TableCell><Typography fontWeight={700}>{match.match.gameDefinition.name}</Typography><Typography variant="caption" color="text.secondary">{match.match.gameDefinition.key}</Typography></TableCell><TableCell>{match.match.mode}</TableCell><TableCell><Chip size="small" label={match.result} color={match.result === 'WIN' ? 'success' : match.result === 'LOSS' || match.result === 'FORFEIT' ? 'error' : 'default'} /></TableCell><TableCell>{match.finalScore ?? '—'}</TableCell><TableCell>{match.match.status}</TableCell><TableCell>{shortDate(match.createdAt)}</TableCell></TableRow>)}{!data.matches.length && <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4 }}><Typography color="text.secondary">No match history yet.</Typography></TableCell></TableRow>}</TableBody></Table></Box></Section>
 
     <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ md: 'center' }} sx={{ pb: 2 }}><Typography variant="caption" color="text.secondary">Showing up to 200 recent records per activity stream. UUID: {user.id}</Typography><Button startIcon={<ArrowBackRoundedIcon />} onClick={onBack}>Back to players</Button></Stack>
-    {editing && <PlayerDetailsDialog user={user} onClose={() => setEditing(false)} onSaved={load} onRegistered={() => undefined} />}
+    {storageDialogOpen && <PlayerStorageDialog userId={user.id} entry={storageEntry} onClose={() => setStorageDialogOpen(false)} onSaved={() => { setStorageDialogOpen(false); void load(); }} />}
+    {uploadOpen && <PlayerFileUploadDialog userId={user.id} onClose={() => setUploadOpen(false)} onSaved={() => { setUploadOpen(false); void load(); }} />}
+    {editing && <PlayerDetailsDialog user={user} initialTab={editingTab} onClose={() => setEditing(false)} onSaved={load} onRegistered={() => undefined} />}
   </Stack>;
 }

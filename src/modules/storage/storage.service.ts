@@ -6,11 +6,12 @@ import { createHash, randomUUID } from "node:crypto"
 import { extname } from "node:path"
 
 import { PrismaService } from "../../prisma.service"
-import { CreateFeedbackDto, FeedbackQueryDto, PlayerStorageItemDto, UpdateFeedbackDto, UploadFileDto } from "./dtos/storage.dto"
+import { CreateFeedbackDto, FeedbackQueryDto, PlayerStorageItemDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UploadFileDto } from "./dtos/storage.dto"
 import type { UploadedImage } from "./types"
 import { CreateFeedbackTransaction } from "./transactions/create-feedback-transaction"
 import { UpdateFeedbackTransaction } from "./transactions/update-feedback-transaction"
 import { UpdatePlayerStorageTransaction } from "./transactions/update-player-storage-transaction"
+import { DeletePlayerStorageTransaction } from "./transactions/delete-player-storage-transaction"
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
@@ -21,7 +22,7 @@ const ALLOWED_STAT_SUFFIXES = new Set(["games_played", "accuracy", "wins", "loss
 export class StorageService {
   private client?: S3Client
 
-  constructor(private readonly prisma: PrismaService, private readonly updatePlayerStorageTransaction: UpdatePlayerStorageTransaction, private readonly createFeedbackTransaction: CreateFeedbackTransaction, private readonly updateFeedbackTransaction: UpdateFeedbackTransaction) {}
+  constructor(private readonly prisma: PrismaService, private readonly updatePlayerStorageTransaction: UpdatePlayerStorageTransaction, private readonly deletePlayerStorageTransaction: DeletePlayerStorageTransaction, private readonly createFeedbackTransaction: CreateFeedbackTransaction, private readonly updateFeedbackTransaction: UpdateFeedbackTransaction) {}
 
   async upload(file: UploadedImage | undefined, dto: UploadFileDto, userId?: string, actorId?: string) {
     if (!file?.buffer) throw new BadRequestException("A file is required")
@@ -78,6 +79,30 @@ export class StorageService {
 
   async updateStorage(userId: string, payload: PlayerStorageItemDto[]) {
     return this.updatePlayerStorageTransaction.run({ userId, payload }).then((items) => ({ payload: items }))
+  }
+
+  deleteStorage(userId: string, key: string) {
+    return this.deletePlayerStorageTransaction.run({ userId, key })
+  }
+
+  async listAdminStorage(query: SystemAdminStorageQueryDto) {
+    const page = query.page || 1
+    const limit = query.limit || 50
+    const search = query.search?.trim()
+    const userWhere: Prisma.UserWhereInput | undefined = search ? { OR: [
+      { username: { contains: search, mode: "insensitive" } },
+      { email: { contains: search, mode: "insensitive" } },
+      { profile: { displayName: { contains: search, mode: "insensitive" } } },
+    ] } : undefined
+    const storageWhere: Prisma.PlayerStorageItemWhereInput = { ...(query.userId ? { userId: query.userId } : {}), ...(userWhere ? { user: userWhere } : {}), ...(search ? { OR: [{ key: { contains: search, mode: "insensitive" } }, { value: { contains: search, mode: "insensitive" } }, ...(userWhere ? [{ user: userWhere }] : [])] } : {}) }
+    const fileWhere: Prisma.StoredFileWhereInput = { ...(query.userId ? { userId: query.userId } : {}), ...(userWhere ? { user: userWhere } : {}), ...(search ? { OR: [{ originalName: { contains: search, mode: "insensitive" } }, { purpose: { contains: search, mode: "insensitive" } }, ...(userWhere ? [{ user: userWhere }] : [])] } : {}) }
+    const [storageTotal, fileTotal, storageItems, files] = await this.prisma.$transaction([
+      this.prisma.playerStorageItem.count({ where: storageWhere }),
+      this.prisma.storedFile.count({ where: fileWhere }),
+      this.prisma.playerStorageItem.findMany({ where: storageWhere, orderBy: [{ updatedAt: "desc" }, { key: "asc" }], skip: (page - 1) * limit, take: limit, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } }),
+      this.prisma.storedFile.findMany({ where: fileWhere, orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } }),
+    ])
+    return this.serialize({ storageItems, files, pagination: { page, limit, storageTotal, fileTotal, storagePages: Math.ceil(storageTotal / limit), filePages: Math.ceil(fileTotal / limit) } })
   }
 
   getStorage(userId: string) {

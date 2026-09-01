@@ -97,6 +97,34 @@ export class FeedbackQueryDto {
   limit = 25
 }
 
+export class SystemAdminStorageQueryDto {
+  @ApiPropertyOptional({ format: "uuid" })
+  @IsOptional()
+  @IsUUID("4")
+  userId?: string
+
+  @ApiPropertyOptional({ description: "Search usernames, emails, display names, storage keys, and file names" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page = 1
+
+  @ApiPropertyOptional({ default: 50, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit = 50
+}
+
 export class CreateFeedbackDto {
   @ApiProperty({ enum: FeedbackEntity, example: FeedbackEntity.GAME })
   @Transform(({ value }) => typeof value === "string" ? value.toUpperCase() : value)

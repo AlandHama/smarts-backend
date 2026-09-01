@@ -14,7 +14,7 @@ import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationD
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
 import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
 import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
-import { FeedbackQueryDto, UpdateFeedbackDto, UploadFileDto } from "../storage/dtos"
+import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UpdatePlayerStorageDto, UploadFileDto } from "../storage/dtos"
 import type { UploadedImage } from "../storage/types"
 
 @ApiTags("System Admin")
@@ -41,6 +41,12 @@ export class SystemAdminController {
   @Delete("api/files/:fileId")
   @ApiBearerAuth("access-token")
   deleteFile(@Param("fileId", ParseUUIDPipe) fileId: string) { return this.systemAdminService.deleteFile(fileId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/storage")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List player storage entries and uploaded files" })
+  listStorage(@Query() query: SystemAdminStorageQueryDto) { return this.systemAdminService.listStorage(query) }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/feedback")
@@ -137,6 +143,34 @@ export class SystemAdminController {
   ) {
     return this.systemAdminService.updateUserProfile(userId, admin.id, dto)
   }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/storage")
+  @ApiBearerAuth("access-token")
+  updatePlayerStorage(@Param("userId", ParseUUIDPipe) userId: string, @Body() dto: UpdatePlayerStorageDto) { return this.systemAdminService.updatePlayerStorage(userId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/users/:userId/storage/:key")
+  @ApiBearerAuth("access-token")
+  deletePlayerStorage(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string) { return this.systemAdminService.deletePlayerStorage(userId, key) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/files")
+  @ApiBearerAuth("access-token")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({ schema: { type: "object", properties: { file: { type: "string", format: "binary" }, purpose: { type: "string" }, visibility: { type: "string", enum: ["PUBLIC", "PRIVATE"] } }, required: ["file", "purpose"] } })
+  uploadPlayerFile(@Param("userId", ParseUUIDPipe) userId: string, @UploadedFile() file: UploadedImage, @Body() dto: UploadFileDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.uploadPlayerFile(file, userId, dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/users/:userId/files/:fileId/url")
+  @ApiBearerAuth("access-token")
+  playerFileUrl(@Param("userId", ParseUUIDPipe) userId: string, @Param("fileId", ParseUUIDPipe) fileId: string) { return this.systemAdminService.playerFileUrl(fileId, userId).then((url) => ({ url })) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/users/:userId/files/:fileId")
+  @ApiBearerAuth("access-token")
+  deletePlayerFile(@Param("userId", ParseUUIDPipe) userId: string, @Param("fileId", ParseUUIDPipe) fileId: string) { return this.systemAdminService.deletePlayerFile(fileId, userId) }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/reset-password")
