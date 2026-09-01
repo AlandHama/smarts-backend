@@ -11,7 +11,7 @@ export interface AdminUser {
   createdAt: string;
   lastOnline: string | null;
   _count?: { sessions: number };
-  profile: { displayName: string; avatarUrl: string | null; countryCode: string | null; bio?: string | null; level: number; xp: string; elo: number } | null;
+  profile: { displayName: string; avatarUrl: string | null; countryCode: string | null; bio?: string | null; level: number; xp: string; elo: number; isPublic?: boolean; metadata?: Record<string, unknown> | null } | null;
   stats: { gamesPlayed: number; wins: number; losses: number; draws: number; currentWinStreak: number; highestWinStreak: number; highestElo: number; totalScore: string } | null;
   wallet?: WalletSummary;
   progressions?: PlayerProgression[];
@@ -233,6 +233,9 @@ export interface Player360Data {
   rewardGrants: Array<{ id: string; sourceType: string; sourceId: string; rewardType: string; grantKey: string; amount: string | null; targetKey: string | null; status: string; createdAt: string; currency: { code: string; name: string } | null; progressionDefinition: { key: string; name: string } | null }>;
   gameStats: Array<{ id: string; gamesPlayed: number; wins: number; losses: number; draws: number; forfeits: number; totalCorrect: number; totalQuestions: number; totalTimeMs: string; totalScore: string; bestScore: string; lastPlayedAt: string | null; gameDefinition: { key: string; name: string } }>;
   matches: Array<{ id: string; finalScore: number | null; answeredCount: number; result: string; submittedAt: string | null; createdAt: string; match: { id: string; mode: string; status: string; startedAt: string | null; endedAt: string | null; settledAt: string | null; createdAt: string; gameDefinition: { key: string; name: string } } }>;
+  storageItems: Array<{ id: string; key: string; value: string; visibility: string; valueType: string; version: number; updatedAt: string }>;
+  files: Array<{ id: string; objectKey: string; originalName: string; contentType: string; byteSize: string; checksum: string | null; purpose: string; visibility: string; status: string; createdAt: string; deletedAt: string | null }>;
+  feedback: Array<{ id: string; entity: string; description: string; status: string; adminNote: string | null; createdAt: string; category: { key: string; name: string } }>;
 }
 
 export interface AdminSession {

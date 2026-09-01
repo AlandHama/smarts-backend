@@ -57,7 +57,7 @@ export class PlayersService {
       },
     })
     if (!player) throw new NotFoundException("Player not found")
-    if (!player.profile || !player.stats) throw new NotFoundException("Player profile is not initialized")
+    if (!player.profile || !player.profile.isPublic || !player.stats) throw new NotFoundException("Player profile is not public")
     return this.toPublicResponse(player)
   }
 

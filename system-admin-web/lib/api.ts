@@ -10,6 +10,7 @@ export function clearSession() {
 export function hasSession() { return typeof window !== 'undefined' && Boolean(localStorage.getItem(ACCESS_KEY)); }
 
 function saveSession(body: any) {
+  if (!body?.token?.accessToken || !body?.token?.refreshToken) throw new Error('The server returned an incomplete session');
   localStorage.setItem(ACCESS_KEY, body.token.accessToken);
   localStorage.setItem(REFRESH_KEY, body.token.refreshToken);
 }
@@ -22,7 +23,9 @@ export async function login(identifier: string, password: string) {
   return body;
 }
 
-async function refresh() {
+let refreshPromise: Promise<void> | null = null;
+
+async function rotateSession() {
   const refreshToken = localStorage.getItem(REFRESH_KEY);
   if (!refreshToken) throw new Error('Session expired');
   const response = await fetch('/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken }) });
@@ -31,9 +34,28 @@ async function refresh() {
   saveSession(body);
 }
 
+function refresh() {
+  if (!refreshPromise) {
+    refreshPromise = rotateSession().finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+}
+
+function accessTokenNeedsRefresh(token: string | null) {
+  if (!token) return false;
+  try {
+    const encoded = token.split('.')[1];
+    const payload = JSON.parse(atob(encoded.replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' && payload.exp * 1000 - Date.now() < 60_000;
+  } catch {
+    return false;
+  }
+}
+
 export async function api<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
+  if (!retried && accessTokenNeedsRefresh(localStorage.getItem(ACCESS_KEY))) await refresh();
   const headers = new Headers(init.headers);
-  headers.set('Content-Type', 'application/json');
+  if (!(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const accessToken = localStorage.getItem(ACCESS_KEY);
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
   const response = await fetch(`/system-admin/api${path}`, { ...init, headers });
@@ -43,3 +65,10 @@ export async function api<T>(path: string, init: RequestInit = {}, retried = fal
   return body as T;
 }
 
+export async function uploadFile<T>(path: string, file: File, purpose: string, visibility: 'PUBLIC' | 'PRIVATE' = 'PRIVATE'): Promise<T> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('purpose', purpose);
+  form.append('visibility', visibility);
+  return api<T>(path, { method: 'POST', body: form });
+}

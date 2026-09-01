@@ -151,6 +151,20 @@ npm run dev
 | `SYSTEM_ADMIN_EMAIL` | no | Initial system-admin email; defaults to a local placeholder |
 | `SYSTEM_ADMIN_DISPLAY_NAME` | no | Initial system-admin display name |
 | `SIGNUP_MCN_AMOUNT` | no | Server-side MCN signup grant in integer units; defaults to `1500` |
+| `S3_ENDPOINT` | Phase 7 | S3-compatible endpoint, for example `https://t3.storageapi.dev` |
+| `S3_REGION` | Phase 7 | S3-compatible region, for example `auto` |
+| `S3_BUCKET` | Phase 7 | Bucket used for player and commerce files |
+| `S3_ACCESS_KEY_ID` | Phase 7 | Storage access key; configure only in Railway variables |
+| `S3_SECRET_ACCESS_KEY` | Phase 7 | Storage secret; configure only in Railway variables |
+| `S3_PUBLIC_BASE_URL` | recommended | Public base URL for immutable catalog/profile images; defaults to endpoint/bucket |
+
+Phase 7 storage uses organized object keys such as `player-avatar/{userId}/{uuid}.png`,
+`commerce-asset/admin/{uuid}.png`, and `catalog-item/admin/{uuid}.png`. Private
+files are returned through 15-minute signed download URLs. Configure the
+S3-compatible credentials in Railway under Variables; do not commit them to
+GitHub. The mobile storage contract is `GET/POST /players/me/storage`, file
+uploads are `POST /players/me/files`, and feedback is `GET
+/feedback/categories/:entity` plus `POST /feedback`.
 
 ## License
 

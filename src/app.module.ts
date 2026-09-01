@@ -12,9 +12,10 @@ import { LeaderboardModule } from "./modules/leaderboard/leaderboard.module"
 import { GameModule } from "./modules/game/game.module"
 import { MatchesModule } from "./modules/matches/matches.module"
 import { CommerceModule } from "./modules/commerce/commerce.module"
+import { StorageModule } from "./modules/storage/storage.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, PlayersModule, ProgressionModule, CommerceModule, SystemAdminModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, SystemAdminModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

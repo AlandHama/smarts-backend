@@ -16,6 +16,7 @@ import { UsersView } from '../components/UsersView';
 import { SessionsView } from '../components/SessionsView';
 import { CommerceView } from '../components/CommerceView';
 import { Player360View } from '../components/Player360View';
+import { FeedbackView } from '../components/FeedbackView';
 import { api, clearSession, hasSession, login } from '../lib/api';
 import { adminTheme } from '../lib/theme';
 
@@ -38,5 +39,5 @@ export default function AdminPage() {
   const openPlayer360 = (userId: string) => { setPlayer360Id(userId); setView('player360'); };
   const backToPlayers = () => { setPlayer360Id(null); setView('players'); };
 
-  return <ThemeProvider theme={adminTheme}><CssBaseline />{checking ? null : !admin ? <LoginView onLogin={signIn} /> : <AdminShell view={view} onViewChange={(nextView) => { if (nextView !== 'player360') setPlayer360Id(null); setView(nextView); }} onLogout={signOut} adminName={admin.username || admin.email || 'Administrator'}>{view === 'overview' && <OverviewView onNavigate={setView} />}{view === 'players' && <UsersView onOpenPlayer360={openPlayer360} />}{view === 'player360' && player360Id && <Player360View userId={player360Id} onBack={backToPlayers} />}{view === 'sessions' && <SessionsView />}{view === 'progressions' && <><ProgressionsView /><ProgressionTopPlayersPanel /></>}{view === 'economy' && <><EconomyView /><CurrencyTopPlayersPanel /></>}{view === 'commerce' && <CommerceView />}{view === 'leaderboards' && <><LeaderboardView /><SeasonManagerPanel /></>}{view === 'game-config' && <GameConfigView />}</AdminShell>}</ThemeProvider>;
+  return <ThemeProvider theme={adminTheme}><CssBaseline />{checking ? null : !admin ? <LoginView onLogin={signIn} /> : <AdminShell view={view} onViewChange={(nextView) => { if (nextView !== 'player360') setPlayer360Id(null); setView(nextView); }} onLogout={signOut} adminName={admin.username || admin.email || 'Administrator'}>{view === 'overview' && <OverviewView onNavigate={setView} />}{view === 'players' && <UsersView onOpenPlayer360={openPlayer360} />}{view === 'player360' && player360Id && <Player360View userId={player360Id} onBack={backToPlayers} />}{view === 'sessions' && <SessionsView />}{view === 'progressions' && <><ProgressionsView /><ProgressionTopPlayersPanel /></>}{view === 'economy' && <><EconomyView /><CurrencyTopPlayersPanel /></>}{view === 'commerce' && <CommerceView />}{view === 'leaderboards' && <><LeaderboardView /><SeasonManagerPanel /></>}{view === 'game-config' && <GameConfigView />}{view === 'feedback' && <FeedbackView />}</AdminShell>}</ThemeProvider>;
 }

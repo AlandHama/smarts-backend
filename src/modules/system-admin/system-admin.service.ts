@@ -26,6 +26,9 @@ import { GameService } from "../game/game.service"
 import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction"
 import { CommerceService } from "../commerce/commerce.service"
 import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
+import { FeedbackQueryDto, UpdateFeedbackDto, UploadFileDto } from "../storage/dtos"
+import { StorageService } from "../storage/storage.service"
+import type { UploadedImage } from "../storage/types"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -50,6 +53,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly gameService: GameService,
     private readonly terminateAdminSessionTransaction: TerminateAdminSessionTransaction,
     private readonly commerceService: CommerceService,
+    private readonly storageService: StorageService,
   ) {}
 
   async onModuleInit() {
@@ -127,7 +131,7 @@ export class SystemAdminService implements OnModuleInit {
           isSystemAdmin: true,
           createdAt: true,
           lastOnline: true,
-          profile: { select: { displayName: true, avatarUrl: true, level: true, xp: true, elo: true } },
+          profile: { select: { displayName: true, avatarUrl: true, countryCode: true, bio: true, isPublic: true, level: true, xp: true, elo: true } },
           stats: { select: { gamesPlayed: true, wins: true, losses: true, draws: true, currentWinStreak: true, highestWinStreak: true, highestElo: true, totalScore: true } },
           _count: { select: { sessions: true } },
         },
@@ -228,7 +232,7 @@ export class SystemAdminService implements OnModuleInit {
 
   async getPlayer360(userId: string) {
     const user = await this.getUser(userId, true)
-    const [inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches] = await this.prisma.$transaction([
+    const [inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback] = await this.prisma.$transaction([
       this.prisma.inventoryItem.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: { select: { id: true, key: true, name: true, assetType: true, ownershipPolicy: true, imageUrl: true } }, assetVariation: { select: { id: true, key: true, name: true, imageUrl: true } } } }),
       this.prisma.entitlement.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: { select: { key: true, name: true, imageUrl: true } } } }),
       this.prisma.purchase.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { currency: { select: { code: true, name: true } }, lines: { orderBy: { createdAt: "asc" }, include: { catalogItem: { select: { key: true, name: true, imageUrl: true } } } } } }),
@@ -238,11 +242,14 @@ export class SystemAdminService implements OnModuleInit {
       this.prisma.rewardGrant.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { currency: { select: { code: true, name: true } }, progressionDefinition: { select: { key: true, name: true } } } }),
       this.prisma.playerGameStats.findMany({ where: { userId }, orderBy: { lastPlayedAt: "desc" }, take: 100, include: { gameDefinition: { select: { key: true, name: true } } } }),
       this.prisma.matchParticipant.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { match: { select: { id: true, mode: true, status: true, startedAt: true, endedAt: true, settledAt: true, createdAt: true, gameDefinition: { select: { key: true, name: true } } } } } }),
+      this.prisma.playerStorageItem.findMany({ where: { userId }, orderBy: [{ displayOrder: "asc" }, { key: "asc" }], take: 200 }),
+      this.prisma.storedFile.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200 }),
+      this.prisma.playerFeedback.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { category: { select: { key: true, name: true } } } }),
     ])
     const walletTransactions = user.wallet
       ? await this.prisma.walletTransaction.findMany({ where: { walletId: user.wallet.id }, orderBy: { createdAt: "desc" }, take: 500, include: { currency: { select: { code: true, name: true, kind: true } } } })
       : []
-    return this.serialize({ user: { ...user, wallet: user.wallet ? { ...user.wallet, transactions: walletTransactions } : null }, inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches })
+    return this.serialize({ user: { ...user, wallet: user.wallet ? { ...user.wallet, transactions: walletTransactions } : null }, inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback })
   }
 
   async updateUserProfile(userId: string, actorId: string, dto: UpdateUserProfileDto) {
@@ -310,6 +317,11 @@ export class SystemAdminService implements OnModuleInit {
   grantCommerceInventory(userId: string, dto: InventoryMutationDto, actorId: string) { return this.commerceService.grantInventory(userId, dto, actorId) }
   revokeCommerceInventory(userId: string, dto: InventoryMutationDto, actorId: string) { return this.commerceService.revokeInventory(userId, dto, actorId) }
   playerEntitlements(userId: string) { return this.commerceService.listPlayerEntitlements(userId) }
+  uploadFile(file: UploadedImage | undefined, dto: UploadFileDto, actorId: string) { return this.storageService.upload(file, dto, undefined, actorId) }
+  fileUrl(fileId: string) { return this.storageService.downloadUrl(fileId, undefined, true) }
+  deleteFile(fileId: string) { return this.storageService.delete(fileId, undefined, true) }
+  listFeedback(query: FeedbackQueryDto) { return this.storageService.listFeedback(query) }
+  updateFeedback(id: string, dto: UpdateFeedbackDto, adminId: string) { return this.storageService.updateFeedback(id, dto, adminId) }
 
   private async getUser(userId: string, detailed = false) {
     const user = await this.prisma.user.findUnique({
@@ -324,7 +336,7 @@ export class SystemAdminService implements OnModuleInit {
         isSystemAdmin: true,
         createdAt: true,
         lastOnline: true,
-        profile: { select: { displayName: true, avatarUrl: true, level: true, xp: true, elo: true } },
+        profile: { select: { displayName: true, avatarUrl: true, countryCode: true, bio: true, isPublic: true, metadata: true, level: true, xp: true, elo: true } },
         stats: { select: { gamesPlayed: true, wins: true, losses: true, draws: true, currentWinStreak: true, highestWinStreak: true, highestElo: true, totalScore: true } },
         _count: { select: { sessions: true } },
         ...(detailed ? {

@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import CloudUploadRoundedIcon from "@mui/icons-material/CloudUploadRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import ShoppingBagRoundedIcon from "@mui/icons-material/ShoppingBagRounded";
@@ -30,7 +31,7 @@ import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { api } from "../lib/api";
+import { api, uploadFile } from "../lib/api";
 import { UserSelector, type SelectableUser } from "./UserSelector";
 import type {
   CommerceAsset,
@@ -56,13 +57,16 @@ const stableKey = (value: string) =>
     .slice(0, 100);
 const isPositiveInteger = (value: string) =>
   /^\d+$/.test(value) && value.replace(/^0+/, "").length > 0;
-const json = (value: string, label: string) => {
-  try {
-    return value.trim() ? JSON.parse(value) : undefined;
-  } catch {
-    throw new Error(`${label} must be valid JSON`);
-  }
-};
+function ImageUploadField({ label, files, onChange, existingUrl, multiple = false }: { label: string; files: File[]; onChange: (files: File[]) => void; existingUrl?: string | null; multiple?: boolean }) {
+  return <Stack spacing={1}>
+    <Button component="label" variant="outlined" startIcon={<CloudUploadRoundedIcon />} sx={{ justifyContent: "flex-start" }}>
+      {files.length ? `${files.length} image${files.length === 1 ? "" : "s"} selected` : label}
+      <input hidden type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple={multiple} onChange={(event) => onChange(Array.from(event.target.files ?? []))} />
+    </Button>
+    {existingUrl && !files.length && <Box component="img" src={existingUrl} alt="Current image" sx={{ width: 64, height: 64, objectFit: "cover", borderRadius: 1.5 }} />}
+    <Typography variant="caption" color="text.secondary">JPEG, PNG, WEBP, or GIF · maximum 10 MB</Typography>
+  </Stack>;
+}
 
 function AssetDialog({
   asset,
@@ -76,6 +80,8 @@ function AssetDialog({
   onSaved: () => void;
 }) {
   const [error, setError] = useState("");
+  const [primaryFile, setPrimaryFile] = useState<File[]>([]);
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   return (
     <Dialog open fullWidth maxWidth="md" onClose={onClose}>
       <DialogTitle>
@@ -101,17 +107,17 @@ function AssetDialog({
                 `An asset with the key "${key}" already exists. Choose a different stable key or edit "${duplicate.name}".`,
               );
             }
+            const primaryUpload = primaryFile[0] ? await uploadFile<{ url: string }>("/uploads", primaryFile[0], "commerce-asset", "PUBLIC") : undefined;
+            const galleryUploads = galleryFiles.length ? await Promise.all(galleryFiles.map((file) => uploadFile<{ url: string }>("/uploads", file, "commerce-asset", "PUBLIC"))) : [];
             const payload = {
               key,
               name: field(form, "name"),
               assetType: field(form, "assetType"),
               ownershipPolicy: field(form, "ownershipPolicy"),
               description: field(form, "description") || undefined,
-              imageUrl: field(form, "imageUrl") || undefined,
+              imageUrl: primaryUpload?.url ?? asset?.imageUrl ?? undefined,
               imageAlt: field(form, "imageAlt") || undefined,
-              imageUrls: field(form, "imageUrls")
-                ? json(field(form, "imageUrls"), "Image URLs")
-                : undefined,
+              imageUrls: galleryUploads.length ? [...(asset?.imageUrls ?? []), ...galleryUploads.map((upload) => upload.url)] : (asset?.imageUrls ?? undefined),
             };
             await api(
               asset ? `/commerce/assets/${asset.id}` : "/commerce/assets",
@@ -187,13 +193,7 @@ function AssetDialog({
                 />
               </Grid>
               <Grid size={{ xs: 12, sm: 8 }}>
-                <TextField
-                  name="imageUrl"
-                  label="Primary image URL"
-                  defaultValue={asset?.imageUrl ?? ""}
-                  placeholder="https://cdn.example.com/item.png"
-                  fullWidth
-                />
+                <ImageUploadField label="Upload primary image" files={primaryFile} onChange={setPrimaryFile} existingUrl={asset?.imageUrl} />
               </Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
@@ -204,15 +204,8 @@ function AssetDialog({
                 />
               </Grid>
               <Grid size={12}>
-                <TextField
-                  name="imageUrls"
-                  label="Additional image URLs (JSON array)"
-                  defaultValue={
-                    asset?.imageUrls ? JSON.stringify(asset.imageUrls) : ""
-                  }
-                  placeholder='["https://cdn.example.com/front.png"]'
-                  fullWidth
-                />
+                <ImageUploadField label="Upload additional images" files={galleryFiles} onChange={setGalleryFiles} multiple />
+                {Boolean(asset?.imageUrls?.length) && <Typography variant="caption" color="text.secondary">Existing gallery images are preserved when new images are added.</Typography>}
               </Grid>
             </Grid>
           </Stack>
@@ -354,6 +347,7 @@ function ItemDialog({
   onSaved: () => void;
 }) {
   const [error, setError] = useState("");
+  const [imageFile, setImageFile] = useState<File[]>([]);
   const defaultPrices: CatalogPriceForm[] =
     item?.prices.map((price) => ({
       currencyCode: price.currency.code,
@@ -454,13 +448,14 @@ function ItemDialog({
               }
               return payload;
             });
+            const imageUpload = imageFile[0] ? await uploadFile<{ url: string }>("/uploads", imageFile[0], "catalog-item", "PUBLIC") : undefined;
             const payload = {
               ...(item ? {} : { catalogId: field(form, "catalogId") }),
               key: stableKey(field(form, "key")),
               name: field(form, "name"),
               assetKey: field(form, "assetKey") || undefined,
               description: field(form, "description") || undefined,
-              imageUrl: field(form, "imageUrl") || undefined,
+              imageUrl: imageUpload?.url ?? item?.imageUrl ?? undefined,
               imageAlt: field(form, "imageAlt") || undefined,
               prices: normalizedPrices,
               rewards: normalizedRewards,
@@ -538,12 +533,7 @@ function ItemDialog({
                 </Select>
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  name="imageUrl"
-                  label="Catalog image URL"
-                  defaultValue={item?.imageUrl ?? ""}
-                  fullWidth
-                />
+                <ImageUploadField label="Upload catalog image" files={imageFile} onChange={setImageFile} existingUrl={item?.imageUrl} />
               </Grid>
               <Grid size={12}>
                 <TextField

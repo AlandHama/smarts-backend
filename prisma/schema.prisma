@@ -226,34 +226,72 @@ enum EntitlementStatus {
   EXPIRED
 }
 
+enum StoredFileVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum StoredFileStatus {
+  ACTIVE
+  DELETED
+}
+
+enum FeedbackEntity {
+  GAME
+  PLAYER
+  UGC
+}
+
+enum FeedbackStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum PlayerStorageVisibility {
+  PRIVATE
+  PUBLIC
+}
+
+enum PlayerStorageValueType {
+  STRING
+  JSON
+  DATE
+  URL
+}
+
 model User {
-  id           String     @id @default(uuid()) @db.Uuid
-  username     String     @unique @db.VarChar(50)
-  passwordHash String     @db.VarChar(255)
-  firstName    String?    @db.VarChar(100)
-  lastName     String?    @db.VarChar(100)
-  email        String?    @unique @db.VarChar(255)
-  status       UserStatus @default(ACTIVE)
-  isSystemAdmin Boolean    @default(false)
-  lastOnline   DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  sessions     Session[]
-  profile      PlayerProfile?
-  stats        PlayerStats?
-  wallet       Wallet?
-  progressions      PlayerProgression[]
-  idempotencyKeys   IdempotencyKey[]
-  progressionEvents ProgressionEvent[]
-  rewardGrants      RewardGrant[]
-  leaderboardEntries LeaderboardEntry[]
+  id                     String                  @id @default(uuid()) @db.Uuid
+  username               String                  @unique @db.VarChar(50)
+  passwordHash           String                  @db.VarChar(255)
+  firstName              String?                 @db.VarChar(100)
+  lastName               String?                 @db.VarChar(100)
+  email                  String?                 @unique @db.VarChar(255)
+  status                 UserStatus              @default(ACTIVE)
+  isSystemAdmin          Boolean                 @default(false)
+  lastOnline             DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  sessions               Session[]
+  profile                PlayerProfile?
+  stats                  PlayerStats?
+  wallet                 Wallet?
+  progressions           PlayerProgression[]
+  idempotencyKeys        IdempotencyKey[]
+  progressionEvents      ProgressionEvent[]
+  rewardGrants           RewardGrant[]
+  leaderboardEntries     LeaderboardEntry[]
   leaderboardScoreEvents LeaderboardScoreEvent[] @relation("LeaderboardScoreEventPlayer")
-  createdMatches Match[] @relation("MatchCreatedBy")
-  matchParticipants MatchParticipant[]
-  gameStats PlayerGameStats[]
-  inventoryItems InventoryItem[]
-  purchases Purchase[]
-  entitlements Entitlement[]
+  createdMatches         Match[]                 @relation("MatchCreatedBy")
+  matchParticipants      MatchParticipant[]
+  gameStats              PlayerGameStats[]
+  inventoryItems         InventoryItem[]
+  purchases              Purchase[]
+  entitlements           Entitlement[]
+  storageItems           PlayerStorageItem[]
+  files                  StoredFile[]
+  feedback               PlayerFeedback[]
 }
 
 model Session {
@@ -266,7 +304,7 @@ model Session {
   deviceInfo          String?       @db.VarChar(500)
   ipAddress           String?       @db.VarChar(100)
   deviceName          String?       @db.VarChar(100)
-  location            String?        @db.VarChar(100)
+  location            String?       @db.VarChar(100)
   loginTimestamp      DateTime      @default(now())
   lastActiveTimestamp DateTime      @default(now())
   expiresAt           DateTime
@@ -287,6 +325,8 @@ model PlayerProfile {
   avatarUrl   String?  @db.Text
   countryCode String?  @db.VarChar(2)
   bio         String?  @db.VarChar(250)
+  isPublic    Boolean  @default(true)
+  metadata    Json?
   level       Int      @default(1)
   xp          BigInt   @default(0)
   elo         Int      @default(1000)
@@ -297,6 +337,82 @@ model PlayerProfile {
   @@index([elo])
   @@index([level])
   @@index([countryCode])
+}
+
+model PlayerStorageItem {
+  id           String                  @id @default(uuid()) @db.Uuid
+  userId       String                  @db.Uuid
+  key          String                  @db.VarChar(100)
+  value        String                  @db.Text
+  visibility   PlayerStorageVisibility @default(PRIVATE)
+  valueType    PlayerStorageValueType  @default(STRING)
+  displayOrder Int                     @default(0)
+  version      Int                     @default(1)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, visibility, displayOrder])
+  @@index([key, visibility])
+}
+
+model StoredFile {
+  id           String               @id @default(uuid()) @db.Uuid
+  userId       String?              @db.Uuid
+  objectKey    String               @unique @db.VarChar(512)
+  originalName String               @db.VarChar(255)
+  contentType  String               @db.VarChar(120)
+  byteSize     BigInt
+  checksum     String?              @db.VarChar(128)
+  purpose      String               @db.VarChar(80)
+  visibility   StoredFileVisibility @default(PRIVATE)
+  status       StoredFileStatus     @default(ACTIVE)
+  metadata     Json?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  deletedAt    DateTime?
+  user         User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, purpose, status])
+  @@index([purpose, status, createdAt])
+}
+
+model FeedbackCategory {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique @db.VarChar(80)
+  entity      FeedbackEntity
+  name        String           @db.VarChar(120)
+  description String?          @db.VarChar(500)
+  active      Boolean          @default(true)
+  sortOrder   Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  feedback    PlayerFeedback[]
+
+  @@index([entity, active, sortOrder])
+}
+
+model PlayerFeedback {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @db.Uuid
+  categoryId  String           @db.Uuid
+  entity      FeedbackEntity
+  entityId    String?          @db.Uuid
+  description String           @db.Text
+  status      FeedbackStatus   @default(OPEN)
+  metadata    Json?
+  adminNote   String?          @db.Text
+  resolvedAt  DateTime?
+  resolvedBy  String?          @db.Uuid
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    FeedbackCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([entity, status, createdAt])
+  @@index([categoryId, createdAt])
 }
 
 model PlayerStats {
@@ -316,62 +432,62 @@ model PlayerStats {
 }
 
 model CurrencyDefinition {
-  id        String       @id @default(uuid()) @db.Uuid
-  code      String       @unique @db.VarChar(32)
-  name      String       @db.VarChar(100)
-  kind      CurrencyKind
-  precision Int          @default(0)
-  active    Boolean      @default(true)
-  metadata  Json?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  balances     WalletBalance[]
-  tierRewards  ProgressionTierReward[]
-  rewardGrants RewardGrant[]
-  transactions WalletTransaction[]
-  catalogPrices CatalogPrice[]
+  id             String                  @id @default(uuid()) @db.Uuid
+  code           String                  @unique @db.VarChar(32)
+  name           String                  @db.VarChar(100)
+  kind           CurrencyKind
+  precision      Int                     @default(0)
+  active         Boolean                 @default(true)
+  metadata       Json?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  balances       WalletBalance[]
+  tierRewards    ProgressionTierReward[]
+  rewardGrants   RewardGrant[]
+  transactions   WalletTransaction[]
+  catalogPrices  CatalogPrice[]
   catalogRewards CatalogReward[]
-  purchases Purchase[]
+  purchases      Purchase[]
 }
 
 model AssetDefinition {
-  id               String               @id @default(uuid()) @db.Uuid
-  key              String               @unique @db.VarChar(100)
-  name             String               @db.VarChar(120)
-  description      String?              @db.Text
-  assetType        AssetType
-  ownershipPolicy  AssetOwnershipPolicy @default(STACKABLE)
-  imageUrl         String?              @db.Text
-  imageAlt         String?              @db.VarChar(160)
-  imageUrls        Json?
-  active           Boolean              @default(true)
-  metadata         Json?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  variations       AssetVariation[]
-  inventoryItems   InventoryItem[]
-  catalogItems     CatalogItem[]
-  rewards          CatalogReward[]
-  entitlements     Entitlement[]
+  id              String               @id @default(uuid()) @db.Uuid
+  key             String               @unique @db.VarChar(100)
+  name            String               @db.VarChar(120)
+  description     String?              @db.Text
+  assetType       AssetType
+  ownershipPolicy AssetOwnershipPolicy @default(STACKABLE)
+  imageUrl        String?              @db.Text
+  imageAlt        String?              @db.VarChar(160)
+  imageUrls       Json?
+  active          Boolean              @default(true)
+  metadata        Json?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  variations      AssetVariation[]
+  inventoryItems  InventoryItem[]
+  catalogItems    CatalogItem[]
+  rewards         CatalogReward[]
+  entitlements    Entitlement[]
 
   @@index([active, assetType])
 }
 
 model AssetVariation {
-  id             String          @id @default(uuid()) @db.Uuid
-  assetDefinitionId String       @db.Uuid
-  key            String          @db.VarChar(100)
-  name           String?         @db.VarChar(120)
-  imageUrl       String?         @db.Text
-  imageAlt       String?         @db.VarChar(160)
-  imageUrls      Json?
-  active         Boolean         @default(true)
-  metadata       Json?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  assetDefinition AssetDefinition @relation(fields: [assetDefinitionId], references: [id], onDelete: Cascade)
-  inventoryItems InventoryItem[]
-  rewards        CatalogReward[]
+  id                String          @id @default(uuid()) @db.Uuid
+  assetDefinitionId String          @db.Uuid
+  key               String          @db.VarChar(100)
+  name              String?         @db.VarChar(120)
+  imageUrl          String?         @db.Text
+  imageAlt          String?         @db.VarChar(160)
+  imageUrls         Json?
+  active            Boolean         @default(true)
+  metadata          Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  assetDefinition   AssetDefinition @relation(fields: [assetDefinitionId], references: [id], onDelete: Cascade)
+  inventoryItems    InventoryItem[]
+  rewards           CatalogReward[]
 
   @@unique([assetDefinitionId, key])
   @@index([assetDefinitionId, active])
@@ -394,27 +510,27 @@ model Catalog {
 }
 
 model CatalogItem {
-  id              String           @id @default(uuid()) @db.Uuid
-  catalogId       String           @db.Uuid
-  key             String           @db.VarChar(100)
-  name            String           @db.VarChar(120)
-  description     String?          @db.Text
-  assetDefinitionId String?        @db.Uuid
-  imageUrl        String?          @db.Text
-  imageAlt        String?          @db.VarChar(160)
-  imageUrls       Json?
-  purchasable     Boolean          @default(true)
-  active          Boolean          @default(true)
-  startsAt        DateTime?
-  endsAt          DateTime?
-  metadata        Json?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  catalog         Catalog          @relation(fields: [catalogId], references: [id], onDelete: Cascade)
-  assetDefinition AssetDefinition? @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
-  prices          CatalogPrice[]
-  rewards         CatalogReward[]
-  purchaseLines   PurchaseLine[]
+  id                String           @id @default(uuid()) @db.Uuid
+  catalogId         String           @db.Uuid
+  key               String           @db.VarChar(100)
+  name              String           @db.VarChar(120)
+  description       String?          @db.Text
+  assetDefinitionId String?          @db.Uuid
+  imageUrl          String?          @db.Text
+  imageAlt          String?          @db.VarChar(160)
+  imageUrls         Json?
+  purchasable       Boolean          @default(true)
+  active            Boolean          @default(true)
+  startsAt          DateTime?
+  endsAt            DateTime?
+  metadata          Json?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  catalog           Catalog          @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  assetDefinition   AssetDefinition? @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  prices            CatalogPrice[]
+  rewards           CatalogReward[]
+  purchaseLines     PurchaseLine[]
 
   @@unique([catalogId, key])
   @@index([catalogId, active, startsAt, endsAt])
@@ -422,39 +538,39 @@ model CatalogItem {
 }
 
 model CatalogPrice {
-  id           String             @id @default(uuid()) @db.Uuid
-  catalogItemId String            @db.Uuid
-  currencyId   String             @db.Uuid
-  amount       BigInt
-  active       Boolean            @default(true)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  catalogItem  CatalogItem        @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
-  currency     CurrencyDefinition @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  id            String             @id @default(uuid()) @db.Uuid
+  catalogItemId String             @db.Uuid
+  currencyId    String             @db.Uuid
+  amount        BigInt
+  active        Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  catalogItem   CatalogItem        @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  currency      CurrencyDefinition @relation(fields: [currencyId], references: [id], onDelete: Restrict)
 
   @@unique([catalogItemId, currencyId])
   @@index([currencyId, active])
 }
 
 model CatalogReward {
-  id                   String                 @id @default(uuid()) @db.Uuid
-  catalogItemId        String                 @db.Uuid
-  rewardType           CatalogRewardType
-  assetDefinitionId    String?                @db.Uuid
-  assetVariationId     String?                @db.Uuid
-  currencyId           String?                @db.Uuid
-  progressionDefinitionId String?             @db.Uuid
-  targetKey            String?                @db.VarChar(120)
-  amount               BigInt?
-  quantity             Int                    @default(1)
-  sortOrder            Int                    @default(0)
-  metadata             Json?
-  createdAt            DateTime               @default(now())
-  catalogItem          CatalogItem            @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
-  assetDefinition     AssetDefinition?       @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
-  assetVariation      AssetVariation?        @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
-  currency             CurrencyDefinition?    @relation(fields: [currencyId], references: [id], onDelete: Restrict)
-  progressionDefinition ProgressionDefinition? @relation(fields: [progressionDefinitionId], references: [id], onDelete: Restrict)
+  id                      String                 @id @default(uuid()) @db.Uuid
+  catalogItemId           String                 @db.Uuid
+  rewardType              CatalogRewardType
+  assetDefinitionId       String?                @db.Uuid
+  assetVariationId        String?                @db.Uuid
+  currencyId              String?                @db.Uuid
+  progressionDefinitionId String?                @db.Uuid
+  targetKey               String?                @db.VarChar(120)
+  amount                  BigInt?
+  quantity                Int                    @default(1)
+  sortOrder               Int                    @default(0)
+  metadata                Json?
+  createdAt               DateTime               @default(now())
+  catalogItem             CatalogItem            @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  assetDefinition         AssetDefinition?       @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  assetVariation          AssetVariation?        @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
+  currency                CurrencyDefinition?    @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  progressionDefinition   ProgressionDefinition? @relation(fields: [progressionDefinitionId], references: [id], onDelete: Restrict)
 
   @@index([catalogItemId, sortOrder])
   @@index([assetDefinitionId])
@@ -462,22 +578,22 @@ model CatalogReward {
 }
 
 model InventoryItem {
-  id                  String                    @id @default(uuid()) @db.Uuid
-  instanceId          String                    @unique @default(uuid()) @db.Uuid
-  stackKey            String?
-  userId              String                    @db.Uuid
-  assetDefinitionId   String                    @db.Uuid
-  assetVariationId    String?                   @db.Uuid
-  quantity            Int                       @default(1)
-  acquisitionSource   InventoryAcquisitionSource
-  sourceId            String                    @db.VarChar(255)
-  rentalExpiresAt     DateTime?
-  metadata            Json?
-  createdAt           DateTime                  @default(now())
-  updatedAt           DateTime                  @updatedAt
-  user                User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assetDefinition     AssetDefinition           @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
-  assetVariation      AssetVariation?           @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
+  id                String                     @id @default(uuid()) @db.Uuid
+  instanceId        String                     @unique @default(uuid()) @db.Uuid
+  stackKey          String?
+  userId            String                     @db.Uuid
+  assetDefinitionId String                     @db.Uuid
+  assetVariationId  String?                    @db.Uuid
+  quantity          Int                        @default(1)
+  acquisitionSource InventoryAcquisitionSource
+  sourceId          String                     @db.VarChar(255)
+  rentalExpiresAt   DateTime?
+  metadata          Json?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  user              User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetDefinition   AssetDefinition            @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  assetVariation    AssetVariation?            @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([userId, assetDefinitionId, assetVariationId])
@@ -485,61 +601,61 @@ model InventoryItem {
 }
 
 model Purchase {
-  id                 String         @id @default(uuid()) @db.Uuid
-  userId             String         @db.Uuid
-  status             PurchaseStatus @default(PENDING)
-  currencyId         String         @db.Uuid
-  totalAmount        BigInt
-  idempotencyKeyId   String         @unique @db.Uuid
-  provider           String?        @db.VarChar(40)
-  providerReference  String?        @unique @db.VarChar(255)
-  failureReason      String?        @db.Text
-  metadata           Json?
-  completedAt        DateTime?
-  refundedAt         DateTime?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currency           CurrencyDefinition @relation(fields: [currencyId], references: [id], onDelete: Restrict)
-  idempotencyKey     IdempotencyKey @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
-  lines              PurchaseLine[]
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String             @db.Uuid
+  status            PurchaseStatus     @default(PENDING)
+  currencyId        String             @db.Uuid
+  totalAmount       BigInt
+  idempotencyKeyId  String             @unique @db.Uuid
+  provider          String?            @db.VarChar(40)
+  providerReference String?            @unique @db.VarChar(255)
+  failureReason     String?            @db.Text
+  metadata          Json?
+  completedAt       DateTime?
+  refundedAt        DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency          CurrencyDefinition @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  idempotencyKey    IdempotencyKey     @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
+  lines             PurchaseLine[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
 }
 
 model PurchaseLine {
-  id             String      @id @default(uuid()) @db.Uuid
-  purchaseId     String      @db.Uuid
-  catalogItemId  String?     @db.Uuid
-  itemKeySnapshot String     @db.VarChar(100)
-  itemNameSnapshot String    @db.VarChar(120)
-  quantity       Int
-  unitAmount     BigInt
-  totalAmount    BigInt
-  rewardSnapshot Json
-  createdAt      DateTime    @default(now())
-  purchase       Purchase    @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  catalogItem    CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  id               String       @id @default(uuid()) @db.Uuid
+  purchaseId       String       @db.Uuid
+  catalogItemId    String?      @db.Uuid
+  itemKeySnapshot  String       @db.VarChar(100)
+  itemNameSnapshot String       @db.VarChar(120)
+  quantity         Int
+  unitAmount       BigInt
+  totalAmount      BigInt
+  rewardSnapshot   Json
+  createdAt        DateTime     @default(now())
+  purchase         Purchase     @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  catalogItem      CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
 
   @@index([purchaseId])
   @@index([catalogItemId])
 }
 
 model Entitlement {
-  id             String             @id @default(uuid()) @db.Uuid
-  userId         String             @db.Uuid
-  entitlementKey String             @db.VarChar(160)
-  assetDefinitionId String?         @db.Uuid
-  status         EntitlementStatus  @default(ACTIVE)
-  sourceType     String             @db.VarChar(40)
-  sourceId       String             @db.VarChar(255)
-  expiresAt      DateTime?
-  metadata       Json?
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assetDefinition AssetDefinition?  @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  id                String            @id @default(uuid()) @db.Uuid
+  userId            String            @db.Uuid
+  entitlementKey    String            @db.VarChar(160)
+  assetDefinitionId String?           @db.Uuid
+  status            EntitlementStatus @default(ACTIVE)
+  sourceType        String            @db.VarChar(40)
+  sourceId          String            @db.VarChar(255)
+  expiresAt         DateTime?
+  metadata          Json?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetDefinition   AssetDefinition?  @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
 
   @@unique([userId, entitlementKey])
   @@index([userId, status, expiresAt])
@@ -547,13 +663,13 @@ model Entitlement {
 }
 
 model Wallet {
-  id         String         @id @default(uuid()) @db.Uuid
-  userId     String         @unique @db.Uuid
-  walletType WalletType     @default(PLAYER)
-  status     WalletStatus   @default(ACTIVE)
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
-  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String              @id @default(uuid()) @db.Uuid
+  userId       String              @unique @db.Uuid
+  walletType   WalletType          @default(PLAYER)
+  status       WalletStatus        @default(ACTIVE)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   balances     WalletBalance[]
   transactions WalletTransaction[]
 }
@@ -574,39 +690,39 @@ model WalletBalance {
 }
 
 model IdempotencyKey {
-  id           String           @id @default(uuid()) @db.Uuid
-  userId       String?          @db.Uuid
-  scope        String           @db.VarChar(100)
-  key          String           @db.VarChar(128)
-  requestHash  String           @db.Char(64)
-  responseJson Json?
-  status       IdempotencyStatus @default(PROCESSING)
-  createdAt    DateTime         @default(now())
-  completedAt  DateTime?
-  user         User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id              String            @id @default(uuid()) @db.Uuid
+  userId          String?           @db.Uuid
+  scope           String            @db.VarChar(100)
+  key             String            @db.VarChar(128)
+  requestHash     String            @db.Char(64)
+  responseJson    Json?
+  status          IdempotencyStatus @default(PROCESSING)
+  createdAt       DateTime          @default(now())
+  completedAt     DateTime?
+  user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
   matchSettlement MatchSettlement?
-  purchase       Purchase?
+  purchase        Purchase?
 
   @@unique([scope, key])
   @@index([userId, scope])
 }
 
 model ProgressionDefinition {
-  id            String                 @id @default(uuid()) @db.Uuid
-  key           String                 @unique @db.VarChar(64)
-  name          String                 @db.VarChar(100)
-  kind          ProgressionKind
-  active        Boolean                @default(true)
-  allowNegative Boolean                @default(false)
-  resetPolicy   ProgressionResetPolicy @default(NEVER)
-  metadata      Json?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  tiers         ProgressionTier[]
-  playerRows    PlayerProgression[]
-  rewards       ProgressionTierReward[] @relation("TargetProgression")
-  events        ProgressionEvent[]
-  grants        RewardGrant[]
+  id             String                  @id @default(uuid()) @db.Uuid
+  key            String                  @unique @db.VarChar(64)
+  name           String                  @db.VarChar(100)
+  kind           ProgressionKind
+  active         Boolean                 @default(true)
+  allowNegative  Boolean                 @default(false)
+  resetPolicy    ProgressionResetPolicy  @default(NEVER)
+  metadata       Json?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  tiers          ProgressionTier[]
+  playerRows     PlayerProgression[]
+  rewards        ProgressionTierReward[] @relation("TargetProgression")
+  events         ProgressionEvent[]
+  grants         RewardGrant[]
   catalogRewards CatalogReward[]
 }
 
@@ -628,59 +744,59 @@ model ProgressionTier {
 }
 
 model ProgressionTierReward {
-  id                   String                @id @default(uuid()) @db.Uuid
-  tierId               String                @db.Uuid
-  rewardType           ProgressionRewardType
-  targetProgressionId  String?               @db.Uuid
-  currencyId           String?               @db.Uuid
-  targetKey            String?               @db.VarChar(120)
-  amount               BigInt?
-  sortOrder            Int                   @default(0)
-  metadata             Json?
-  createdAt            DateTime              @default(now())
-  tier                 ProgressionTier       @relation(fields: [tierId], references: [id], onDelete: Cascade)
-  targetProgression    ProgressionDefinition? @relation("TargetProgression", fields: [targetProgressionId], references: [id], onDelete: Restrict)
-  currency             CurrencyDefinition?  @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  id                  String                 @id @default(uuid()) @db.Uuid
+  tierId              String                 @db.Uuid
+  rewardType          ProgressionRewardType
+  targetProgressionId String?                @db.Uuid
+  currencyId          String?                @db.Uuid
+  targetKey           String?                @db.VarChar(120)
+  amount              BigInt?
+  sortOrder           Int                    @default(0)
+  metadata            Json?
+  createdAt           DateTime               @default(now())
+  tier                ProgressionTier        @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  targetProgression   ProgressionDefinition? @relation("TargetProgression", fields: [targetProgressionId], references: [id], onDelete: Restrict)
+  currency            CurrencyDefinition?    @relation(fields: [currencyId], references: [id], onDelete: Restrict)
 
   @@index([tierId, sortOrder])
   @@index([targetProgressionId])
 }
 
 model PlayerProgression {
-  id                 String               @id @default(uuid()) @db.Uuid
-  userId             String               @db.Uuid
-  progressionId      String               @db.Uuid
-  points             BigInt               @default(0)
-  step               Int                  @default(1)
-  previousThreshold  BigInt               @default(0)
-  nextThreshold      BigInt?
-  lastLevelUpAt      DateTime?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  progression        ProgressionDefinition @relation(fields: [progressionId], references: [id], onDelete: Cascade)
-  events             ProgressionEvent[]
+  id                String                @id @default(uuid()) @db.Uuid
+  userId            String                @db.Uuid
+  progressionId     String                @db.Uuid
+  points            BigInt                @default(0)
+  step              Int                   @default(1)
+  previousThreshold BigInt                @default(0)
+  nextThreshold     BigInt?
+  lastLevelUpAt     DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progression       ProgressionDefinition @relation(fields: [progressionId], references: [id], onDelete: Cascade)
+  events            ProgressionEvent[]
 
   @@unique([userId, progressionId])
   @@index([progressionId, points])
 }
 
 model ProgressionEvent {
-  id              String                    @id @default(uuid()) @db.Uuid
-  userId          String                    @db.Uuid
-  progressionId   String                    @db.Uuid
-  playerRowId     String                    @db.Uuid
-  delta           BigInt
-  balanceBefore   BigInt
-  balanceAfter    BigInt
-  sourceType      ProgressionEventSourceType
-  sourceId        String                    @db.VarChar(255)
-  idempotencyKeyId String?                  @db.Uuid
-  metadata        Json?
-  createdAt       DateTime                  @default(now())
-  user            User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  progression     ProgressionDefinition     @relation(fields: [progressionId], references: [id], onDelete: Cascade)
-  playerRow       PlayerProgression         @relation(fields: [playerRowId], references: [id], onDelete: Cascade)
+  id               String                     @id @default(uuid()) @db.Uuid
+  userId           String                     @db.Uuid
+  progressionId    String                     @db.Uuid
+  playerRowId      String                     @db.Uuid
+  delta            BigInt
+  balanceBefore    BigInt
+  balanceAfter     BigInt
+  sourceType       ProgressionEventSourceType
+  sourceId         String                     @db.VarChar(255)
+  idempotencyKeyId String?                    @db.Uuid
+  metadata         Json?
+  createdAt        DateTime                   @default(now())
+  user             User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progression      ProgressionDefinition      @relation(fields: [progressionId], references: [id], onDelete: Cascade)
+  playerRow        PlayerProgression          @relation(fields: [playerRowId], references: [id], onDelete: Cascade)
 
   @@index([userId, progressionId, createdAt])
   @@index([sourceType, sourceId])
@@ -688,45 +804,45 @@ model ProgressionEvent {
 }
 
 model RewardGrant {
-  id                    String               @id @default(uuid()) @db.Uuid
-  userId                String               @db.Uuid
-  sourceType            WalletTransactionSourceType
-  sourceId              String               @db.VarChar(255)
-  rewardType            ProgressionRewardType
-  grantKey              String               @unique @db.VarChar(255)
-  progressionDefinitionId String?             @db.Uuid
-  currencyId            String?              @db.Uuid
-  amount                BigInt?
-  targetKey             String?              @db.VarChar(120)
-  status                RewardGrantStatus   @default(GRANTED)
-  policyVersion         String?              @db.VarChar(32)
-  idempotencyKeyId      String?              @db.Uuid
-  metadata              Json?
-  createdAt             DateTime             @default(now())
-  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  progressionDefinition ProgressionDefinition? @relation(fields: [progressionDefinitionId], references: [id], onDelete: Restrict)
-  currency              CurrencyDefinition? @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  id                      String                      @id @default(uuid()) @db.Uuid
+  userId                  String                      @db.Uuid
+  sourceType              WalletTransactionSourceType
+  sourceId                String                      @db.VarChar(255)
+  rewardType              ProgressionRewardType
+  grantKey                String                      @unique @db.VarChar(255)
+  progressionDefinitionId String?                     @db.Uuid
+  currencyId              String?                     @db.Uuid
+  amount                  BigInt?
+  targetKey               String?                     @db.VarChar(120)
+  status                  RewardGrantStatus           @default(GRANTED)
+  policyVersion           String?                     @db.VarChar(32)
+  idempotencyKeyId        String?                     @db.Uuid
+  metadata                Json?
+  createdAt               DateTime                    @default(now())
+  user                    User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progressionDefinition   ProgressionDefinition?      @relation(fields: [progressionDefinitionId], references: [id], onDelete: Restrict)
+  currency                CurrencyDefinition?         @relation(fields: [currencyId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([sourceType, sourceId])
 }
 
 model WalletTransaction {
-  id              String                    @id @default(uuid()) @db.Uuid
-  walletId        String                    @db.Uuid
-  currencyId      String                    @db.Uuid
-  direction       WalletTransactionDirection
-  amount          BigInt
-  balanceBefore   BigInt
-  balanceAfter    BigInt
-  sourceType      WalletTransactionSourceType
-  sourceId        String                    @db.VarChar(255)
-  grantKey        String?                   @unique @db.VarChar(255)
-  idempotencyKeyId String?                  @db.Uuid
-  metadata        Json?
-  createdAt       DateTime                  @default(now())
-  wallet          Wallet                    @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  currency        CurrencyDefinition        @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  id               String                      @id @default(uuid()) @db.Uuid
+  walletId         String                      @db.Uuid
+  currencyId       String                      @db.Uuid
+  direction        WalletTransactionDirection
+  amount           BigInt
+  balanceBefore    BigInt
+  balanceAfter     BigInt
+  sourceType       WalletTransactionSourceType
+  sourceId         String                      @db.VarChar(255)
+  grantKey         String?                     @unique @db.VarChar(255)
+  idempotencyKeyId String?                     @db.Uuid
+  metadata         Json?
+  createdAt        DateTime                    @default(now())
+  wallet           Wallet                      @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  currency         CurrencyDefinition          @relation(fields: [currencyId], references: [id], onDelete: Restrict)
 
   @@index([walletId, currencyId, createdAt])
   @@index([sourceType, sourceId])
@@ -734,17 +850,17 @@ model WalletTransaction {
 }
 
 model Leaderboard {
-  id          String                   @id @default(uuid()) @db.Uuid
-  key         String                   @unique @db.VarChar(80)
-  name        String                   @db.VarChar(120)
+  id          String                  @id @default(uuid()) @db.Uuid
+  key         String                  @unique @db.VarChar(80)
+  name        String                  @db.VarChar(120)
   memberType  LeaderboardMemberType
   period      LeaderboardPeriod
-  direction   LeaderboardDirection     @default(DESCENDING)
-  writePolicy LeaderboardWritePolicy   @default(SERVER_ONLY)
-  active      Boolean                  @default(true)
+  direction   LeaderboardDirection    @default(DESCENDING)
+  writePolicy LeaderboardWritePolicy  @default(SERVER_ONLY)
+  active      Boolean                 @default(true)
   metadata    Json?
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
   seasons     LeaderboardSeason[]
   entries     LeaderboardEntry[]
   scoreEvents LeaderboardScoreEvent[]
@@ -755,7 +871,7 @@ model LeaderboardSeason {
   leaderboardId String                  @db.Uuid
   startsAt      DateTime
   endsAt        DateTime
-  status        LeaderboardSeasonStatus  @default(SCHEDULED)
+  status        LeaderboardSeasonStatus @default(SCHEDULED)
   resetAt       DateTime?
   createdAt     DateTime                @default(now())
   leaderboard   Leaderboard             @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
@@ -767,18 +883,18 @@ model LeaderboardSeason {
 }
 
 model LeaderboardEntry {
-  id            String             @id @default(uuid()) @db.Uuid
-  leaderboardId String             @db.Uuid
-  seasonId      String             @db.Uuid
-  playerId      String?            @db.Uuid
-  memberKey     String             @db.VarChar(128)
-  score         BigInt             @default(0)
+  id            String                  @id @default(uuid()) @db.Uuid
+  leaderboardId String                  @db.Uuid
+  seasonId      String                  @db.Uuid
+  playerId      String?                 @db.Uuid
+  memberKey     String                  @db.VarChar(128)
+  score         BigInt                  @default(0)
   metadata      Json?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  leaderboard   Leaderboard        @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
-  season        LeaderboardSeason  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
-  player        User?              @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  leaderboard   Leaderboard             @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  season        LeaderboardSeason       @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  player        User?                   @relation(fields: [playerId], references: [id], onDelete: Cascade)
   scoreEvents   LeaderboardScoreEvent[]
 
   @@unique([leaderboardId, seasonId, memberKey])
@@ -787,23 +903,23 @@ model LeaderboardEntry {
 }
 
 model LeaderboardScoreEvent {
-  id              String                       @id @default(uuid()) @db.Uuid
-  entryId         String?                      @db.Uuid
-  leaderboardId   String                       @db.Uuid
-  seasonId        String                       @db.Uuid
-  memberKey       String                       @db.VarChar(128)
-  playerId        String?                      @db.Uuid
-  delta           BigInt
-  scoreBefore     BigInt
-  scoreAfter      BigInt
-  sourceType      LeaderboardScoreSourceType
-  sourceId        String                       @db.VarChar(255)
-  idempotencyKeyId String?                     @db.Uuid
-  createdAt       DateTime                     @default(now())
-  entry           LeaderboardEntry?            @relation(fields: [entryId], references: [id], onDelete: SetNull)
-  leaderboard     Leaderboard                  @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
-  season          LeaderboardSeason            @relation(fields: [seasonId], references: [id], onDelete: Cascade)
-  player          User?                        @relation("LeaderboardScoreEventPlayer", fields: [playerId], references: [id], onDelete: SetNull)
+  id               String                     @id @default(uuid()) @db.Uuid
+  entryId          String?                    @db.Uuid
+  leaderboardId    String                     @db.Uuid
+  seasonId         String                     @db.Uuid
+  memberKey        String                     @db.VarChar(128)
+  playerId         String?                    @db.Uuid
+  delta            BigInt
+  scoreBefore      BigInt
+  scoreAfter       BigInt
+  sourceType       LeaderboardScoreSourceType
+  sourceId         String                     @db.VarChar(255)
+  idempotencyKeyId String?                    @db.Uuid
+  createdAt        DateTime                   @default(now())
+  entry            LeaderboardEntry?          @relation(fields: [entryId], references: [id], onDelete: SetNull)
+  leaderboard      Leaderboard                @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  season           LeaderboardSeason          @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  player           User?                      @relation("LeaderboardScoreEventPlayer", fields: [playerId], references: [id], onDelete: SetNull)
 
   @@unique([entryId, sourceType, sourceId])
   @@index([entryId, createdAt])
@@ -812,17 +928,17 @@ model LeaderboardScoreEvent {
 }
 
 model GameDefinition {
-  id          String       @id @default(uuid()) @db.Uuid
-  key         String       @unique @db.VarChar(64)
-  name        String       @db.VarChar(120)
-  active      Boolean      @default(true)
-  modePolicy  Json?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  configs     GameConfig[]
-  matches     Match[]
-  content     GameContentItem[]
-  gameStats   PlayerGameStats[]
+  id         String            @id @default(uuid()) @db.Uuid
+  key        String            @unique @db.VarChar(64)
+  name       String            @db.VarChar(120)
+  active     Boolean           @default(true)
+  modePolicy Json?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  configs    GameConfig[]
+  matches    Match[]
+  content    GameContentItem[]
+  gameStats  PlayerGameStats[]
 }
 
 model GameConfig {
@@ -836,28 +952,28 @@ model GameConfig {
   scoreMultiplierForXp       Decimal        @db.Decimal(20, 8)
   maxEloDelta                Int
   soloEloScoreDivisor        Int
-  soloEloMaxDelta             Int
-  winnerBaseReward            BigInt
-  loserBaseReward             BigInt
-  drawReward                  BigInt
-  scoreRewardDivisor          Int
-  scoreRewardCap              BigInt
-  winnerRewardBonusMax        BigInt
-  loserRewardBonusMax         BigInt
-  multiplayerRewardReference  BigInt
-  correctAnswerPoints         Json
-  wrongAnswerPenaltyPercent   Int
-  maxAnswerTimeSeconds        Int
-  maxMatchDurationSeconds     Int
-  maxQuestions                Int
-  rankingEnabled              Boolean        @default(false)
-  rankingEloMultiplier        Decimal        @db.Decimal(20, 8)
-  rankingLevelMultiplier      Decimal        @db.Decimal(20, 8)
-  rankingCoinMultiplier       Decimal        @db.Decimal(20, 8)
-  settings                    Json?
-  createdAt                   DateTime       @default(now())
-  updatedAt                   DateTime       @updatedAt
-  gameDefinition              GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
+  soloEloMaxDelta            Int
+  winnerBaseReward           BigInt
+  loserBaseReward            BigInt
+  drawReward                 BigInt
+  scoreRewardDivisor         Int
+  scoreRewardCap             BigInt
+  winnerRewardBonusMax       BigInt
+  loserRewardBonusMax        BigInt
+  multiplayerRewardReference BigInt
+  correctAnswerPoints        Json
+  wrongAnswerPenaltyPercent  Int
+  maxAnswerTimeSeconds       Int
+  maxMatchDurationSeconds    Int
+  maxQuestions               Int
+  rankingEnabled             Boolean        @default(false)
+  rankingEloMultiplier       Decimal        @db.Decimal(20, 8)
+  rankingLevelMultiplier     Decimal        @db.Decimal(20, 8)
+  rankingCoinMultiplier      Decimal        @db.Decimal(20, 8)
+  settings                   Json?
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+  gameDefinition             GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
   matches                    Match[]
 
   @@unique([gameDefinitionId, version])
@@ -865,47 +981,47 @@ model GameConfig {
 }
 
 model Match {
-  id                String         @id @default(uuid()) @db.Uuid
-  gameDefinitionId  String         @db.Uuid
-  gameConfigId      String         @db.Uuid
-  mode              GameMode
-  status            MatchStatus    @default(CREATED)
-  serverNonce       String         @unique @db.VarChar(128)
-  startedAt         DateTime?
-  endedAt           DateTime?
-  settledAt         DateTime?
-  createdByUserId   String         @db.Uuid
-  metadata          Json?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  gameDefinition    GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
-  gameConfig        GameConfig     @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
-  createdBy         User           @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  participants      MatchParticipant[]
-  events            MatchEvent[]
-  settlement        MatchSettlement?
-  assignments       MatchContentAssignment[]
+  id               String                   @id @default(uuid()) @db.Uuid
+  gameDefinitionId String                   @db.Uuid
+  gameConfigId     String                   @db.Uuid
+  mode             GameMode
+  status           MatchStatus              @default(CREATED)
+  serverNonce      String                   @unique @db.VarChar(128)
+  startedAt        DateTime?
+  endedAt          DateTime?
+  settledAt        DateTime?
+  createdByUserId  String                   @db.Uuid
+  metadata         Json?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  gameDefinition   GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  gameConfig       GameConfig               @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
+  createdBy        User                     @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  participants     MatchParticipant[]
+  events           MatchEvent[]
+  settlement       MatchSettlement?
+  assignments      MatchContentAssignment[]
 
   @@index([status, createdAt])
   @@index([createdByUserId, status])
 }
 
 model MatchParticipant {
-  id                String                  @id @default(uuid()) @db.Uuid
-  matchId           String                  @db.Uuid
-  userId            String?                 @db.Uuid
-  participantType   MatchParticipantType
-  finalScore        Int?
-  answeredCount     Int                     @default(0)
-  result            MatchParticipantResult  @default(PENDING)
+  id               String                   @id @default(uuid()) @db.Uuid
+  matchId          String                   @db.Uuid
+  userId           String?                  @db.Uuid
+  participantType  MatchParticipantType
+  finalScore       Int?
+  answeredCount    Int                      @default(0)
+  result           MatchParticipantResult   @default(PENDING)
   submittedAt      DateTime?
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-  match             Match                   @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  user              User?                   @relation(fields: [userId], references: [id], onDelete: Restrict)
-  events            MatchEvent[]
-  assignments       MatchContentAssignment[]
-  winnerSettlement  MatchSettlement?        @relation("MatchSettlementWinner")
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  match            Match                    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user             User?                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  events           MatchEvent[]
+  assignments      MatchContentAssignment[]
+  winnerSettlement MatchSettlement?         @relation("MatchSettlementWinner")
 
   @@unique([matchId, userId])
   @@index([matchId, result])
@@ -913,19 +1029,19 @@ model MatchParticipant {
 }
 
 model MatchEvent {
-  id                String         @id @default(uuid()) @db.Uuid
-  matchId           String         @db.Uuid
-  participantId     String         @db.Uuid
-  sequence          Int
-  eventType         MatchEventType
-  clientEventId     String         @db.VarChar(128)
-  payload           Json?
-  clientOccurredAt  DateTime?
-  serverReceivedAt  DateTime       @default(now())
-  accepted          Boolean        @default(false)
-  rejectionReason   String?        @db.VarChar(160)
-  match             Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  participant       MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  id               String           @id @default(uuid()) @db.Uuid
+  matchId          String           @db.Uuid
+  participantId    String           @db.Uuid
+  sequence         Int
+  eventType        MatchEventType
+  clientEventId    String           @db.VarChar(128)
+  payload          Json?
+  clientOccurredAt DateTime?
+  serverReceivedAt DateTime         @default(now())
+  accepted         Boolean          @default(false)
+  rejectionReason  String?          @db.VarChar(160)
+  match            Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participant      MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, participantId, clientEventId])
   @@unique([matchId, participantId, sequence])
@@ -933,52 +1049,52 @@ model MatchEvent {
 }
 
 model MatchSettlement {
-  id                    String             @id @default(uuid()) @db.Uuid
-  matchId               String             @unique @db.Uuid
-  policyVersion         String             @db.VarChar(32)
-  winnerParticipantId   String?            @unique @db.Uuid
-  settlementJson        Json
-  idempotencyKeyId      String             @unique @db.Uuid
-  createdAt             DateTime           @default(now())
-  match                 Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  winnerParticipant     MatchParticipant?  @relation("MatchSettlementWinner", fields: [winnerParticipantId], references: [id], onDelete: SetNull)
-  idempotencyKey        IdempotencyKey     @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
+  id                  String            @id @default(uuid()) @db.Uuid
+  matchId             String            @unique @db.Uuid
+  policyVersion       String            @db.VarChar(32)
+  winnerParticipantId String?           @unique @db.Uuid
+  settlementJson      Json
+  idempotencyKeyId    String            @unique @db.Uuid
+  createdAt           DateTime          @default(now())
+  match               Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  winnerParticipant   MatchParticipant? @relation("MatchSettlementWinner", fields: [winnerParticipantId], references: [id], onDelete: SetNull)
+  idempotencyKey      IdempotencyKey    @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
 }
 
 model GameContentItem {
-  id              String          @id @default(uuid()) @db.Uuid
-  gameDefinitionId String         @db.Uuid
-  version         Int             @default(1)
-  contentType     String          @db.VarChar(40)
-  prompt          Json
-  options         Json
-  difficulty      Int             @default(1)
-  category        String?         @db.VarChar(80)
-  answerHash      String          @db.Char(64)
-  answerIndex     Int
-  active          Boolean         @default(true)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  gameDefinition  GameDefinition  @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
-  assignments     MatchContentAssignment[]
+  id               String                   @id @default(uuid()) @db.Uuid
+  gameDefinitionId String                   @db.Uuid
+  version          Int                      @default(1)
+  contentType      String                   @db.VarChar(40)
+  prompt           Json
+  options          Json
+  difficulty       Int                      @default(1)
+  category         String?                  @db.VarChar(80)
+  answerHash       String                   @db.Char(64)
+  answerIndex      Int
+  active           Boolean                  @default(true)
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  gameDefinition   GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
+  assignments      MatchContentAssignment[]
 
   @@index([gameDefinitionId, active, version])
 }
 
 model MatchContentAssignment {
-  id              String          @id @default(uuid()) @db.Uuid
-  matchId         String          @db.Uuid
-  participantId   String          @db.Uuid
-  contentItemId   String          @db.Uuid
-  position        Int
-  assignmentTokenHash String      @db.Char(64)
-  servedAt        DateTime        @default(now())
-  expiresAt       DateTime?
-  answeredAt      DateTime?
-  createdAt       DateTime        @default(now())
-  match           Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  participant     MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
-  contentItem     GameContentItem  @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
+  id                  String           @id @default(uuid()) @db.Uuid
+  matchId             String           @db.Uuid
+  participantId       String           @db.Uuid
+  contentItemId       String           @db.Uuid
+  position            Int
+  assignmentTokenHash String           @db.Char(64)
+  servedAt            DateTime         @default(now())
+  expiresAt           DateTime?
+  answeredAt          DateTime?
+  createdAt           DateTime         @default(now())
+  match               Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participant         MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  contentItem         GameContentItem  @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
 
   @@unique([matchId, participantId, position])
   @@index([participantId, contentItemId])
@@ -986,42 +1102,42 @@ model MatchContentAssignment {
 }
 
 model PlayerGameStats {
-  id              String         @id @default(uuid()) @db.Uuid
-  userId          String         @db.Uuid
-  gameDefinitionId String        @db.Uuid
-  gamesPlayed     Int            @default(0)
-  wins            Int            @default(0)
-  losses          Int            @default(0)
-  draws           Int            @default(0)
-  forfeits        Int            @default(0)
-  totalCorrect    Int            @default(0)
-  totalQuestions  Int            @default(0)
-  totalTimeMs     BigInt         @default(0)
-  totalScore      BigInt         @default(0)
-  bestScore       BigInt         @default(0)
-  lastPlayedAt    DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  gameDefinition  GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
+  id               String         @id @default(uuid()) @db.Uuid
+  userId           String         @db.Uuid
+  gameDefinitionId String         @db.Uuid
+  gamesPlayed      Int            @default(0)
+  wins             Int            @default(0)
+  losses           Int            @default(0)
+  draws            Int            @default(0)
+  forfeits         Int            @default(0)
+  totalCorrect     Int            @default(0)
+  totalQuestions   Int            @default(0)
+  totalTimeMs      BigInt         @default(0)
+  totalScore       BigInt         @default(0)
+  bestScore        BigInt         @default(0)
+  lastPlayedAt     DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameDefinition   GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
 
   @@unique([userId, gameDefinitionId])
   @@index([gameDefinitionId, totalScore])
 }
 
 model OutboxEvent {
-  id            String           @id @default(uuid()) @db.Uuid
-  eventType     String           @db.VarChar(120)
-  aggregateType String           @db.VarChar(80)
-  aggregateId   String           @db.Uuid
+  id            String            @id @default(uuid()) @db.Uuid
+  eventType     String            @db.VarChar(120)
+  aggregateType String            @db.VarChar(80)
+  aggregateId   String            @db.Uuid
   payload       Json
   status        OutboxEventStatus @default(PENDING)
-  attempts      Int              @default(0)
-  availableAt   DateTime         @default(now())
+  attempts      Int               @default(0)
+  availableAt   DateTime          @default(now())
   processedAt   DateTime?
-  lastError     String?          @db.Text
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  lastError     String?           @db.Text
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@index([status, availableAt])
   @@index([aggregateType, aggregateId])

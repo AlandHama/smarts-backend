@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common"
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger"
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common"
+import { FileInterceptor } from "@nestjs/platform-express"
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { SkipAuth } from "../../common/decorators/skip-auth.decorator"
@@ -13,11 +14,45 @@ import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationD
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
 import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
 import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
+import { FeedbackQueryDto, UpdateFeedbackDto, UploadFileDto } from "../storage/dtos"
+import type { UploadedImage } from "../storage/types"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
 export class SystemAdminController {
   constructor(private readonly systemAdminService: SystemAdminService) {}
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/uploads")
+  @ApiBearerAuth("access-token")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({ schema: { type: "object", properties: { file: { type: "string", format: "binary" }, purpose: { type: "string" }, visibility: { type: "string", enum: ["PUBLIC", "PRIVATE"] } }, required: ["file", "purpose"] } })
+  uploadFile(@UploadedFile() file: UploadedImage, @Body() dto: UploadFileDto, @CurrentUser() admin: UserResponseDto) {
+    return this.systemAdminService.uploadFile(file, dto, admin.id)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/files/:fileId/url")
+  @ApiBearerAuth("access-token")
+  getFileUrl(@Param("fileId", ParseUUIDPipe) fileId: string) { return this.systemAdminService.fileUrl(fileId).then((url) => ({ url })) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/files/:fileId")
+  @ApiBearerAuth("access-token")
+  deleteFile(@Param("fileId", ParseUUIDPipe) fileId: string) { return this.systemAdminService.deleteFile(fileId) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/feedback")
+  @ApiBearerAuth("access-token")
+  listFeedback(@Query() query: FeedbackQueryDto) { return this.systemAdminService.listFeedback(query) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/feedback/:feedbackId")
+  @ApiBearerAuth("access-token")
+  updateFeedback(@Param("feedbackId", ParseUUIDPipe) feedbackId: string, @Body() dto: UpdateFeedbackDto, @CurrentUser() admin: UserResponseDto) {
+    return this.systemAdminService.updateFeedback(feedbackId, dto, admin.id)
+  }
 
   @SkipAuth()
   @Post("api/auth/login")

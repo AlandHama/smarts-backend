@@ -46,6 +46,7 @@ export class UpdateUserProfileTransaction extends PrismaTransaction<UpdateUserPr
         ...(dto.avatarUrl !== undefined ? { avatarUrl: dto.avatarUrl } : {}),
         ...(dto.countryCode !== undefined ? { countryCode: dto.countryCode?.trim().toUpperCase() || null } : {}),
         ...(dto.bio !== undefined ? { bio: dto.bio?.trim() || null } : {}),
+        ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),
       }
       if (Object.keys(profileData).length > 0) {
         await transaction.playerProfile.update({ where: { userId: data.userId }, data: profileData })

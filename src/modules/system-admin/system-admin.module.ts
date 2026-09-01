@@ -17,9 +17,10 @@ import { EconomyModule } from "../economy/economy.module"
 import { LeaderboardModule } from "../leaderboard/leaderboard.module"
 import { GameModule } from "../game/game.module"
 import { CommerceModule } from "../commerce/commerce.module"
+import { StorageModule } from "../storage/storage.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,
