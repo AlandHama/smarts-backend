@@ -186,7 +186,7 @@ export interface TopPlayer {
   currency?: { code: string; name: string };
 }
 
-export interface OverviewMetrics { totalUsers: number; activeUsers: number; bannedUsers: number; activeAdmins: number; activeSessions: number; }
+export interface OverviewMetrics { totalUsers: number; activeUsers: number; bannedUsers: number; activeAdmins: number; activeSessions: number; onlinePlayers: number; }
 
 export interface CommerceAsset { id: string; key: string; name: string; description: string | null; assetType: string; ownershipPolicy: string; imageUrl: string | null; imageAlt: string | null; imageUrls?: string[] | null; active: boolean; variations?: Array<{ id: string; key: string; name: string | null }> }
 export interface CommerceCatalogItem { id: string; catalogId: string; key: string; name: string; description: string | null; assetDefinitionId: string | null; assetDefinition?: { id: string; key: string; name: string; imageUrl: string | null } | null; imageUrl: string | null; imageAlt: string | null; imageUrls?: string[] | null; purchasable: boolean; active: boolean; prices: Array<{ id: string; amount: string; active: boolean; currency: { code: string; name: string; precision?: number } }>; rewards: Array<{ id: string; rewardType: string; amount: string | null; quantity: number; targetKey: string | null; assetDefinition: { key: string; name: string; imageUrl: string | null } | null; assetVariation: { key: string; name: string | null; imageUrl?: string | null } | null; currency: { code: string; name: string } | null; progressionDefinition: { key: string; name: string } | null }> }

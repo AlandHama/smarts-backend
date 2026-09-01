@@ -19,6 +19,10 @@ export class MatchController {
   @Get(":matchId")
   get(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto) { return this.matchService.get(matchId, user.id) }
 
+  @Post(":matchId/start")
+  @ApiOperation({ summary: "Start a matched game and issue server-owned content assignments" })
+  start(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto) { return this.matchService.start(matchId, user.id) }
+
   @Post(":matchId/events")
   @ApiOperation({ summary: "Submit a bounded gameplay event; answers are verified against server content" })
   event(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto, @Body() dto: MatchEventDto) { return this.matchService.recordEventForPlayer(matchId, user.id, dto) }
@@ -26,6 +30,10 @@ export class MatchController {
   @Post(":matchId/complete")
   @ApiOperation({ summary: "Finish and atomically settle a match when all players have submitted" })
   complete(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto, @Body() dto: CompleteMatchDto) { return this.matchService.complete(matchId, user.id, dto) }
+
+  @Post(":matchId/forfeit")
+  @ApiOperation({ summary: "Forfeit or leave an active match" })
+  forfeit(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto) { return this.matchService.forfeit(matchId, user.id) }
 
   @Get(":matchId/settlement")
   settlement(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto) { return this.matchService.getSettlement(matchId, user.id) }

@@ -148,14 +148,17 @@ export class SystemAdminService implements OnModuleInit {
   }
 
   async overview() {
-    const [total, active, banned, admins, sessions] = await this.prisma.$transaction([
+    const now = new Date()
+    const onlineSince = new Date(now.getTime() - this.presenceWindowMs())
+    const [total, active, banned, admins, sessions, onlinePlayers] = await this.prisma.$transaction([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { status: UserStatus.ACTIVE } }),
       this.prisma.user.count({ where: { status: UserStatus.BANNED } }),
       this.prisma.user.count({ where: { isSystemAdmin: true, status: UserStatus.ACTIVE } }),
-      this.prisma.session.count({ where: { sessionStatus: "ACTIVE", expiresAt: { gt: new Date() } } }),
+      this.prisma.session.count({ where: { sessionStatus: "ACTIVE", expiresAt: { gt: now } } }),
+      this.prisma.presence.count({ where: { lastHeartbeatAt: { gt: onlineSince }, user: { status: UserStatus.ACTIVE } } }),
     ])
-    return { totalUsers: total, activeUsers: active, bannedUsers: banned, activeAdmins: admins, activeSessions: sessions }
+    return { totalUsers: total, activeUsers: active, bannedUsers: banned, activeAdmins: admins, activeSessions: sessions, onlinePlayers }
   }
 
   async createUser(dto: RegisterRequestDto) {
@@ -337,6 +340,11 @@ export class SystemAdminService implements OnModuleInit {
   removeFriend(userId: string, friendId: string) { return this.friendsService.removeFriend(userId, friendId) }
   blockFriend(userId: string, friendId: string) { return this.friendsService.blockPlayer(userId, friendId) }
   unblockFriend(userId: string, friendId: string) { return this.friendsService.unblockPlayer(userId, friendId) }
+
+  private presenceWindowMs() {
+    const configured = Number(process.env.PRESENCE_ONLINE_WINDOW_SECONDS)
+    return (Number.isFinite(configured) && configured >= 30 && configured <= 3600 ? configured : 300) * 1000
+  }
 
   private async getUser(userId: string, detailed = false) {
     const user = await this.prisma.user.findUnique({

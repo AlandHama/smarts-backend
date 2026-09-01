@@ -9,13 +9,16 @@ import { CompleteMatchTransaction } from "./transactions/complete-match-transact
 import { CreateMatchTransaction } from "./transactions/create-match-transaction"
 import { RecordMatchEventTransaction } from "./transactions/record-match-event-transaction"
 import { SettleMatchTransaction } from "./transactions/settle-match-transaction"
+import { ExpireMatchTransaction } from "./transactions/expire-match-transaction"
+import { ForfeitMatchTransaction } from "./transactions/forfeit-match-transaction"
+import { StartMatchTransaction } from "./transactions/start-match-transaction"
 import { MatchController } from "./match.controller"
 import { MatchService } from "./match.service"
 
 @Module({
   imports: [DatabaseModule, GameModule, ProgressionModule, EconomyModule, LeaderboardModule],
   controllers: [MatchController],
-  providers: [MatchService, CreateMatchTransaction, RecordMatchEventTransaction, CompleteMatchTransaction, SettleMatchTransaction],
-  exports: [MatchService, SettleMatchTransaction],
+  providers: [MatchService, CreateMatchTransaction, RecordMatchEventTransaction, CompleteMatchTransaction, SettleMatchTransaction, StartMatchTransaction, ForfeitMatchTransaction, ExpireMatchTransaction],
+  exports: [MatchService, SettleMatchTransaction, ExpireMatchTransaction],
 })
 export class MatchesModule {}

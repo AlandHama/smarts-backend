@@ -26,6 +26,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
 
     const now = new Date()
     const match = await transaction.match.create({ data: { gameDefinitionId: game.id, gameConfigId: config.id, mode: input.dto.mode, status: "STARTED", serverNonce: randomBytes(32).toString("base64url"), startedAt: now, createdByUserId: input.userId, metadata: input.dto.metadata as Prisma.InputJsonValue | undefined } })
+    await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: game.id, status: "STARTED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex"), startedAt: now } })
     const participants = [
       await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.userId, participantType: MatchParticipantType.PLAYER } }),
     ]
@@ -44,6 +45,6 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
       }
     }
     if (!items.length) assignments.push({ warning: "No server content is configured; score-reward settlement will be held for review." })
-    return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments }
+    return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments: assignments.filter((assignment) => assignment.participantId === participants[0].id) }
   }
 }

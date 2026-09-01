@@ -14,9 +14,10 @@ import { MatchesModule } from "./modules/matches/matches.module"
 import { CommerceModule } from "./modules/commerce/commerce.module"
 import { StorageModule } from "./modules/storage/storage.module"
 import { FriendsModule } from "./modules/friends/friends.module"
+import { MatchmakingModule } from "./modules/matchmaking/matchmaking.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, SystemAdminModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, SystemAdminModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

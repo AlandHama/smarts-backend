@@ -22,7 +22,9 @@ export class CompleteMatchTransaction extends PrismaTransaction<{ matchId: strin
     if (humanPending) {
       return { status: "PENDING", matchId: match.id, message: "Result recorded; waiting for the other player" }
     }
-    await transaction.match.update({ where: { id: match.id }, data: { status: "FINISHED", endedAt: new Date() } })
+    const endedAt = new Date()
+    await transaction.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt } })
+    await transaction.match.update({ where: { id: match.id }, data: { status: "FINISHED", endedAt } })
     return this.settleMatch.runWithinTransaction({ matchId: match.id, userId: input.userId, idempotencyKey: input.dto.idempotencyKey }, transaction)
   }
 }
