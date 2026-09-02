@@ -318,6 +318,7 @@ export class SystemAdminService implements OnModuleInit {
   listGameContent(key: string) { return this.gameService.listContent(key, true) }
   listRewardPolicies() { return this.configService.listAdmin() }
   publishRewardPolicy(dto: PublishRewardPolicyDto) { return this.configService.publish(dto) }
+  deactivateRewardPolicy(key: string) { return this.configService.deactivate(key) }
   listAdRewardClaims() {
     return this.prisma.adRewardClaim.findMany({
       orderBy: { createdAt: "desc" },

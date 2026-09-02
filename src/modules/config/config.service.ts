@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client"
 import { PrismaService } from "../../prisma.service"
 import { PublishRewardPolicyDto } from "./dtos/reward-policy.dto"
 import { PublishRewardPolicyTransaction } from "./transactions/publish-reward-policy-transaction"
+import { DeactivateRewardPolicyTransaction } from "./transactions/deactivate-reward-policy-transaction"
 import { GameService } from "../game/game.service"
 
 @Injectable()
@@ -11,6 +12,7 @@ export class ConfigService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly publishTransaction: PublishRewardPolicyTransaction,
+    private readonly deactivateTransaction: DeactivateRewardPolicyTransaction,
     private readonly gameService: GameService,
   ) {}
 
@@ -18,7 +20,7 @@ export class ConfigService {
     return this.prisma.rewardPolicyVersion.findMany({
       orderBy: [{ key: "asc" }, { version: "desc" }],
       take: 500,
-      select: { id: true, key: true, version: true, active: true, publicConfig: true, createdAt: true, updatedAt: true },
+      select: { id: true, key: true, version: true, active: true, publicConfig: true, privateConfig: true, createdAt: true, updatedAt: true },
     })
   }
 
@@ -42,6 +44,8 @@ export class ConfigService {
     if (this.containsSensitivePublicValue(dto.publicConfig)) throw new BadRequestException("Critical reward and verification values must remain server-side")
     return this.publishTransaction.run(dto)
   }
+
+  deactivate(key: string) { return this.deactivateTransaction.run(key) }
 
   private containsSensitivePublicValue(value: unknown, path = ""): boolean {
     if (Array.isArray(value)) return value.some((item) => this.containsSensitivePublicValue(item, path))

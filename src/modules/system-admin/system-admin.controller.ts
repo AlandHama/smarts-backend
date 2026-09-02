@@ -419,7 +419,7 @@ export class SystemAdminController {
   @UseGuards(SystemAdminGuard)
   @Get("api/reward-policies")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "List versioned reward policies without exposing private policy values" })
+  @ApiOperation({ summary: "List versioned reward policies and their server-side settings for administrators" })
   rewardPolicies() { return this.systemAdminService.listRewardPolicies() }
 
   @UseGuards(SystemAdminGuard)
@@ -427,6 +427,12 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Publish a new version of a server-owned reward policy" })
   publishRewardPolicy(@Body() dto: PublishRewardPolicyDto) { return this.systemAdminService.publishRewardPolicy(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/reward-policies/:key")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Deactivate a reward policy while retaining its immutable version history" })
+  deactivateRewardPolicy(@Param("key") key: string) { return this.systemAdminService.deactivateRewardPolicy(key) }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/ad-rewards/claims")
