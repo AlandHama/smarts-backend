@@ -4,8 +4,9 @@ import { Prisma, WalletTransactionDirection, WalletTransactionSourceType } from 
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 
-export type ReverseWalletInput = { userId: string; ledgerId?: string; originalGrantKey?: string; sourceId: string }
+export type ReverseWalletInput = { userId: string; ledgerId?: string; originalGrantKey?: string; sourceId: string; actorId?: string; reason?: string }
 
 @Injectable()
 export class ReverseWalletTransaction extends PrismaTransaction<ReverseWalletInput, any> {
@@ -38,6 +39,7 @@ export class ReverseWalletTransaction extends PrismaTransaction<ReverseWalletInp
     if (after < 0n) throw new BadRequestException("Cannot reverse this credit because the balance has already been spent")
     await transaction.walletBalance.update({ where: { id: locked.id }, data: { amount: after, version: { increment: 1n } } })
     const reversal = await transaction.walletTransaction.create({ data: { walletId: original.walletId, currencyId: original.currencyId, direction: WalletTransactionDirection.REVERSAL, amount: original.amount, balanceBefore: locked.amount, balanceAfter: after, sourceType: WalletTransactionSourceType.REFUND, sourceId, grantKey, idempotencyKeyId: idem.id, metadata: { reversalOf: original.id, reversedDirection: original.direction } } })
+    if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "WALLET_REVERSAL", entityType: "WalletTransaction", entityId: reversal.id, reason: input.reason, metadata: { userId: input.userId, originalTransactionId: original.id, sourceId } })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: this.serialize(reversal) as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     return this.serialize(reversal)
   }

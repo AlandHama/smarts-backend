@@ -354,6 +354,7 @@ model User {
   matchmakingInvitesReceived MatchmakingInvite[]     @relation("MatchmakingInviteInvitee")
   adRewardClaims             AdRewardClaim[]
   notifications              Notification[]
+  adminAuditEvents            AdminAuditEvent[]
 }
 
 model Session {
@@ -1411,4 +1412,22 @@ model Notification {
   @@unique([outboxEventId, userId])
   @@index([userId, status, createdAt])
   @@index([notificationType, createdAt])
+}
+
+/// Immutable record of a privileged operation performed from the system console.
+/// Passwords, token hashes, and provider secrets must never be written here.
+model AdminAuditEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String   @db.Uuid
+  action     String   @db.VarChar(100)
+  entityType String   @db.VarChar(80)
+  entityId   String?  @db.VarChar(255)
+  reason     String   @db.VarChar(500)
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([entityType, entityId, createdAt])
 }

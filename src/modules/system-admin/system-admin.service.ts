@@ -163,16 +163,70 @@ export class SystemAdminService implements OnModuleInit {
       this.prisma.session.count({ where: { sessionStatus: "ACTIVE", expiresAt: { gt: now } } }),
       this.prisma.presence.count({ where: { lastHeartbeatAt: { gt: onlineSince }, user: { status: UserStatus.ACTIVE } } }),
     ])
-    return { totalUsers: total, activeUsers: active, bannedUsers: banned, activeAdmins: admins, activeSessions: sessions, onlinePlayers }
+    const [queue, matches, failedOutbox, pendingOutbox, failedPurchases, openFeedback] = await this.prisma.$transaction([
+      this.prisma.matchmakingTicket.count({ where: { status: "SEARCHING", expiresAt: { gt: now } } }),
+      this.prisma.match.count({ where: { status: { in: ["STARTED", "REVIEW"] } } }),
+      this.prisma.outboxEvent.count({ where: { status: "FAILED" } }),
+      this.prisma.outboxEvent.count({ where: { status: { in: ["PENDING", "PROCESSING"] }, availableAt: { lte: now } } }),
+      this.prisma.purchase.count({ where: { status: "FAILED" } }),
+      this.prisma.playerFeedback.count({ where: { status: { in: ["OPEN", "IN_REVIEW"] } } }),
+    ])
+    return { totalUsers: total, activeUsers: active, bannedUsers: banned, activeAdmins: admins, activeSessions: sessions, onlinePlayers, queueTickets: queue, activeMatches: matches, failedOutbox, pendingOutbox, failedPurchases, openFeedback }
   }
 
-  async createUser(dto: RegisterRequestDto) {
-    const user = await this.usersService.create(dto)
+  /** Operational counters intentionally come from server-owned records, not mobile telemetry. */
+  async operations() {
+    const now = new Date()
+    const [searchingTickets, activeMatches, reviewMatches, settledMatches, pendingOutbox, processingOutbox, failedOutbox, pendingNotifications, failedNotifications, failedPurchases, completedPurchases, rejectedClaims, grantedClaims, activePolicies, openFeedback, inventoryRows, scoreEvents, walletTransactions, recentOutbox, recentAudit] = await this.prisma.$transaction([
+      this.prisma.matchmakingTicket.count({ where: { status: "SEARCHING", expiresAt: { gt: now } } }),
+      this.prisma.match.count({ where: { status: "STARTED" } }),
+      this.prisma.match.count({ where: { status: "REVIEW" } }),
+      this.prisma.match.count({ where: { status: "SETTLED" } }),
+      this.prisma.outboxEvent.count({ where: { status: "PENDING" } }),
+      this.prisma.outboxEvent.count({ where: { status: "PROCESSING" } }),
+      this.prisma.outboxEvent.count({ where: { status: "FAILED" } }),
+      this.prisma.notification.count({ where: { status: "PENDING" } }),
+      this.prisma.notification.count({ where: { status: "FAILED" } }),
+      this.prisma.purchase.count({ where: { status: "FAILED" } }),
+      this.prisma.purchase.count({ where: { status: "COMPLETED" } }),
+      this.prisma.adRewardClaim.count({ where: { status: "REJECTED" } }),
+      this.prisma.adRewardClaim.count({ where: { status: "GRANTED" } }),
+      this.prisma.rewardPolicyVersion.count({ where: { active: true } }),
+      this.prisma.playerFeedback.count({ where: { status: { in: ["OPEN", "IN_REVIEW"] } } }),
+      this.prisma.inventoryItem.count(),
+      this.prisma.leaderboardScoreEvent.count(),
+      this.prisma.walletTransaction.count(),
+      this.prisma.outboxEvent.findMany({ orderBy: { createdAt: "desc" }, take: 12, select: { id: true, eventType: true, aggregateType: true, aggregateId: true, status: true, attempts: true, lastError: true, createdAt: true, processedAt: true } }),
+      this.prisma.adminAuditEvent.findMany({ orderBy: { createdAt: "desc" }, take: 25, select: { id: true, action: true, entityType: true, entityId: true, reason: true, metadata: true, createdAt: true, actor: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } }),
+    ])
+    return this.serialize({
+      checkedAt: now,
+      health: { api: "ok", database: "ok", migrations: "managed", presenceWindowSeconds: this.presenceWindowMs() / 1000 },
+      queue: { searchingTickets },
+      matches: { active: activeMatches, review: reviewMatches, settled: settledMatches },
+      outbox: { pending: pendingOutbox, processing: processingOutbox, failed: failedOutbox },
+      notifications: { pending: pendingNotifications, failed: failedNotifications },
+      commerce: { failedPurchases, completedPurchases, inventoryRows },
+      rewards: { rejectedClaims, grantedClaims, activePolicies },
+      feedback: { open: openFeedback },
+      ledger: { leaderboardScoreEvents: scoreEvents, walletTransactions },
+      recentOutbox,
+      recentAudit,
+    })
+  }
+
+  async listAudit(limit = 100) {
+    const rows = await this.prisma.adminAuditEvent.findMany({ orderBy: { createdAt: "desc" }, take: Math.min(Math.max(limit, 1), 200), select: { id: true, action: true, entityType: true, entityId: true, reason: true, metadata: true, createdAt: true, actor: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } })
+    return this.serialize(rows)
+  }
+
+  async createUser(dto: RegisterRequestDto, actorId?: string) {
+    const user = await this.usersService.create({ ...dto, actorId, reason: "Player account created from the system administrator console" })
     return this.getUser(user.id)
   }
 
-  async createAdmin(dto: RegisterAdminDto) {
-    const user = await this.usersService.create({ ...dto, isSystemAdmin: true })
+  async createAdmin(dto: RegisterAdminDto, actorId?: string) {
+    const user = await this.usersService.create({ ...dto, isSystemAdmin: true, actorId, reason: "Administrator account created from the system administrator console" })
     return this.getUser(user.id)
   }
 
@@ -234,7 +288,7 @@ export class SystemAdminService implements OnModuleInit {
   }
 
   terminateSession(sessionId: string, actorId: string) {
-    return this.terminateAdminSessionTransaction.run({ sessionId, actorId })
+    return this.terminateAdminSessionTransaction.run({ sessionId, actorId, reason: "Session terminated from the system administrator console" })
   }
 
   getUserDetails(userId: string) {
@@ -270,16 +324,16 @@ export class SystemAdminService implements OnModuleInit {
   }
 
   async resetUserPassword(userId: string, actorId: string, dto: ResetUserPasswordDto) {
-    await this.resetUserPasswordTransaction.run({ userId, actorId, password: dto.password })
+    await this.resetUserPasswordTransaction.run({ userId, actorId, password: dto.password, reason: dto.reason })
     return { message: "Password reset and all active sessions terminated" }
   }
 
   updateStatus(userId: string, actorId: string, dto: UpdateUserStatusDto) {
-    return this.updateUserStatusTransaction.run({ userId, actorId, status: dto.status })
+    return this.updateUserStatusTransaction.run({ userId, actorId, status: dto.status, reason: dto.reason })
   }
 
   async deleteUser(userId: string, actorId: string) {
-    await this.deleteUserTransaction.run({ userId, actorId })
+    await this.deleteUserTransaction.run({ userId, actorId, reason: "Account deleted from the system administrator console" })
     return { message: "User deleted" }
   }
 
@@ -293,21 +347,21 @@ export class SystemAdminService implements OnModuleInit {
   createProgressionReward(tierId: string, dto: CreateProgressionRewardDto) { return this.progressionService.createReward(tierId, dto) }
   updateProgressionReward(id: string, dto: UpdateProgressionRewardDto) { return this.progressionService.updateReward(id, dto) }
   deleteProgressionReward(id: string) { return this.progressionService.deleteReward(id) }
-  awardProgression(userId: string, key: string, dto: AwardProgressionPointsDto) { return this.progressionService.awardAdmin(userId, key, BigInt(dto.amount), dto.sourceId, dto.metadata) }
-  resetProgression(userId: string, key: string, dto: ResetProgressionDto) { return this.progressionService.resetAdmin(userId, key, dto.sourceId) }
+  awardProgression(userId: string, key: string, dto: AwardProgressionPointsDto, actorId: string) { return this.progressionService.awardAdmin(userId, key, BigInt(dto.amount), dto.sourceId, dto.metadata, actorId, dto.reason) }
+  resetProgression(userId: string, key: string, dto: ResetProgressionDto, actorId: string) { return this.progressionService.resetAdmin(userId, key, dto.sourceId, actorId, dto.reason) }
   listCurrencies() { return this.walletService.listCurrencies(true) }
   createCurrency(dto: CreateCurrencyDto) { return this.walletService.createCurrency(dto) }
   updateCurrency(id: string, dto: UpdateCurrencyDto) { return this.walletService.updateCurrency(id, dto) }
   getAdminWallet(userId: string) { return this.walletService.getAdminWallet(userId) }
-  creditWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.creditWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", metadata: { ...(dto.metadata ?? {}), actorId } }) }
-  debitWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.debitWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", metadata: { ...(dto.metadata ?? {}), actorId } }) }
-  reverseWallet(userId: string, dto: ReverseWalletDto) { return this.reverseWalletTransaction.run({ userId, ledgerId: dto.ledgerId, originalGrantKey: dto.originalGrantKey, sourceId: dto.sourceId }) }
+  creditWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.creditWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", reason: dto.reason, actorId, metadata: { ...(dto.metadata ?? {}), actorId } }) }
+  debitWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.debitWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", reason: dto.reason, actorId, metadata: { ...(dto.metadata ?? {}), actorId } }) }
+  reverseWallet(userId: string, dto: ReverseWalletDto, actorId: string) { return this.reverseWalletTransaction.run({ userId, ledgerId: dto.ledgerId, originalGrantKey: dto.originalGrantKey, sourceId: dto.sourceId, actorId, reason: dto.reason }) }
   listLeaderboards(includeInactive = false) { return this.leaderboardService.listDefinitions(includeInactive) }
   createLeaderboard(dto: CreateLeaderboardDto) { return this.leaderboardService.createDefinition(dto) }
   updateLeaderboard(id: string, dto: UpdateLeaderboardDto) { return this.leaderboardService.updateDefinition(id, dto) }
   createLeaderboardSeason(id: string, dto: CreateLeaderboardSeasonDto) { return this.leaderboardService.createSeason(id, dto) }
   closeLeaderboardSeason(id: string) { return this.leaderboardService.closeSeason(id) }
-  applyLeaderboardScore(key: string, dto: ApplyLeaderboardScoreDto, actorId: string) { return this.leaderboardService.applyScore({ leaderboardKey: key, playerId: dto.playerId, memberKey: dto.memberKey, delta: BigInt(dto.delta), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", metadata: { ...(dto.metadata ?? {}), actorId } }) }
+  applyLeaderboardScore(key: string, dto: ApplyLeaderboardScoreDto, actorId: string) { return this.leaderboardService.applyScore({ leaderboardKey: key, playerId: dto.playerId, memberKey: dto.memberKey, delta: BigInt(dto.delta), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", reason: dto.reason, actorId, metadata: { ...(dto.metadata ?? {}), actorId } }) }
   topLeaderboardPlayers(key: string, limit: number) { return this.leaderboardService.topForAdmin(key, limit) }
   rebuildLeaderboard(key: string) { return this.leaderboardService.rebuild(key) }
   topProgressionPlayers(key: string, limit: number) { return this.progressionService.topPlayers(key, limit) }

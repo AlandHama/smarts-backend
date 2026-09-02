@@ -85,12 +85,12 @@ export class ProgressionService {
   updateReward(id: string, dto: UpdateProgressionRewardDto) { return this.updateRewardTransaction.run({ id, dto }).then((item) => this.serialize(item)) }
   deleteReward(id: string) { return this.deleteRewardTransaction.run(id).then(() => ({ message: "Progression reward deleted" })) }
 
-  awardAdmin(userId: string, progressionKey: string, amount: bigint, sourceId: string, metadata?: Record<string, unknown>) {
-    return this.awardTransaction.run({ userId, progressionKey, amount, sourceId, sourceType: ProgressionEventSourceType.ADMIN, metadata })
+  awardAdmin(userId: string, progressionKey: string, amount: bigint, sourceId: string, metadata?: Record<string, unknown>, actorId?: string, reason?: string) {
+    return this.awardTransaction.run({ userId, progressionKey, amount, sourceId, sourceType: ProgressionEventSourceType.ADMIN, metadata, actorId, reason })
   }
 
-  resetAdmin(userId: string, progressionKey: string, sourceId: string) {
-    return this.resetTransaction.run({ userId, progressionKey, sourceId })
+  resetAdmin(userId: string, progressionKey: string, sourceId: string, actorId?: string, reason?: string) {
+    return this.resetTransaction.run({ userId, progressionKey, sourceId, actorId, reason })
   }
 
   async topPlayers(key: string, limit = 10) {

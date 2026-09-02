@@ -72,6 +72,10 @@ export class LeaderboardMembersDto {
 }
 
 export class ApplyLeaderboardScoreDto {
+  @ApiPropertyOptional({ maxLength: 500, description: "Reason recorded in the administrator audit trail" })
+  @IsOptional() @IsString() @MaxLength(500)
+  reason?: string
+
   @ApiPropertyOptional({ example: "US", description: "Required for country/generic boards." })
   @IsOptional()
   @IsString()

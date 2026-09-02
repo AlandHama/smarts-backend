@@ -4,6 +4,7 @@ import { InventoryAcquisitionSource, Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 
 export type InventoryMutationInput = { userId: string; assetKey: string; variationKey?: string; quantity: number; source: InventoryAcquisitionSource; sourceId: string; metadata?: Record<string, unknown> }
 
@@ -33,6 +34,8 @@ export class GrantInventoryItemTransaction extends PrismaTransaction<InventoryMu
       ? await transaction.inventoryItem.update({ where: { id: existing.id }, data: { quantity: { increment: input.quantity }, sourceId: input.sourceId, metadata: input.metadata as Prisma.InputJsonValue | undefined } })
       : await transaction.inventoryItem.create({ data: { userId: input.userId, assetDefinitionId: asset.id, assetVariationId: variation?.id, quantity: input.quantity, stackKey, acquisitionSource: input.source, sourceId: input.sourceId, metadata: input.metadata as Prisma.InputJsonValue | undefined } })
     const result = this.serialize(row)
+    const actorId = typeof input.metadata?.actorId === "string" ? input.metadata.actorId : undefined
+    if (actorId) await writeAdminAudit(transaction, { actorId, action: "INVENTORY_GRANT", entityType: "InventoryItem", entityId: row.id, reason: typeof input.metadata?.reason === "string" ? input.metadata.reason : undefined, metadata: { userId: input.userId, assetKey: asset.key, quantity: input.quantity, sourceId: input.sourceId } })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     return result
   }

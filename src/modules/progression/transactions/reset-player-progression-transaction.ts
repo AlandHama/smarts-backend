@@ -4,12 +4,13 @@ import { Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 
 @Injectable()
-export class ResetPlayerProgressionTransaction extends PrismaTransaction<{ userId: string; progressionKey: string; sourceId: string }, any> {
+export class ResetPlayerProgressionTransaction extends PrismaTransaction<{ userId: string; progressionKey: string; sourceId: string; actorId?: string; reason?: string }, any> {
   constructor(prisma: PrismaService) { super(prisma) }
 
-  protected async execute(input: { userId: string; progressionKey: string; sourceId: string }, transaction: Prisma.TransactionClient) {
+  protected async execute(input: { userId: string; progressionKey: string; sourceId: string; actorId?: string; reason?: string }, transaction: Prisma.TransactionClient) {
     if (!input.sourceId.trim()) throw new BadRequestException("A source id is required")
     const progression = await transaction.progressionDefinition.findUnique({ where: { key: input.progressionKey.trim().toLowerCase() }, include: { tiers: { orderBy: { pointsThreshold: "asc" } } } })
     if (!progression) throw new NotFoundException("Progression definition not found")
@@ -27,7 +28,7 @@ export class ResetPlayerProgressionTransaction extends PrismaTransaction<{ userI
     await transaction.progressionEvent.create({ data: { userId: input.userId, progressionId: progression.id, playerRowId: row.id, delta: -row.points, balanceBefore: row.points, balanceAfter: 0n, sourceType: "ADMIN", sourceId: input.sourceId.trim(), idempotencyKeyId: idem.id } })
     const result = { progressionKey: progression.key, pointsBefore: row.points.toString(), pointsAfter: "0", step: updated.step }
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
+    if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "PROGRESSION_RESET", entityType: "User", entityId: input.userId, reason: input.reason, metadata: { progressionKey: progression.key, sourceId: input.sourceId } })
     return result
   }
 }
-

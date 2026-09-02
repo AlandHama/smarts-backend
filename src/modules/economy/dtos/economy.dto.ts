@@ -39,6 +39,10 @@ export class CreateCurrencyDto {
 export class UpdateCurrencyDto extends PartialType(CreateCurrencyDto) {}
 
 export class WalletMutationDto {
+  @ApiPropertyOptional({ maxLength: 500, description: "Reason recorded in the administrator audit trail" })
+  @IsOptional() @IsString() @MaxLength(500)
+  reason?: string
+
   @ApiProperty({ example: "MCN" })
   @IsString()
   @MaxLength(32)
@@ -66,6 +70,10 @@ export class WalletMutationDto {
 }
 
 export class ReverseWalletDto {
+  @ApiPropertyOptional({ maxLength: 500, description: "Reason recorded in the administrator audit trail" })
+  @IsOptional() @IsString() @MaxLength(500)
+  reason?: string
+
   @ApiPropertyOptional({ example: "ledger-uuid", description: "Either ledgerId or originalGrantKey is required." })
   @IsOptional()
   @IsString()

@@ -4,6 +4,7 @@ import { Prisma, WalletTransactionDirection, WalletTransactionSourceType } from 
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 import { WalletMutationInput } from "./credit-wallet-transaction"
 
 @Injectable()
@@ -33,10 +34,10 @@ export class DebitWalletTransaction extends PrismaTransaction<WalletMutationInpu
     await transaction.walletBalance.update({ where: { id: locked.id }, data: { amount: after, version: { increment: 1n } } })
     const ledger = await transaction.walletTransaction.create({ data: { walletId: wallet.id, currencyId: currency.id, direction: WalletTransactionDirection.DEBIT, amount: input.amount, balanceBefore: locked.amount, balanceAfter: after, sourceType: input.sourceType, sourceId, grantKey, idempotencyKeyId: idem.id, metadata: input.metadata as Prisma.InputJsonValue | undefined } })
     const response = this.serializeBalance(ledger.balanceAfter, wallet.id, currency.id, code)
+    if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "WALLET_DEBIT", entityType: "Wallet", entityId: wallet.id, reason: input.reason, metadata: { userId: input.userId, currencyCode: code, amount: input.amount.toString(), sourceId } })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: response as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     return response
   }
 
   private serializeBalance(amount: bigint, walletId: string, currencyId: string, code: string) { return { walletId, currencyId, currencyCode: code, amount: amount.toString() } }
 }
-

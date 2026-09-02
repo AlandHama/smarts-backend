@@ -3,18 +3,19 @@ import { Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 import { SystemAdminUserStatus } from "../dtos/update-user-status.dto"
 
 @Injectable()
 export class UpdateUserStatusTransaction extends PrismaTransaction<
-  { userId: string; status: SystemAdminUserStatus; actorId: string },
+  { userId: string; status: SystemAdminUserStatus; actorId: string; reason?: string },
   { id: string; status: string }
 > {
   constructor(prisma: PrismaService) {
     super(prisma)
   }
 
-  protected async execute(data: { userId: string; status: SystemAdminUserStatus; actorId: string }, transaction: Prisma.TransactionClient) {
+    protected async execute(data: { userId: string; status: SystemAdminUserStatus; actorId: string; reason?: string }, transaction: Prisma.TransactionClient) {
     const user = await transaction.user.findUnique({ where: { id: data.userId }, select: { id: true, isSystemAdmin: true } })
     if (!user) throw new NotFoundException("User not found")
     if (user.id === data.actorId && data.status !== SystemAdminUserStatus.Active) {
@@ -37,6 +38,8 @@ export class UpdateUserStatusTransaction extends PrismaTransaction<
         data: { sessionStatus: "TERMINATED" },
       })
     }
+
+    await writeAdminAudit(transaction, { actorId: data.actorId, action: `USER_${data.status}`, entityType: "User", entityId: data.userId, reason: data.reason, metadata: { terminatedSessions: data.status !== SystemAdminUserStatus.Active } })
 
     return updated
   }

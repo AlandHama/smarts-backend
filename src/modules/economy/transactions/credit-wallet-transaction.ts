@@ -4,6 +4,7 @@ import { Prisma, ProgressionRewardType, WalletTransactionDirection, WalletTransa
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 
 export type WalletMutationInput = {
   userId: string
@@ -14,6 +15,8 @@ export type WalletMutationInput = {
   metadata?: Record<string, unknown>
   rewardGrantKey?: string
   policyVersion?: string
+  actorId?: string
+  reason?: string
 }
 
 @Injectable()
@@ -45,6 +48,7 @@ export class CreditWalletTransaction extends PrismaTransaction<WalletMutationInp
     await transaction.walletBalance.update({ where: { id: locked.id }, data: { amount: after, version: { increment: 1n } } })
     const ledger = await transaction.walletTransaction.create({ data: { walletId: wallet.id, currencyId: currency.id, direction: WalletTransactionDirection.CREDIT, amount: input.amount, balanceBefore: locked.amount, balanceAfter: after, sourceType: input.sourceType, sourceId, grantKey, idempotencyKeyId: idem.id, metadata: input.metadata as Prisma.InputJsonValue | undefined } })
     await this.ensureRewardGrant(transaction, input, currency.id, input.amount, grantKey)
+    if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "WALLET_CREDIT", entityType: "Wallet", entityId: wallet.id, reason: input.reason, metadata: { userId: input.userId, currencyCode: code, amount: input.amount.toString(), sourceId } })
     const response = this.serializeBalance(ledger.balanceAfter, wallet.id, currency.id, code)
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: response as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     return response

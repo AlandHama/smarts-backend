@@ -4,6 +4,7 @@ import { Prisma, LeaderboardMemberType, LeaderboardScoreSourceType } from "@pris
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 
 export type ApplyLeaderboardScoreInput = {
   leaderboardKey: string
@@ -13,6 +14,8 @@ export type ApplyLeaderboardScoreInput = {
   sourceId: string
   sourceType: LeaderboardScoreSourceType
   metadata?: Record<string, unknown>
+  actorId?: string
+  reason?: string
 }
 
 @Injectable()
@@ -83,6 +86,7 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
     const event = await transaction.leaderboardScoreEvent.create({ data: { entryId: entry.id, leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey, playerId: member.playerId, delta: input.delta, scoreBefore: entry.score, scoreAfter, sourceType: input.sourceType, sourceId, idempotencyKeyId: idempotency.id } })
     const response = { leaderboardKey: board.key, seasonId: season.id, entryId: entry.id, memberKey: member.memberKey, scoreBefore: entry.score.toString(), scoreAfter: scoreAfter.toString(), delta: input.delta.toString(), eventId: event.id }
     await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: response as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
+    if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "LEADERBOARD_SCORE", entityType: "LeaderboardEntry", entityId: entry.id, reason: input.reason, metadata: { leaderboardKey: board.key, playerId: member.playerId, delta: input.delta.toString(), sourceId } })
     return response
   }
 

@@ -4,6 +4,7 @@ import { Prisma, ProgressionEventSourceType, ProgressionRewardType, RewardGrantS
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 
 export type AwardProgressionInput = {
   userId: string
@@ -12,6 +13,8 @@ export type AwardProgressionInput = {
   sourceId: string
   sourceType: ProgressionEventSourceType
   metadata?: Record<string, unknown>
+  actorId?: string
+  reason?: string
 }
 
 export type ProgressionAwardResult = {
@@ -72,6 +75,7 @@ export class AwardProgressionPointsTransaction extends PrismaTransaction<AwardPr
     const result = await this.applyPoints(transaction, input.userId, progression, input.amount, input.sourceType, input.sourceId.trim(), input.metadata, idempotency.id, new Set<string>())
     if (pointsGrant) await transaction.rewardGrant.update({ where: { id: pointsGrant.id }, data: { status: "GRANTED" } })
     await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
+    if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "PROGRESSION_AWARD", entityType: "User", entityId: input.userId, reason: input.reason, metadata: { progressionKey: key, amount: input.amount.toString(), sourceId: input.sourceId } })
     return result
   }
 

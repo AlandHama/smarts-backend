@@ -106,6 +106,18 @@ export class SystemAdminController {
   }
 
   @UseGuards(SystemAdminGuard)
+  @Get("api/operations")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Inspect operational health, queues, failures, ledgers, and recent audit events" })
+  operations() { return this.systemAdminService.operations() }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/audit")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List immutable system administrator audit events" })
+  audit(@Query("limit") limit?: string) { return this.systemAdminService.listAudit(limit ? Number(limit) : 100) }
+
+  @UseGuards(SystemAdminGuard)
   @Get("api/users")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List and search user accounts" })
@@ -117,16 +129,16 @@ export class SystemAdminController {
   @Post("api/users")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Create a player account from the admin console" })
-  createUser(@Body() dto: RegisterRequestDto) {
-    return this.systemAdminService.createUser(dto)
+  createUser(@Body() dto: RegisterRequestDto, @CurrentUser() admin: UserResponseDto) {
+    return this.systemAdminService.createUser(dto, admin.id)
   }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/admins")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Create an active system administrator account" })
-  createAdmin(@Body() dto: RegisterAdminDto) {
-    return this.systemAdminService.createAdmin(dto)
+  createAdmin(@Body() dto: RegisterAdminDto, @CurrentUser() admin: UserResponseDto) {
+    return this.systemAdminService.createAdmin(dto, admin.id)
   }
 
   @UseGuards(SystemAdminGuard)
@@ -298,12 +310,12 @@ export class SystemAdminController {
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/progressions/:key/award")
   @ApiBearerAuth("access-token")
-  awardProgression(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string, @Body() dto: AwardProgressionPointsDto) { return this.systemAdminService.awardProgression(userId, key, dto) }
+  awardProgression(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string, @Body() dto: AwardProgressionPointsDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.awardProgression(userId, key, dto, admin.id) }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/progressions/:key/reset")
   @ApiBearerAuth("access-token")
-  resetProgression(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string, @Body() dto: ResetProgressionDto) { return this.systemAdminService.resetProgression(userId, key, dto) }
+  resetProgression(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string, @Body() dto: ResetProgressionDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.resetProgression(userId, key, dto, admin.id) }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/economy/currencies")
@@ -339,7 +351,7 @@ export class SystemAdminController {
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/wallet/reverse")
   @ApiBearerAuth("access-token")
-  reverseWallet(@Param("userId", ParseUUIDPipe) userId: string, @Body() dto: ReverseWalletDto) { return this.systemAdminService.reverseWallet(userId, dto) }
+  reverseWallet(@Param("userId", ParseUUIDPipe) userId: string, @Body() dto: ReverseWalletDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.reverseWallet(userId, dto, admin.id) }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/leaderboards")

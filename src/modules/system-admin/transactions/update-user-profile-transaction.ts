@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { UpdateUserProfileDto } from "../dtos/update-user-profile.dto"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 
 export interface UpdateUserProfileInput {
   userId: string
@@ -51,6 +52,7 @@ export class UpdateUserProfileTransaction extends PrismaTransaction<UpdateUserPr
       if (Object.keys(profileData).length > 0) {
         await transaction.playerProfile.update({ where: { userId: data.userId }, data: profileData })
       }
+      await writeAdminAudit(transaction, { actorId: data.actorId, action: "USER_PROFILE_UPDATE", entityType: "User", entityId: data.userId, reason: dto.reason, metadata: { fields: Object.keys({ ...dto }).filter((field) => field !== "password") } })
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         throw new ConflictException("Username or email is already registered")

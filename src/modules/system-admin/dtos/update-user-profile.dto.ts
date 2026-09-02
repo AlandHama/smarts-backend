@@ -2,6 +2,12 @@ import { ApiPropertyOptional } from "@nestjs/swagger"
 import { IsBoolean, IsEmail, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength } from "class-validator"
 
 export class UpdateUserProfileDto {
+  @ApiPropertyOptional({ maxLength: 500, description: "Reason recorded in the administrator audit trail" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  readonly reason?: string
+
   @ApiPropertyOptional({ minLength: 3, maxLength: 50 })
   @IsOptional()
   @IsString()

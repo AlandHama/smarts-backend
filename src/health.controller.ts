@@ -41,9 +41,13 @@ export class HealthController {
   async health() {
     try {
       await this.prisma.$queryRaw`SELECT 1`
-      return { status: "ok", database: "ok" }
+      const migrationTable = await this.prisma.$queryRaw<Array<{ present: boolean }>>`SELECT to_regclass('public._prisma_migrations') IS NOT NULL AS present`
+      if (!migrationTable[0]?.present) return { status: "degraded", database: "ok", migrations: "unknown" }
+      const failed = await this.prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM "_prisma_migrations" WHERE "finished_at" IS NULL AND "rolled_back_at" IS NULL`
+      const migrations = String(failed[0]?.count ?? 0) === "0" ? "ok" : "failed"
+      return { status: migrations === "ok" ? "ok" : "degraded", database: "ok", migrations }
     } catch {
-      return { status: "degraded", database: "unreachable" }
+      return { status: "degraded", database: "unreachable", migrations: "unknown" }
     }
   }
 }

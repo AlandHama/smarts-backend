@@ -6,8 +6,9 @@ import { PrismaTransaction } from "../../../../../common/helpers/prisma-transact
 import { PrismaService } from "../../../../../prisma.service"
 import { RegisterRequestDto } from "../../../../auth/dtos/register-request.dto"
 import { CreditWalletTransaction } from "../../../../economy/transactions/credit-wallet-transaction"
+import { writeAdminAudit } from "../../../../../common/helpers/admin-audit"
 
-export type CreateUserInput = RegisterRequestDto & { isSystemAdmin?: boolean }
+export type CreateUserInput = RegisterRequestDto & { isSystemAdmin?: boolean; actorId?: string; reason?: string }
 
 @Injectable()
 export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, any> {
@@ -103,6 +104,7 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
           sourceType: "SIGNUP",
         }, transaction)
       }
+      if (dto.actorId) await writeAdminAudit(transaction, { actorId: dto.actorId, action: dto.isSystemAdmin ? "ADMIN_CREATE" : "USER_CREATE", entityType: "User", entityId: user.id, reason: dto.reason, metadata: { isSystemAdmin: dto.isSystemAdmin ?? false } })
       return user
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

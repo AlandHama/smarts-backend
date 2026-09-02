@@ -113,6 +113,10 @@ export class CreateProgressionRewardDto {
 export class UpdateProgressionRewardDto extends PartialType(CreateProgressionRewardDto) {}
 
 export class AwardProgressionPointsDto {
+  @ApiPropertyOptional({ maxLength: 500, description: "Reason recorded in the administrator audit trail" })
+  @IsOptional() @IsString() @MaxLength(500)
+  reason?: string
+
   @ApiProperty({ example: "250" })
   @IsString()
   @Matches(/^-?\d+$/)
@@ -130,9 +134,12 @@ export class AwardProgressionPointsDto {
 }
 
 export class ResetProgressionDto {
+  @ApiPropertyOptional({ maxLength: 500, description: "Reason recorded in the administrator audit trail" })
+  @IsOptional() @IsString() @MaxLength(500)
+  reason?: string
+
   @ApiProperty({ example: "manual-reset-2026-08-31-001" })
   @IsString()
   @MaxLength(255)
   sourceId!: string
 }
-

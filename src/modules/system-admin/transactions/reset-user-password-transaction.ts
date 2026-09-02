@@ -4,11 +4,13 @@ import { Prisma } from "@prisma/client"
 import { HashHelper } from "../../../common/helpers/hash.helper"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 
 export interface ResetUserPasswordInput {
   userId: string
   actorId: string
   password: string
+  reason?: string
 }
 
 @Injectable()
@@ -29,5 +31,6 @@ export class ResetUserPasswordTransaction extends PrismaTransaction<ResetUserPas
       where: { userId: data.userId, sessionStatus: "ACTIVE" },
       data: { sessionStatus: "TERMINATED" },
     })
+    await writeAdminAudit(transaction, { actorId: data.actorId, action: "USER_PASSWORD_RESET", entityType: "User", entityId: data.userId, reason: data.reason, metadata: { activeSessionsTerminated: true } })
   }
 }
