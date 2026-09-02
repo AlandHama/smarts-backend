@@ -10,14 +10,16 @@ export class ForfeitMatchTransaction extends PrismaTransaction<{ matchId: string
 
   protected async execute(input: { matchId: string; userId: string }, transaction: Prisma.TransactionClient) {
     await transaction.$executeRaw`SELECT "id" FROM "Match" WHERE "id" = ${input.matchId} FOR UPDATE`
-    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { participants: true } })
+    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { participants: true, rounds: { where: { status: { in: ["CREATED", "STARTED"] } }, orderBy: { roundIndex: "desc" }, take: 1 } } })
     if (!match) throw new NotFoundException("Match not found")
     const participant = match.participants.find((item) => item.userId === input.userId)
     if (!participant) throw new NotFoundException("Player is not a participant in this match")
     if (match.status !== "STARTED" && match.status !== "CREATED") throw new ConflictException("The match is no longer active")
+    const round = match.rounds[0]
+    if (!round) throw new ConflictException("The match has no active round")
     if (participant.result !== "PENDING") return { matchId: match.id, status: match.status, result: participant.result }
     const previous = await transaction.matchEvent.findFirst({ where: { matchId: match.id, participantId: participant.id }, orderBy: { sequence: "desc" }, select: { sequence: true } })
-    await transaction.matchEvent.create({ data: { matchId: match.id, participantId: participant.id, sequence: (previous?.sequence ?? 0) + 1, eventType: "FORFEIT", clientEventId: `server-forfeit-${participant.id}-${Date.now()}`, accepted: true, payload: { submitted: true } as Prisma.InputJsonValue } })
+    await transaction.matchEvent.create({ data: { matchId: match.id, participantId: participant.id, roundId: round.id, sequence: (previous?.sequence ?? 0) + 1, eventType: "FORFEIT", clientEventId: `server-forfeit-${participant.id}-${Date.now()}`, accepted: true, payload: { submitted: true } as Prisma.InputJsonValue } })
     await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "FORFEIT", submittedAt: new Date() } })
     const otherPending = match.participants.some((item) => item.id !== participant.id && item.participantType === "PLAYER" && item.result === "PENDING")
     if (!otherPending) {

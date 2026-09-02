@@ -5,6 +5,7 @@ import { Prisma, GameMode, MatchParticipantType } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { CreateMatchDto } from "../dtos"
+import { createAssignmentToken, MAX_SERVER_CONTENT_PER_MATCH, selectServerContent } from "../utilities/server-content"
 
 @Injectable()
 export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; dto: CreateMatchDto }, any> {
@@ -26,25 +27,26 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
 
     const now = new Date()
     const match = await transaction.match.create({ data: { gameDefinitionId: game.id, gameConfigId: config.id, mode: input.dto.mode, status: "STARTED", serverNonce: randomBytes(32).toString("base64url"), startedAt: now, createdByUserId: input.userId, metadata: input.dto.metadata as Prisma.InputJsonValue | undefined } })
-    await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: game.id, status: "STARTED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex"), startedAt: now } })
+    const round = await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: game.id, status: "STARTED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex"), startedAt: now } })
     const participants = [
       await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.userId, participantType: MatchParticipantType.PLAYER } }),
     ]
     if (input.dto.mode === GameMode.BOT) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: MatchParticipantType.BOT, result: "COMPLETED", finalScore: 0, submittedAt: now } }))
     else if (input.dto.opponentUserId) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.dto.opponentUserId, participantType: MatchParticipantType.PLAYER } }))
 
-    const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: [{ version: "desc" }, { createdAt: "asc" }], take: config.maxQuestions })
+    const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true } })
+    const selectedItems = selectServerContent(items, config.maxQuestions, match.serverNonce)
     const assignments: Array<Record<string, unknown>> = []
     for (const participant of participants) {
       if (participant.participantType === MatchParticipantType.BOT) continue
-      for (let position = 0; position < items.length; position += 1) {
-        const token = randomBytes(32).toString("base64url")
+      for (let position = 0; position < selectedItems.length; position += 1) {
+        const token = createAssignmentToken(match.serverNonce, participant.id, round.id, position)
         const expiresAt = new Date(now.getTime() + config.maxMatchDurationSeconds * 1000)
-        const assignment = await transaction.matchContentAssignment.create({ data: { matchId: match.id, participantId: participant.id, contentItemId: items[position].id, position, assignmentTokenHash: createHash("sha256").update(token).digest("hex"), expiresAt }, include: { contentItem: { select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } } } })
+        const assignment = await transaction.matchContentAssignment.create({ data: { matchId: match.id, roundId: round.id, participantId: participant.id, contentItemId: selectedItems[position].id, position, assignmentTokenHash: createHash("sha256").update(token).digest("hex"), expiresAt }, include: { contentItem: { select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } } } })
         assignments.push({ participantId: participant.id, id: assignment.id, position, token, contentItem: assignment.contentItem, expiresAt })
       }
     }
-    if (!items.length) assignments.push({ warning: "No server content is configured; score-reward settlement will be held for review." })
+    if (!selectedItems.length) assignments.push({ warning: "No active server content is configured; this match will be held for review." })
     return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments: assignments.filter((assignment) => assignment.participantId === participants[0].id) }
   }
 }

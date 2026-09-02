@@ -298,46 +298,46 @@ enum FriendRequestStatus {
 }
 
 model User {
-  id                     String                  @id @default(uuid()) @db.Uuid
-  username               String                  @unique @db.VarChar(50)
-  passwordHash           String                  @db.VarChar(255)
-  firstName              String?                 @db.VarChar(100)
-  lastName               String?                 @db.VarChar(100)
-  email                  String?                 @unique @db.VarChar(255)
-  status                 UserStatus              @default(ACTIVE)
-  isSystemAdmin          Boolean                 @default(false)
-  lastOnline             DateTime?
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  sessions               Session[]
-  profile                PlayerProfile?
-  stats                  PlayerStats?
-  wallet                 Wallet?
-  progressions           PlayerProgression[]
-  idempotencyKeys        IdempotencyKey[]
-  progressionEvents      ProgressionEvent[]
-  rewardGrants           RewardGrant[]
-  leaderboardEntries     LeaderboardEntry[]
-  leaderboardScoreEvents LeaderboardScoreEvent[] @relation("LeaderboardScoreEventPlayer")
-  createdMatches         Match[]                 @relation("MatchCreatedBy")
-  matchParticipants      MatchParticipant[]
-  gameStats              PlayerGameStats[]
-  inventoryItems         InventoryItem[]
-  purchases              Purchase[]
-  entitlements           Entitlement[]
-  storageItems           PlayerStorageItem[]
-  files                  StoredFile[]
-  feedback               PlayerFeedback[]
-  friendRequestsSent     FriendRequest[] @relation("FriendRequestRequester")
-  friendRequestsReceived FriendRequest[] @relation("FriendRequestAddressee")
-  friendships             Friendship[] @relation("FriendshipUser")
-  friendsOf               Friendship[] @relation("FriendshipFriend")
-  blocksCreated           FriendBlock[] @relation("FriendBlocker")
-  blockedBy               FriendBlock[] @relation("FriendBlocked")
-  presence                Presence?
-  matchmakingTickets     MatchmakingTicket[]
-  matchmakingInvitesSent MatchmakingInvite[] @relation("MatchmakingInviteInviter")
-  matchmakingInvitesReceived MatchmakingInvite[] @relation("MatchmakingInviteInvitee")
+  id                         String                  @id @default(uuid()) @db.Uuid
+  username                   String                  @unique @db.VarChar(50)
+  passwordHash               String                  @db.VarChar(255)
+  firstName                  String?                 @db.VarChar(100)
+  lastName                   String?                 @db.VarChar(100)
+  email                      String?                 @unique @db.VarChar(255)
+  status                     UserStatus              @default(ACTIVE)
+  isSystemAdmin              Boolean                 @default(false)
+  lastOnline                 DateTime?
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+  sessions                   Session[]
+  profile                    PlayerProfile?
+  stats                      PlayerStats?
+  wallet                     Wallet?
+  progressions               PlayerProgression[]
+  idempotencyKeys            IdempotencyKey[]
+  progressionEvents          ProgressionEvent[]
+  rewardGrants               RewardGrant[]
+  leaderboardEntries         LeaderboardEntry[]
+  leaderboardScoreEvents     LeaderboardScoreEvent[] @relation("LeaderboardScoreEventPlayer")
+  createdMatches             Match[]                 @relation("MatchCreatedBy")
+  matchParticipants          MatchParticipant[]
+  gameStats                  PlayerGameStats[]
+  inventoryItems             InventoryItem[]
+  purchases                  Purchase[]
+  entitlements               Entitlement[]
+  storageItems               PlayerStorageItem[]
+  files                      StoredFile[]
+  feedback                   PlayerFeedback[]
+  friendRequestsSent         FriendRequest[]         @relation("FriendRequestRequester")
+  friendRequestsReceived     FriendRequest[]         @relation("FriendRequestAddressee")
+  friendships                Friendship[]            @relation("FriendshipUser")
+  friendsOf                  Friendship[]            @relation("FriendshipFriend")
+  blocksCreated              FriendBlock[]           @relation("FriendBlocker")
+  blockedBy                  FriendBlock[]           @relation("FriendBlocked")
+  presence                   Presence?
+  matchmakingTickets         MatchmakingTicket[]
+  matchmakingInvitesSent     MatchmakingInvite[]     @relation("MatchmakingInviteInviter")
+  matchmakingInvitesReceived MatchmakingInvite[]     @relation("MatchmakingInviteInvitee")
 }
 
 model Session {
@@ -365,28 +365,28 @@ model Session {
 }
 
 model Presence {
-  id               String   @id @default(uuid()) @db.Uuid
-  userId           String   @unique @db.Uuid
-  lastHeartbeatAt  DateTime
-  lastSeenAt       DateTime
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @db.Uuid
+  lastHeartbeatAt DateTime
+  lastSeenAt      DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([lastHeartbeatAt])
   @@index([lastSeenAt])
 }
 
 model FriendRequest {
-  id           String             @id @default(uuid()) @db.Uuid
-  requesterId  String             @db.Uuid
-  addresseeId  String             @db.Uuid
-  status       FriendRequestStatus @default(PENDING)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  respondedAt  DateTime?
-  requester    User               @relation("FriendRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  addressee    User               @relation("FriendRequestAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  id          String              @id @default(uuid()) @db.Uuid
+  requesterId String              @db.Uuid
+  addresseeId String              @db.Uuid
+  status      FriendRequestStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  respondedAt DateTime?
+  requester   User                @relation("FriendRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee   User                @relation("FriendRequestAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
 
   @@unique([requesterId, addresseeId])
   @@index([addresseeId, status, createdAt])
@@ -394,13 +394,13 @@ model FriendRequest {
 }
 
 model Friendship {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @db.Uuid
-  friendId    String   @db.Uuid
-  acceptedAt  DateTime @default(now())
-  createdAt   DateTime @default(now())
-  user        User     @relation("FriendshipUser", fields: [userId], references: [id], onDelete: Cascade)
-  friend      User     @relation("FriendshipFriend", fields: [friendId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  friendId   String   @db.Uuid
+  acceptedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  user       User     @relation("FriendshipUser", fields: [userId], references: [id], onDelete: Cascade)
+  friend     User     @relation("FriendshipFriend", fields: [friendId], references: [id], onDelete: Cascade)
 
   @@unique([userId, friendId])
   @@index([friendId])
@@ -408,12 +408,12 @@ model Friendship {
 }
 
 model FriendBlock {
-  id         String   @id @default(uuid()) @db.Uuid
-  blockerId  String   @db.Uuid
-  blockedId  String   @db.Uuid
-  createdAt  DateTime @default(now())
-  blocker    User     @relation("FriendBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
-  blocked    User     @relation("FriendBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid()) @db.Uuid
+  blockerId String   @db.Uuid
+  blockedId String   @db.Uuid
+  createdAt DateTime @default(now())
+  blocker   User     @relation("FriendBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("FriendBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
 
   @@unique([blockerId, blockedId])
   @@index([blockedId])
@@ -791,18 +791,18 @@ model WalletBalance {
 }
 
 model IdempotencyKey {
-  id              String            @id @default(uuid()) @db.Uuid
-  userId          String?           @db.Uuid
-  scope           String            @db.VarChar(100)
-  key             String            @db.VarChar(128)
-  requestHash     String            @db.Char(64)
-  responseJson    Json?
-  status          IdempotencyStatus @default(PROCESSING)
-  createdAt       DateTime          @default(now())
-  completedAt     DateTime?
-  user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
-  matchSettlement MatchSettlement?
-  purchase        Purchase?
+  id                 String              @id @default(uuid()) @db.Uuid
+  userId             String?             @db.Uuid
+  scope              String              @db.VarChar(100)
+  key                String              @db.VarChar(128)
+  requestHash        String              @db.Char(64)
+  responseJson       Json?
+  status             IdempotencyStatus   @default(PROCESSING)
+  createdAt          DateTime            @default(now())
+  completedAt        DateTime?
+  user               User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  matchSettlement    MatchSettlement?
+  purchase           Purchase?
   matchmakingTickets MatchmakingTicket[]
 
   @@unique([scope, key])
@@ -1030,20 +1030,20 @@ model LeaderboardScoreEvent {
 }
 
 model GameDefinition {
-  id         String            @id @default(uuid()) @db.Uuid
-  key        String            @unique @db.VarChar(64)
-  name       String            @db.VarChar(120)
-  active     Boolean           @default(true)
-  modePolicy Json?
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
-  configs    GameConfig[]
-  matches    Match[]
-  content    GameContentItem[]
-  gameStats  PlayerGameStats[]
+  id                 String              @id @default(uuid()) @db.Uuid
+  key                String              @unique @db.VarChar(64)
+  name               String              @db.VarChar(120)
+  active             Boolean             @default(true)
+  modePolicy         Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  configs            GameConfig[]
+  matches            Match[]
+  content            GameContentItem[]
+  gameStats          PlayerGameStats[]
   matchmakingTickets MatchmakingTicket[]
   matchmakingInvites MatchmakingInvite[]
-  rounds     MatchRound[]
+  rounds             MatchRound[]
 }
 
 model GameConfig {
@@ -1086,26 +1086,26 @@ model GameConfig {
 }
 
 model Match {
-  id               String                   @id @default(uuid()) @db.Uuid
-  gameDefinitionId String                   @db.Uuid
-  gameConfigId     String                   @db.Uuid
-  mode             GameMode
-  status           MatchStatus              @default(CREATED)
-  serverNonce      String                   @unique @db.VarChar(128)
-  startedAt        DateTime?
-  endedAt          DateTime?
-  settledAt        DateTime?
-  createdByUserId  String                   @db.Uuid
-  metadata         Json?
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
-  gameDefinition   GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
-  gameConfig       GameConfig               @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
-  createdBy        User                     @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  participants     MatchParticipant[]
-  events           MatchEvent[]
-  settlement       MatchSettlement?
-  assignments      MatchContentAssignment[]
+  id                 String                   @id @default(uuid()) @db.Uuid
+  gameDefinitionId   String                   @db.Uuid
+  gameConfigId       String                   @db.Uuid
+  mode               GameMode
+  status             MatchStatus              @default(CREATED)
+  serverNonce        String                   @unique @db.VarChar(128)
+  startedAt          DateTime?
+  endedAt            DateTime?
+  settledAt          DateTime?
+  createdByUserId    String                   @db.Uuid
+  metadata           Json?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  gameDefinition     GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  gameConfig         GameConfig               @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
+  createdBy          User                     @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  participants       MatchParticipant[]
+  events             MatchEvent[]
+  settlement         MatchSettlement?
+  assignments        MatchContentAssignment[]
   matchmakingTickets MatchmakingTicket[]
   matchmakingInvite  MatchmakingInvite?
   rounds             MatchRound[]
@@ -1115,48 +1115,50 @@ model Match {
 }
 
 model MatchRound {
-  id                String          @id @default(uuid()) @db.Uuid
-  matchId           String          @db.Uuid
+  id                String                   @id @default(uuid()) @db.Uuid
+  matchId           String                   @db.Uuid
   roundIndex        Int
-  gameDefinitionId  String          @db.Uuid
-  status            MatchRoundStatus @default(CREATED)
-  challengeSeedHash String          @db.Char(64)
+  gameDefinitionId  String                   @db.Uuid
+  status            MatchRoundStatus         @default(CREATED)
+  challengeSeedHash String                   @db.Char(64)
   startedAt         DateTime?
   endedAt           DateTime?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  match             Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  gameDefinition    GameDefinition  @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  match             Match                    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  gameDefinition    GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  events            MatchEvent[]
+  assignments       MatchContentAssignment[]
 
   @@unique([matchId, roundIndex])
   @@index([gameDefinitionId, status])
 }
 
 model MatchmakingTicket {
-  id                  String                   @id @default(uuid()) @db.Uuid
-  userId              String                   @db.Uuid
-  gameDefinitionId    String                   @db.Uuid
+  id                  String                  @id @default(uuid()) @db.Uuid
+  userId              String                  @db.Uuid
+  gameDefinitionId    String                  @db.Uuid
   mode                MatchmakingTicketMode
   status              MatchmakingTicketStatus @default(SEARCHING)
-  isRankingMatch      Boolean                  @default(false)
-  rankingSeriesId     String?                  @db.Uuid
+  isRankingMatch      Boolean                 @default(false)
+  rankingSeriesId     String?                 @db.Uuid
   levelSnapshot       Int
   eloSnapshot         BigInt
-  countryCodeSnapshot String?                  @db.Char(2)
+  countryCodeSnapshot String?                 @db.Char(2)
   constraints         Json?
-  clientVersion       String?                  @db.VarChar(32)
-  allowBotFallback    Boolean                  @default(false)
-  createdAt           DateTime                 @default(now())
+  clientVersion       String?                 @db.VarChar(32)
+  allowBotFallback    Boolean                 @default(false)
+  createdAt           DateTime                @default(now())
   expiresAt           DateTime
   lastHeartbeatAt     DateTime
   matchedAt           DateTime?
   cancelledAt         DateTime?
-  matchId             String?                  @db.Uuid
-  idempotencyKeyId    String?                  @db.Uuid
-  user                User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  gameDefinition      GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
-  match               Match?                   @relation(fields: [matchId], references: [id], onDelete: SetNull)
-  idempotencyKey      IdempotencyKey?          @relation(fields: [idempotencyKeyId], references: [id], onDelete: SetNull)
+  matchId             String?                 @db.Uuid
+  idempotencyKeyId    String?                 @db.Uuid
+  user                User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameDefinition      GameDefinition          @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  match               Match?                  @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  idempotencyKey      IdempotencyKey?         @relation(fields: [idempotencyKeyId], references: [id], onDelete: SetNull)
 
   @@index([status, gameDefinitionId, mode, createdAt])
   @@index([userId, status])
@@ -1212,6 +1214,7 @@ model MatchEvent {
   id               String           @id @default(uuid()) @db.Uuid
   matchId          String           @db.Uuid
   participantId    String           @db.Uuid
+  roundId          String?          @db.Uuid
   sequence         Int
   eventType        MatchEventType
   clientEventId    String           @db.VarChar(128)
@@ -1220,12 +1223,15 @@ model MatchEvent {
   serverReceivedAt DateTime         @default(now())
   accepted         Boolean          @default(false)
   rejectionReason  String?          @db.VarChar(160)
+  requestHash      String?          @db.Char(64)
   match            Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
   participant      MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  round            MatchRound?      @relation(fields: [roundId], references: [id], onDelete: SetNull)
 
   @@unique([matchId, participantId, clientEventId])
   @@unique([matchId, participantId, sequence])
   @@index([matchId, participantId, serverReceivedAt])
+  @@index([roundId, participantId, sequence])
 }
 
 model MatchSettlement {
@@ -1265,6 +1271,7 @@ model MatchContentAssignment {
   id                  String           @id @default(uuid()) @db.Uuid
   matchId             String           @db.Uuid
   participantId       String           @db.Uuid
+  roundId             String?          @db.Uuid
   contentItemId       String           @db.Uuid
   position            Int
   assignmentTokenHash String           @db.Char(64)
@@ -1275,10 +1282,12 @@ model MatchContentAssignment {
   match               Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
   participant         MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
   contentItem         GameContentItem  @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
+  round               MatchRound?      @relation(fields: [roundId], references: [id], onDelete: SetNull)
 
   @@unique([matchId, participantId, position])
   @@index([participantId, contentItemId])
   @@index([matchId, participantId, answeredAt])
+  @@index([roundId, participantId, position])
 }
 
 model PlayerGameStats {

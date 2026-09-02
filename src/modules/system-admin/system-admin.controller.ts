@@ -153,6 +153,14 @@ export class SystemAdminController {
   }
 
   @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/game-stats/rebuild")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Rebuild one player's game statistics from settled matches and accepted answer events" })
+  rebuildPlayerGameStats(@Param("userId", ParseUUIDPipe) userId: string, @Query("gameKey") gameKey: string) {
+    return this.systemAdminService.rebuildPlayerGameStats(userId, gameKey)
+  }
+
+  @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "View a complete player account, wallet, and session summary" })

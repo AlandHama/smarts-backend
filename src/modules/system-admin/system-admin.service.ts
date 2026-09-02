@@ -23,6 +23,7 @@ import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeason
 import { LeaderboardService } from "../leaderboard/leaderboard.service"
 import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
 import { GameService } from "../game/game.service"
+import { RebuildPlayerGameStatsTransaction } from "../game/transactions/rebuild-player-game-stats-transaction"
 import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction"
 import { CommerceService } from "../commerce/commerce.service"
 import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
@@ -53,6 +54,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly reverseWalletTransaction: ReverseWalletTransaction,
     private readonly leaderboardService: LeaderboardService,
     private readonly gameService: GameService,
+    private readonly rebuildPlayerGameStatsTransaction: RebuildPlayerGameStatsTransaction,
     private readonly terminateAdminSessionTransaction: TerminateAdminSessionTransaction,
     private readonly commerceService: CommerceService,
     private readonly storageService: StorageService,
@@ -311,6 +313,7 @@ export class SystemAdminService implements OnModuleInit {
   updateGameConfig(key: string, dto: UpdateGameConfigDto) { return this.gameService.updateConfig(key, dto) }
   createGameContent(dto: CreateGameContentDto) { return this.gameService.createContent(dto) }
   listGameContent(key: string) { return this.gameService.listContent(key, true) }
+  rebuildPlayerGameStats(userId: string, gameKey: string) { return this.rebuildPlayerGameStatsTransaction.run({ userId, gameKey }) }
   listCommerceCatalogs() { return this.commerceService.listCatalogs(true) }
   createCommerceCatalog(dto: CreateCatalogDto) { return this.commerceService.createCatalog(dto) }
   updateCommerceCatalog(id: string, dto: UpdateCatalogDto) { return this.commerceService.updateCatalog(id, dto) }

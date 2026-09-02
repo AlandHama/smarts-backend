@@ -72,7 +72,13 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       const progression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.mainProgressionKey, amount: xp, sourceId: `${lockedMatch.id}:xp:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       const eloProgression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.eloProgressionKey, amount: eloDelta, sourceId: `${lockedMatch.id}:elo:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       const wallet = await this.creditWallet.runWithinTransaction({ userId: player.id, currencyCode: config.rewardCurrencyCode, amount: coinReward, sourceId: `${lockedMatch.id}:currency:${player.id}`, sourceType: WalletTransactionSourceType.MATCH, metadata: { matchId: lockedMatch.id, result, policyVersion } }, transaction)
-      await this.updateStats(transaction, lockedMatch, item.participant, result, item.score)
+      const answerEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: "ANSWER", accepted: true }, select: { payload: true } })
+      const answerSummary = answerEvents.reduce((summary, event) => {
+        const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {}
+        const timeTakenMs = typeof payload.timeTakenMs === "number" && Number.isSafeInteger(payload.timeTakenMs) && payload.timeTakenMs >= 0 ? payload.timeTakenMs : 0
+        return { totalQuestions: summary.totalQuestions + 1, totalCorrect: summary.totalCorrect + (payload.correct === true ? 1 : 0), totalTimeMs: summary.totalTimeMs + BigInt(timeTakenMs) }
+      }, { totalQuestions: 0, totalCorrect: 0, totalTimeMs: 0n })
+      await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
       if (eloDelta > 0n && winner?.participant.id === item.participant.id) {
         const leaderboardKeys = this.getLeaderboardKeys(config)
         for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
@@ -92,7 +98,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     return settlementJson
   }
 
-  private async updateStats(transaction: Prisma.TransactionClient, match: any, participant: any, result: string, score: bigint) {
+  private async updateStats(transaction: Prisma.TransactionClient, match: any, participant: any, result: string, score: bigint, answers: { totalCorrect: number; totalQuestions: number; totalTimeMs: bigint }) {
     if (!participant.userId) return
     const stats = await transaction.playerStats.findUnique({ where: { userId: participant.userId } })
     if (stats) {
@@ -100,7 +106,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       const streak = result === "WIN" ? stats.currentWinStreak + 1 : 0
       await transaction.playerStats.update({ where: { id: stats.id }, data: { gamesPlayed: { increment: 1 }, wins: result === "WIN" ? { increment: 1 } : undefined, losses: result === "LOSS" ? { increment: 1 } : undefined, draws: result === "DRAW" ? { increment: 1 } : undefined, currentWinStreak: streak, highestWinStreak: streak > stats.highestWinStreak ? streak : undefined, totalScore: { increment: score } } })
     }
-    const gameStats = await transaction.playerGameStats.upsert({ where: { userId_gameDefinitionId: { userId: participant.userId, gameDefinitionId: match.gameDefinitionId } }, create: { userId: participant.userId, gameDefinitionId: match.gameDefinitionId, gamesPlayed: 1, wins: result === "WIN" ? 1 : 0, losses: result === "LOSS" ? 1 : 0, draws: result === "DRAW" ? 1 : 0, forfeits: result === "FORFEIT" ? 1 : 0, totalScore: score, bestScore: score, lastPlayedAt: new Date() }, update: { gamesPlayed: { increment: 1 }, wins: result === "WIN" ? { increment: 1 } : undefined, losses: result === "LOSS" ? { increment: 1 } : undefined, draws: result === "DRAW" ? { increment: 1 } : undefined, forfeits: result === "FORFEIT" ? { increment: 1 } : undefined, totalScore: { increment: score }, bestScore: { set: score }, lastPlayedAt: new Date() } })
+    const gameStats = await transaction.playerGameStats.upsert({ where: { userId_gameDefinitionId: { userId: participant.userId, gameDefinitionId: match.gameDefinitionId } }, create: { userId: participant.userId, gameDefinitionId: match.gameDefinitionId, gamesPlayed: 1, wins: result === "WIN" ? 1 : 0, losses: result === "LOSS" ? 1 : 0, draws: result === "DRAW" ? 1 : 0, forfeits: result === "FORFEIT" ? 1 : 0, totalCorrect: answers.totalCorrect, totalQuestions: answers.totalQuestions, totalTimeMs: answers.totalTimeMs, totalScore: score, bestScore: score, lastPlayedAt: new Date() }, update: { gamesPlayed: { increment: 1 }, wins: result === "WIN" ? { increment: 1 } : undefined, losses: result === "LOSS" ? { increment: 1 } : undefined, draws: result === "DRAW" ? { increment: 1 } : undefined, forfeits: result === "FORFEIT" ? { increment: 1 } : undefined, totalCorrect: { increment: answers.totalCorrect }, totalQuestions: { increment: answers.totalQuestions }, totalTimeMs: { increment: answers.totalTimeMs }, totalScore: { increment: score }, lastPlayedAt: new Date() } })
     if (gameStats.bestScore < score) await transaction.playerGameStats.update({ where: { id: gameStats.id }, data: { bestScore: score } })
   }
 

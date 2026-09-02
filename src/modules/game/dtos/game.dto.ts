@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger"
-import { IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, Matches, Max, Min } from "class-validator"
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, Matches, Max, Min } from "class-validator"
 
 const DECIMAL = /^\d+(\.\d{1,8})?$/
 
@@ -119,6 +119,7 @@ export class UpdateGameConfigDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(100)
   maxQuestions?: number
 
   @ApiPropertyOptional()
@@ -165,6 +166,8 @@ export class CreateGameContentDto {
 
   @ApiProperty({ type: Object, example: ["3", "4", "5", "6"] })
   @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(8)
   options!: unknown[]
 
   @ApiProperty({ example: 1 })
@@ -175,6 +178,7 @@ export class CreateGameContentDto {
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(0)
+  @Max(7)
   answerIndex!: number
 
   @ApiPropertyOptional({ example: "general" })

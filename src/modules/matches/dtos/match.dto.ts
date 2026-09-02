@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger"
-import { IsDateString, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min } from "class-validator"
+import { IsDateString, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator"
 import { GameMode, MatchEventType } from "@prisma/client"
 
 export class CreateMatchDto {
@@ -30,12 +30,14 @@ export class MatchEventDto {
 
   @ApiProperty({ example: "answer-1" })
   @IsString()
+  @MinLength(1)
   @MaxLength(128)
   clientEventId!: string
 
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)
+  @Max(1000000)
   sequence!: number
 
   @ApiPropertyOptional({ type: Object })

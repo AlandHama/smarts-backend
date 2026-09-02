@@ -15,6 +15,4 @@ export class GameController {
   @Get(":key")
   definition(@Param("key") key: string) { return this.gameService.getDefinition(key) }
 
-  @Get(":key/content")
-  content(@Param("key") key: string) { return this.gameService.listContent(key, false) }
 }
