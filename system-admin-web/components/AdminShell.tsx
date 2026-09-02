@@ -14,6 +14,7 @@ import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import ForumRoundedIcon from '@mui/icons-material/ForumRounded';
 import FolderCopyRoundedIcon from '@mui/icons-material/FolderCopyRounded';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
+import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -27,7 +28,7 @@ import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 
-export type AdminView = 'overview' | 'players' | 'player360' | 'sessions' | 'friends' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config' | 'storage' | 'feedback';
+export type AdminView = 'overview' | 'players' | 'player360' | 'sessions' | 'friends' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config' | 'reward-policies' | 'storage' | 'feedback';
 
 const navigation = [
   { key: 'overview' as const, label: 'Overview', icon: <DashboardRoundedIcon /> },
@@ -40,6 +41,7 @@ const navigation = [
   { key: 'storage' as const, label: 'Storage & files', icon: <FolderCopyRoundedIcon /> },
   { key: 'leaderboards' as const, label: 'Leaderboards', icon: <LeaderboardRoundedIcon /> },
   { key: 'game-config' as const, label: 'Game config', icon: <TuneRoundedIcon /> },
+  { key: 'reward-policies' as const, label: 'Reward policies', icon: <SecurityRoundedIcon /> },
   { key: 'feedback' as const, label: 'Feedback', icon: <ForumRoundedIcon /> },
 ];
 

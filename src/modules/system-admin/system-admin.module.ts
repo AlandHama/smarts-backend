@@ -19,9 +19,11 @@ import { GameModule } from "../game/game.module"
 import { CommerceModule } from "../commerce/commerce.module"
 import { StorageModule } from "../storage/storage.module"
 import { FriendsModule } from "../friends/friends.module"
+import { ConfigModule } from "../config/config.module"
+import { AdRewardsModule } from "../ad-rewards/ad-rewards.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,

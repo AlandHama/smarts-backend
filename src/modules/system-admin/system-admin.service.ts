@@ -32,6 +32,8 @@ import { StorageService } from "../storage/storage.service"
 import type { UploadedImage } from "../storage/types"
 import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
 import { FriendsService } from "../friends/friends.service"
+import { ConfigService } from "../config/config.service"
+import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -59,6 +61,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly commerceService: CommerceService,
     private readonly storageService: StorageService,
     private readonly friendsService: FriendsService,
+    private readonly configService: ConfigService,
   ) {}
 
   async onModuleInit() {
@@ -313,6 +316,15 @@ export class SystemAdminService implements OnModuleInit {
   updateGameConfig(key: string, dto: UpdateGameConfigDto) { return this.gameService.updateConfig(key, dto) }
   createGameContent(dto: CreateGameContentDto) { return this.gameService.createContent(dto) }
   listGameContent(key: string) { return this.gameService.listContent(key, true) }
+  listRewardPolicies() { return this.configService.listAdmin() }
+  publishRewardPolicy(dto: PublishRewardPolicyDto) { return this.configService.publish(dto) }
+  listAdRewardClaims() {
+    return this.prisma.adRewardClaim.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 500,
+      include: { currency: { select: { code: true, name: true } }, user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } },
+    }).then((items) => this.serialize(items))
+  }
   rebuildPlayerGameStats(userId: string, gameKey: string) { return this.rebuildPlayerGameStatsTransaction.run({ userId, gameKey }) }
   listCommerceCatalogs() { return this.commerceService.listCatalogs(true) }
   createCommerceCatalog(dto: CreateCatalogDto) { return this.commerceService.createCatalog(dto) }

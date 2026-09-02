@@ -158,6 +158,7 @@ npm run dev
 | `S3_SECRET_ACCESS_KEY` | Phase 7 | Storage secret; configure only in Railway variables |
 | `S3_PUBLIC_BASE_URL` | optional | Only use if the bucket is intentionally public; private buckets are supported |
 | `PUBLIC_API_URL` | recommended | Absolute Railway API URL used for stable public media links, for example `https://api-production-xxxx.up.railway.app` |
+| `AD_REWARD_WEBHOOK_SECRET` | Phase 9B | Private HMAC secret used to verify ad-provider callbacks; configure only in Railway Variables |
 
 Phase 7 storage uses organized object keys such as `player-avatar/{userId}/{uuid}.png`,
 `commerce-asset/admin/{uuid}.png`, and `catalog-item/admin/{uuid}.png`. Private
@@ -176,6 +177,20 @@ is server-owned: the mobile client sends `POST /presence/heartbeat`, reads
 server timestamp, not from player storage or a client-supplied time. The
 default online window is five minutes and can be changed with
 `PRESENCE_ONLINE_WINDOW_SECONDS` (30–3600 seconds).
+
+Phase 9B replaces Firebase reward/config authority. The mobile client reads the
+safe projection from `GET /configuration/public`; it must not calculate or
+credit rewards. Before showing a rewarded ad, call authenticated
+`POST /ad-rewards/impressions` and pass the returned claim token as provider
+custom data. The provider callback calls `POST /ad-rewards/claims` with the
+claim id, provider event id, claim token, and an HMAC-SHA256
+`x-ad-reward-signature` over `claimId:providerEventId:adFormat:claimToken`.
+The server resolves the player region and policy, enforces cooldown/daily caps,
+and credits the wallet exactly once. Configure the policy from the system-admin
+`Reward policies` page; leave the webhook secret out of the database and mobile
+app. Durable in-app notifications are available at `GET /notifications` and
+`POST /notifications/:id/read`, while purchase and reward events are processed
+from the transactional outbox.
 
 ## License
 

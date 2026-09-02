@@ -77,6 +77,20 @@ enum RewardGrantStatus {
   REJECTED
 }
 
+enum AdRewardClaimStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  GRANTED
+}
+
+enum NotificationStatus {
+  PENDING
+  READ
+  DISPATCHED
+  FAILED
+}
+
 enum WalletTransactionDirection {
   CREDIT
   DEBIT
@@ -338,6 +352,8 @@ model User {
   matchmakingTickets         MatchmakingTicket[]
   matchmakingInvitesSent     MatchmakingInvite[]     @relation("MatchmakingInviteInviter")
   matchmakingInvitesReceived MatchmakingInvite[]     @relation("MatchmakingInviteInvitee")
+  adRewardClaims             AdRewardClaim[]
+  notifications              Notification[]
 }
 
 model Session {
@@ -549,6 +565,7 @@ model CurrencyDefinition {
   catalogPrices  CatalogPrice[]
   catalogRewards CatalogReward[]
   purchases      Purchase[]
+  adRewardClaims AdRewardClaim[]
 }
 
 model AssetDefinition {
@@ -1330,4 +1347,68 @@ model OutboxEvent {
 
   @@index([status, availableAt])
   @@index([aggregateType, aggregateId])
+}
+
+/// Versioned configuration. `privateConfig` is never returned by a public
+/// endpoint and may contain server-only reward/verification policy.
+model RewardPolicyVersion {
+  id            String   @id @default(uuid()) @db.Uuid
+  key           String   @db.VarChar(80)
+  version       Int
+  active        Boolean  @default(true)
+  publicConfig  Json
+  privateConfig Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([key, version])
+  @@index([key, active, version])
+}
+
+model AdRewardClaim {
+  id                  String              @id @default(uuid()) @db.Uuid
+  userId              String              @db.Uuid
+  provider            String              @db.VarChar(40)
+  adFormat            String              @db.VarChar(40)
+  claimTokenHash      String              @unique @db.Char(64)
+  providerEventId     String?             @db.VarChar(255)
+  countryCode         String?             @db.Char(2)
+  currencyId          String?             @db.Uuid
+  rewardAmount        BigInt?
+  status              AdRewardClaimStatus @default(PENDING)
+  verificationPayload Json?
+  rejectionReason     String?             @db.VarChar(255)
+  expiresAt           DateTime
+  verifiedAt          DateTime?
+  grantedAt           DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency            CurrencyDefinition? @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerEventId])
+  @@index([userId, status, createdAt])
+  @@index([userId, grantedAt])
+  @@index([expiresAt, status])
+}
+
+model Notification {
+  id               String             @id @default(uuid()) @db.Uuid
+  userId           String?            @db.Uuid
+  outboxEventId    String?            @db.Uuid
+  notificationType String             @db.VarChar(120)
+  title            String             @db.VarChar(160)
+  body             String             @db.Text
+  data             Json?
+  status           NotificationStatus @default(PENDING)
+  readAt           DateTime?
+  dispatchedAt     DateTime?
+  failureReason    String?            @db.Text
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  user             User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([outboxEventId, userId])
+  @@index([userId, status, createdAt])
+  @@index([notificationType, createdAt])
 }

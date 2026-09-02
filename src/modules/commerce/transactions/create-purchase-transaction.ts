@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash } from "node:crypto"
-import { CatalogRewardType, InventoryAcquisitionSource, Prisma, ProgressionEventSourceType, WalletTransactionSourceType } from "@prisma/client"
+import { CatalogRewardType, InventoryAcquisitionSource, Prisma, ProgressionEventSourceType, ProgressionRewardType, WalletTransactionSourceType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
@@ -49,9 +49,14 @@ export class CreatePurchaseTransaction extends PrismaTransaction<CreatePurchaseI
     const rewardSnapshot = { primaryAsset: item.assetDefinition ? { key: item.assetDefinition.key, name: item.assetDefinition.name, quantity: input.quantity } : null, rewards: item.rewards.map((reward) => ({ id: reward.id, rewardType: reward.rewardType, assetKey: reward.assetDefinition?.key ?? null, variationKey: reward.assetVariation?.key ?? null, currencyCode: reward.currency?.code ?? null, progressionKey: reward.progressionDefinition?.key ?? null, targetKey: reward.targetKey, amount: reward.amount?.toString() ?? null, quantity: reward.quantity, sortOrder: reward.sortOrder, metadata: reward.metadata ?? null })) }
     await transaction.purchaseLine.create({ data: { purchaseId: purchase.id, catalogItemId: item.id, itemKeySnapshot: item.key, itemNameSnapshot: item.name, quantity: input.quantity, unitAmount: price.amount, totalAmount: total, rewardSnapshot: rewardSnapshot as Prisma.InputJsonValue } })
     await this.debitWallet.runWithinTransaction({ userId: input.userId, currencyCode, amount: total, sourceId: purchase.id, sourceType: WalletTransactionSourceType.PURCHASE, metadata: { catalogItemKey: item.key, quantity: input.quantity } }, transaction)
-    if (item.assetDefinition) await this.grantInventory.runWithinTransaction({ userId: input.userId, assetKey: item.assetDefinition.key, quantity: input.quantity, source: InventoryAcquisitionSource.PURCHASE, sourceId: `${purchase.id}:primary`, metadata: { purchaseId: purchase.id, catalogItemKey: item.key } }, transaction)
+    if (item.assetDefinition) {
+      const grantKey = `PURCHASE:${purchase.id}:primary`
+      const grant = await this.createGrant(transaction, input.userId, purchase.id, grantKey, ProgressionRewardType.ASSET, item.assetDefinition.key, BigInt(input.quantity), null)
+      await this.grantInventory.runWithinTransaction({ userId: input.userId, assetKey: item.assetDefinition.key, quantity: input.quantity, source: InventoryAcquisitionSource.PURCHASE, sourceId: `${purchase.id}:primary`, metadata: { purchaseId: purchase.id, catalogItemKey: item.key } }, transaction)
+      await transaction.rewardGrant.update({ where: { id: grant.id }, data: { status: "GRANTED" } })
+    }
     for (const reward of item.rewards) await this.grantReward(transaction, input.userId, purchase.id, item.key, input.quantity, reward)
-    const result = { purchaseId: purchase.id, status: "COMPLETED", catalogKey, catalogItemKey: item.key, currencyCode, totalAmount: total.toString(), quantity: input.quantity }
+    const result = { purchaseId: purchase.id, userId: input.userId, status: "COMPLETED", catalogKey, catalogItemKey: item.key, currencyCode, totalAmount: total.toString(), quantity: input.quantity }
     await transaction.purchase.update({ where: { id: purchase.id }, data: { status: "COMPLETED", completedAt: new Date() } })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     await transaction.outboxEvent.create({ data: { eventType: "commerce.purchase.completed", aggregateType: "Purchase", aggregateId: purchase.id, payload: result as unknown as Prisma.InputJsonValue } })
@@ -61,12 +66,20 @@ export class CreatePurchaseTransaction extends PrismaTransaction<CreatePurchaseI
   private async grantReward(transaction: Prisma.TransactionClient, userId: string, purchaseId: string, itemKey: string, purchaseQuantity: number, reward: any) {
     const sourceId = `${purchaseId}:${reward.id}`
     const quantity = reward.quantity * purchaseQuantity
+    const grantKey = `PURCHASE:${purchaseId}:reward:${reward.id}`
+    const rewardType = reward.rewardType === CatalogRewardType.ASSET ? ProgressionRewardType.ASSET : reward.rewardType === CatalogRewardType.CURRENCY ? ProgressionRewardType.CURRENCY : reward.rewardType === CatalogRewardType.PROGRESSION_POINTS ? ProgressionRewardType.PROGRESSION_POINTS : reward.rewardType === CatalogRewardType.PROGRESSION_RESET ? ProgressionRewardType.PROGRESSION_RESET : ProgressionRewardType.ENTITLEMENT
+    const grantAmount = rewardType === ProgressionRewardType.ASSET
+      ? BigInt(quantity)
+      : rewardType === ProgressionRewardType.CURRENCY || rewardType === ProgressionRewardType.PROGRESSION_POINTS
+        ? (reward.amount ? reward.amount * BigInt(purchaseQuantity) : null)
+        : null
+    const grant = await this.createGrant(transaction, userId, purchaseId, grantKey, rewardType, reward.targetKey ?? reward.assetDefinition?.key ?? reward.progressionDefinition?.key ?? null, grantAmount, reward.currency?.id ?? null, reward.progressionDefinition?.id ?? null)
     if (reward.rewardType === CatalogRewardType.ASSET) {
       if (!reward.assetDefinition) throw new BadRequestException("Asset reward is not configured")
       await this.grantInventory.runWithinTransaction({ userId, assetKey: reward.assetDefinition.key, variationKey: reward.assetVariation?.key, quantity, source: InventoryAcquisitionSource.PURCHASE, sourceId, metadata: { purchaseId, catalogItemKey: itemKey } }, transaction)
     } else if (reward.rewardType === CatalogRewardType.CURRENCY) {
       if (!reward.currency || !reward.amount || reward.amount <= 0n) throw new BadRequestException("Currency reward is not configured")
-      await this.creditWallet.runWithinTransaction({ userId, currencyCode: reward.currency.code, amount: reward.amount * BigInt(purchaseQuantity), sourceId, sourceType: WalletTransactionSourceType.PURCHASE, metadata: { purchaseId, catalogItemKey: itemKey } }, transaction)
+      await this.creditWallet.runWithinTransaction({ userId, currencyCode: reward.currency.code, amount: reward.amount * BigInt(purchaseQuantity), sourceId, sourceType: WalletTransactionSourceType.PURCHASE, rewardGrantKey: grantKey, metadata: { purchaseId, catalogItemKey: itemKey } }, transaction)
     } else if (reward.rewardType === CatalogRewardType.PROGRESSION_POINTS) {
       if (!reward.progressionDefinition || !reward.amount || reward.amount <= 0n) throw new BadRequestException("Progression reward is not configured")
       await this.awardProgression.runWithinTransaction({ userId, progressionKey: reward.progressionDefinition.key, amount: reward.amount * BigInt(purchaseQuantity), sourceId, sourceType: ProgressionEventSourceType.PURCHASE, metadata: { purchaseId, catalogItemKey: itemKey } }, transaction)
@@ -77,6 +90,11 @@ export class CreatePurchaseTransaction extends PrismaTransaction<CreatePurchaseI
       if (!reward.targetKey) throw new BadRequestException("Entitlement reward is not configured")
       await transaction.entitlement.upsert({ where: { userId_entitlementKey: { userId, entitlementKey: reward.targetKey } }, create: { userId, entitlementKey: reward.targetKey, assetDefinitionId: reward.assetDefinition?.id, status: "ACTIVE", sourceType: "PURCHASE", sourceId, metadata: reward.metadata as Prisma.InputJsonValue | undefined }, update: { status: "ACTIVE", sourceType: "PURCHASE", sourceId, metadata: reward.metadata as Prisma.InputJsonValue | undefined } })
     }
+    await transaction.rewardGrant.update({ where: { id: grant.id }, data: { status: "GRANTED" } })
+  }
+
+  private createGrant(transaction: Prisma.TransactionClient, userId: string, purchaseId: string, grantKey: string, rewardType: ProgressionRewardType, targetKey: string | null, amount: bigint | null, currencyId: string | null, progressionDefinitionId?: string) {
+    return transaction.rewardGrant.create({ data: { userId, sourceType: WalletTransactionSourceType.PURCHASE, sourceId: purchaseId, rewardType, grantKey, targetKey, amount, currencyId, progressionDefinitionId, status: "PENDING", policyVersion: "purchase-v1" } })
   }
 
   private isAvailable(startsAt: Date | null, endsAt: Date | null) { const now = Date.now(); return (!startsAt || startsAt.getTime() <= now) && (!endsAt || endsAt.getTime() > now) }

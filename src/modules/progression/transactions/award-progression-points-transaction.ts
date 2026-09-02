@@ -61,7 +61,16 @@ export class AwardProgressionPointsTransaction extends PrismaTransaction<AwardPr
     if (idempotency.status === "COMPLETED" && idempotency.responseJson) return idempotency.responseJson as unknown as ProgressionAwardResult
     if (idempotency.status === "PROCESSING" && idempotency.responseJson) throw new ConflictException("The progression award is already being processed")
 
+    const pointsGrantKey = `${input.sourceType}:${input.sourceId.trim()}:${progression.key}:points`
+    const pointsGrant = input.amount > 0n
+      ? await transaction.rewardGrant.upsert({
+        where: { grantKey: pointsGrantKey },
+        create: { userId: input.userId, sourceType: input.sourceType as unknown as WalletTransactionSourceType, sourceId: input.sourceId.trim(), rewardType: ProgressionRewardType.PROGRESSION_POINTS, grantKey: pointsGrantKey, progressionDefinitionId: progression.id, amount: input.amount, status: "PENDING", policyVersion: "progression-v1", idempotencyKeyId: idempotency.id, metadata: input.metadata as Prisma.InputJsonValue | undefined },
+        update: {},
+      })
+      : null
     const result = await this.applyPoints(transaction, input.userId, progression, input.amount, input.sourceType, input.sourceId.trim(), input.metadata, idempotency.id, new Set<string>())
+    if (pointsGrant) await transaction.rewardGrant.update({ where: { id: pointsGrant.id }, data: { status: "GRANTED" } })
     await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     return result
   }

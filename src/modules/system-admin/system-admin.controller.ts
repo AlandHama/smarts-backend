@@ -17,6 +17,7 @@ import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutati
 import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UpdatePlayerStorageDto, UploadFileDto } from "../storage/dtos"
 import type { UploadedImage } from "../storage/types"
 import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
+import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -414,6 +415,24 @@ export class SystemAdminController {
   @Get("api/game-config/:gameKey/content")
   @ApiBearerAuth("access-token")
   listGameContent(@Param("gameKey") gameKey: string) { return this.systemAdminService.listGameContent(gameKey) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/reward-policies")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List versioned reward policies without exposing private policy values" })
+  rewardPolicies() { return this.systemAdminService.listRewardPolicies() }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/reward-policies")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Publish a new version of a server-owned reward policy" })
+  publishRewardPolicy(@Body() dto: PublishRewardPolicyDto) { return this.systemAdminService.publishRewardPolicy(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/ad-rewards/claims")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Inspect verified, rejected, and granted ad reward claims" })
+  adRewardClaims() { return this.systemAdminService.listAdRewardClaims() }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/commerce/catalogs")
