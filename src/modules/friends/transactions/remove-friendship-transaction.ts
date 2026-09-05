@@ -14,8 +14,8 @@ export class RemoveFriendshipTransaction extends PrismaTransaction<RemoveFriends
   protected async execute(input: RemoveFriendshipInput, transaction: Prisma.TransactionClient) {
     const result = await transaction.friendship.deleteMany({ where: { OR: [{ userId: input.userId, friendId: input.friendId }, { userId: input.friendId, friendId: input.userId }] } })
     if (!result.count) throw new NotFoundException("Friendship not found")
-    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "FRIENDSHIP_REMOVED", entityType: "Friendship", summary: "Removed a friendship", metadata: { friendId: input.friendId } })
-    await writePlayerAudit(transaction, { userId: input.friendId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIENDSHIP_REMOVED", entityType: "Friendship", summary: "A friendship was removed", metadata: { friendId: input.userId } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "FRIENDSHIP_REMOVED", entityType: "Friendship", summary: "Removed a friendship", changes: { relationship: { old: "ACCEPTED", new: "NONE" } }, metadata: { friendId: input.friendId } })
+    await writePlayerAudit(transaction, { userId: input.friendId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIENDSHIP_REMOVED", entityType: "Friendship", summary: "A friendship was removed", changes: { relationship: { old: "ACCEPTED", new: "NONE" } }, metadata: { friendId: input.userId } })
     return { message: "Friendship removed" }
   }
 }

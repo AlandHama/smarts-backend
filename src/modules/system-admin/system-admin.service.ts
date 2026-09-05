@@ -249,6 +249,7 @@ export class SystemAdminService implements OnModuleInit {
       entityType: true,
       entityId: true,
       summary: true,
+      changes: true,
       metadata: true,
       createdAt: true,
       user: { select: { id: true, username: true, email: true, firstName: true, lastName: true, isSystemAdmin: true, profile: { select: { displayName: true, avatarUrl: true } } } },
@@ -350,7 +351,7 @@ export class SystemAdminService implements OnModuleInit {
       this.prisma.playerStorageItem.findMany({ where: { userId }, orderBy: [{ displayOrder: "asc" }, { key: "asc" }], take: 200 }),
       this.prisma.storedFile.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200 }),
       this.prisma.playerFeedback.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { category: { select: { key: true, name: true } } } }),
-      this.prisma.playerAuditEvent.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, select: { id: true, userId: true, actorType: true, action: true, entityType: true, entityId: true, summary: true, metadata: true, createdAt: true } }),
+      this.prisma.playerAuditEvent.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, select: { id: true, userId: true, actorType: true, action: true, entityType: true, entityId: true, summary: true, changes: true, metadata: true, createdAt: true } }),
     ])
     const walletTransactions = user.wallet
       ? await this.prisma.walletTransaction.findMany({ where: { walletId: user.wallet.id }, orderBy: { createdAt: "desc" }, take: 500, include: { currency: { select: { code: true, name: true, kind: true } } } })

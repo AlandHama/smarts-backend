@@ -13,7 +13,8 @@ export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string
   }
 
   protected async execute(data: { userId: string; dto: UpdateProfileDto }, transaction: Prisma.TransactionClient) {
-    const profile = await transaction.playerProfile.findUnique({ where: { userId: data.userId } })
+    const current = await transaction.user.findUnique({ where: { id: data.userId }, select: { firstName: true, lastName: true, profile: true } })
+    const profile = current?.profile
     if (!profile) throw new NotFoundException("Player profile not found")
 
     const dto = data.dto
@@ -37,6 +38,14 @@ export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string
       })
     }
     const fields = Object.keys(dto).filter((field) => field !== "password")
-    if (fields.length) await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.PLAYER, action: "PROFILE_UPDATED", entityType: "User", entityId: data.userId, summary: `Updated player profile: ${fields.join(", ")}`, metadata: { fields } })
+    const changes: Record<string, { old: unknown; new: unknown }> = {}
+    if (dto.displayName !== undefined) changes.displayName = { old: profile.displayName, new: dto.displayName.trim() }
+    if (dto.avatarUrl !== undefined) changes.avatarUrl = { old: profile.avatarUrl, new: dto.avatarUrl }
+    if (dto.countryCode !== undefined) changes.countryCode = { old: profile.countryCode, new: dto.countryCode?.trim().toUpperCase() ?? null }
+    if (dto.bio !== undefined) changes.bio = { old: profile.bio, new: dto.bio?.trim() || null }
+    if (dto.isPublic !== undefined) changes.isPublic = { old: profile.isPublic, new: dto.isPublic }
+    if (dto.firstName !== undefined) changes.firstName = { old: current?.firstName, new: dto.firstName?.trim() || null }
+    if (dto.lastName !== undefined) changes.lastName = { old: current?.lastName, new: dto.lastName?.trim() || null }
+    if (fields.length) await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.PLAYER, action: "PROFILE_UPDATED", entityType: "User", entityId: data.userId, summary: `Updated player profile: ${fields.join(", ")}`, changes, metadata: { fields } })
   }
 }

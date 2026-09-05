@@ -17,7 +17,7 @@ export class UpdateUserStatusTransaction extends PrismaTransaction<
   }
 
     protected async execute(data: { userId: string; status: SystemAdminUserStatus; actorId: string; reason?: string }, transaction: Prisma.TransactionClient) {
-    const user = await transaction.user.findUnique({ where: { id: data.userId }, select: { id: true, isSystemAdmin: true } })
+    const user = await transaction.user.findUnique({ where: { id: data.userId }, select: { id: true, status: true, isSystemAdmin: true } })
     if (!user) throw new NotFoundException("User not found")
     if (user.id === data.actorId && data.status !== SystemAdminUserStatus.Active) {
       throw new ConflictException("You cannot deactivate or ban your own admin account")
@@ -41,7 +41,7 @@ export class UpdateUserStatusTransaction extends PrismaTransaction<
     }
 
     await writeAdminAudit(transaction, { actorId: data.actorId, action: `USER_${data.status}`, entityType: "User", entityId: data.userId, reason: data.reason, metadata: { terminatedSessions: data.status !== SystemAdminUserStatus.Active } })
-    await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.ADMIN, action: `ACCOUNT_${data.status}`, entityType: "User", entityId: data.userId, summary: `Account status changed to ${data.status}`, metadata: { actorId: data.actorId, terminatedSessions: data.status !== SystemAdminUserStatus.Active } })
+    await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.ADMIN, action: `ACCOUNT_${data.status}`, entityType: "User", entityId: data.userId, summary: `Account status changed from ${user.status} to ${data.status}`, changes: { status: { old: user.status, new: data.status } }, metadata: { actorId: data.actorId, terminatedSessions: data.status !== SystemAdminUserStatus.Active } })
 
     return updated
   }

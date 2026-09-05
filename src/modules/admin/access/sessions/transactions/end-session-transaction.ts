@@ -16,6 +16,6 @@ export class EndSessionTransaction extends PrismaTransaction<{ userId: string; t
       where: { userId: data.userId, tokenId: data.tokenId, sessionStatus: "ACTIVE" },
       data: { sessionStatus: "TERMINATED" },
     })
-    if (result.count) await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.PLAYER, action: "SESSION_ENDED", entityType: "Session", summary: "Ended an authenticated session" })
+    if (result.count) await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.PLAYER, action: "SESSION_ENDED", entityType: "Session", summary: "Ended an authenticated session", changes: { sessionStatus: { old: "ACTIVE", new: "TERMINATED" } } })
   }
 }

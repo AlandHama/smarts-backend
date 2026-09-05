@@ -15,7 +15,7 @@ export class DeletePlayerStorageTransaction extends PrismaTransaction<DeletePlay
     const item = await transaction.playerStorageItem.findUnique({ where: { userId_key: { userId: input.userId, key: input.key } } })
     if (!item) throw new NotFoundException("Storage entry not found")
     await transaction.playerStorageItem.delete({ where: { id: item.id } })
-    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "STORAGE_DELETED", entityType: "PlayerStorageItem", entityId: item.id, summary: `Deleted storage key ${item.key}`, metadata: { key: item.key } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "STORAGE_DELETED", entityType: "PlayerStorageItem", entityId: item.id, summary: `Deleted storage key ${item.key}`, changes: { [item.key]: { old: { value: item.value, visibility: item.visibility, valueType: item.valueType, displayOrder: item.displayOrder }, new: null } }, metadata: { key: item.key } })
     return { message: "Storage entry deleted" }
   }
 }

@@ -36,7 +36,7 @@ export class RevokeInventoryItemTransaction extends PrismaTransaction<RevokeInve
     const result = { removed: input.quantity, assetKey: asset.key, inventoryItemId: row.id, remaining: row.quantity - input.quantity, deleted: row.quantity === input.quantity, sourceId: input.sourceId }
     const actorId = typeof input.metadata?.actorId === "string" ? input.metadata.actorId : undefined
     if (actorId) await writeAdminAudit(transaction, { actorId, action: "INVENTORY_REVOKE", entityType: "InventoryItem", entityId: row.id, reason: typeof input.metadata?.reason === "string" ? input.metadata.reason : undefined, metadata: { userId: input.userId, assetKey: asset.key, quantity: input.quantity, sourceId: input.sourceId } })
-    await writePlayerAudit(transaction, { userId: input.userId, actorType: actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "INVENTORY_REVOKED", entityType: "InventoryItem", entityId: row.id, summary: `Removed ${input.quantity} ${asset.name}`, metadata: { assetKey: asset.key, variationKey: input.variationKey, quantity: input.quantity, sourceId: input.sourceId } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "INVENTORY_REVOKED", entityType: "InventoryItem", entityId: row.id, summary: `Removed ${input.quantity} ${asset.name}`, changes: { quantity: { old: row.quantity, new: result.remaining } }, metadata: { assetKey: asset.key, variationKey: input.variationKey, sourceId: input.sourceId } })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     return result
   }

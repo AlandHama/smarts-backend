@@ -1449,6 +1449,7 @@ model PlayerAuditEvent {
   entityType String             @db.VarChar(80)
   entityId   String?            @db.VarChar(255)
   summary    String             @db.VarChar(500)
+  changes    Json?
   metadata   Json?
   createdAt  DateTime           @default(now())
   user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -37,7 +37,7 @@ export class GrantInventoryItemTransaction extends PrismaTransaction<InventoryMu
     const result = this.serialize(row)
     const actorId = typeof input.metadata?.actorId === "string" ? input.metadata.actorId : undefined
     if (actorId) await writeAdminAudit(transaction, { actorId, action: "INVENTORY_GRANT", entityType: "InventoryItem", entityId: row.id, reason: typeof input.metadata?.reason === "string" ? input.metadata.reason : undefined, metadata: { userId: input.userId, assetKey: asset.key, quantity: input.quantity, sourceId: input.sourceId } })
-    await writePlayerAudit(transaction, { userId: input.userId, actorType: actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "INVENTORY_GRANTED", entityType: "InventoryItem", entityId: row.id, summary: `Granted ${input.quantity} ${asset.name}`, metadata: { assetKey: asset.key, variationKey: input.variationKey, quantity: input.quantity, source: input.source, sourceId: input.sourceId } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "INVENTORY_GRANTED", entityType: "InventoryItem", entityId: row.id, summary: `Granted ${input.quantity} ${asset.name}`, changes: { quantity: { old: existing?.quantity ?? 0, new: row.quantity } }, metadata: { assetKey: asset.key, variationKey: input.variationKey, source: input.source, sourceId: input.sourceId } })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     return result
   }

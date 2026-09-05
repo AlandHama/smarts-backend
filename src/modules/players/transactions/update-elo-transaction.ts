@@ -19,6 +19,6 @@ export class UpdateEloTransaction extends PrismaTransaction<{ userId: string; el
     if (data.elo > stats.highestElo) {
       await transaction.playerStats.update({ where: { userId: data.userId }, data: { highestElo: data.elo } })
     }
-    await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.SYSTEM, action: "ELO_CHANGED", entityType: "PlayerProfile", entityId: profile.userId, summary: `Changed ELO from ${before?.elo ?? "unknown"} to ${data.elo}`, metadata: { eloBefore: before?.elo ?? null, eloAfter: data.elo, highestElo: Math.max(stats.highestElo, data.elo) } })
+    await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.SYSTEM, action: "ELO_CHANGED", entityType: "PlayerProfile", entityId: profile.userId, summary: `Changed ELO from ${before?.elo ?? "unknown"} to ${data.elo}`, changes: { elo: { old: before?.elo ?? null, new: data.elo }, highestElo: { old: stats.highestElo, new: Math.max(stats.highestElo, data.elo) } }, metadata: { source: "server" } })
   }
 }

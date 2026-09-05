@@ -16,10 +16,16 @@ export class UpdatePlayerStorageTransaction extends PrismaTransaction<UpdatePlay
   constructor(prisma: PrismaService) { super(prisma) }
 
   protected async execute(input: UpdatePlayerStorageInput, transaction: Prisma.TransactionClient) {
+    const keys = input.payload.map((item) => item.key)
+    const existing = await transaction.playerStorageItem.findMany({ where: { userId: input.userId, key: { in: keys } }, select: { key: true, value: true, visibility: true, valueType: true, displayOrder: true } })
+    const previous = new Map(existing.map((item) => [item.key, item]))
+    const changes: Record<string, { old: unknown; new: unknown }> = {}
     for (const item of input.payload) {
       this.assertAllowedKey(item.key)
       const publicItem = item.isPublic ?? item.is_public ?? false
       const displayOrder = this.order(item.order, input.payload.indexOf(item))
+      const prior = previous.get(item.key)
+      changes[item.key] = { old: prior ? { value: prior.value, visibility: prior.visibility, valueType: prior.valueType, displayOrder: prior.displayOrder } : null, new: { value: item.value, visibility: publicItem ? PlayerStorageVisibility.PUBLIC : PlayerStorageVisibility.PRIVATE, valueType: this.valueType(item.key), displayOrder } }
       await transaction.playerStorageItem.upsert({
         where: { userId_key: { userId: input.userId, key: item.key } },
         create: { userId: input.userId, key: item.key, value: item.value, visibility: publicItem ? PlayerStorageVisibility.PUBLIC : PlayerStorageVisibility.PRIVATE, valueType: this.valueType(item.key), displayOrder },
@@ -27,7 +33,7 @@ export class UpdatePlayerStorageTransaction extends PrismaTransaction<UpdatePlay
       })
     }
     const items = await transaction.playerStorageItem.findMany({ where: { userId: input.userId }, orderBy: [{ displayOrder: "asc" }, { key: "asc" }], take: 200 })
-    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "STORAGE_UPDATED", entityType: "PlayerStorageItem", summary: `Updated ${input.payload.length} player storage entr${input.payload.length === 1 ? "y" : "ies"}`, metadata: { keys: input.payload.map((item) => item.key) } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "STORAGE_UPDATED", entityType: "PlayerStorageItem", summary: `Updated ${input.payload.length} player storage entr${input.payload.length === 1 ? "y" : "ies"}`, changes, metadata: { keys } })
     return items
   }
 

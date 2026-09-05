@@ -26,7 +26,7 @@ export class CreateSessionTransaction extends PrismaTransaction<SessionCreateDat
 
   protected execute(data: SessionCreateData, transaction: Prisma.TransactionClient) {
     return transaction.session.create({ data }).then(async (session) => {
-      await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.SYSTEM, action: "SESSION_STARTED", entityType: "Session", entityId: session.id, summary: `Started a ${data.isMobileSession ? "mobile" : "web"} session`, metadata: { isMobileSession: data.isMobileSession ?? true, deviceName: data.deviceName, clientVersion: data.clientVersion } })
+      await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.SYSTEM, action: "SESSION_STARTED", entityType: "Session", entityId: session.id, summary: `Started a ${data.isMobileSession ? "mobile" : "web"} session`, changes: { sessionStatus: { old: "NONE", new: "ACTIVE" } }, metadata: { isMobileSession: data.isMobileSession ?? true, deviceName: data.deviceName, clientVersion: data.clientVersion } })
       return session
     })
   }

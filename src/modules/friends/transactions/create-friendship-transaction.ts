@@ -20,8 +20,8 @@ export class CreateFriendshipTransaction extends PrismaTransaction<CreateFriends
     const now = new Date()
     await transaction.friendship.createMany({ data: [{ userId: input.userId, friendId: input.friendId, acceptedAt: now }, { userId: input.friendId, friendId: input.userId, acceptedAt: now }], skipDuplicates: true })
     await transaction.friendRequest.updateMany({ where: { OR: [{ requesterId: input.userId, addresseeId: input.friendId }, { requesterId: input.friendId, addresseeId: input.userId }] }, data: { status: "ACCEPTED", respondedAt: now } })
-    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "FRIENDSHIP_CREATED", entityType: "Friendship", summary: "Became friends with another player", metadata: { friendId: input.friendId } })
-    await writePlayerAudit(transaction, { userId: input.friendId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIENDSHIP_CREATED", entityType: "Friendship", summary: "Became friends with another player", metadata: { friendId: input.userId } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "FRIENDSHIP_CREATED", entityType: "Friendship", summary: "Became friends with another player", changes: { relationship: { old: "NONE", new: "ACCEPTED" } }, metadata: { friendId: input.friendId } })
+    await writePlayerAudit(transaction, { userId: input.friendId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIENDSHIP_CREATED", entityType: "Friendship", summary: "Became friends with another player", changes: { relationship: { old: "NONE", new: "ACCEPTED" } }, metadata: { friendId: input.userId } })
     return { message: "Players are now friends" }
   }
 }

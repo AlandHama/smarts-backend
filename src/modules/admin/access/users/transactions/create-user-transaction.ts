@@ -106,7 +106,7 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
         }, transaction)
       }
       if (dto.actorId) await writeAdminAudit(transaction, { actorId: dto.actorId, action: dto.isSystemAdmin ? "ADMIN_CREATE" : "USER_CREATE", entityType: "User", entityId: user.id, reason: dto.reason, metadata: { isSystemAdmin: dto.isSystemAdmin ?? false } })
-      await writePlayerAudit(transaction, { userId: user.id, actorType: dto.actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: dto.isSystemAdmin ? "ADMIN_REGISTERED" : "PLAYER_REGISTERED", entityType: "User", entityId: user.id, summary: dto.isSystemAdmin ? "System administrator account registered" : "Player account registered", metadata: { isSystemAdmin: dto.isSystemAdmin ?? false, signupCurrencyAmount: signupAmount.toString() } })
+      await writePlayerAudit(transaction, { userId: user.id, actorType: dto.actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: dto.isSystemAdmin ? "ADMIN_REGISTERED" : "PLAYER_REGISTERED", entityType: "User", entityId: user.id, summary: dto.isSystemAdmin ? "System administrator account registered" : "Player account registered", changes: { accountStatus: { old: "NONE", new: "ACTIVE" }, wallet: { old: null, new: { MCN: signupAmount.toString(), GLD: "0" } } }, metadata: { isSystemAdmin: dto.isSystemAdmin ?? false } })
       return user
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

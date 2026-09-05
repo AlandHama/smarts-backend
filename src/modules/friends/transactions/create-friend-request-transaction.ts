@@ -28,8 +28,8 @@ export class CreateFriendRequestTransaction extends PrismaTransaction<CreateFrie
       ? transaction.friendRequest.update({ where: { id: existing.id }, data: { status: FriendRequestStatus.PENDING, createdAt: new Date(), respondedAt: null } })
       : transaction.friendRequest.create({ data: { requesterId: input.requesterId, addresseeId: input.addresseeId } })
     await request.then(async (row) => {
-      await writePlayerAudit(transaction, { userId: input.requesterId, actorType: PlayerAuditActorType.PLAYER, action: "FRIEND_REQUEST_SENT", entityType: "FriendRequest", entityId: row.id, summary: "Sent a friend request", metadata: { addresseeId: input.addresseeId } })
-      await writePlayerAudit(transaction, { userId: input.addresseeId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIEND_REQUEST_RECEIVED", entityType: "FriendRequest", entityId: row.id, summary: "Received a friend request", metadata: { requesterId: input.requesterId } })
+      await writePlayerAudit(transaction, { userId: input.requesterId, actorType: PlayerAuditActorType.PLAYER, action: "FRIEND_REQUEST_SENT", entityType: "FriendRequest", entityId: row.id, summary: "Sent a friend request", changes: { relationship: { old: "NONE", new: "PENDING" } }, metadata: { addresseeId: input.addresseeId } })
+      await writePlayerAudit(transaction, { userId: input.addresseeId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIEND_REQUEST_RECEIVED", entityType: "FriendRequest", entityId: row.id, summary: "Received a friend request", changes: { relationship: { old: "NONE", new: "PENDING" } }, metadata: { requesterId: input.requesterId } })
     })
     return request
   }

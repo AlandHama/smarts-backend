@@ -61,7 +61,7 @@ export class CreatePurchaseTransaction extends PrismaTransaction<CreatePurchaseI
     await transaction.purchase.update({ where: { id: purchase.id }, data: { status: "COMPLETED", completedAt: new Date() } })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     await transaction.outboxEvent.create({ data: { eventType: "commerce.purchase.completed", aggregateType: "Purchase", aggregateId: purchase.id, payload: result as unknown as Prisma.InputJsonValue } })
-    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "PURCHASE_COMPLETED", entityType: "Purchase", entityId: purchase.id, summary: `Purchased ${item.name} × ${input.quantity}`, metadata: { catalogKey, catalogItemKey: item.key, currencyCode, totalAmount: total.toString(), quantity: input.quantity } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "PURCHASE_COMPLETED", entityType: "Purchase", entityId: purchase.id, summary: `Purchased ${item.name} × ${input.quantity}`, changes: { status: { old: "PENDING", new: "COMPLETED" }, totalAmount: { old: 0n, new: total } }, metadata: { catalogKey, catalogItemKey: item.key, currencyCode, quantity: input.quantity } })
     return result
   }
 

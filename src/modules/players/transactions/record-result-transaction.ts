@@ -18,7 +18,7 @@ export class RecordResultTransaction extends PrismaTransaction<{ userId: string;
     if (!stats) throw new NotFoundException("Player stats not found")
 
     const currentWinStreak = data.result === "win" ? stats.currentWinStreak + 1 : 0
-    await transaction.playerStats.update({
+    const updated = await transaction.playerStats.update({
       where: { userId: data.userId },
       data: {
         gamesPlayed: { increment: 1 },
@@ -29,6 +29,6 @@ export class RecordResultTransaction extends PrismaTransaction<{ userId: string;
         highestWinStreak: currentWinStreak > stats.highestWinStreak ? currentWinStreak : undefined,
       },
     })
-    await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_RESULT_RECORDED", entityType: "PlayerStats", entityId: stats.id, summary: `Recorded a ${data.result} result`, metadata: { result: data.result, gamesPlayed: stats.gamesPlayed + 1 } })
+    await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_RESULT_RECORDED", entityType: "PlayerStats", entityId: stats.id, summary: `Recorded a ${data.result} result`, changes: { gamesPlayed: { old: stats.gamesPlayed, new: updated.gamesPlayed }, wins: { old: stats.wins, new: updated.wins }, losses: { old: stats.losses, new: updated.losses }, draws: { old: stats.draws, new: updated.draws }, currentWinStreak: { old: stats.currentWinStreak, new: updated.currentWinStreak } }, metadata: { result: data.result } })
   }
 }

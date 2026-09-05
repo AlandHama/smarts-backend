@@ -56,7 +56,7 @@ export class StorageService {
           visibility,
           metadata: actorId ? { actorId } : undefined,
         } })
-        if (userId) await writePlayerAudit(transaction, { userId, actorType: actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.PLAYER, action: "FILE_UPLOADED", entityType: "StoredFile", entityId: row.id, summary: `Uploaded ${row.originalName}`, metadata: { purpose: row.purpose, contentType: row.contentType, byteSize: row.byteSize.toString(), visibility: row.visibility, ...(actorId ? { actorId } : {}) } })
+        if (userId) await writePlayerAudit(transaction, { userId, actorType: actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.PLAYER, action: "FILE_UPLOADED", entityType: "StoredFile", entityId: row.id, summary: `Uploaded ${row.originalName}`, changes: { file: { old: null, new: { originalName: row.originalName, purpose: row.purpose, contentType: row.contentType, byteSize: row.byteSize.toString(), visibility: row.visibility } } }, metadata: { ...(actorId ? { actorId } : {}) } })
         return row
       })
       return this.serialize({ ...stored, url: visibility === StoredFileVisibility.PUBLIC ? this.stablePublicFileUrl(stored.id) : await this.downloadUrl(stored.id, userId, true) })
@@ -101,7 +101,7 @@ export class StorageService {
     await this.deleteObject(file.objectKey)
     await this.prisma.$transaction(async (transaction) => {
       await transaction.storedFile.update({ where: { id: file.id }, data: { status: StoredFileStatus.DELETED, deletedAt: new Date() } })
-      if (file.userId) await writePlayerAudit(transaction, { userId: file.userId, actorType: allowAdmin ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.PLAYER, action: "FILE_DELETED", entityType: "StoredFile", entityId: file.id, summary: `Deleted file ${file.originalName}`, metadata: { purpose: file.purpose, ...(allowAdmin && actorId ? { actorId } : {}) } })
+      if (file.userId) await writePlayerAudit(transaction, { userId: file.userId, actorType: allowAdmin ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.PLAYER, action: "FILE_DELETED", entityType: "StoredFile", entityId: file.id, summary: `Deleted file ${file.originalName}`, changes: { file: { old: { originalName: file.originalName, purpose: file.purpose, contentType: file.contentType, byteSize: file.byteSize.toString(), visibility: file.visibility, status: file.status }, new: null } }, metadata: { ...(allowAdmin && actorId ? { actorId } : {}) } })
     })
     return { message: "File deleted" }
   }
