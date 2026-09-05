@@ -8,7 +8,7 @@ import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { SystemAdminGuard } from "./system-admin.guard"
 import { SystemAdminService } from "./system-admin.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
 import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
@@ -42,7 +42,7 @@ export class SystemAdminController {
   @UseGuards(SystemAdminGuard)
   @Delete("api/files/:fileId")
   @ApiBearerAuth("access-token")
-  deleteFile(@Param("fileId", ParseUUIDPipe) fileId: string) { return this.systemAdminService.deleteFile(fileId) }
+  deleteFile(@Param("fileId", ParseUUIDPipe) fileId: string, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.deleteFile(fileId, admin.id) }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/storage")
@@ -118,6 +118,12 @@ export class SystemAdminController {
   audit(@Query("limit") limit?: string) { return this.systemAdminService.listAudit(limit ? Number(limit) : 100) }
 
   @UseGuards(SystemAdminGuard)
+  @Get("api/player-audits")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List server-owned player activity history with filters" })
+  playerAudits(@Query() query: PlayerAuditsQueryDto) { return this.systemAdminService.listPlayerAudits(query) }
+
+  @UseGuards(SystemAdminGuard)
   @Get("api/users")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List and search user accounts" })
@@ -163,6 +169,14 @@ export class SystemAdminController {
   @ApiOperation({ summary: "View the complete Player 360 account workspace" })
   getPlayer360(@Param("userId", ParseUUIDPipe) userId: string) {
     return this.systemAdminService.getPlayer360(userId)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/users/:userId/audits")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List one player's complete activity history" })
+  playerAuditsForUser(@Param("userId", ParseUUIDPipe) userId: string, @Query() query: PlayerAuditsQueryDto) {
+    return this.systemAdminService.listPlayerAudits({ ...query, playerId: userId })
   }
 
   @UseGuards(SystemAdminGuard)
@@ -219,7 +233,7 @@ export class SystemAdminController {
   @UseGuards(SystemAdminGuard)
   @Delete("api/users/:userId/files/:fileId")
   @ApiBearerAuth("access-token")
-  deletePlayerFile(@Param("userId", ParseUUIDPipe) userId: string, @Param("fileId", ParseUUIDPipe) fileId: string) { return this.systemAdminService.deletePlayerFile(fileId, userId) }
+  deletePlayerFile(@Param("userId", ParseUUIDPipe) userId: string, @Param("fileId", ParseUUIDPipe) fileId: string, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.deletePlayerFile(fileId, userId, admin.id) }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/reset-password")

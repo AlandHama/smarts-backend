@@ -204,6 +204,7 @@ export interface AdminOperations {
 }
 
 export interface AdminAuditEvent { id: string; action: string; entityType: string; entityId: string | null; reason: string; metadata: Record<string, unknown> | null; createdAt: string; actor: { id: string; username: string; email: string | null; profile: { displayName: string } | null } }
+export interface PlayerAuditEvent { id: string; userId: string; actorType: 'PLAYER' | 'SYSTEM' | 'ADMIN'; action: string; entityType: string; entityId: string | null; summary: string; metadata: Record<string, unknown> | null; createdAt: string; user?: { id: string; username: string; email: string | null; firstName?: string | null; lastName?: string | null; isSystemAdmin?: boolean; profile?: { displayName: string; avatarUrl: string | null } | null } }
 
 export interface CommerceAsset { id: string; key: string; name: string; description: string | null; assetType: string; ownershipPolicy: string; imageUrl: string | null; imageAlt: string | null; imageUrls?: string[] | null; active: boolean; variations?: Array<{ id: string; key: string; name: string | null }> }
 export interface CommerceCatalogItem { id: string; catalogId: string; key: string; name: string; description: string | null; assetDefinitionId: string | null; assetDefinition?: { id: string; key: string; name: string; imageUrl: string | null } | null; imageUrl: string | null; imageAlt: string | null; imageUrls?: string[] | null; purchasable: boolean; active: boolean; prices: Array<{ id: string; amount: string; active: boolean; currency: { code: string; name: string; precision?: number } }>; rewards: Array<{ id: string; rewardType: string; amount: string | null; quantity: number; targetKey: string | null; assetDefinition: { key: string; name: string; imageUrl: string | null } | null; assetVariation: { key: string; name: string | null; imageUrl?: string | null } | null; currency: { code: string; name: string } | null; progressionDefinition: { key: string; name: string } | null }> }
@@ -253,6 +254,7 @@ export interface Player360Data {
   storageItems: Array<{ id: string; key: string; value: string; visibility: string; valueType: string; version: number; updatedAt: string }>;
   files: Array<{ id: string; objectKey: string; originalName: string; contentType: string; byteSize: string; checksum: string | null; purpose: string; visibility: string; status: string; createdAt: string; deletedAt: string | null }>;
   feedback: Array<{ id: string; entity: string; description: string; status: string; adminNote: string | null; createdAt: string; category: { key: string; name: string } }>;
+  playerAuditEvents: PlayerAuditEvent[];
   friends: Array<{ id: string; playerId: string; username: string; name: string; online: boolean; lastSeen: string | null; acceptedAt: string; avatarUrl: string | null }>;
   incomingRequests: Array<{ id: string; playerId: string; username: string; name: string; createdAt: string }>;
   outgoingRequests: Array<{ id: string; playerId: string; username: string; name: string; createdAt: string }>;

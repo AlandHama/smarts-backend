@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from "@nestjs/common"
-import { Prisma } from "@prisma/client"
+import { PlayerAuditActorType, Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 export type PlayerResult = "win" | "loss" | "draw"
 
@@ -28,5 +29,6 @@ export class RecordResultTransaction extends PrismaTransaction<{ userId: string;
         highestWinStreak: currentWinStreak > stats.highestWinStreak ? currentWinStreak : undefined,
       },
     })
+    await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_RESULT_RECORDED", entityType: "PlayerStats", entityId: stats.id, summary: `Recorded a ${data.result} result`, metadata: { result: data.result, gamesPlayed: stats.gamesPlayed + 1 } })
   }
 }

@@ -1,8 +1,9 @@
 import { Injectable } from "@nestjs/common"
-import { Prisma } from "@prisma/client"
+import { PlayerAuditActorType, Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../../../prisma.service"
+import { writePlayerAudit } from "../../../../../common/helpers/player-audit"
 
 export interface SessionCreateData {
   userId: string
@@ -24,6 +25,9 @@ export class CreateSessionTransaction extends PrismaTransaction<SessionCreateDat
   }
 
   protected execute(data: SessionCreateData, transaction: Prisma.TransactionClient) {
-    return transaction.session.create({ data })
+    return transaction.session.create({ data }).then(async (session) => {
+      await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.SYSTEM, action: "SESSION_STARTED", entityType: "Session", entityId: session.id, summary: `Started a ${data.isMobileSession ? "mobile" : "web"} session`, metadata: { isMobileSession: data.isMobileSession ?? true, deviceName: data.deviceName, clientVersion: data.clientVersion } })
+      return session
+    })
   }
 }

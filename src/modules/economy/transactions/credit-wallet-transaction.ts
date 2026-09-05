@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash } from "node:crypto"
-import { Prisma, ProgressionRewardType, WalletTransactionDirection, WalletTransactionSourceType } from "@prisma/client"
+import { Prisma, PlayerAuditActorType, ProgressionRewardType, WalletTransactionDirection, WalletTransactionSourceType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { writeAdminAudit } from "../../../common/helpers/admin-audit"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 export type WalletMutationInput = {
   userId: string
@@ -49,6 +50,7 @@ export class CreditWalletTransaction extends PrismaTransaction<WalletMutationInp
     const ledger = await transaction.walletTransaction.create({ data: { walletId: wallet.id, currencyId: currency.id, direction: WalletTransactionDirection.CREDIT, amount: input.amount, balanceBefore: locked.amount, balanceAfter: after, sourceType: input.sourceType, sourceId, grantKey, idempotencyKeyId: idem.id, metadata: input.metadata as Prisma.InputJsonValue | undefined } })
     await this.ensureRewardGrant(transaction, input, currency.id, input.amount, grantKey)
     if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "WALLET_CREDIT", entityType: "Wallet", entityId: wallet.id, reason: input.reason, metadata: { userId: input.userId, currencyCode: code, amount: input.amount.toString(), sourceId } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: input.actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "WALLET_CREDIT", entityType: "WalletTransaction", entityId: ledger.id, summary: `Credited ${input.amount.toString()} ${code}`, metadata: { currencyCode: code, amount: input.amount.toString(), balanceBefore: locked.amount.toString(), balanceAfter: after.toString(), sourceId, sourceType: input.sourceType } })
     const response = this.serializeBalance(ledger.balanceAfter, wallet.id, currency.id, code)
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: response as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     return response

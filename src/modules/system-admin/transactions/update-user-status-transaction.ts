@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common"
-import { Prisma } from "@prisma/client"
+import { PlayerAuditActorType, Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { writeAdminAudit } from "../../../common/helpers/admin-audit"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 import { SystemAdminUserStatus } from "../dtos/update-user-status.dto"
 
 @Injectable()
@@ -40,6 +41,7 @@ export class UpdateUserStatusTransaction extends PrismaTransaction<
     }
 
     await writeAdminAudit(transaction, { actorId: data.actorId, action: `USER_${data.status}`, entityType: "User", entityId: data.userId, reason: data.reason, metadata: { terminatedSessions: data.status !== SystemAdminUserStatus.Active } })
+    await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.ADMIN, action: `ACCOUNT_${data.status}`, entityType: "User", entityId: data.userId, summary: `Account status changed to ${data.status}`, metadata: { actorId: data.actorId, terminatedSessions: data.status !== SystemAdminUserStatus.Active } })
 
     return updated
   }

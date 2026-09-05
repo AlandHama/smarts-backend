@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common"
 import { PutObjectCommand, S3Client, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
-import { FeedbackEntity, PlayerStorageValueType, PlayerStorageVisibility, Prisma, StoredFileStatus, StoredFileVisibility } from "@prisma/client"
+import { FeedbackEntity, PlayerAuditActorType, PlayerStorageValueType, PlayerStorageVisibility, Prisma, StoredFileStatus, StoredFileVisibility } from "@prisma/client"
 import { createHash, randomUUID } from "node:crypto"
 import { extname } from "node:path"
 
@@ -12,6 +12,7 @@ import { CreateFeedbackTransaction } from "./transactions/create-feedback-transa
 import { UpdateFeedbackTransaction } from "./transactions/update-feedback-transaction"
 import { UpdatePlayerStorageTransaction } from "./transactions/update-player-storage-transaction"
 import { DeletePlayerStorageTransaction } from "./transactions/delete-player-storage-transaction"
+import { writePlayerAudit } from "../../common/helpers/player-audit"
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
@@ -43,17 +44,21 @@ export class StorageService {
         CacheControl: visibility === StoredFileVisibility.PUBLIC ? "public, max-age=31536000, immutable" : "private, no-cache",
         Metadata: { checksum, purpose: dto.purpose },
       }))
-      const stored = await this.prisma.storedFile.create({ data: {
-        userId,
-        objectKey: key,
-        originalName: file.originalname.slice(0, 255),
-        contentType: file.mimetype,
-        byteSize: BigInt(file.size),
-        checksum,
-        purpose: dto.purpose,
-        visibility,
-        metadata: actorId ? { actorId } : undefined,
-      } })
+      const stored = await this.prisma.$transaction(async (transaction) => {
+        const row = await transaction.storedFile.create({ data: {
+          userId,
+          objectKey: key,
+          originalName: file.originalname.slice(0, 255),
+          contentType: file.mimetype,
+          byteSize: BigInt(file.size),
+          checksum,
+          purpose: dto.purpose,
+          visibility,
+          metadata: actorId ? { actorId } : undefined,
+        } })
+        if (userId) await writePlayerAudit(transaction, { userId, actorType: actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.PLAYER, action: "FILE_UPLOADED", entityType: "StoredFile", entityId: row.id, summary: `Uploaded ${row.originalName}`, metadata: { purpose: row.purpose, contentType: row.contentType, byteSize: row.byteSize.toString(), visibility: row.visibility, ...(actorId ? { actorId } : {}) } })
+        return row
+      })
       return this.serialize({ ...stored, url: visibility === StoredFileVisibility.PUBLIC ? this.stablePublicFileUrl(stored.id) : await this.downloadUrl(stored.id, userId, true) })
     } catch (error) {
       await this.deleteObject(key).catch(() => undefined)
@@ -90,11 +95,14 @@ export class StorageService {
     return visit(value) as T
   }
 
-  async delete(fileId: string, userId?: string, allowAdmin = false) {
+  async delete(fileId: string, userId?: string, allowAdmin = false, actorId?: string) {
     const file = await this.prisma.storedFile.findFirst({ where: { id: fileId, status: StoredFileStatus.ACTIVE } })
     if (!file || (!allowAdmin && file.userId !== userId)) throw new NotFoundException("File not found")
     await this.deleteObject(file.objectKey)
-    await this.prisma.storedFile.update({ where: { id: file.id }, data: { status: StoredFileStatus.DELETED, deletedAt: new Date() } })
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.storedFile.update({ where: { id: file.id }, data: { status: StoredFileStatus.DELETED, deletedAt: new Date() } })
+      if (file.userId) await writePlayerAudit(transaction, { userId: file.userId, actorType: allowAdmin ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.PLAYER, action: "FILE_DELETED", entityType: "StoredFile", entityId: file.id, summary: `Deleted file ${file.originalName}`, metadata: { purpose: file.purpose, ...(allowAdmin && actorId ? { actorId } : {}) } })
+    })
     return { message: "File deleted" }
   }
 

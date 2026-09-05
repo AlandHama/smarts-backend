@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, InternalServerErrorException } from "@nestjs/common"
-import { Prisma } from "@prisma/client"
+import { PlayerAuditActorType, Prisma } from "@prisma/client"
 
 import { HashHelper } from "../../../../../common/helpers/hash.helper"
 import { PrismaTransaction } from "../../../../../common/helpers/prisma-transaction"
@@ -7,6 +7,7 @@ import { PrismaService } from "../../../../../prisma.service"
 import { RegisterRequestDto } from "../../../../auth/dtos/register-request.dto"
 import { CreditWalletTransaction } from "../../../../economy/transactions/credit-wallet-transaction"
 import { writeAdminAudit } from "../../../../../common/helpers/admin-audit"
+import { writePlayerAudit } from "../../../../../common/helpers/player-audit"
 
 export type CreateUserInput = RegisterRequestDto & { isSystemAdmin?: boolean; actorId?: string; reason?: string }
 
@@ -105,6 +106,7 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
         }, transaction)
       }
       if (dto.actorId) await writeAdminAudit(transaction, { actorId: dto.actorId, action: dto.isSystemAdmin ? "ADMIN_CREATE" : "USER_CREATE", entityType: "User", entityId: user.id, reason: dto.reason, metadata: { isSystemAdmin: dto.isSystemAdmin ?? false } })
+      await writePlayerAudit(transaction, { userId: user.id, actorType: dto.actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: dto.isSystemAdmin ? "ADMIN_REGISTERED" : "PLAYER_REGISTERED", entityType: "User", entityId: user.id, summary: dto.isSystemAdmin ? "System administrator account registered" : "Player account registered", metadata: { isSystemAdmin: dto.isSystemAdmin ?? false, signupCurrencyAmount: signupAmount.toString() } })
       return user
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

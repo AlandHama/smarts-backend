@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable } from "@nestjs/common"
-import { PlayerStorageValueType, PlayerStorageVisibility, Prisma } from "@prisma/client"
+import { PlayerAuditActorType, PlayerStorageValueType, PlayerStorageVisibility, Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import type { PlayerStorageItemDto } from "../dtos/storage.dto"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 const PUBLIC_KEYS = new Set(["player_country", "profile_url", "profile_file_id", "last_seen"])
 const STAT_SUFFIXES = new Set(["games_played", "accuracy", "wins", "losses", "answering_speed", "total_correct", "total_questions", "total_time_ms"])
@@ -25,7 +26,9 @@ export class UpdatePlayerStorageTransaction extends PrismaTransaction<UpdatePlay
         update: { value: item.value, visibility: publicItem ? PlayerStorageVisibility.PUBLIC : PlayerStorageVisibility.PRIVATE, valueType: this.valueType(item.key), displayOrder, version: { increment: 1 } },
       })
     }
-    return transaction.playerStorageItem.findMany({ where: { userId: input.userId }, orderBy: [{ displayOrder: "asc" }, { key: "asc" }], take: 200 })
+    const items = await transaction.playerStorageItem.findMany({ where: { userId: input.userId }, orderBy: [{ displayOrder: "asc" }, { key: "asc" }], take: 200 })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "STORAGE_UPDATED", entityType: "PlayerStorageItem", summary: `Updated ${input.payload.length} player storage entr${input.payload.length === 1 ? "y" : "ies"}`, metadata: { keys: input.payload.map((item) => item.key) } })
+    return items
   }
 
   private assertAllowedKey(key: string) {

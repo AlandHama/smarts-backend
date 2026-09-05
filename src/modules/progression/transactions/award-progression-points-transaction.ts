@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash } from "node:crypto"
-import { Prisma, ProgressionEventSourceType, ProgressionRewardType, RewardGrantStatus, WalletTransactionDirection, WalletTransactionSourceType } from "@prisma/client"
+import { Prisma, PlayerAuditActorType, ProgressionEventSourceType, ProgressionRewardType, RewardGrantStatus, WalletTransactionDirection, WalletTransactionSourceType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { writeAdminAudit } from "../../../common/helpers/admin-audit"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 export type AwardProgressionInput = {
   userId: string
@@ -76,6 +77,7 @@ export class AwardProgressionPointsTransaction extends PrismaTransaction<AwardPr
     if (pointsGrant) await transaction.rewardGrant.update({ where: { id: pointsGrant.id }, data: { status: "GRANTED" } })
     await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "PROGRESSION_AWARD", entityType: "User", entityId: input.userId, reason: input.reason, metadata: { progressionKey: key, amount: input.amount.toString(), sourceId: input.sourceId } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: input.actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "PROGRESSION_POINTS_AWARDED", entityType: "Progression", entityId: progression.id, summary: `${input.amount < 0n ? "Changed" : "Awarded"} ${input.amount.toString()} points in ${progression.name}`, metadata: { progressionKey: key, amount: input.amount.toString(), sourceId: input.sourceId, sourceType: input.sourceType, crossedTiers: result.crossedTiers } })
     return result
   }
 

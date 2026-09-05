@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash } from "node:crypto"
-import { CatalogRewardType, InventoryAcquisitionSource, Prisma, ProgressionEventSourceType, ProgressionRewardType, WalletTransactionSourceType } from "@prisma/client"
+import { CatalogRewardType, InventoryAcquisitionSource, PlayerAuditActorType, Prisma, ProgressionEventSourceType, ProgressionRewardType, WalletTransactionSourceType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
@@ -9,6 +9,7 @@ import { ResetPlayerProgressionTransaction } from "../../progression/transaction
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { GrantInventoryItemTransaction } from "./grant-inventory-item-transaction"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 export type CreatePurchaseInput = { userId: string; catalogKey?: string; catalogItemKey: string; currencyCode: string; quantity: number; idempotencyKey: string }
 
@@ -60,6 +61,7 @@ export class CreatePurchaseTransaction extends PrismaTransaction<CreatePurchaseI
     await transaction.purchase.update({ where: { id: purchase.id }, data: { status: "COMPLETED", completedAt: new Date() } })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     await transaction.outboxEvent.create({ data: { eventType: "commerce.purchase.completed", aggregateType: "Purchase", aggregateId: purchase.id, payload: result as unknown as Prisma.InputJsonValue } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "PURCHASE_COMPLETED", entityType: "Purchase", entityId: purchase.id, summary: `Purchased ${item.name} × ${input.quantity}`, metadata: { catalogKey, catalogItemKey: item.key, currencyCode, totalAmount: total.toString(), quantity: input.quantity } })
     return result
   }
 

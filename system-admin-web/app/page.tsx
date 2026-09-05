@@ -21,6 +21,7 @@ import { RewardPoliciesView } from '../components/RewardPoliciesView';
 import { StorageView } from '../components/StorageView';
 import { FriendsView } from '../components/FriendsView';
 import { OperationsView } from '../components/OperationsView';
+import { PlayerAuditsView } from '../components/PlayerAuditsView';
 import { api, clearSession, hasSession, login } from '../lib/api';
 import { adminTheme } from '../lib/theme';
 
@@ -58,6 +59,7 @@ export default function AdminPage() {
     {view === 'player360' && player360Id && <Player360View userId={player360Id} onBack={backToPlayers} />}
     {view === 'sessions' && <SessionsView />}
     {view === 'friends' && <FriendsView />}
+    {view === 'player-audits' && <PlayerAuditsView onOpenPlayer360={openPlayer360} />}
     {view === 'progressions' && <><ProgressionsView /><ProgressionTopPlayersPanel /></>}
     {view === 'economy' && <><EconomyView /><CurrencyTopPlayersPanel /></>}
     {view === 'commerce' && <CommerceView />}

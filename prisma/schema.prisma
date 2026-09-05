@@ -23,6 +23,12 @@ enum SessionStatus {
   TERMINATED
 }
 
+enum PlayerAuditActorType {
+  PLAYER
+  SYSTEM
+  ADMIN
+}
+
 enum CurrencyKind {
   SOFT
   HARD
@@ -355,6 +361,7 @@ model User {
   adRewardClaims             AdRewardClaim[]
   notifications              Notification[]
   adminAuditEvents            AdminAuditEvent[]
+  playerAuditEvents           PlayerAuditEvent[]
 }
 
 model Session {
@@ -1430,4 +1437,24 @@ model AdminAuditEvent {
   @@index([actorId, createdAt])
   @@index([action, createdAt])
   @@index([entityType, entityId, createdAt])
+}
+
+/// Append-only, server-owned history of actions and state changes for one player.
+/// Do not write passwords, token hashes, provider secrets, or sensitive answers.
+model PlayerAuditEvent {
+  id         String             @id @default(uuid()) @db.Uuid
+  userId     String             @db.Uuid
+  actorType  PlayerAuditActorType @default(SYSTEM)
+  action     String             @db.VarChar(120)
+  entityType String             @db.VarChar(80)
+  entityId   String?            @db.VarChar(255)
+  summary    String             @db.VarChar(500)
+  metadata   Json?
+  createdAt  DateTime           @default(now())
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, action, createdAt])
+  @@index([entityType, createdAt])
+  @@index([action, createdAt])
 }

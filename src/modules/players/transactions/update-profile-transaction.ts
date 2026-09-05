@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common"
-import { Prisma } from "@prisma/client"
+import { PlayerAuditActorType, Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { UpdateProfileDto } from "../dtos/update-profile.dto"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 @Injectable()
 export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string; dto: UpdateProfileDto }, void> {
@@ -35,5 +36,7 @@ export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string
         },
       })
     }
+    const fields = Object.keys(dto).filter((field) => field !== "password")
+    if (fields.length) await writePlayerAudit(transaction, { userId: data.userId, actorType: PlayerAuditActorType.PLAYER, action: "PROFILE_UPDATED", entityType: "User", entityId: data.userId, summary: `Updated player profile: ${fields.join(", ")}`, metadata: { fields } })
   }
 }

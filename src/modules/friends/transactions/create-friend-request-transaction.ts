@@ -1,8 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common"
-import { FriendRequestStatus, Prisma, UserStatus } from "@prisma/client"
+import { FriendRequestStatus, PlayerAuditActorType, Prisma, UserStatus } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 export class CreateFriendRequestInput { requesterId!: string; addresseeId!: string }
 
@@ -23,8 +24,13 @@ export class CreateFriendRequestTransaction extends PrismaTransaction<CreateFrie
     if (existing?.status === FriendRequestStatus.ACCEPTED) throw new ConflictException("You are already friends")
     const reverse = await transaction.friendRequest.findUnique({ where: { requesterId_addresseeId: { requesterId: input.addresseeId, addresseeId: input.requesterId } } })
     if (reverse?.status === FriendRequestStatus.PENDING) throw new ConflictException("This player already sent you a friend request")
-    return existing
+    const request = existing
       ? transaction.friendRequest.update({ where: { id: existing.id }, data: { status: FriendRequestStatus.PENDING, createdAt: new Date(), respondedAt: null } })
       : transaction.friendRequest.create({ data: { requesterId: input.requesterId, addresseeId: input.addresseeId } })
+    await request.then(async (row) => {
+      await writePlayerAudit(transaction, { userId: input.requesterId, actorType: PlayerAuditActorType.PLAYER, action: "FRIEND_REQUEST_SENT", entityType: "FriendRequest", entityId: row.id, summary: "Sent a friend request", metadata: { addresseeId: input.addresseeId } })
+      await writePlayerAudit(transaction, { userId: input.addresseeId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIEND_REQUEST_RECEIVED", entityType: "FriendRequest", entityId: row.id, summary: "Received a friend request", metadata: { requesterId: input.requesterId } })
+    })
+    return request
   }
 }

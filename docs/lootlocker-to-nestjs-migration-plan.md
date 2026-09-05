@@ -1484,44 +1484,488 @@ Before the production launch build:
 
 Rollback is a software deployment rollback, not a data migration rollback. If a release is defective before meaningful production use, deploy the previous known-good NestJS/mobile build or disable the affected feature flag. Never switch new users back to LootLocker or Firebase, and never copy balances or settlements between providers. For an already-created Railway record, use an audited compensating transaction.
 
-## 7. Mobile changes required before greenfield launch
+## 7. Mobile migration execution plan: LootLocker/Firebase to NestJS
 
-The Flutter app should eventually have these infrastructure clients:
+This section is the Flutter execution track for the backend phases above. It is
+intentionally ordered by dependency. A mobile phase is not complete merely
+because one screen displays data from NestJS: the old provider path must be
+removed from that feature's dependency graph, its retry behavior must be safe,
+and the feature must pass against a clean Railway database.
+
+The current SMARTS app has a shared `AuthRepository` abstraction, but its
+production implementation is still `LootLockerAuthRepository` backed by
+`LootLockerAuthService`. `ConfigService` still reads Firebase Remote Config and
+stores LootLocker domain/session keys. `dependency_injection.dart` registers
+LootLocker services, Firebase repositories, and Firebase Cloud Functions. Game
+providers also directly type-depend on `LootLockerAuthService`. These are the
+primary seams to replace; do not add a second provider fallback in the final
+build.
+
+### 7.1 Mobile migration rules
+
+The following rules apply to every mobile phase:
+
+1. Build a small typed HTTP transport around the NestJS base URL. It must add
+   `Authorization: Bearer <accessToken>`, `Content-Type: application/json`,
+   `x-client-platform: mobile`, and the app version header. It must never add
+   `domain-key`, `is-development`, `game_key`, `x-session-token`, or a
+   LootLocker API key.
+2. Keep one authenticated request pipeline. Repositories and providers must not
+   construct provider-specific headers or URLs themselves.
+3. Parse Railway UUIDs as opaque strings. Do not call them ULIDs, convert them
+   to integers, or derive identity from their formatting.
+4. Preserve server numeric values that can exceed JavaScript-style safe integer
+   ranges as strings. This includes wallet amounts, XP, ELO/rating values when
+   represented as a large integer, leaderboard scores, timestamps where
+   applicable, and ledger deltas.
+5. Retry a retryable command only with the same idempotency key and the same
+   request body. Never generate a new key automatically for an uncertain
+   response.
+6. A `401` may trigger one single-flight refresh attempt. If rotation fails,
+   clear the access/refresh pair and return the app to the signed-out state.
+   Do not recursively refresh forever or retry a rejected command indefinitely.
+7. Local state is a cache and presentation state. It is not authority for
+   currency, XP, ELO, scores, inventory quantity, match state, rewards, or
+   game statistics.
+8. Remove a legacy implementation only after its replacement is wired into
+   every consumer. A dead file that remains registered in GetIt is still a
+   runtime migration risk.
+9. Log operation names and safe IDs only. Never log passwords, raw JWTs,
+   refresh tokens, provider credentials, ad verification payloads, or answer
+   keys.
+
+### 7.2 Mobile Phase M0 — Contract lock and transport foundation
+
+**Depends on:** backend Phase 0 and the API contract in Section 5.
+
+**Purpose:** Establish one Railway transport and freeze the response shapes
+before feature-by-feature replacement begins.
+
+Implementation steps:
+
+1. Add a Railway base URL selected by build flavor/environment, not by Firebase
+   Remote Config. Production must point to the Railway API and development
+   must be explicit.
+2. Add typed `RailwayApiClient`, request/response error models, timeout rules,
+   and the single-flight token-refresh interceptor.
+3. Add a secure-storage adapter with separate keys for access token, refresh
+   token, user UUID, and optional token-expiry metadata. Never reuse the old
+   LootLocker session-token keys as a semantic alias.
+4. Add serializers for the NestJS token pair, `UserResponse`, `PlayerResponse`,
+   wallet string amounts, pagination, and server error messages.
+5. Add a request context for idempotency keys. Commands such as purchase,
+   matchmaking enqueue/cancel, match events, completion, ad claims, feedback,
+   friend requests, and profile writes must be able to supply a stable key.
+6. Add a development-only network log redactor and verify that authorization
+   and refresh headers/body values are never printed.
+
+**Do not migrate screens yet.** First make the transport testable with fake
+responses and one real `/health` request in a development build.
+
+**Exit criteria:** the app can reach `/health`; the transport can decode a
+NestJS error; token refresh is single-flight and one-shot; no request uses a
+LootLocker header; and the old provider transport remains unused by the new
+Railway test client.
+
+### 7.3 Mobile Phase M1 — Railway UUID authentication and player profile
+
+**Depends on:** backend Phase 1 and M0.
+
+**Purpose:** Make NestJS the only identity authority from first registration.
+
+Add these clients/adapters:
 
 ```text
 RailwayAuthService
+RailwayAuthRepository implements AuthRepository
 RailwayPlayerService
-RailwayProgressionService
-RailwayWalletService
-RailwayLeaderboardService
-RailwayMatchmakingService
-RailwayMatchService
-RailwayGameContentService
-RailwayGameStatsService
-RailwayAdRewardService
+RailwayPlayerRepository
+```
+
+Use the backend contract exactly:
+
+| Mobile action | NestJS request | Required client behavior |
+| --- | --- | --- |
+| Register | `POST /auth/register` | Send username, email, password, display name, and optional names/country; store the returned pair. |
+| Sign in | `POST /auth/login` | Accept username or email; never send a LootLocker domain/game key. |
+| Refresh | `POST /auth/refresh` | Rotate the refresh token and atomically replace both stored tokens. |
+| Current identity | `GET /auth/me` | Reconcile account status and UUID after app restart. |
+| Player model | `GET /players/me` | Load profile, backend projections, stats, and safe wallet summary. |
+| Profile edit | `PATCH /players/me` | Send only profile fields allowed by the DTO. |
+| Logout | `POST /auth/logout` | Terminate the current Railway session, then clear local credentials. |
+
+Implementation steps:
+
+1. Preserve the domain-level `AuthRepository` and use cases where possible,
+   but replace the concrete LootLocker implementation with the Railway one.
+2. Update `AuthResult` mapping from the NestJS shape `{ token, user }` and map
+   `token.accessToken`, `token.refreshToken`, and their expiry values without
+   treating them as `session_token`.
+3. Update `AuthProvider` startup: load tokens, call `/auth/me`, then load
+   `/players/me`; if either returns an authorization/status failure, clear the
+   session safely.
+4. Replace `getSessionToken`, `setSessionToken`, and `verifySession` semantics
+   with access/refresh pair semantics. Keep a compatibility migration that
+   deletes old LootLocker secure-storage keys; it must not send them to NestJS.
+5. Change registration to include the required NestJS `username` and
+   `displayName` fields. If the current UI asks for only email/password, add
+   the missing fields or derive a user-visible value before the request; do not
+   invent a hidden provider identity.
+6. Keep level, XP, and ELO display-only. The app may animate a response from
+   the server but must not update these values as a local game side effect.
+7. Google/Apple login needs a deliberate backend `ExternalIdentity` flow. Do
+   not route Google tokens through LootLocker as a temporary shortcut. If that
+   backend flow is not approved yet, disable those buttons for the Railway
+   build rather than creating an insecure client-only account link.
+8. Replace direct `LootLockerAuthService` constructor dependencies in game and
+   feature providers with a small interface for the authenticated player/session
+   context. This prevents later phases from importing LootLocker by accident.
+
+**Exit criteria:** a new account creates the complete atomic Railway row set;
+the app can sign in, restart, refresh, call `/auth/me`, call `/players/me`,
+logout, and sign in again without any LootLocker request or Firebase identity
+dependency.
+
+### 7.4 Mobile Phase M2 — Progression, leveling, wallet, and leaderboard reads
+
+**Depends on:** backend Phases 2–4 and M1.
+
+**Purpose:** Move all player-owned display data to Railway before moving game
+result writes.
+
+Create:
+
+```text
+RailwayProgressionService / RailwayProgressionRepository
+RailwayWalletService / RailwayWalletRepository
+RailwayLeaderboardService / RailwayLeaderboardRepository
+```
+
+Implementation steps:
+
+1. Replace LootLocker progression reads with `/progressions`,
+   `/progressions/:key/tiers`, `/players/me/progressions`, and
+   `/players/me/progressions/:key`.
+2. Replace local tier/threshold calculations with the server's `step`,
+   `previousThreshold`, `nextThreshold`, `crossedTiers`, and `rewardsGranted`
+   response. A local level-up animation may acknowledge a server response but
+   cannot grant or replay the reward.
+3. Replace wallet reads with `/wallet`, `/wallet/transactions`, and
+   `/currencies`. Display amounts from strings and refresh after a successful
+   server command rather than incrementing a local balance optimistically as
+   committed state.
+4. Replace leaderboard reads with `/leaderboards`, board details, paginated
+   entries, current-user rank, and selected-member reads. Remove mobile
+   `incrementScore`, `submitScore`, and read-current-then-write-current-plus-
+   delta behavior.
+5. Remove mobile calls to arbitrary XP, ELO, currency, or score mutation
+   endpoints. Those writes can only arrive from match settlement, approved ad
+   claims, purchases, or protected admin commands.
+6. Update wallet, progression, friend leaderboard, and result-screen providers
+   to consume repository interfaces rather than LootLocker concrete types.
+7. Reconcile on app resume and after a result/reward response. A stale cache is
+   acceptable; silently showing a locally invented balance is not.
+
+**Exit criteria:** progression, wallet, and leaderboard screens work with
+Railway reads; all amounts and scores render correctly as strings; mobile has
+no arbitrary progression/score writer; and a retry cannot duplicate a reward.
+
+### 7.5 Mobile Phase M3 — Catalog, inventory, purchases, storage, and files
+
+**Depends on:** backend Phases 6–7 and M1/M2.
+
+Create:
+
+```text
 RailwayCatalogService
 RailwayInventoryService
 RailwayPurchaseService
 RailwayStorageService
-RailwayFriendsService
-RailwayConfigService
 ```
 
-The old `LootLocker*Service`, Firebase initialization, Firestore/RTDB repositories and writes, Firebase Remote Config reads, `notifyAdminPurchaseHttp`, `lootlocker_config.json`, domain key, game key, `x-session-token`, Firebase document IDs, and LootLocker-specific ID parsing must be removed after the final Firebase replacement phase. If FCM is retained temporarily, it is delivery-only and must not own notification, match, reward, or account state.
+Implementation steps:
 
-Client responsibilities:
+1. Replace LootLocker catalog/assets reads with `/catalog`. Use Railway
+   catalog/item UUIDs or stable public keys only; never expose provider IDs as
+   authority.
+2. Replace inventory reads with `/inventory` and item detail/use/redeem
+   commands where enabled. Treat quantity and entitlement status as server
+   projections.
+3. Start purchases with a client-generated idempotency key, send only the
+   selected Railway catalog item and desired quantity, and let NestJS select
+   the active price/reward snapshot. Never send a client price, reward bundle,
+   currency amount, or “purchase succeeded” claim.
+4. If app-store billing is used, send the platform receipt/token to the
+   backend verification endpoint. A successful local billing callback is not a
+   completed game purchase until the Railway purchase response is committed.
+5. Replace generic LootLocker storage with allowlisted `/players/me/storage`
+   requests. Do not carry over arbitrary Firebase document paths or storage
+   keys.
+6. Replace player/profile file uploads with the Railway storage flow. Upload
+   only to server-approved S3 paths or signed URLs, then store the resulting
+   file reference returned by NestJS. Do not expose S3 credentials in Flutter.
+7. Render signed short-lived download URLs and handle expiration by requesting
+   a new URL. Never persist a private object URL as permanent authorization.
+8. Remove `LootLockerMetadataService`, LootLocker asset/file repositories, and
+   public Firebase storage writes after all consumers are migrated.
 
-- secure storage of access/refresh tokens;
-- refresh on a 401 once, then sign out if rotation fails;
-- sending an idempotency key for every retryable command;
-- rendering server responses;
-- local caching only for display/performance;
-- never adding XP, currency, ELO, leaderboard score, match state, or game statistics locally as if it were committed;
-- sending match actions/events to NestJS instead of writing Firebase documents or public storage;
-- using server-issued match/content assignments and settlement responses;
-- submitting only provider-verifiable ad tokens/nonces, never eCPM, region, or reward amount.
+**Exit criteria:** catalog prices come only from the server; purchase retry is
+idempotent; inventory and entitlements reconcile from Railway; private files
+are inaccessible without a signed URL; and no mobile code contains S3 secrets,
+LootLocker object IDs, or Firebase document paths.
 
-The result screen should consume a single settlement response. If a background request is used for UX, it must be retry-safe and the UI must reconcile with `GET /matches/:id`.
+### 7.6 Mobile Phase M4 — Friends, presence, sessions, and feedback
+
+**Depends on:** backend Phases 1, 7, and 8.
+
+Create:
+
+```text
+RailwayFriendsService / RailwayFriendsRepository
+RailwayPresenceService
+RailwayFeedbackService
+```
+
+Implementation steps:
+
+1. Replace LootLocker friends requests, accepted relationships, blocks, and
+   friend leaderboard lookups with the Railway friends routes. Use UUIDs as
+   opaque identifiers and apply the server's privacy response.
+2. Send an authenticated heartbeat at a bounded interval while the app is
+   active and stop it when the app goes to the background. Presence is a
+   server-derived TTL signal, not a public storage key.
+3. On resume, reconcile presence and friend state. Do not claim that a player
+   is online solely because the local app is open.
+4. Replace feedback writes with category lookup and `/feedback` submission.
+   Use a stable idempotency key for retries and display the server's accepted
+   status.
+5. If the mobile app exposes session management, use `/auth/sessions` and the
+   session termination routes; never display or store refresh-token hashes.
+
+**Exit criteria:** friend operations are relational Railway operations,
+presence survives reconnects correctly, feedback is rate-limit compatible,
+and no friend/presence/feedback write reaches LootLocker or Firebase.
+
+### 7.7 Mobile Phase M5 — Matchmaking queue and friend-match lifecycle
+
+**Depends on:** backend Phase 9.1 and M1–M4.
+
+Create:
+
+```text
+RailwayMatchmakingService / RailwayMatchmakingRepository
+RailwayMatchService
+```
+
+Implementation steps:
+
+1. Replace `RealtimeDatabaseMatchmakingRepository` and
+   `LootLockerMatchmakingService` with `/matchmaking/queue`, status,
+   heartbeat, cancellation, and friend-invite routes.
+2. The queue request may send game intent, mode, ranking intent, client version,
+   bounded preferences, and an idempotency key. It must not send player level,
+   ELO, country authority, final score, question lists, or opponent state.
+3. Keep the queue lease alive using the server ticket ID and explicit heartbeat
+   endpoint. Replace Firebase `onDisconnect` and local 20/30-second TTL logic.
+4. Poll with bounded backoff or use the authorized server stream when available.
+   Stop polling after cancellation, expiry, match creation, sign-out, or ban.
+5. Replace friend-match Firebase documents with friend invite/accept routes.
+   The match ID returned by NestJS becomes the only match identity.
+6. Make provider state transitions explicit in the Flutter state machine:
+   `idle -> searching -> matched -> loadingMatch -> active -> finishing ->
+   settled/review/cancelled`.
+7. Handle expiry, cancellation, reconnect, and duplicate responses as normal
+   states, not as new queue commands with new identities.
+
+**Exit criteria:** queue and friend matchmaking work without Firebase RTDB or
+LootLocker; the server resolves player snapshots and bot fallback; and app
+restart can reconcile an existing ticket/match from NestJS.
+
+### 7.8 Mobile Phase M6 — Server game content and accepted gameplay events
+
+**Depends on:** backend Phase 9.2 and M5.
+
+**Purpose:** Remove Firebase question/game-state authority and make every game
+action a bounded server event.
+
+Implementation steps:
+
+1. Replace `FirebaseGameRepository`, `FirebaseMathGameRepository`, local
+   public question loading, and any Firestore `matches`/`playerStates` writes
+   with authorized match and content reads.
+2. Load only server-issued content assignments. The client receives prompt,
+   safe options, position, assignment token, and expiry data; it never receives
+   an answer key, answer hash, private challenge seed, or reward policy.
+3. For each answer/ready/heartbeat/leave/finish action, send the match ID,
+   participant context supplied by the server, monotonic sequence,
+   client-event ID, bounded event payload, and idempotency key.
+4. Treat accepted/rejected event responses as authoritative. Do not update
+   final score, opponent state, question validity, or game statistics from a
+   local calculation and then write it to Firebase.
+5. Keep local scoring only as an immediate display hint if product requires it;
+   replace it with the server projection as soon as the event response arrives.
+6. On reconnect, call `GET /matches/:matchId` and replay only safe, unconfirmed
+   commands with their original idempotency keys. Never replay an entire local
+   event list with new IDs.
+7. Replace local finish/reward chains with `POST /matches/:matchId/complete`
+   followed by one settlement read. A review/withheld response must be shown
+   as pending review, not converted into a client-side win.
+
+**Exit criteria:** no Firebase question, match, or player-state write remains;
+the client uses server assignments/events; accepted events are replay-safe; and
+the result screen can render a committed or review settlement.
+
+### 7.9 Mobile Phase M7 — Server settlement, rewards, ad claims, config, and notifications
+
+**Depends on:** backend Phases 5 and 9B, plus M6.
+
+Implementation steps:
+
+1. Replace per-game local result chains in trivia, math, flick, follow-the-lead,
+   stacking, high-low, memorize, and similar providers with one
+   `RailwayMatchService.completeMatch` flow.
+2. Render the settlement response as the source for XP, level changes, ELO,
+   wallet effects, leaderboard effects, game stats, tier rewards, and reward
+   grants. Do not independently call old LootLocker/Firebase reward paths
+   after settlement.
+3. Replace `FirebaseCloudFunctionsService` reward/purchase calls with Railway
+   purchase and reward endpoints. A background retry must retain the original
+   idempotency key.
+4. Replace `AdRewardService` client credit logic with a Railway ad-claim flow:
+   request a server challenge if required, show the ad through the approved
+   provider, submit only provider-verifiable token/nonce data, and render the
+   committed wallet response. Never send amount, region, eCPM, or “watched” as
+   proof.
+5. Replace Firebase Remote Config reads with the safe public projection from
+   NestJS. Server-only reward, answer, verification, maintenance authority,
+   and provider secrets must not be copied into mobile configuration.
+6. Replace durable Firebase notification state with Railway notification
+   reads/acknowledgement. FCM may remain temporarily as delivery-only; a push
+   callback must not create a reward or match state.
+7. Keep result screens resilient to delayed outbox notifications. The direct
+   settlement response is the source of immediate UI truth; notifications are
+   secondary delivery.
+
+**Exit criteria:** one match completion produces one server settlement, no
+client-side reward authority remains, ad retries cannot double-credit, Firebase
+Remote Config is not required for game value decisions, and durable rewards or
+notifications do not depend on Firebase.
+
+### 7.10 Mobile Phase M8 — Provider removal, clean-install verification, and release
+
+**Depends on:** M0–M7 and backend Phase 11.
+
+This is the final removal phase, not a temporary “switch” controlled by a
+runtime flag. There are zero users and no legacy data import, so the release
+build can remove old providers outright.
+
+Removal checklist:
+
+1. Remove LootLocker SDK/configuration and all `LootLocker*Service`,
+   `LootLocker*Repository`, `lootlocker_config.json`, domain/game key reads,
+   `x-session-token`, LootLocker ID parsing, and legacy session-key handling.
+2. Remove Firebase initialization that is used for authoritative game state,
+   Firestore/RTDB matchmaking, questions, player states, rewards, and Remote
+   Config. Remove Firebase Cloud Function reward/purchase calls.
+3. If FCM is retained for push delivery, document the exact delivery-only
+   boundary and ensure notification state remains in Railway.
+4. Remove dead GetIt registrations and direct imports. Run a source search for
+   `lootlocker`, `firebase_database`, `cloud_firestore`,
+   `firebase_remote_config`, `session_token`, `domain-key`, `x-session-token`,
+   `playerStates`, `friend_matches`, and `notifyAdminPurchaseHttp`.
+5. Remove legacy provider environment variables and secrets from the mobile
+   build configuration. Do not ship Railway database, S3 secret, JWT secret,
+   ad webhook secret, or provider verification secret in the app.
+6. Install from scratch, register a disposable account, and verify auth,
+   profile, progression, wallet, catalog, purchase, inventory, matchmaking,
+   gameplay events, settlement, ad claim rejection/verification, friends,
+   presence, storage, and feedback.
+7. Kill and restart the app during login, token refresh, queueing, an active
+   match, purchase submission, and settlement retrieval. Verify every recovery
+   path reconciles with NestJS instead of recreating a command.
+8. Test a rejected/banned account, expired access token, refresh-token reuse,
+   duplicate command, duplicate ad callback, duplicate purchase receipt,
+   matchmaking expiry, review settlement, and outbox delay.
+
+**Final mobile exit criteria:** the release build uses only Railway auth,
+player, progression, wallet, leaderboard, matchmaking, match, content, stats,
+catalog, inventory, purchase, ad-reward, storage, friends, presence, config,
+and feedback clients. No authoritative read or write reaches LootLocker or
+Firebase, and the app passes the clean-install checks in Phase 11.
+
+### 7.11 Mobile-to-backend compatibility matrix
+
+Use this matrix during code review. A row is complete only when the old mobile
+implementation is no longer reachable from production dependency injection.
+
+| SMARTS legacy surface | Current examples found in Flutter | Railway replacement | Removal gate |
+| --- | --- | --- | --- |
+| Authentication/session | `LootLockerAuthService`, `LootLockerAuthRepository`, `ConfigService` session keys | `RailwayAuthService`, bearer access token, rotated refresh token, NestJS `Session` | M1 auth restart/refresh test passes |
+| Profile/player | LootLocker player info/name and metadata calls | `RailwayPlayerService`, `/auth/me`, `/players/me` | M1 profile fields reconcile |
+| Progression | `LootLockerProgressionService` and local level-up calculations | Railway progression queries and settlement response | M2 server step/threshold test passes |
+| Wallet | `LootLockerWalletService`, wallet provider local balance updates | `/wallet`, ledger-backed settlement/claim/purchase responses | M2 amount-string and retry tests pass |
+| Leaderboards | LootLocker leaderboard service and score increments | Railway leaderboard read queries; trusted settlement writer | M2 no client score-writer search |
+| Catalog/inventory/purchase | LootLocker catalog/assets/inventory/purchase services | Railway catalog, inventory, purchase, entitlement APIs | M3 price snapshot/retry test passes |
+| Storage/files | LootLocker storage/file/metadata services and public writes | Railway storage DTOs plus signed S3 URLs | M3 private-file ownership test passes |
+| Friends/presence | LootLocker friends/presence services | Railway friends and heartbeat endpoints | M4 privacy/expiry test passes |
+| Matchmaking | `RealtimeDatabaseMatchmakingRepository`, LootLocker matchmaking | Railway ticket/worker/friend-invite lifecycle | M5 restart/expiry test passes |
+| Game content/state | `FirebaseGameRepository`, `FirebaseMathGameRepository`, Firestore/RTDB state | Railway assignments, accepted match events, settlement | M6 answer/event replay test passes |
+| Rewards/config | Firebase Remote Config, `FirebaseCloudFunctionsService`, local ad credit | Railway policies, claims, grants, outbox, notifications | M7 server-only reward test passes |
+| Push delivery | Firebase Messaging | FCM delivery-only adapter, Railway notification state | M7 outage cannot alter reward state |
+
+### 7.12 Mobile testing and rollout gates
+
+Run focused tests after each mobile phase; do not wait for the final release.
+
+#### Transport and authentication
+
+- register rollback leaves no partial user-owned rows;
+- login accepts username and email as specified;
+- access expiry causes one refresh, not a loop;
+- refresh rotation replaces the old pair and rejects reuse;
+- concurrent requests share one refresh promise;
+- inactive/banned status clears the mobile session;
+- logout and logout-all reconcile after app restart.
+
+#### Data and economy
+
+- BigInt/string values render without rounding;
+- stale wallet/progression/leaderboard cache is replaced by the server;
+- duplicate purchase/ad/claim commands return the original committed result;
+- no price, reward, score, XP, or ELO comes from a trusted mobile field;
+- signed file URLs are renewed after expiration.
+
+#### Match lifecycle
+
+- queue heartbeat and expiry behave correctly across background/resume;
+- duplicate event responses do not advance local state twice;
+- event sequence/replay/assignment rejection is displayed safely;
+- reconnect reads the server match projection;
+- complete/settlement is called once logically and remains retryable;
+- review/withheld settlement does not display competitive rewards.
+
+#### Release search gates
+
+Before release, fail the build review if production mobile code still imports
+or registers any of these authoritative legacy surfaces:
+
+```text
+LootLockerAuthService / LootLockerAuthRepository
+LootLockerProgressionService / LootLockerProgressionRepository
+LootLockerWalletService / LootLockerWalletRepository
+LootLockerLeaderboardService / LootLockerLeaderboardRepository
+LootLockerMatchmakingService
+RealtimeDatabaseMatchmakingRepository
+FirebaseGameRepository / FirebaseMathGameRepository
+FirebaseCloudFunctionsService
+firebase_remote_config for game authority
+domain-key / x-session-token / lootlocker_config.json
+```
+
+The final smoke test must use the same clean Railway database verification
+sequence in Phase 11. No shadow-read, dual-write, feature-flagged provider
+fallback, or runtime “legacy mode” is permitted after the final provider
+removal build.
 
 ## 8. Security checklist
 

@@ -1,12 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash } from "node:crypto"
-import { Prisma, ProgressionEventSourceType, WalletTransactionSourceType, LeaderboardScoreSourceType } from "@prisma/client"
+import { PlayerAuditActorType, Prisma, ProgressionEventSourceType, WalletTransactionSourceType, LeaderboardScoreSourceType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { ApplyLeaderboardScoreTransaction } from "../../leaderboard/transactions/apply-score-transaction"
 import { AwardProgressionPointsTransaction } from "../../progression/transactions/award-progression-points-transaction"
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 type SettleInput = { matchId: string; userId: string; idempotencyKey: string }
 
@@ -87,6 +88,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         if (country && country !== opponent) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       }
       await transaction.matchParticipant.update({ where: { id: item.participant.id }, data: { result, submittedAt: item.participant.submittedAt ?? new Date() } })
+      await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, metadata: { gameKey: lockedMatch.gameDefinition.key, result, score: item.score.toString(), eloDelta: eloDelta.toString(), xp: xp.toString(), currencyReward: coinReward.toString(), policyVersion } })
       results.push({ playerId: player.id, username: player.username, result, score: item.score.toString(), eloDelta: eloDelta.toString(), progression, eloProgression, wallet })
     }
 

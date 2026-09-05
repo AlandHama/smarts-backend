@@ -6,7 +6,7 @@ import { PrismaService } from "../../prisma.service"
 import { AuthService } from "../auth/services/auth.service"
 import { UsersService } from "../admin/access/users/users.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { AdminSessionStatusFilter, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { AdminSessionStatusFilter, PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { DeleteUserTransaction } from "./transactions/delete-user-transaction"
 import { EnsureSystemAdminInput, EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin-transaction"
 import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction"
@@ -220,6 +220,46 @@ export class SystemAdminService implements OnModuleInit {
     return this.serialize(rows)
   }
 
+  async listPlayerAudits(query: PlayerAuditsQueryDto) {
+    const page = query.page || 1
+    const limit = query.limit || 50
+    const search = query.search?.trim()
+    const where: Prisma.PlayerAuditEventWhereInput = {
+      ...(query.playerId ? { userId: query.playerId } : {}),
+      ...(query.action?.trim() ? { action: { equals: query.action.trim(), mode: "insensitive" } } : {}),
+      ...(query.entityType?.trim() ? { entityType: { equals: query.entityType.trim(), mode: "insensitive" } } : {}),
+      ...(query.from || query.to ? { createdAt: { ...(query.from ? { gte: new Date(query.from) } : {}), ...(query.to ? { lte: new Date(query.to) } : {}) } } : {}),
+      ...(search ? {
+        OR: [
+          { action: { contains: search, mode: "insensitive" } },
+          { entityType: { contains: search, mode: "insensitive" } },
+          { entityId: { contains: search, mode: "insensitive" } },
+          { summary: { contains: search, mode: "insensitive" } },
+          { user: { username: { contains: search, mode: "insensitive" } } },
+          { user: { email: { contains: search, mode: "insensitive" } } },
+          { user: { profile: { displayName: { contains: search, mode: "insensitive" } } } },
+        ],
+      } : {}),
+    }
+    const select = {
+      id: true,
+      userId: true,
+      actorType: true,
+      action: true,
+      entityType: true,
+      entityId: true,
+      summary: true,
+      metadata: true,
+      createdAt: true,
+      user: { select: { id: true, username: true, email: true, firstName: true, lastName: true, isSystemAdmin: true, profile: { select: { displayName: true, avatarUrl: true } } } },
+    } as const
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.playerAuditEvent.count({ where }),
+      this.prisma.playerAuditEvent.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit, select }),
+    ])
+    return { items: this.serialize(rows), pagination: { page, limit, total, pages: Math.ceil(total / limit) } }
+  }
+
   async createUser(dto: RegisterRequestDto, actorId?: string) {
     const user = await this.usersService.create({ ...dto, actorId, reason: "Player account created from the system administrator console" })
     return this.getUser(user.id)
@@ -297,7 +337,7 @@ export class SystemAdminService implements OnModuleInit {
 
   async getPlayer360(userId: string) {
     const user = await this.getUser(userId, true)
-    const [inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback] = await this.prisma.$transaction([
+    const [inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback, playerAuditEvents] = await this.prisma.$transaction([
       this.prisma.inventoryItem.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: { select: { id: true, key: true, name: true, assetType: true, ownershipPolicy: true, imageUrl: true } }, assetVariation: { select: { id: true, key: true, name: true, imageUrl: true } } } }),
       this.prisma.entitlement.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: { select: { key: true, name: true, imageUrl: true } } } }),
       this.prisma.purchase.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { currency: { select: { code: true, name: true } }, lines: { orderBy: { createdAt: "asc" }, include: { catalogItem: { select: { key: true, name: true, imageUrl: true } } } } } }),
@@ -310,12 +350,13 @@ export class SystemAdminService implements OnModuleInit {
       this.prisma.playerStorageItem.findMany({ where: { userId }, orderBy: [{ displayOrder: "asc" }, { key: "asc" }], take: 200 }),
       this.prisma.storedFile.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200 }),
       this.prisma.playerFeedback.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { category: { select: { key: true, name: true } } } }),
+      this.prisma.playerAuditEvent.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, select: { id: true, userId: true, actorType: true, action: true, entityType: true, entityId: true, summary: true, metadata: true, createdAt: true } }),
     ])
     const walletTransactions = user.wallet
       ? await this.prisma.walletTransaction.findMany({ where: { walletId: user.wallet.id }, orderBy: { createdAt: "desc" }, take: 500, include: { currency: { select: { code: true, name: true, kind: true } } } })
       : []
     const social = await this.friendsService.player360Social(userId)
-    return this.serialize({ user: { ...user, wallet: user.wallet ? { ...user.wallet, transactions: walletTransactions } : null }, inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback, ...social })
+    return this.serialize({ user: { ...user, wallet: user.wallet ? { ...user.wallet, transactions: walletTransactions } : null }, inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback, playerAuditEvents, ...social })
   }
 
   async updateUserProfile(userId: string, actorId: string, dto: UpdateUserProfileDto) {
@@ -400,9 +441,9 @@ export class SystemAdminService implements OnModuleInit {
   deletePlayerStorage(userId: string, key: string) { return this.storageService.deleteStorage(userId, key) }
   uploadPlayerFile(file: UploadedImage | undefined, userId: string, dto: UploadFileDto, actorId: string) { return this.storageService.upload(file, dto, userId, actorId) }
   playerFileUrl(fileId: string, userId: string) { return this.storageService.downloadUrl(fileId, userId, true) }
-  deletePlayerFile(fileId: string, userId: string) { return this.storageService.delete(fileId, userId, true) }
+  deletePlayerFile(fileId: string, userId: string, actorId: string) { return this.storageService.delete(fileId, userId, true, actorId) }
   fileUrl(fileId: string) { return this.storageService.downloadUrl(fileId, undefined, true) }
-  deleteFile(fileId: string) { return this.storageService.delete(fileId, undefined, true) }
+  deleteFile(fileId: string, actorId?: string) { return this.storageService.delete(fileId, undefined, true, actorId) }
   listFeedback(query: FeedbackQueryDto) { return this.storageService.listFeedback(query) }
   updateFeedback(id: string, dto: UpdateFeedbackDto, adminId: string) { return this.storageService.updateFeedback(id, dto, adminId) }
   listFriends(query: AdminFriendsQueryDto) { return this.friendsService.adminList(query) }

@@ -1,8 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common"
-import { FriendRequestStatus, Prisma } from "@prisma/client"
+import { FriendRequestStatus, PlayerAuditActorType, Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 export class AcceptFriendRequestInput { requesterId!: string; addresseeId!: string; actorId!: string }
 
@@ -16,6 +17,9 @@ export class AcceptFriendRequestTransaction extends PrismaTransaction<AcceptFrie
     if (!request || request.status !== FriendRequestStatus.PENDING) throw new NotFoundException("Pending friend request not found")
     const now = new Date()
     await transaction.friendship.createMany({ data: [{ userId: input.requesterId, friendId: input.addresseeId, acceptedAt: now }, { userId: input.addresseeId, friendId: input.requesterId, acceptedAt: now }], skipDuplicates: true })
-    return transaction.friendRequest.update({ where: { id: request.id }, data: { status: FriendRequestStatus.ACCEPTED, respondedAt: now } })
+    const updated = await transaction.friendRequest.update({ where: { id: request.id }, data: { status: FriendRequestStatus.ACCEPTED, respondedAt: now } })
+    await writePlayerAudit(transaction, { userId: input.addresseeId, actorType: PlayerAuditActorType.PLAYER, action: "FRIEND_REQUEST_ACCEPTED", entityType: "FriendRequest", entityId: request.id, summary: "Accepted a friend request", metadata: { requesterId: input.requesterId } })
+    await writePlayerAudit(transaction, { userId: input.requesterId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIEND_REQUEST_ACCEPTED", entityType: "FriendRequest", entityId: request.id, summary: "A friend request was accepted", metadata: { addresseeId: input.addresseeId } })
+    return updated
   }
 }

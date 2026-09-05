@@ -1,8 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common"
-import { Prisma, UserStatus } from "@prisma/client"
+import { PlayerAuditActorType, Prisma, UserStatus } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 export class CreateFriendshipInput { userId!: string; friendId!: string }
 
@@ -19,6 +20,8 @@ export class CreateFriendshipTransaction extends PrismaTransaction<CreateFriends
     const now = new Date()
     await transaction.friendship.createMany({ data: [{ userId: input.userId, friendId: input.friendId, acceptedAt: now }, { userId: input.friendId, friendId: input.userId, acceptedAt: now }], skipDuplicates: true })
     await transaction.friendRequest.updateMany({ where: { OR: [{ requesterId: input.userId, addresseeId: input.friendId }, { requesterId: input.friendId, addresseeId: input.userId }] }, data: { status: "ACCEPTED", respondedAt: now } })
+    await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "FRIENDSHIP_CREATED", entityType: "Friendship", summary: "Became friends with another player", metadata: { friendId: input.friendId } })
+    await writePlayerAudit(transaction, { userId: input.friendId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIENDSHIP_CREATED", entityType: "Friendship", summary: "Became friends with another player", metadata: { friendId: input.userId } })
     return { message: "Players are now friends" }
   }
 }

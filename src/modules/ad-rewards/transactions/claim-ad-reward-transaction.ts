@@ -1,12 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common"
 import { createHash, createHmac, timingSafeEqual } from "node:crypto"
-import { Prisma, WalletTransactionSourceType } from "@prisma/client"
+import { PlayerAuditActorType, Prisma, WalletTransactionSourceType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { ConfigService } from "../../config/config.service"
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 import { ClaimAdRewardDto } from "../dtos/ad-reward.dto"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 type AdPolicy = {
   currencyCode?: string
@@ -81,6 +82,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<{ dto: ClaimAdRe
     const currency = await transaction.currencyDefinition.findUnique({ where: { code: currencyCode }, select: { id: true } })
     const updated = await transaction.adRewardClaim.update({ where: { id: claim.id }, data: { providerEventId, countryCode: country ?? null, currencyId: currency?.id, rewardAmount: amount, status: "GRANTED", verificationPayload: { providerVerified: true }, verifiedAt: now, grantedAt: now } })
     await transaction.outboxEvent.create({ data: { eventType: "ad-reward.granted", aggregateType: "AdRewardClaim", aggregateId: claim.id, payload: { claimId: claim.id, userId: claim.userId, amount: amount.toString(), currencyCode, ledger } as unknown as Prisma.InputJsonValue } })
+    await writePlayerAudit(transaction, { userId: claim.userId, actorType: PlayerAuditActorType.SYSTEM, action: "AD_REWARD_GRANTED", entityType: "AdRewardClaim", entityId: claim.id, summary: `Granted ${amount.toString()} ${currencyCode} for a verified ad`, metadata: { provider: claim.provider, adFormat: claim.adFormat, providerEventId, currencyCode, amount: amount.toString(), policyVersion: policy.version } })
     return { claimId: updated.id, status: updated.status, amount: amount.toString(), currencyCode, grantedAt: updated.grantedAt }
   }
 

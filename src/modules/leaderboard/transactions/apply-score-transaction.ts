@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash } from "node:crypto"
-import { Prisma, LeaderboardMemberType, LeaderboardScoreSourceType } from "@prisma/client"
+import { Prisma, LeaderboardMemberType, LeaderboardScoreSourceType, PlayerAuditActorType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { writeAdminAudit } from "../../../common/helpers/admin-audit"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 export type ApplyLeaderboardScoreInput = {
   leaderboardKey: string
@@ -27,7 +28,7 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
     if (!sourceId) throw new BadRequestException("A score source id is required")
     if (input.delta === 0n) throw new BadRequestException("Score delta cannot be zero")
     const key = input.leaderboardKey.trim().toLowerCase()
-    const board = await transaction.leaderboard.findUnique({ where: { key }, select: { id: true, key: true, memberType: true, active: true, period: true } })
+    const board = await transaction.leaderboard.findUnique({ where: { key }, select: { id: true, key: true, name: true, memberType: true, active: true, period: true } })
     if (!board || !board.active) throw new NotFoundException("Leaderboard not found or inactive")
 
     const now = new Date()
@@ -87,6 +88,7 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
     const response = { leaderboardKey: board.key, seasonId: season.id, entryId: entry.id, memberKey: member.memberKey, scoreBefore: entry.score.toString(), scoreAfter: scoreAfter.toString(), delta: input.delta.toString(), eventId: event.id }
     await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: response as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "LEADERBOARD_SCORE", entityType: "LeaderboardEntry", entityId: entry.id, reason: input.reason, metadata: { leaderboardKey: board.key, playerId: member.playerId, delta: input.delta.toString(), sourceId } })
+    if (member.playerId) await writePlayerAudit(transaction, { userId: member.playerId, actorType: input.actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "LEADERBOARD_SCORE_APPLIED", entityType: "LeaderboardEntry", entityId: entry.id, summary: `${input.delta > 0n ? "Increased" : "Changed"} ${board.name} score by ${input.delta.toString()}`, metadata: { leaderboardKey: board.key, seasonId: season.id, delta: input.delta.toString(), scoreBefore: entry.score.toString(), scoreAfter: scoreAfter.toString(), sourceId } })
     return response
   }
 
