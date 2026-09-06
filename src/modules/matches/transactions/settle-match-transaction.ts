@@ -44,7 +44,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     if (idem.requestHash !== requestHash) throw new ConflictException("The settlement idempotency key is invalid")
     if (idem.status === "COMPLETED" && idem.responseJson) return idem.responseJson
 
-    const scores = humanParticipants.map((item) => ({ participant: item, score: BigInt(item.finalScore ?? 0) }))
+    const scores = lockedMatch.participants.map((item) => ({ participant: item, score: BigInt(item.finalScore ?? 0) }))
     const highest = scores.reduce((max, current) => current.score > max ? current.score : max, scores[0]?.score ?? 0n)
     const winners = scores.filter((item) => item.score === highest && item.participant.result !== "FORFEIT")
     const forfeited = scores.find((item) => item.participant.result === "FORFEIT")
@@ -55,10 +55,13 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
 
     for (const item of scores) {
       const player = item.participant.user
-      if (!player?.id) continue
       const isWinner = winner?.participant.id === item.participant.id
       const isDraw = draw
       const result = isWinner ? "WIN" : isDraw ? "DRAW" : item.participant.result === "FORFEIT" ? "FORFEIT" : "LOSS"
+      await transaction.matchParticipant.update({ where: { id: item.participant.id }, data: { result, submittedAt: item.participant.submittedAt ?? new Date() } })
+      // Bots participate in the result calculation but never receive player
+      // progression, wallet, leaderboard, or audit rewards.
+      if (!player?.id) continue
       const scoreDiff = winner && !isDraw ? item.score - (winner.participant.id === item.participant.id ? scores.find((candidate) => candidate.participant.id !== item.participant.id)?.score ?? 0n : winner.score) : 0n
       const eloDelta = item.participant.result === "FORFEIT" ? 0n : lockedMatch.mode === "SINGLE_PLAYER" || lockedMatch.mode === "BOT"
         ? this.multiply(BigInt(Math.min(config.soloEloMaxDelta, Number(item.score / BigInt(config.soloEloScoreDivisor)))), config.rankingEnabled ? config.rankingEloMultiplier.toString() : "1")
@@ -87,7 +90,6 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         const opponent = humanParticipants.find((candidate) => candidate.id !== item.participant.id)?.user?.profile?.countryCode?.trim().toUpperCase()
         if (country && country !== opponent) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       }
-      await transaction.matchParticipant.update({ where: { id: item.participant.id }, data: { result, submittedAt: item.participant.submittedAt ?? new Date() } })
       await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, changes: { result: { old: "PENDING", new: result }, scoreEarned: { old: 0n, new: item.score }, eloDelta: { old: 0n, new: eloDelta }, xpAwarded: { old: 0n, new: xp }, currencyReward: { old: 0n, new: coinReward } }, metadata: { gameKey: lockedMatch.gameDefinition.key, policyVersion } })
       results.push({ playerId: player.id, username: player.username, result, score: item.score.toString(), eloDelta: eloDelta.toString(), progression, eloProgression, wallet })
     }

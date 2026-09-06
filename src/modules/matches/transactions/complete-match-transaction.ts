@@ -4,13 +4,15 @@ import { Prisma } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { CompleteMatchDto } from "../dtos"
+import { BotGameplayService } from "../bot-gameplay.service"
 import { SettleMatchTransaction } from "./settle-match-transaction"
 
 @Injectable()
 export class CompleteMatchTransaction extends PrismaTransaction<{ matchId: string; userId: string; dto: CompleteMatchDto }, any> {
-  constructor(prisma: PrismaService, private readonly settleMatch: SettleMatchTransaction) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly settleMatch: SettleMatchTransaction, private readonly botGameplay: BotGameplayService) { super(prisma) }
 
   protected async execute(input: { matchId: string; userId: string; dto: CompleteMatchDto }, transaction: Prisma.TransactionClient) {
+    await transaction.$executeRaw`SELECT "id" FROM "Match" WHERE "id" = ${input.matchId} FOR UPDATE`
     const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { participants: true, settlement: true } })
     if (!match) throw new NotFoundException("Match not found")
     const participant = match.participants.find((item) => item.userId === input.userId)
@@ -18,6 +20,7 @@ export class CompleteMatchTransaction extends PrismaTransaction<{ matchId: strin
     if (match.settlement) return match.settlement.settlementJson
     if (match.status === "CANCELLED" || match.status === "REVIEW") throw new ConflictException("The match cannot be completed")
     if (participant.result === "PENDING") await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "COMPLETED", submittedAt: new Date() } })
+    await this.botGameplay.completeWithinTransaction({ matchId: match.id, userId: input.userId }, transaction)
     const humanPending = match.participants.some((item) => item.participantType === "PLAYER" && item.id !== participant.id && item.result === "PENDING")
     if (humanPending) {
       return { status: "PENDING", matchId: match.id, message: "Result recorded; waiting for the other player" }

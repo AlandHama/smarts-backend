@@ -14,11 +14,12 @@ import { ForfeitMatchTransaction } from "./transactions/forfeit-match-transactio
 import { StartMatchTransaction } from "./transactions/start-match-transaction"
 import { MatchController } from "./match.controller"
 import { MatchService } from "./match.service"
+import { BotGameplayService } from "./bot-gameplay.service"
 
 @Module({
   imports: [DatabaseModule, GameModule, ProgressionModule, EconomyModule, LeaderboardModule],
   controllers: [MatchController],
-  providers: [MatchService, CreateMatchTransaction, RecordMatchEventTransaction, CompleteMatchTransaction, SettleMatchTransaction, StartMatchTransaction, ForfeitMatchTransaction, ExpireMatchTransaction],
+  providers: [MatchService, CreateMatchTransaction, RecordMatchEventTransaction, CompleteMatchTransaction, SettleMatchTransaction, StartMatchTransaction, ForfeitMatchTransaction, ExpireMatchTransaction, BotGameplayService],
   exports: [MatchService, SettleMatchTransaction, ExpireMatchTransaction],
 })
 export class MatchesModule {}

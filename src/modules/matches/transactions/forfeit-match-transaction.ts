@@ -3,10 +3,11 @@ import { Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { BotGameplayService } from "../bot-gameplay.service"
 
 @Injectable()
 export class ForfeitMatchTransaction extends PrismaTransaction<{ matchId: string; userId: string }, any> {
-  constructor(prisma: PrismaService) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly botGameplay: BotGameplayService) { super(prisma) }
 
   protected async execute(input: { matchId: string; userId: string }, transaction: Prisma.TransactionClient) {
     await transaction.$executeRaw`SELECT "id" FROM "Match" WHERE "id" = ${input.matchId} FOR UPDATE`
@@ -21,6 +22,7 @@ export class ForfeitMatchTransaction extends PrismaTransaction<{ matchId: string
     const previous = await transaction.matchEvent.findFirst({ where: { matchId: match.id, participantId: participant.id }, orderBy: { sequence: "desc" }, select: { sequence: true } })
     await transaction.matchEvent.create({ data: { matchId: match.id, participantId: participant.id, roundId: round.id, sequence: (previous?.sequence ?? 0) + 1, eventType: "FORFEIT", clientEventId: `server-forfeit-${participant.id}-${Date.now()}`, accepted: true, payload: { submitted: true } as Prisma.InputJsonValue } })
     await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "FORFEIT", submittedAt: new Date() } })
+    await this.botGameplay.completeWithinTransaction({ matchId: match.id, userId: input.userId }, transaction)
     const otherPending = match.participants.some((item) => item.id !== participant.id && item.participantType === "PLAYER" && item.result === "PENDING")
     if (!otherPending) {
       const endedAt = new Date()

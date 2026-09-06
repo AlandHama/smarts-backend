@@ -33,7 +33,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
     const participants = [
       await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.userId, participantType: MatchParticipantType.PLAYER } }),
     ]
-    if (input.dto.mode === GameMode.BOT) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: MatchParticipantType.BOT, result: "COMPLETED", finalScore: 0, submittedAt: now } }))
+    if (input.dto.mode === GameMode.BOT) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: MatchParticipantType.BOT, result: "PENDING" } }))
     else if (input.dto.opponentUserId) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.dto.opponentUserId, participantType: MatchParticipantType.PLAYER } }))
 
     const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true } })

@@ -5,6 +5,7 @@ import { Prisma, MatchEventType } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { MatchEventDto } from "../dtos"
+import { BotGameplayService } from "../bot-gameplay.service"
 import { hashMatchEventRequest, jsonByteLength } from "../utilities/server-content"
 
 const MAX_EVENT_PAYLOAD_BYTES = 8 * 1024
@@ -13,7 +14,7 @@ const ANSWER_KEYS = new Set(["assignmentId", "assignmentToken", "selectedAnswerI
 
 @Injectable()
 export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: string; userId: string; dto: MatchEventDto }, any> {
-  constructor(prisma: PrismaService) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly botGameplay: BotGameplayService) { super(prisma) }
 
   protected async execute(input: { matchId: string; userId: string; dto: MatchEventDto }, transaction: Prisma.TransactionClient) {
     const clientEventId = input.dto.clientEventId.trim()
@@ -63,11 +64,15 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     if (input.dto.eventType === MatchEventType.FINISH) {
       const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { submitted: true } } })
       await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "COMPLETED", submittedAt: new Date() } })
+      await this.botGameplay.completeWithinTransaction({ matchId: match.id, userId: input.userId }, transaction)
+      await this.closeIfAllHumanParticipantsFinished(transaction, match.id)
       return event
     }
     if (input.dto.eventType === MatchEventType.FORFEIT || input.dto.eventType === MatchEventType.LEAVE) {
       const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { submitted: true } } })
       await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "FORFEIT", submittedAt: new Date() } })
+      await this.botGameplay.completeWithinTransaction({ matchId: match.id, userId: input.userId }, transaction)
+      await this.closeIfAllHumanParticipantsFinished(transaction, match.id)
       return event
     }
     return transaction.matchEvent.create({ data: { ...base, accepted: true, payload: {} } })
@@ -113,6 +118,14 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
 
   private reject(transaction: Prisma.TransactionClient, base: any, reason: string) {
     return transaction.matchEvent.create({ data: { ...base, accepted: false, payload: {}, rejectionReason: reason } })
+  }
+
+  private async closeIfAllHumanParticipantsFinished(transaction: Prisma.TransactionClient, matchId: string) {
+    const pending = await transaction.matchParticipant.count({ where: { matchId, participantType: "PLAYER", result: "PENDING" } })
+    if (pending) return
+    const endedAt = new Date()
+    await transaction.matchRound.updateMany({ where: { matchId, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt } })
+    await transaction.match.update({ where: { id: matchId }, data: { status: "FINISHED", endedAt } })
   }
 }
 
