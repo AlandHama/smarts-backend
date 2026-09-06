@@ -18,6 +18,7 @@ import { CommerceView } from '../components/CommerceView';
 import { Player360View } from '../components/Player360View';
 import { FeedbackView } from '../components/FeedbackView';
 import { RewardPoliciesView } from '../components/RewardPoliciesView';
+import { PaidRewardsView } from '../components/PaidRewardsView';
 import { StorageView } from '../components/StorageView';
 import { FriendsView } from '../components/FriendsView';
 import { OperationsView } from '../components/OperationsView';
@@ -28,7 +29,7 @@ import { api, clearSession, hasSession, login } from '../lib/api';
 import { adminTheme } from '../lib/theme';
 
 const viewPaths: Record<Exclude<AdminView, 'player360' | 'match360'>, string> = {
-  overview: '/', operations: '/operations/', players: '/players/', sessions: '/sessions/', friends: '/friends/', 'player-audits': '/player-audits/', matches: '/matches/', progressions: '/progressions/', economy: '/economy/', commerce: '/commerce/', leaderboards: '/leaderboards/', 'game-config': '/game-config/', 'reward-policies': '/reward-policies/', storage: '/storage/', feedback: '/feedback/',
+  overview: '/', operations: '/operations/', players: '/players/', sessions: '/sessions/', friends: '/friends/', 'player-audits': '/player-audits/', matches: '/matches/', progressions: '/progressions/', economy: '/economy/', commerce: '/commerce/', 'paid-rewards': '/paid-rewards/', leaderboards: '/leaderboards/', 'game-config': '/game-config/', 'reward-policies': '/reward-policies/', storage: '/storage/', feedback: '/feedback/',
 };
 
 function routeState() {
@@ -105,6 +106,7 @@ export default function AdminPage() {
     {view === 'progressions' && <><ProgressionsView /><ProgressionTopPlayersPanel /></>}
     {view === 'economy' && <><EconomyView /><CurrencyTopPlayersPanel /></>}
     {view === 'commerce' && <CommerceView />}
+    {view === 'paid-rewards' && <PaidRewardsView onOpenPlayer360={openPlayer360} />}
     {view === 'storage' && <StorageView />}
     {view === 'leaderboards' && <><LeaderboardView /><SeasonManagerPanel /></>}
     {view === 'game-config' && <GameConfigView />}

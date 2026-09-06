@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger"
 import { Type } from "class-transformer"
-import { ArrayMaxSize, IsArray, IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from "class-validator"
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from "class-validator"
 
 import { AssetOwnershipPolicy, AssetType, CatalogRewardType, InventoryAcquisitionSource } from "@prisma/client"
 
@@ -83,6 +83,24 @@ export class InventoryMutationDto {
   @ApiPropertyOptional({ enum: InventoryAcquisitionSource, default: InventoryAcquisitionSource.ADMIN }) @IsOptional() @IsEnum(InventoryAcquisitionSource) source?: InventoryAcquisitionSource
   @ApiProperty({ example: "admin-grant-2026-0001" }) @IsString() @MaxLength(255) sourceId!: string
   @ApiProperty({ example: "Compensation for support ticket" }) @IsString() @MaxLength(500) reason!: string
+}
+
+export class PaidRewardRequestDto {
+  @ApiProperty({ example: "gift-card:steam-10" }) @IsString() @MaxLength(100) assetKey!: string
+  @ApiPropertyOptional({ example: "us" }) @IsOptional() @IsString() @MaxLength(100) variationKey?: string
+  @ApiPropertyOptional({ example: "Please review my paid reward request." }) @IsOptional() @IsString() @MaxLength(500) message?: string
+  @ApiProperty({ example: "mobile-paid-reward-2026-0001" }) @IsString() @MaxLength(128) idempotencyKey!: string
+}
+
+export class PaidRewardDecisionDto {
+  @ApiProperty({ enum: ["FULFILLED", "REFUSED"] }) @IsIn(["FULFILLED", "REFUSED"]) status!: "FULFILLED" | "REFUSED"
+  @ApiPropertyOptional({ example: "Approved after payment verification." }) @IsOptional() @IsString() @MaxLength(500) adminNote?: string
+}
+
+export class BulkRedeemCodeDto {
+  @ApiProperty({ example: "gift-card:steam-10" }) @IsString() @MaxLength(100) assetKey!: string
+  @ApiPropertyOptional({ example: "us" }) @IsOptional() @IsString() @MaxLength(100) variationKey?: string
+  @ApiProperty({ type: [String], description: "One unused redeem code per array item." }) @IsArray() @ArrayNotEmpty() @ArrayMaxSize(10000) @IsString({ each: true }) @MaxLength(255, { each: true }) codes!: string[]
 }
 
 export class EntitlementMutationDto {

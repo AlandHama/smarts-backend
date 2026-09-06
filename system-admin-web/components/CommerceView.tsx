@@ -12,6 +12,7 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -27,6 +28,7 @@ import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
+import TableContainer from "@mui/material/TableContainer";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -39,6 +41,7 @@ import type {
   CommerceCatalogItem,
   CommerceInventoryItem,
   CommercePurchase,
+  AssetRedeemCode,
   CurrencyDefinition,
   ProgressionDefinition,
 } from "../lib/types";
@@ -964,6 +967,56 @@ function InventoryDialog({
   );
 }
 
+function AssetRedeemCodesPanel({ assets, mode, onChanged }: { assets: CommerceAsset[]; mode: "list" | "bulk"; onChanged: () => void }) {
+  const [codes, setCodes] = useState<AssetRedeemCode[]>([]);
+  const [status, setStatus] = useState("AVAILABLE");
+  const [assetKey, setAssetKey] = useState(mode === "bulk" ? assets[0]?.key ?? "" : "");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => { if (mode === "bulk" && !assetKey && assets.length) setAssetKey(assets[0].key); }, [assets, assetKey, mode]);
+
+  const loadCodes = async () => {
+    setLoading(true);
+    try {
+      setError("");
+      const query = new URLSearchParams({ ...(assetKey ? { assetKey } : {}), ...(status ? { status } : {}) });
+      setCodes(await api<AssetRedeemCode[]>(`/commerce/assets/redeem-codes?${query.toString()}`));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to load redeem codes");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { if (mode === "list") void loadCodes(); }, [mode, assetKey, status]);
+
+  const insert = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      setError(""); setMessage("");
+      const form = event.currentTarget;
+      const raw = String((form.elements.namedItem("codes") as HTMLTextAreaElement)?.value ?? "");
+      const codesToInsert = [...new Set(raw.split(/\r?\n/).map((value) => value.trim()).filter(Boolean))];
+      if (!assetKey) throw new Error("Select an asset first");
+      if (!codesToInsert.length) throw new Error("Paste at least one code, one per line");
+      const result = await api<{ inserted: number; skipped: number }>("/commerce/assets/redeem-codes", { method: "POST", body: JSON.stringify({ assetKey, variationKey: field(form, "variationKey") || undefined, codes: codesToInsert }) });
+      setMessage(`${result.inserted} code${result.inserted === 1 ? "" : "s"} inserted; ${result.skipped} duplicate${result.skipped === 1 ? "" : "s"} skipped.`);
+      form.reset();
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to insert redeem codes");
+    }
+  };
+
+  return <Box sx={{ p: { xs: 2, md: 3 } }}><Stack spacing={2}>
+    <Box><Typography variant="h6" fontWeight={800}>{mode === "list" ? "Redeem code inventory" : "Asset actions · bulk insert"}</Typography><Typography variant="body2" color="text.secondary">{mode === "list" ? "Codes are masked here. Approval of a paid reward request claims one AVAILABLE code atomically." : "Paste provider codes one per line. Duplicate codes are ignored safely."}</Typography></Box>
+    {error && <Typography color="error.main">{error}</Typography>}{message && <Typography color="success.main">{message}</Typography>}
+    {mode === "bulk" ? <Card variant="outlined"><form onSubmit={insert}><Stack spacing={2} sx={{ p: 2.5 }}><Select size="small" value={assetKey} onChange={(event) => setAssetKey(event.target.value)} displayEmpty required><MenuItem value="" disabled>Select unique asset</MenuItem>{assets.map((asset) => <MenuItem key={asset.id} value={asset.key}>{asset.name} · {asset.key} · {asset.ownershipPolicy}</MenuItem>)}</Select><TextField name="variationKey" size="small" label="Variation key (optional)" /><TextField name="codes" label="Redeem codes" placeholder="CODE-AAAA-1111\nCODE-BBBB-2222" multiline minRows={8} fullWidth required helperText="One code per line; blank lines are ignored." /><Button type="submit" variant="contained">Insert codes</Button></Stack></form></Card> : <><Stack direction={{ xs: "column", sm: "row" }} spacing={1}><Select size="small" value={assetKey} onChange={(event) => setAssetKey(event.target.value)} displayEmpty sx={{ minWidth: 260 }}><MenuItem value="">All assets</MenuItem>{assets.map((asset) => <MenuItem key={asset.id} value={asset.key}>{asset.name}</MenuItem>)}</Select><Select size="small" value={status} onChange={(event) => setStatus(event.target.value)} sx={{ minWidth: 160 }}><MenuItem value="AVAILABLE">Available</MenuItem><MenuItem value="ASSIGNED">Assigned</MenuItem><MenuItem value="VOID">Void</MenuItem><MenuItem value="">All statuses</MenuItem></Select></Stack>{loading ? <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={28} /></Stack> : <TableContainer><Table size="small"><TableHead><TableRow><TableCell>Asset</TableCell><TableCell>Code</TableCell><TableCell>Status</TableCell><TableCell>Player</TableCell><TableCell>Created</TableCell></TableRow></TableHead><TableBody>{codes.map((code) => <TableRow key={code.id}><TableCell><Typography fontWeight={700}>{code.assetDefinition.name}</Typography><Typography variant="caption" color="text.secondary">{code.assetVariation?.name || code.assetDefinition.key}</Typography></TableCell><TableCell sx={{ fontFamily: "monospace" }}>{code.code}</TableCell><TableCell><Chip size="small" label={code.status} color={code.status === "AVAILABLE" ? "success" : code.status === "ASSIGNED" ? "primary" : "default"} /></TableCell><TableCell>{code.assignedUser?.profile?.displayName || code.assignedUser?.username || "—"}</TableCell><TableCell>{new Date(code.createdAt).toLocaleString()}</TableCell></TableRow>)}{!codes.length && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 5 }}><Typography color="text.secondary">No redeem codes found.</Typography></TableCell></TableRow>}</TableBody></Table></TableContainer>}</>}
+  </Stack></Box>;
+}
+
 export function CommerceView() {
   const [tab, setTab] = useState(0);
   const [catalogs, setCatalogs] = useState<CommerceCatalog[]>([]);
@@ -1118,6 +1171,8 @@ export function CommerceView() {
         >
           <Tab label={`Catalogs · ${catalogs.length}`} />
           <Tab label={`Assets · ${assets.length}`} />
+          <Tab label="Redeem codes" />
+          <Tab label="Asset actions" />
           <Tab label={`Inventory · ${inventory.length}`} />
           <Tab label={`Purchases · ${purchases.length}`} />
         </Tabs>
@@ -1302,7 +1357,9 @@ export function CommerceView() {
             </Grid>
           </Box>
         )}
-        {tab === 2 && (
+        {tab === 2 && <AssetRedeemCodesPanel assets={assets} mode="list" onChanged={load} />}
+        {tab === 3 && <AssetRedeemCodesPanel assets={assets} mode="bulk" onChanged={load} />}
+        {tab === 4 && (
           <Box sx={{ p: { xs: 1, md: 3 }, overflowX: "auto" }}>
             <Table size="small">
               <TableHead>
@@ -1374,7 +1431,7 @@ export function CommerceView() {
             )}
           </Box>
         )}
-        {tab === 3 && (
+        {tab === 5 && (
           <Box sx={{ p: { xs: 1, md: 3 }, overflowX: "auto" }}>
             <Table size="small">
               <TableHead>

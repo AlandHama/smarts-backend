@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { UserResponseDto } from "../auth/dtos/user-response.dto"
-import { PurchaseDto } from "./dtos"
+import { PaidRewardRequestDto, PurchaseDto } from "./dtos"
 import { CommerceService } from "./commerce.service"
 
 @ApiTags("Commerce")
@@ -16,4 +16,6 @@ export class CommerceController {
   @Get("entitlements") entitlements(@CurrentUser() user: UserResponseDto) { return this.commerce.listPlayerEntitlements(user.id) }
   @Get("purchases") purchases(@CurrentUser() user: UserResponseDto) { return this.commerce.listPurchases(user.id) }
   @Post("purchases") @ApiOperation({ summary: "Purchase a catalog item with a virtual wallet" }) purchase(@CurrentUser() user: UserResponseDto, @Body() dto: PurchaseDto) { return this.commerce.purchase(user.id, dto) }
+  @Get("paid-reward-requests") @ApiOperation({ summary: "List the authenticated player's paid reward requests" }) paidRewardRequests(@CurrentUser() user: UserResponseDto) { return this.commerce.listPaidRewardRequests(user.id) }
+  @Post("paid-reward-requests") @ApiOperation({ summary: "Request a redeem-code-backed paid reward for administrator review" }) requestPaidReward(@CurrentUser() user: UserResponseDto, @Body() dto: PaidRewardRequestDto) { return this.commerce.requestPaidReward(user.id, dto) }
 }

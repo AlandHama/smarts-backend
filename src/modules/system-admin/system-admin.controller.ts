@@ -13,7 +13,7 @@ import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewar
 import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
 import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
-import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
+import { BulkRedeemCodeDto, CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, PaidRewardDecisionDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
 import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UpdatePlayerStorageDto, UploadFileDto } from "../storage/dtos"
 import type { UploadedImage } from "../storage/types"
 import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
@@ -492,6 +492,18 @@ export class SystemAdminController {
   adRewardClaims() { return this.systemAdminService.listAdRewardClaims() }
 
   @UseGuards(SystemAdminGuard)
+  @Get("api/paid-rewards/requests")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List player paid reward requests for review" })
+  paidRewardRequests(@Query("status") status?: string) { return this.systemAdminService.listPaidRewardRequests(status) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/paid-rewards/requests/:requestId")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Fulfil or refuse a player paid reward request" })
+  decidePaidRewardRequest(@Param("requestId", ParseUUIDPipe) requestId: string, @Body() dto: PaidRewardDecisionDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.decidePaidRewardRequest(requestId, dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
   @Get("api/commerce/catalogs")
   @ApiBearerAuth("access-token")
   commerceCatalogs() { return this.systemAdminService.listCommerceCatalogs() }
@@ -520,6 +532,18 @@ export class SystemAdminController {
   @Patch("api/commerce/assets/:assetId")
   @ApiBearerAuth("access-token")
   updateCommerceAsset(@Param("assetId", ParseUUIDPipe) assetId: string, @Body() dto: UpdateAssetDto) { return this.systemAdminService.updateCommerceAsset(assetId, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/commerce/assets/redeem-codes")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Bulk insert single-use asset redeem codes" })
+  bulkInsertRedeemCodes(@Body() dto: BulkRedeemCodeDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.bulkInsertRedeemCodes(dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/commerce/assets/redeem-codes")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List masked asset redeem codes and assignments" })
+  redeemCodes(@Query("assetKey") assetKey?: string, @Query("status") status?: string) { return this.systemAdminService.listRedeemCodes(assetKey, status) }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/commerce/items")

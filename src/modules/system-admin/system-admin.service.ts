@@ -26,7 +26,7 @@ import { GameService } from "../game/game.service"
 import { RebuildPlayerGameStatsTransaction } from "../game/transactions/rebuild-player-game-stats-transaction"
 import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction"
 import { CommerceService } from "../commerce/commerce.service"
-import { CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
+import { BulkRedeemCodeDto, CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, PaidRewardDecisionDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
 import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UpdatePlayerStorageDto, UploadFileDto } from "../storage/dtos"
 import { StorageService } from "../storage/storage.service"
 import type { UploadedImage } from "../storage/types"
@@ -558,6 +558,8 @@ export class SystemAdminService implements OnModuleInit {
       include: { currency: { select: { code: true, name: true } }, user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } },
     }).then((items) => this.serialize(items))
   }
+  listPaidRewardRequests(status?: string) { return this.commerceService.listAdminPaidRewardRequests(status) }
+  decidePaidRewardRequest(id: string, dto: PaidRewardDecisionDto, actorId: string) { return this.commerceService.decidePaidRewardRequest(id, dto, actorId) }
   rebuildPlayerGameStats(userId: string, gameKey: string) { return this.rebuildPlayerGameStatsTransaction.run({ userId, gameKey }) }
   listCommerceCatalogs() { return this.commerceService.listCatalogs(true) }
   createCommerceCatalog(dto: CreateCatalogDto) { return this.commerceService.createCatalog(dto) }
@@ -565,6 +567,8 @@ export class SystemAdminService implements OnModuleInit {
   listCommerceAssets() { return this.commerceService.listAssets(true) }
   createCommerceAsset(dto: CreateAssetDto) { return this.commerceService.createAsset(dto) }
   updateCommerceAsset(id: string, dto: UpdateAssetDto) { return this.commerceService.updateAsset(id, dto) }
+  bulkInsertRedeemCodes(dto: BulkRedeemCodeDto, actorId: string) { return this.commerceService.bulkInsertRedeemCodes(dto, actorId) }
+  listRedeemCodes(assetKey?: string, status?: string) { return this.commerceService.listRedeemCodes(assetKey, status) }
   createCommerceItem(dto: CreateCatalogItemDto) { return this.commerceService.createCatalogItem(dto) }
   updateCommerceItem(id: string, dto: UpdateCatalogItemDto) { return this.commerceService.updateCatalogItem(id, dto) }
   listCommerceInventory(query: InventoryQueryDto) { return this.commerceService.listInventory(query) }

@@ -15,6 +15,7 @@ import ForumRoundedIcon from '@mui/icons-material/ForumRounded';
 import FolderCopyRoundedIcon from '@mui/icons-material/FolderCopyRounded';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
+import RedeemRoundedIcon from '@mui/icons-material/RedeemRounded';
 import MonitorHeartRoundedIcon from '@mui/icons-material/MonitorHeartRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
@@ -31,7 +32,7 @@ import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 
-export type AdminView = 'overview' | 'operations' | 'players' | 'player360' | 'sessions' | 'friends' | 'player-audits' | 'matches' | 'match360' | 'progressions' | 'economy' | 'commerce' | 'leaderboards' | 'game-config' | 'reward-policies' | 'storage' | 'feedback';
+export type AdminView = 'overview' | 'operations' | 'players' | 'player360' | 'sessions' | 'friends' | 'player-audits' | 'matches' | 'match360' | 'progressions' | 'economy' | 'commerce' | 'paid-rewards' | 'leaderboards' | 'game-config' | 'reward-policies' | 'storage' | 'feedback';
 
 const navigation = [
   { key: 'overview' as const, label: 'Overview', icon: <DashboardRoundedIcon /> },
@@ -44,6 +45,7 @@ const navigation = [
   { key: 'progressions' as const, label: 'Progressions', icon: <SettingsSuggestRoundedIcon /> },
   { key: 'economy' as const, label: 'Economy', icon: <MonetizationOnRoundedIcon /> },
   { key: 'commerce' as const, label: 'Commerce', icon: <StorefrontRoundedIcon /> },
+  { key: 'paid-rewards' as const, label: 'Paid rewards', icon: <RedeemRoundedIcon /> },
   { key: 'storage' as const, label: 'Storage & files', icon: <FolderCopyRoundedIcon /> },
   { key: 'leaderboards' as const, label: 'Leaderboards', icon: <LeaderboardRoundedIcon /> },
   { key: 'game-config' as const, label: 'Game config', icon: <TuneRoundedIcon /> },
