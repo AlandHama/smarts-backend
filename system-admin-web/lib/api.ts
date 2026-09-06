@@ -28,7 +28,10 @@ let refreshPromise: Promise<void> | null = null;
 async function rotateSession() {
   const refreshToken = localStorage.getItem(REFRESH_KEY);
   if (!refreshToken) throw new Error('Session expired');
-  const response = await fetch('/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken }) });
+  // Keep console refresh on the same mounted API surface as login and all
+  // other admin calls. The root /auth path is used by mobile clients and is
+  // not the stable public mount for the exported console.
+  const response = await fetch('/system-admin/api/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken }) });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) { clearSession(); throw new Error(body.message || 'Session expired'); }
   saveSession(body);
@@ -46,7 +49,7 @@ function accessTokenNeedsRefresh(token: string | null) {
   try {
     const encoded = token.split('.')[1];
     const payload = JSON.parse(atob(encoded.replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof payload.exp === 'number' && payload.exp * 1000 - Date.now() < 60_000;
+    return typeof payload.exp === 'number' && payload.exp * 1000 - Date.now() < 5 * 60_000;
   } catch {
     return false;
   }

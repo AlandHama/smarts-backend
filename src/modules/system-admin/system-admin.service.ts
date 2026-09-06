@@ -6,7 +6,7 @@ import { PrismaService } from "../../prisma.service"
 import { AuthService } from "../auth/services/auth.service"
 import { UsersService } from "../admin/access/users/users.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { AdminSessionStatusFilter, PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { AdminSessionStatusFilter, PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminMatchesQueryDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { DeleteUserTransaction } from "./transactions/delete-user-transaction"
 import { EnsureSystemAdminInput, EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin-transaction"
 import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction"
@@ -330,6 +330,142 @@ export class SystemAdminService implements OnModuleInit {
 
   terminateSession(sessionId: string, actorId: string) {
     return this.terminateAdminSessionTransaction.run({ sessionId, actorId, reason: "Session terminated from the system administrator console" })
+  }
+
+  async listMatches(query: SystemAdminMatchesQueryDto) {
+    const page = query.page || 1
+    const limit = query.limit || 50
+    const search = query.search?.trim()
+    const isUuidSearch = Boolean(search && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(search))
+    const where: Prisma.MatchWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.playerId ? { participants: { some: { userId: query.playerId } } } : {}),
+      ...(search ? {
+        OR: [
+          ...(isUuidSearch ? [{ id: search }] : []),
+          { gameDefinition: { key: { contains: search.toLowerCase(), mode: "insensitive" } } },
+          { gameDefinition: { name: { contains: search, mode: "insensitive" } } },
+          { participants: { some: { user: { username: { contains: search, mode: "insensitive" } } } } },
+          { participants: { some: { user: { email: { contains: search, mode: "insensitive" } } } } },
+          { participants: { some: { user: { profile: { displayName: { contains: search, mode: "insensitive" } } } } } },
+        ],
+      } : {}),
+    }
+    const [total, items] = await this.prisma.$transaction([
+      this.prisma.match.count({ where }),
+      this.prisma.match.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          mode: true,
+          status: true,
+          startedAt: true,
+          endedAt: true,
+          settledAt: true,
+          createdAt: true,
+          metadata: true,
+          gameDefinition: { select: { key: true, name: true } },
+          createdBy: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } },
+          participants: {
+            orderBy: { createdAt: "asc" },
+            take: 10,
+            select: {
+              id: true,
+              userId: true,
+              participantType: true,
+              finalScore: true,
+              answeredCount: true,
+              result: true,
+              submittedAt: true,
+              user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true } } } },
+            },
+          },
+          _count: { select: { events: true, assignments: true, rounds: true } },
+        },
+      }),
+    ])
+    return this.serialize({ items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+  }
+
+  async getMatch360(matchId: string) {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        id: true,
+        mode: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        settledAt: true,
+        createdAt: true,
+        updatedAt: true,
+        metadata: true,
+        gameDefinition: { select: { id: true, key: true, name: true, active: true } },
+        gameConfig: { select: { id: true, version: true, active: true, rankingEnabled: true, maxQuestions: true, maxMatchDurationSeconds: true, rewardCurrencyCode: true } },
+        createdBy: { select: { id: true, username: true, email: true, status: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true } } } },
+        participants: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            userId: true,
+            participantType: true,
+            finalScore: true,
+            answeredCount: true,
+            result: true,
+            submittedAt: true,
+            createdAt: true,
+            updatedAt: true,
+            user: { select: { id: true, username: true, email: true, status: true, isSystemAdmin: true, firstName: true, lastName: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true, level: true, xp: true, elo: true } } } },
+            _count: { select: { events: true, assignments: true } },
+          },
+        },
+        rounds: {
+          orderBy: { roundIndex: "asc" },
+          select: { id: true, roundIndex: true, status: true, startedAt: true, endedAt: true, createdAt: true, gameDefinition: { select: { key: true, name: true } } },
+        },
+        events: {
+          orderBy: [{ serverReceivedAt: "asc" }, { sequence: "asc" }],
+          take: 2000,
+          select: {
+            id: true,
+            participantId: true,
+            roundId: true,
+            sequence: true,
+            eventType: true,
+            clientEventId: true,
+            payload: true,
+            clientOccurredAt: true,
+            serverReceivedAt: true,
+            accepted: true,
+            rejectionReason: true,
+            participant: { select: { userId: true, participantType: true, user: { select: { username: true, profile: { select: { displayName: true } } } } } },
+          },
+        },
+        assignments: {
+          orderBy: [{ participantId: "asc" }, { position: "asc" }],
+          take: 1000,
+          select: {
+            id: true,
+            participantId: true,
+            roundId: true,
+            position: true,
+            servedAt: true,
+            expiresAt: true,
+            answeredAt: true,
+            participant: { select: { userId: true, user: { select: { username: true, profile: { select: { displayName: true } } } } } },
+            contentItem: { select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } },
+          },
+        },
+        settlement: { select: { id: true, policyVersion: true, settlementJson: true, createdAt: true, winnerParticipantId: true } },
+        matchmakingTickets: { orderBy: { createdAt: "asc" }, take: 20, select: { id: true, userId: true, mode: true, status: true, isRankingMatch: true, levelSnapshot: true, eloSnapshot: true, countryCodeSnapshot: true, constraints: true, createdAt: true, matchedAt: true, cancelledAt: true, user: { select: { username: true, profile: { select: { displayName: true } } } } } },
+        matchmakingInvite: { select: { id: true, status: true, createdAt: true, acceptedAt: true, respondedAt: true, expiresAt: true, inviter: { select: { id: true, username: true, profile: { select: { displayName: true } } } }, invitee: { select: { id: true, username: true, profile: { select: { displayName: true } } } } } },
+      },
+    })
+    if (!match) throw new NotFoundException("Match not found")
+    return this.serialize(match)
   }
 
   getUserDetails(userId: string) {

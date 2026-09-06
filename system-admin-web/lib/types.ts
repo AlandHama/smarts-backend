@@ -262,6 +262,35 @@ export interface Player360Data {
   presence: { online: boolean; lastSeenAt: string | null; lastHeartbeatAt: string | null };
 }
 
+export interface MatchSummary {
+  id: string;
+  mode: string;
+  status: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  settledAt: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown> | null;
+  gameDefinition: { key: string; name: string };
+  createdBy: { id: string; username: string; email: string | null; profile: { displayName: string; avatarUrl: string | null } | null };
+  participants: Array<{ id: string; userId: string | null; participantType: string; finalScore: number | null; answeredCount: number; result: string; submittedAt: string | null; user: { id: string; username: string; email: string | null; profile: { displayName: string; avatarUrl: string | null; countryCode: string | null } | null } | null }>;
+  _count: { events: number; assignments: number; rounds: number };
+}
+
+export interface Match360Data extends Omit<MatchSummary, 'gameDefinition' | 'createdBy' | 'participants'> {
+  updatedAt: string;
+  gameDefinition: { id: string; key: string; name: string; active: boolean };
+  gameConfig: { id: string; version: number; active: boolean; rankingEnabled: boolean; maxQuestions: number; maxMatchDurationSeconds: number; rewardCurrencyCode: string };
+  createdBy: { id: string; username: string; email: string | null; status: string; profile: { displayName: string; avatarUrl: string | null; countryCode: string | null } | null };
+  participants: Array<{ id: string; userId: string | null; participantType: string; finalScore: number | null; answeredCount: number; result: string; submittedAt: string | null; createdAt: string; updatedAt: string; user: { id: string; username: string; email: string | null; status: string; isSystemAdmin: boolean; firstName: string | null; lastName: string | null; profile: { displayName: string; avatarUrl: string | null; countryCode: string | null; level: number; xp: string; elo: number } | null } | null; _count: { events: number; assignments: number } }>;
+  rounds: Array<{ id: string; roundIndex: number; status: string; startedAt: string | null; endedAt: string | null; createdAt: string; gameDefinition: { key: string; name: string } }>;
+  events: Array<{ id: string; participantId: string; roundId: string | null; sequence: number; eventType: string; clientEventId: string; payload: unknown; clientOccurredAt: string | null; serverReceivedAt: string; accepted: boolean; rejectionReason: string | null; participant: { userId: string | null; participantType: string; user: { username: string; profile: { displayName: string } | null } | null } }>;
+  assignments: Array<{ id: string; participantId: string; roundId: string | null; position: number; servedAt: string; expiresAt: string | null; answeredAt: string | null; participant: { userId: string | null; user: { username: string; profile: { displayName: string } | null } | null }; contentItem: { id: string; contentType: string; prompt: unknown; options: unknown; difficulty: number; category: string | null } }>;
+  settlement: { id: string; policyVersion: string; settlementJson: unknown; createdAt: string; winnerParticipantId: string | null } | null;
+  matchmakingTickets: Array<{ id: string; userId: string; mode: string; status: string; isRankingMatch: boolean; levelSnapshot: number; eloSnapshot: string; countryCodeSnapshot: string | null; constraints: unknown; createdAt: string; matchedAt: string | null; cancelledAt: string | null; user: { username: string; profile: { displayName: string } | null } }>;
+  matchmakingInvite: { id: string; status: string; createdAt: string; acceptedAt: string | null; respondedAt: string | null; expiresAt: string; inviter: { id: string; username: string; profile: { displayName: string } | null }; invitee: { id: string; username: string; profile: { displayName: string } | null } } | null;
+}
+
 export interface AdminSession {
   id: string;
   sessionStatus: 'ACTIVE' | 'TERMINATED';

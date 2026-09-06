@@ -29,7 +29,7 @@ export class AuthService {
     if (user.status === "BANNED") throw new UnauthorizedException("User is banned")
     if (user.status !== "ACTIVE") throw new UnauthorizedException("User is inactive")
 
-    const token = await this.tokenService.generateAuthToken(user, request, this.isMobile(request))
+    const token = await this.tokenService.generateAuthToken({ ...user, isSystemAdmin: user.isSystemAdmin }, request, this.isMobile(request))
     await this.usersService.updateLastOnline(user.id)
     return { token, user: this.usersService.toResponse(user) }
   }

@@ -35,7 +35,14 @@ async function bootstrap() {
 
   // The system-admin-web project is exported during the application build and
   // served by the same Railway process under the stable /system-admin path.
-  app.use("/system-admin", express.static(join(process.cwd(), "system-admin-web", "out"), { extensions: ["html"] }))
+  const adminWebRoot = join(process.cwd(), "system-admin-web", "out")
+  app.use("/system-admin", express.static(adminWebRoot, { extensions: ["html"] }))
+  // The admin console is a static export, but its client-side pages still use
+  // real browser paths. Serve the shell for those paths so refresh/deep links
+  // such as /system-admin/matches/<uuid>/ continue to work on Railway.
+  app.getHttpAdapter().getInstance().get(/^\/system-admin\/(?!api(?:\/|$)).*/, (_request: unknown, response: any) => {
+    response.sendFile(join(adminWebRoot, "index.html"))
+  })
 
   await app.listen(Number(process.env.PORT ?? 8080), "0.0.0.0")
 }

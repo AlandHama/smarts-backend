@@ -25,16 +25,18 @@ export class TokenService {
     private readonly rotateSessionTransaction: RotateSessionTransaction,
   ) {}
 
-  async generateAuthToken(user: { id: string; username: string }, request?: any, isMobile = false): Promise<TokenDto> {
+  async generateAuthToken(user: { id: string; username: string; isSystemAdmin?: boolean }, request?: any, isMobile = false): Promise<TokenDto> {
     return this.createTokenPair(user, request, isMobile)
   }
 
   async generateRefreshToken(refreshToken: string, request?: any, isMobile = false): Promise<TokenDto> {
     const payload = this.verify(refreshToken, TokenType.RefreshToken)
     if (payload.tokenUse !== TokenType.RefreshToken) throw new UnauthorizedException("Invalid refresh token")
+    const user = await this.usersService.findById(payload.userId)
+    if (!user || user.status !== "ACTIVE") throw new UnauthorizedException("Invalid refresh token")
 
     const replacement = await this.createTokenPairData(
-      { id: payload.userId, username: payload.username },
+      { id: user.id, username: user.username, isSystemAdmin: user.isSystemAdmin },
       request,
       isMobile,
     )
@@ -77,7 +79,7 @@ export class TokenService {
   }
 
   private async createTokenPair(
-    user: { id: string; username: string },
+    user: { id: string; username: string; isSystemAdmin?: boolean },
     request: any,
     isMobile: boolean,
   ): Promise<TokenDto> {
@@ -87,15 +89,17 @@ export class TokenService {
   }
 
   private async createTokenPairData(
-    user: { id: string; username: string },
+    user: { id: string; username: string; isSystemAdmin?: boolean },
     request: any,
     isMobile: boolean,
   ): Promise<{ token: TokenDto; session: SessionCreateData }> {
     const tokenId = randomUUID()
-    const payload = { sub: user.id, userId: user.id, username: user.username, tokenId }
+    const payload = { sub: user.id, userId: user.id, username: user.username, isSystemAdmin: user.isSystemAdmin === true, tokenId }
+    const accessExpiresIn = user.isSystemAdmin ? this.config.adminAccessExpiresIn : this.config.accessExpiresIn
+    const accessExpiresInSeconds = user.isSystemAdmin ? this.config.adminAccessExpiresInSeconds : this.config.accessExpiresInSeconds
     const accessToken = this.jwtService.sign({ ...payload, tokenUse: TokenType.AccessToken }, {
       secret: this.config.accessSecret,
-      expiresIn: this.config.accessExpiresIn as any,
+      expiresIn: accessExpiresIn as any,
       algorithm: "HS256",
     })
     const refreshToken = this.jwtService.sign({ ...payload, tokenUse: TokenType.RefreshToken }, {
@@ -110,7 +114,7 @@ export class TokenService {
       token: {
         tokenType: TOKEN_TYPE,
         accessToken,
-        accessTokenExpires: this.config.accessExpiresInSeconds,
+        accessTokenExpires: accessExpiresInSeconds,
         refreshToken,
         refreshTokenExpires: this.config.refreshExpiresInSeconds,
       },

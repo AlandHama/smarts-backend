@@ -8,7 +8,7 @@ import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { SystemAdminGuard } from "./system-admin.guard"
 import { SystemAdminService } from "./system-admin.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminMatchesQueryDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
 import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
@@ -18,11 +18,16 @@ import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, Update
 import type { UploadedImage } from "../storage/types"
 import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
 import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto"
+import { RefreshTokenRequestDto } from "../auth/dtos/refresh-token-request.dto"
+import { TokenService } from "../auth/services/token.service"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
 export class SystemAdminController {
-  constructor(private readonly systemAdminService: SystemAdminService) {}
+  constructor(
+    private readonly systemAdminService: SystemAdminService,
+    private readonly tokenService: TokenService,
+  ) {}
 
   @UseGuards(SystemAdminGuard)
   @Post("api/uploads")
@@ -97,6 +102,14 @@ export class SystemAdminController {
     return this.systemAdminService.login(dto, request)
   }
 
+  @SkipAuth()
+  @Post("api/auth/refresh")
+  @HttpCode(200)
+  @ApiOperation({ summary: "Rotate a system administrator console refresh token" })
+  refresh(@Body() dto: RefreshTokenRequestDto, @Req() request: any) {
+    return this.tokenService.generateRefreshToken(dto.refreshToken, request, false)
+  }
+
   @UseGuards(SystemAdminGuard)
   @Get("api/overview")
   @ApiBearerAuth("access-token")
@@ -162,6 +175,18 @@ export class SystemAdminController {
   terminateSession(@Param("sessionId", ParseUUIDPipe) sessionId: string, @CurrentUser() admin: UserResponseDto) {
     return this.systemAdminService.terminateSession(sessionId, admin.id)
   }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/matches")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List match history for the system administrator console" })
+  matches(@Query() query: SystemAdminMatchesQueryDto) { return this.systemAdminService.listMatches(query) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/matches/:matchId/360")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Inspect a complete server-owned match timeline" })
+  match360(@Param("matchId", ParseUUIDPipe) matchId: string) { return this.systemAdminService.getMatch360(matchId) }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId/360")

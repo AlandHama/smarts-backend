@@ -2,8 +2,10 @@ export interface AuthConfig {
   accessSecret: string
   refreshSecret: string
   accessExpiresIn: string
+  adminAccessExpiresIn: string
   refreshExpiresIn: string
   accessExpiresInSeconds: number
+  adminAccessExpiresInSeconds: number
   refreshExpiresInSeconds: number
 }
 
@@ -46,13 +48,19 @@ export function getAuthConfig(): AuthConfig {
     process.env[`REFRESH_TOKEN_EXPIRES_IN_${environmentSuffix}`] ??
     process.env.REFRESH_TOKEN_EXPIRES_IN ??
     "30d"
+  const adminAccessExpiresIn =
+    process.env.SYSTEM_ADMIN_ACCESS_TOKEN_EXPIRES_IN ??
+    process.env.JWT_ADMIN_ACCESS_EXPIRES_IN ??
+    "1h"
 
   return {
     accessSecret,
     refreshSecret,
     accessExpiresIn,
+    adminAccessExpiresIn,
     refreshExpiresIn,
     accessExpiresInSeconds: durationToSeconds(accessExpiresIn),
+    adminAccessExpiresInSeconds: durationToSeconds(adminAccessExpiresIn),
     refreshExpiresInSeconds: durationToSeconds(refreshExpiresIn),
   }
 }
