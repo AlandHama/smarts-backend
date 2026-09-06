@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
 import { CompleteMatchDto, CreateMatchDto, MatchEventDto } from "./dtos"
+import { createAssignmentToken } from "./utilities/server-content"
 import { CreateMatchTransaction } from "./transactions/create-match-transaction"
 import { RecordMatchEventTransaction } from "./transactions/record-match-event-transaction"
 import { CompleteMatchTransaction } from "./transactions/complete-match-transaction"
@@ -22,7 +23,14 @@ export class MatchService {
   async get(matchId: string, userId: string) {
     const match = await this.prisma.match.findFirst({ where: { id: matchId, participants: { some: { userId } } }, include: { gameDefinition: { select: { key: true, name: true } }, participants: { include: { user: { select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true } } } } } }, assignments: { where: { participant: { userId } }, orderBy: { position: "asc" }, include: { participant: { select: { userId: true } }, contentItem: { select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } } } }, settlement: true } })
     if (!match) throw new NotFoundException("Match not found")
-    return this.serializeMatch({ ...match, participants: match.participants.map((participant) => this.publicParticipant(participant, userId)) })
+    return this.serializeMatch({
+      ...match,
+      participants: match.participants.map((participant) => this.publicParticipant(participant, userId)),
+      // Assignment tokens are derived on demand for the authenticated
+      // participant. The database stores only their hashes, so GET /matches
+      // must rebuild the opaque token without exposing the match nonce.
+      assignments: match.assignments.map((assignment) => this.publicAssignment(assignment, match.serverNonce)),
+    })
   }
 
   async getSettlement(matchId: string, userId: string) {
@@ -58,6 +66,22 @@ export class MatchService {
       result: participant.result,
       ...(isCurrent ? { finalScore: participant.finalScore, answeredCount: participant.answeredCount, submittedAt: participant.submittedAt } : {}),
       ...(participant.user ? { user: participant.user } : {}),
+    }
+  }
+
+  private publicAssignment(assignment: any, serverNonce: string) {
+    return {
+      id: assignment.id,
+      participantId: assignment.participantId,
+      position: assignment.position,
+      token: createAssignmentToken(
+        serverNonce,
+        assignment.participantId,
+        assignment.roundId ?? "",
+        assignment.position,
+      ),
+      contentItem: assignment.contentItem,
+      expiresAt: assignment.expiresAt,
     }
   }
 }

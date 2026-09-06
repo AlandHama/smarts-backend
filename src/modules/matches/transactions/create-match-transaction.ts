@@ -24,6 +24,8 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
       const opponent = await transaction.user.findUnique({ where: { id: input.dto.opponentUserId }, select: { id: true, status: true } })
       if (!opponent || opponent.status !== "ACTIVE") throw new NotFoundException("Opponent not found or inactive")
     }
+    const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
+    if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
 
     const now = new Date()
     const match = await transaction.match.create({ data: { gameDefinitionId: game.id, gameConfigId: config.id, mode: input.dto.mode, status: "STARTED", serverNonce: randomBytes(32).toString("base64url"), startedAt: now, createdByUserId: input.userId, metadata: input.dto.metadata as Prisma.InputJsonValue | undefined } })
@@ -36,6 +38,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
 
     const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true } })
     const selectedItems = selectServerContent(items, config.maxQuestions, match.serverNonce)
+    if (!selectedItems.length) throw new ConflictException("No active server content is configured for this game")
     const assignments: Array<Record<string, unknown>> = []
     for (const participant of participants) {
       if (participant.participantType === MatchParticipantType.BOT) continue
@@ -46,7 +49,6 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
         assignments.push({ participantId: participant.id, id: assignment.id, position, token, contentItem: assignment.contentItem, expiresAt })
       }
     }
-    if (!selectedItems.length) assignments.push({ warning: "No active server content is configured; this match will be held for review." })
     return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments: assignments.filter((assignment) => assignment.participantId === participants[0].id) }
   }
 }
