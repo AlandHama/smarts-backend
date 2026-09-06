@@ -26,7 +26,8 @@ WITH seed (game_key, prompt, options, difficulty, category, answer_index, answer
 )
 INSERT INTO "GameContentItem" (
   "gameDefinitionId", "version", "contentType", "prompt", "options",
-  "difficulty", "category", "answerHash", "answerIndex", "active"
+  "difficulty", "category", "answerHash", "answerIndex", "active",
+  "createdAt", "updatedAt"
 )
 SELECT
   definition."id",
@@ -38,7 +39,9 @@ SELECT
   seed.category,
   seed.answer_hash,
   seed.answer_index,
-  true
+  true,
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
 FROM seed
 JOIN "GameDefinition" definition ON definition."key" = seed.game_key
 WHERE definition."active" = true
