@@ -1861,6 +1861,7 @@ build can remove old providers outright.
 
 Removal checklist:
 
+
 1. Remove LootLocker SDK/configuration and all `LootLocker*Service`,
    `LootLocker*Repository`, `lootlocker_config.json`, domain/game key reads,
    `x-session-token`, LootLocker ID parsing, and legacy session-key handling.
