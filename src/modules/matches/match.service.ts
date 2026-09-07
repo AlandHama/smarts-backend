@@ -9,6 +9,7 @@ import { RecordMatchEventTransaction } from "./transactions/record-match-event-t
 import { CompleteMatchTransaction } from "./transactions/complete-match-transaction"
 import { ForfeitMatchTransaction } from "./transactions/forfeit-match-transaction"
 import { StartMatchTransaction } from "./transactions/start-match-transaction"
+import { botDisplayName } from "./utilities/bot-display-name"
 
 @Injectable()
 export class MatchService {
@@ -25,7 +26,7 @@ export class MatchService {
     if (!match) throw new NotFoundException("Match not found")
     return this.serializeMatch({
       ...match,
-      participants: match.participants.map((participant) => this.publicParticipant(participant, userId)),
+      participants: match.participants.map((participant) => this.publicParticipant(participant, userId, undefined, match.id)),
       // Assignment tokens are derived on demand for the authenticated
       // participant. The database stores only their hashes, so GET /matches
       // must rebuild the opaque token without exposing the match nonce.
@@ -51,20 +52,26 @@ export class MatchService {
 
   private serializeMatch<T extends Record<string, any>>(value: T, userId?: string): T {
     const currentParticipantId = typeof value.currentParticipantId === "string" ? value.currentParticipantId : undefined
+    const matchId = typeof value.id === "string" ? value.id : value.match?.id
     const match = value.match && typeof value.match === "object"
-      ? { ...value.match, participants: Array.isArray(value.match.participants) ? value.match.participants.map((participant: any) => this.publicParticipant(participant, userId, currentParticipantId)) : value.match.participants }
+      ? { ...value.match, participants: Array.isArray(value.match.participants) ? value.match.participants.map((participant: any) => this.publicParticipant(participant, userId, currentParticipantId, matchId)) : value.match.participants }
       : value
-    return this.serialize({ ...value, ...(value.match ? { match } : {}), ...(!value.match && Array.isArray(value.participants) ? { participants: value.participants.map((participant: any) => this.publicParticipant(participant, userId)) } : {}) })
+    return this.serialize({ ...value, ...(value.match ? { match } : {}), ...(!value.match && Array.isArray(value.participants) ? { participants: value.participants.map((participant: any) => this.publicParticipant(participant, userId, undefined, matchId)) } : {}) })
   }
 
-  private publicParticipant(participant: any, userId?: string, currentParticipantId?: string) {
-    const isCurrent = (userId && participant.userId === userId) || (currentParticipantId && participant.id === currentParticipantId)
+  private publicParticipant(participant: any, userId?: string, currentParticipantId?: string, matchId?: string) {
+    const displayName = participant.user?.profile?.displayName || participant.user?.username || (participant.participantType === "BOT" ? botDisplayName(matchId ?? participant.id, participant.id) : undefined)
     return {
       id: participant.id,
       userId: participant.userId,
       participantType: participant.participantType,
+      displayName,
       result: participant.result,
-      ...(isCurrent ? { finalScore: participant.finalScore, answeredCount: participant.answeredCount, submittedAt: participant.submittedAt } : {}),
+      // These are scoreboard projections, not private answer data. Every
+      // participant needs them so clients can render live and final scores.
+      finalScore: participant.finalScore ?? 0,
+      answeredCount: participant.answeredCount ?? 0,
+      submittedAt: participant.submittedAt,
       ...(participant.user ? { user: participant.user } : {}),
     }
   }

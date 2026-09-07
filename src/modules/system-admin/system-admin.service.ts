@@ -3,6 +3,7 @@ import { Prisma, UserStatus } from "@prisma/client"
 
 import { HashHelper } from "../../common/helpers/hash.helper"
 import { PrismaService } from "../../prisma.service"
+import { botDisplayName } from "../matches/utilities/bot-display-name"
 import { AuthService } from "../auth/services/auth.service"
 import { UsersService } from "../admin/access/users/users.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
@@ -387,7 +388,14 @@ export class SystemAdminService implements OnModuleInit {
         },
       }),
     ])
-    return this.serialize({ items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    const normalizedItems = items.map((match) => ({
+      ...match,
+      participants: match.participants.map((participant) => ({
+        ...participant,
+        displayName: participant.user?.profile?.displayName || participant.user?.username || (participant.participantType === "BOT" ? botDisplayName(match.id, participant.id) : null),
+      })),
+    }))
+    return this.serialize({ items: normalizedItems, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
   }
 
   async getMatch360(matchId: string) {
@@ -465,7 +473,13 @@ export class SystemAdminService implements OnModuleInit {
       },
     })
     if (!match) throw new NotFoundException("Match not found")
-    return this.serialize(match)
+    return this.serialize({
+      ...match,
+      participants: match.participants.map((participant) => ({
+        ...participant,
+        displayName: participant.user?.profile?.displayName || participant.user?.username || (participant.participantType === "BOT" ? botDisplayName(match.id, participant.id) : null),
+      })),
+    })
   }
 
   getUserDetails(userId: string) {

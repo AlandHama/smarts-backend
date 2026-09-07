@@ -26,7 +26,7 @@ import { api } from '../lib/api';
 import type { MatchSummary } from '../lib/types';
 
 const date = (value?: string | null) => value ? new Date(value).toLocaleString() : '—';
-const label = (participant: MatchSummary['participants'][number]) => participant.user?.profile?.displayName || participant.user?.username || (participant.participantType === 'BOT' ? 'Bot' : 'Unknown player');
+const label = (participant: MatchSummary['participants'][number]) => participant.displayName || participant.user?.profile?.displayName || participant.user?.username || (participant.participantType === 'BOT' ? 'Bot' : 'Unknown player');
 const statusColor = (status: string): 'success' | 'warning' | 'error' | 'info' | 'default' => status === 'SETTLED' || status === 'FINISHED' ? 'success' : status === 'REVIEW' || status === 'STARTED' ? 'warning' : status === 'CANCELLED' ? 'error' : 'default';
 
 export function MatchesView({ onOpenMatch360 }: { onOpenMatch360: (matchId: string) => void }) {

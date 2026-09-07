@@ -8,6 +8,7 @@ import { ApplyLeaderboardScoreTransaction } from "../../leaderboard/transactions
 import { AwardProgressionPointsTransaction } from "../../progression/transactions/award-progression-points-transaction"
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
+import { botDisplayName } from "../utilities/bot-display-name"
 
 type SettleInput = { matchId: string; userId: string; idempotencyKey: string }
 
@@ -61,7 +62,23 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       await transaction.matchParticipant.update({ where: { id: item.participant.id }, data: { result, submittedAt: item.participant.submittedAt ?? new Date() } })
       // Bots participate in the result calculation but never receive player
       // progression, wallet, leaderboard, or audit rewards.
-      if (!player?.id) continue
+      if (!player?.id) {
+        // Bots do not receive rewards, but their authoritative result still
+        // belongs in the settlement projection so clients can render the
+        // opponent's final score and name.
+        results.push({
+          playerId: item.participant.id,
+          username: botDisplayName(lockedMatch.id, item.participant.id),
+          participantType: item.participant.participantType,
+          result,
+          score: item.score.toString(),
+          eloDelta: "0",
+          progression: null,
+          eloProgression: null,
+          wallet: null,
+        })
+        continue
+      }
       const scoreDiff = winner && !isDraw ? item.score - (winner.participant.id === item.participant.id ? scores.find((candidate) => candidate.participant.id !== item.participant.id)?.score ?? 0n : winner.score) : 0n
       const eloDelta = item.participant.result === "FORFEIT" ? 0n : lockedMatch.mode === "SINGLE_PLAYER" || lockedMatch.mode === "BOT"
         ? this.multiply(BigInt(Math.min(config.soloEloMaxDelta, Number(item.score / BigInt(config.soloEloScoreDivisor)))), config.rankingEnabled ? config.rankingEloMultiplier.toString() : "1")
