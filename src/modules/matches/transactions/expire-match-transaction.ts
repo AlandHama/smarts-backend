@@ -13,7 +13,11 @@ export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: n
     const matches = await transaction.match.findMany({ where: { status: { in: ["CREATED", "STARTED"] }, OR: [{ createdAt: { lte: now } }] }, include: { gameConfig: { select: { maxMatchDurationSeconds: true } } }, take: 100 })
     let expired = 0
     for (const match of matches) {
-      const cutoff = new Date(now.getTime() - match.gameConfig.maxMatchDurationSeconds * 1000)
+      // Flutter submits FINISH when its synchronized match clock reaches the
+      // limit. Give that request a small server-side network grace window so
+      // the expiry worker cannot cancel a legitimate completion at the exact
+      // boundary.
+      const cutoff = new Date(now.getTime() - (match.gameConfig.maxMatchDurationSeconds + this.finishGraceSeconds()) * 1000)
       const reference = match.status === "STARTED" ? (await transaction.match.findUnique({ where: { id: match.id }, select: { startedAt: true } }))?.startedAt : match.createdAt
       if (!reference || reference > cutoff) continue
       await transaction.$queryRaw`SELECT "id" FROM "Match" WHERE "id" = ${match.id} FOR UPDATE`
@@ -25,5 +29,10 @@ export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: n
       expired += 1
     }
     return { expired }
+  }
+
+  private finishGraceSeconds() {
+    const value = Number(process.env.MATCH_FINISH_GRACE_SECONDS)
+    return Number.isFinite(value) && value >= 3 && value <= 60 ? Math.floor(value) : 15
   }
 }

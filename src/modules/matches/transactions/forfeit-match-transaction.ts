@@ -19,6 +19,8 @@ export class ForfeitMatchTransaction extends PrismaTransaction<{ matchId: string
     const round = match.rounds[0]
     if (!round) throw new ConflictException("The match has no active round")
     if (participant.result !== "PENDING") return { matchId: match.id, status: match.status, result: participant.result }
+    const acceptedFinish = await transaction.matchEvent.findFirst({ where: { matchId: match.id, participantId: participant.id, eventType: "FINISH", accepted: true }, select: { id: true } })
+    if (acceptedFinish) return { matchId: match.id, status: match.status, result: "COMPLETED" }
     const previous = await transaction.matchEvent.findFirst({ where: { matchId: match.id, participantId: participant.id }, orderBy: { sequence: "desc" }, select: { sequence: true } })
     await transaction.matchEvent.create({ data: { matchId: match.id, participantId: participant.id, roundId: round.id, sequence: (previous?.sequence ?? 0) + 1, eventType: "FORFEIT", clientEventId: `server-forfeit-${participant.id}-${Date.now()}`, accepted: true, payload: { submitted: true } as Prisma.InputJsonValue } })
     await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "FORFEIT", submittedAt: new Date() } })

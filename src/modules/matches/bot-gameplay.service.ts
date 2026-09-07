@@ -2,9 +2,10 @@ import { Injectable } from "@nestjs/common"
 import { createHash } from "node:crypto"
 import { MatchParticipantType, Prisma } from "@prisma/client"
 
+import { PrismaService } from "../../prisma.service"
 import { createAssignmentToken } from "./utilities/server-content"
 
-type BotCompletionInput = { matchId: string; userId: string }
+type BotCompletionInput = { matchId: string; userId?: string; finalize?: boolean }
 
 type AnswerProfile = {
   answers: number
@@ -20,16 +21,50 @@ type LearningProfile = {
 }
 
 /**
- * Produces a server-owned bot projection when the human player completes a
- * bot match. Learning is deliberately derived from accepted human answer
- * events only, so bot answers never train the bot or amplify their own skill.
+ * Produces a server-owned bot projection while a bot match is active and
+ * completes that projection when the human player finishes. Learning is
+ * deliberately derived from accepted human answer events only, so bot
+ * answers never train the bot or amplify their own skill.
  */
 @Injectable()
 export class BotGameplayService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** Advance active bots from the server worker so their score is visible
+   * during play, even for legacy game screens that do not submit ANSWER events
+   * for every local challenge yet. */
+  async progressActiveMatches() {
+    const matches = await this.prisma.match.findMany({
+      where: {
+        mode: "BOT",
+        status: "STARTED",
+        participants: {
+          some: { participantType: MatchParticipantType.BOT, result: "PENDING" },
+        },
+      },
+      orderBy: { startedAt: "asc" },
+      take: 100,
+      select: { id: true },
+    })
+    for (const match of matches) {
+      await this.prisma.$transaction((transaction) =>
+        this.progressWithinTransaction({ matchId: match.id, finalize: false }, transaction),
+      )
+    }
+  }
+
   async completeWithinTransaction(
     input: BotCompletionInput,
     transaction: Prisma.TransactionClient,
   ) {
+    return this.progressWithinTransaction({ ...input, finalize: true }, transaction)
+  }
+
+  private async progressWithinTransaction(
+    input: BotCompletionInput,
+    transaction: Prisma.TransactionClient,
+  ) {
+    await transaction.$executeRaw`SELECT "id" FROM "Match" WHERE "id" = ${input.matchId} FOR UPDATE`
     const match = await transaction.match.findUnique({
       where: { id: input.matchId },
       include: {
@@ -41,7 +76,6 @@ export class BotGameplayService {
           take: 1,
         },
         assignments: {
-          where: { participant: { userId: input.userId } },
           orderBy: { position: "asc" },
           include: { contentItem: true },
         },
@@ -52,36 +86,39 @@ export class BotGameplayService {
     const bot = match.participants.find(
       (participant) => participant.participantType === MatchParticipantType.BOT,
     )
-    const player = match.participants.find(
-      (participant) => participant.userId === input.userId,
+    const player = match.participants.find((participant) =>
+      participant.participantType === MatchParticipantType.PLAYER &&
+      (!input.userId || participant.userId === input.userId),
     )
     const round = match.rounds[0]
     if (!bot || !player || !round || bot.result !== "PENDING") return
-
-    const humanAnswers = await transaction.matchEvent.count({
-      where: {
-        matchId: match.id,
-        participantId: player.id,
-        eventType: "ANSWER",
-        accepted: true,
-      },
-    })
     const now = new Date()
 
-    // A player who submitted no verified answer is sent to review. The bot
-    // still closes its participant row, but must not manufacture evidence
-    // that would turn an empty human game into a rewarded result.
-    if (!humanAnswers || !match.assignments.length) {
-      await transaction.matchParticipant.update({
-        where: { id: bot.id },
-        data: { result: "COMPLETED", finalScore: 0, submittedAt: now },
-      })
+    const playerAssignments = match.assignments.filter(
+      (assignment) => assignment.participantId === player.id,
+    )
+    if (!playerAssignments.length) {
+      if (input.finalize) {
+        await transaction.matchParticipant.update({
+          where: { id: bot.id },
+          data: { result: "COMPLETED", finalScore: 0, answeredCount: 0, submittedAt: now },
+        })
+      }
       return
     }
 
-    const learning = await this.loadLearningProfile(match.id, match.gameDefinitionId, input.userId, transaction)
-    const botAssignments = []
-    for (const playerAssignment of match.assignments) {
+    const learning = await this.loadLearningProfile(
+      match.id,
+      match.gameDefinitionId,
+      player.userId ?? "",
+      transaction,
+    )
+    const existingBotAssignments = match.assignments.filter(
+      (assignment) => assignment.participantId === bot.id,
+    )
+    const botAssignments = [...existingBotAssignments]
+    for (const playerAssignment of playerAssignments) {
+      if (botAssignments.some((assignment) => assignment.position === playerAssignment.position)) continue
       const token = createAssignmentToken(
         match.serverNonce,
         bot.id,
@@ -100,14 +137,26 @@ export class BotGameplayService {
         },
         include: { contentItem: true },
       })
-      botAssignments.push({ assignment: botAssignment, token })
+      botAssignments.push(botAssignment)
     }
+    botAssignments.sort((left, right) => left.position - right.position)
 
-    let score = 0
-    let simulatedCount = 0
+    const maxTimeMs = Math.max(1000, match.gameConfig.maxAnswerTimeSeconds * 1000)
+    const paceMs = this.botAnswerPace(learning, maxTimeMs, match.serverNonce)
+    const elapsedMs = Math.max(
+      0,
+      now.getTime() - (match.startedAt ?? match.createdAt).getTime(),
+    )
+    const targetAnswers = Math.min(
+      botAssignments.length,
+      Math.floor(elapsedMs / paceMs),
+    )
+    let score = bot.finalScore ?? 0
+    let simulatedCount = bot.answeredCount ?? 0
     const correctPointsConfig = (match.gameConfig.correctAnswerPoints ?? {}) as Record<string, unknown>
     const penaltyPercent = match.gameConfig.wrongAnswerPenaltyPercent
-    for (const { assignment } of botAssignments.slice(0, humanAnswers)) {
+    const unanswered = botAssignments.filter((assignment) => !assignment.answeredAt)
+    for (const assignment of unanswered.slice(0, Math.max(0, targetAnswers - simulatedCount))) {
       const content = assignment.contentItem
       const profile = learning.byContent.get(content.id) ?? learning.global
       const accuracy = this.targetAccuracy(profile, learning.playerAccuracy, learning.global)
@@ -123,12 +172,11 @@ export class BotGameplayService {
             options.length,
             `${match.serverNonce}:wrong:${assignment.id}`,
           )
-      const maxTimeMs = Math.max(1000, match.gameConfig.maxAnswerTimeSeconds * 1000)
       const averageTimeMs = profile.timedAnswers
         ? profile.totalTimeMs / profile.timedAnswers
         : learning.global.timedAnswers
           ? learning.global.totalTimeMs / learning.global.timedAnswers
-          : maxTimeMs * 0.55
+          : 2200
       const timeTakenMs = Math.max(
         250,
         Math.min(maxTimeMs - 100, Math.round(averageTimeMs * (0.85 + random * 0.3))),
@@ -161,7 +209,7 @@ export class BotGameplayService {
       })
       await transaction.matchContentAssignment.update({
         where: { id: assignment.id },
-        data: { answeredAt: new Date() },
+        data: { answeredAt: now },
       })
       simulatedCount += 1
     }
@@ -169,12 +217,21 @@ export class BotGameplayService {
     await transaction.matchParticipant.update({
       where: { id: bot.id },
       data: {
-        result: "COMPLETED",
         finalScore: score,
         answeredCount: simulatedCount,
-        submittedAt: now,
+        ...(input.finalize
+          ? { result: "COMPLETED" as const, submittedAt: now }
+          : {}),
       },
     })
+  }
+
+  private botAnswerPace(learning: LearningProfile, maxTimeMs: number, seed: string) {
+    const learnedAverage = learning.global.timedAnswers
+      ? learning.global.totalTimeMs / learning.global.timedAnswers
+      : 2200
+    const variation = 0.9 + this.randomFraction(`${seed}:pace`) * 0.2
+    return Math.max(900, Math.min(maxTimeMs - 100, Math.round(learnedAverage * variation)))
   }
 
   private async loadLearningProfile(

@@ -3,6 +3,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import { ClaimMatchmakingPairTransaction } from "./transactions/claim-matchmaking-pair-transaction"
 import { ExpireMatchmakingTicketsTransaction } from "./transactions/expire-matchmaking-tickets-transaction"
 import { ExpireMatchTransaction } from "../matches/transactions/expire-match-transaction"
+import { BotGameplayService } from "../matches/bot-gameplay.service"
 import { matchmakerBatchSize } from "./utilities/matchmaking-policy"
 
 @Injectable()
@@ -11,7 +12,7 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>
   private running = false
 
-  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction) {}
+  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction, private readonly botGameplay: BotGameplayService) {}
 
   onModuleInit() {
     void this.tick()
@@ -26,6 +27,7 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.expireTickets.run()
       await this.expireMatches.run()
+      await this.botGameplay.progressActiveMatches()
       for (let index = 0; index < matchmakerBatchSize(); index += 1) {
         const result = await this.claimPair.run()
         if (!result) break

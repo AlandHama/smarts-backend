@@ -20,6 +20,6 @@ import { BotGameplayService } from "./bot-gameplay.service"
   imports: [DatabaseModule, GameModule, ProgressionModule, EconomyModule, LeaderboardModule],
   controllers: [MatchController],
   providers: [MatchService, CreateMatchTransaction, RecordMatchEventTransaction, CompleteMatchTransaction, SettleMatchTransaction, StartMatchTransaction, ForfeitMatchTransaction, ExpireMatchTransaction, BotGameplayService],
-  exports: [MatchService, SettleMatchTransaction, ExpireMatchTransaction],
+  exports: [MatchService, SettleMatchTransaction, ExpireMatchTransaction, BotGameplayService],
 })
 export class MatchesModule {}
