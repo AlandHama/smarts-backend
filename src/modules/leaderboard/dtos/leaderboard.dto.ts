@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger"
+import { Transform } from "class-transformer"
 import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from "class-validator"
 import { LeaderboardDirection, LeaderboardMemberType, LeaderboardPeriod, LeaderboardScoreSourceType, LeaderboardWritePolicy } from "@prisma/client"
 
@@ -50,6 +51,14 @@ export class UpdateLeaderboardDto extends PartialType(CreateLeaderboardDto) {}
 export class LeaderboardQueryDto {
   @ApiPropertyOptional({ default: 25, maximum: 100 })
   @IsOptional()
+  // Older mobile builds requested 200 entries. Normalize that legacy value
+  // at the API boundary so they continue to work while new clients request
+  // the supported maximum directly.
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === "") return value
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? Math.min(100, Math.max(1, Math.trunc(parsed))) : value
+  })
   @IsInt()
   @Min(1)
   @Max(100)
