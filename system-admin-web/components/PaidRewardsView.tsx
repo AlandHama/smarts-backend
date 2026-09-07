@@ -145,8 +145,8 @@ export function PaidRewardsView({
                 Reward requests
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Codes remain masked in the admin list and are delivered through
-                the player account.
+                Full redeem codes are visible to authorized administrators for
+                fulfillment and support.
               </Typography>
             </div>
             <Chip label={`${requests.length} requests`} variant="outlined" />

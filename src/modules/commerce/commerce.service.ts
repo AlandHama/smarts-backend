@@ -144,14 +144,16 @@ export class CommerceService {
       if (asset.ownershipPolicy !== "UNIQUE") throw new BadRequestException("Paid redeem-code assets must use UNIQUE ownership")
       const variation = dto.variationKey ? await tx.assetVariation.findUnique({ where: { assetDefinitionId_key: { assetDefinitionId: asset.id, key: dto.variationKey.trim().toLowerCase() } } }) : null
       if (dto.variationKey && (!variation || !variation.active)) throw new NotFoundException("Asset variation not found or inactive")
-      const available = await tx.assetRedeemCode.count({ where: { assetDefinitionId: asset.id, assetVariationId: variation?.id ?? null, status: "AVAILABLE" } })
-      if (!available) throw new ConflictException("This asset is temporarily out of redeem codes")
       const inventoryItem = dto.inventoryItemId
         ? await tx.inventoryItem.findFirst({ where: { id: dto.inventoryItemId, userId, assetDefinitionId: asset.id, assetVariationId: variation?.id ?? null } })
         : null
       if (dto.inventoryItemId && !inventoryItem) throw new NotFoundException("The requested inventory item was not found")
-      const pending = await tx.paidRewardRequest.findFirst({ where: { userId, assetDefinitionId: asset.id, assetVariationId: variation?.id ?? null, status: "PENDING", ...(inventoryItem ? { inventoryItemId: inventoryItem.id } : {}) }, include: { assetDefinition: true, assetVariation: true, redeemCode: true } })
-      if (pending) return this.playerPaidReward(pending)
+      const existingRequest = inventoryItem
+        ? await tx.paidRewardRequest.findFirst({ where: { userId, inventoryItemId: inventoryItem.id }, orderBy: { requestedAt: "desc" }, include: { assetDefinition: true, assetVariation: true, redeemCode: true } })
+        : null
+      if (existingRequest) return this.playerPaidReward(existingRequest)
+      const available = await tx.assetRedeemCode.count({ where: { assetDefinitionId: asset.id, assetVariationId: variation?.id ?? null, status: "AVAILABLE" } })
+      if (!available) throw new ConflictException("This asset is temporarily out of redeem codes")
       if (inventoryItem?.metadata && typeof inventoryItem.metadata === "object" && !Array.isArray(inventoryItem.metadata) && "redemptionKey" in inventoryItem.metadata) throw new ConflictException("This inventory item already has a redeem code")
       const idempotencyKey = dto.idempotencyKey.trim()
       if (!idempotencyKey) throw new BadRequestException("idempotencyKey is required")
@@ -229,7 +231,7 @@ export class CommerceService {
     const normalizedStatus = status?.trim().toUpperCase()
     if (normalizedStatus && !["AVAILABLE", "ASSIGNED", "VOID"].includes(normalizedStatus)) throw new BadRequestException("Redeem code status is invalid")
     const rows = await this.prisma.assetRedeemCode.findMany({ where: { ...(assetKey ? { assetDefinition: { key: assetKey.trim().toLowerCase() } } : {}), ...(normalizedStatus ? { status: normalizedStatus as any } : {}) }, orderBy: { createdAt: "desc" }, take: 1000, include: { assetDefinition: { select: { id: true, key: true, name: true } }, assetVariation: { select: { id: true, key: true, name: true } }, assignedUser: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, request: { select: { id: true, status: true, requestedAt: true } } } })
-    return rows.map((row) => ({ ...row, code: this.maskCode(row.code) }))
+    return rows.map((row) => ({ ...row, code: row.code }))
   }
 
   private itemInclude() { return { assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true } }, prices: { where: { active: true }, include: { currency: { select: { code: true, name: true, precision: true, active: true } } } }, rewards: { orderBy: { sortOrder: "asc" as const }, include: { assetDefinition: { select: { key: true, name: true, imageUrl: true } }, assetVariation: { select: { key: true, name: true, imageUrl: true } }, currency: { select: { code: true, name: true } }, progressionDefinition: { select: { key: true, name: true } } } } } }
@@ -245,6 +247,5 @@ export class CommerceService {
   private isAvailable(startsAt: Date | null, endsAt: Date | null) { const now = Date.now(); return (!startsAt || startsAt.getTime() <= now) && (!endsAt || endsAt.getTime() > now) }
   private serialize<T>(value: T): T { return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) as T }
   private playerPaidReward(row: any) { return this.serialize({ id: row.id, status: row.status, requestKey: row.requestKey, inventoryItemId: row.inventoryItemId, message: row.message, adminNote: row.adminNote, requestedAt: row.requestedAt, decidedAt: row.decidedAt, asset: row.assetDefinition ? { id: row.assetDefinition.id, key: row.assetDefinition.key, name: row.assetDefinition.name, imageUrl: row.assetDefinition.imageUrl } : undefined, variation: row.assetVariation ? { id: row.assetVariation.id, key: row.assetVariation.key, name: row.assetVariation.name } : null, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
-  private adminPaidReward(row: any) { return this.serialize({ ...this.playerPaidReward(row), user: row.user, adminNote: row.adminNote, decidedBy: row.decidedBy, inventoryItemId: row.inventoryItemId, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: this.maskCode(row.redeemCode.code), status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
-  private maskCode(code: string) { const normalized = code.trim(); return normalized.length <= 4 ? "••••" : `${"•".repeat(Math.min(8, normalized.length - 4))}${normalized.slice(-4)}` }
+  private adminPaidReward(row: any) { return this.serialize({ ...this.playerPaidReward(row), user: row.user, adminNote: row.adminNote, decidedBy: row.decidedBy, inventoryItemId: row.inventoryItemId, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
 }

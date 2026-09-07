@@ -542,7 +542,7 @@ export class SystemAdminController {
   @UseGuards(SystemAdminGuard)
   @Get("api/commerce/assets/redeem-codes")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "List masked asset redeem codes and assignments" })
+  @ApiOperation({ summary: "List full asset redeem codes and assignments for authorized administrators" })
   redeemCodes(@Query("assetKey") assetKey?: string, @Query("status") status?: string) { return this.systemAdminService.listRedeemCodes(assetKey, status) }
 
   @UseGuards(SystemAdminGuard)
