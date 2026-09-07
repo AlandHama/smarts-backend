@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger"
 import { Type } from "class-transformer"
-import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from "class-validator"
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf } from "class-validator"
 
 import { AssetOwnershipPolicy, AssetType, CatalogRewardType, InventoryAcquisitionSource } from "@prisma/client"
 
@@ -88,6 +88,7 @@ export class InventoryMutationDto {
 export class PaidRewardRequestDto {
   @ApiProperty({ example: "gift-card:steam-10" }) @IsString() @MaxLength(100) assetKey!: string
   @ApiPropertyOptional({ example: "us" }) @IsOptional() @IsString() @MaxLength(100) variationKey?: string
+  @ApiPropertyOptional({ description: "The exact owned inventory instance this request is for." }) @IsOptional() @IsUUID() inventoryItemId?: string
   @ApiPropertyOptional({ example: "Please review my paid reward request." }) @IsOptional() @IsString() @MaxLength(500) message?: string
   @ApiProperty({ example: "mobile-paid-reward-2026-0001" }) @IsString() @MaxLength(128) idempotencyKey!: string
 }

@@ -146,15 +146,20 @@ export class CommerceService {
       if (dto.variationKey && (!variation || !variation.active)) throw new NotFoundException("Asset variation not found or inactive")
       const available = await tx.assetRedeemCode.count({ where: { assetDefinitionId: asset.id, assetVariationId: variation?.id ?? null, status: "AVAILABLE" } })
       if (!available) throw new ConflictException("This asset is temporarily out of redeem codes")
-      const pending = await tx.paidRewardRequest.findFirst({ where: { userId, assetDefinitionId: asset.id, assetVariationId: variation?.id ?? null, status: "PENDING" }, include: { assetDefinition: true, assetVariation: true, redeemCode: true } })
+      const inventoryItem = dto.inventoryItemId
+        ? await tx.inventoryItem.findFirst({ where: { id: dto.inventoryItemId, userId, assetDefinitionId: asset.id, assetVariationId: variation?.id ?? null } })
+        : null
+      if (dto.inventoryItemId && !inventoryItem) throw new NotFoundException("The requested inventory item was not found")
+      const pending = await tx.paidRewardRequest.findFirst({ where: { userId, assetDefinitionId: asset.id, assetVariationId: variation?.id ?? null, status: "PENDING", ...(inventoryItem ? { inventoryItemId: inventoryItem.id } : {}) }, include: { assetDefinition: true, assetVariation: true, redeemCode: true } })
       if (pending) return this.playerPaidReward(pending)
+      if (inventoryItem?.metadata && typeof inventoryItem.metadata === "object" && !Array.isArray(inventoryItem.metadata) && "redemptionKey" in inventoryItem.metadata) throw new ConflictException("This inventory item already has a redeem code")
       const idempotencyKey = dto.idempotencyKey.trim()
       if (!idempotencyKey) throw new BadRequestException("idempotencyKey is required")
-      const requestHash = createHash("sha256").update(JSON.stringify({ userId, assetId: asset.id, variationId: variation?.id ?? null, message: dto.message?.trim() ?? null })).digest("hex")
+      const requestHash = createHash("sha256").update(JSON.stringify({ userId, assetId: asset.id, variationId: variation?.id ?? null, inventoryItemId: inventoryItem?.id ?? null, message: dto.message?.trim() ?? null })).digest("hex")
       const idem = await tx.idempotencyKey.upsert({ where: { scope_key: { scope: `paid-reward-request:${userId}`, key: idempotencyKey } }, create: { userId, scope: `paid-reward-request:${userId}`, key: idempotencyKey, requestHash, status: "PROCESSING" }, update: {} })
       if (idem.requestHash !== requestHash) throw new ConflictException("The request idempotency key is invalid")
       if (idem.status === "COMPLETED" && idem.responseJson) return idem.responseJson
-      const request = await tx.paidRewardRequest.create({ data: { userId, assetDefinitionId: asset.id, assetVariationId: variation?.id, requestKey: createHash("sha256").update(`${userId}:${idempotencyKey}`).digest("hex"), message: dto.message?.trim() || undefined, idempotencyKeyId: idem.id }, include: { assetDefinition: true, assetVariation: true, redeemCode: true } })
+      const request = await tx.paidRewardRequest.create({ data: { userId, assetDefinitionId: asset.id, assetVariationId: variation?.id, inventoryItemId: inventoryItem?.id, requestKey: createHash("sha256").update(`${userId}:${idempotencyKey}`).digest("hex"), message: dto.message?.trim() || undefined, idempotencyKeyId: idem.id }, include: { assetDefinition: true, assetVariation: true, redeemCode: true } })
       const result = this.playerPaidReward(request)
       await tx.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as Prisma.InputJsonValue, completedAt: new Date() } })
       return result
@@ -190,7 +195,14 @@ export class CommerceService {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`
       const code = await tx.assetRedeemCode.findFirst({ where: { assetDefinitionId: request.assetDefinitionId, assetVariationId: request.assetVariationId, status: "AVAILABLE" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })
       if (!code) throw new ConflictException("No redeem code is available for this asset")
-      const inventory = await this.grantInventoryTransaction.runWithinTransaction({ userId: request.userId, assetKey: request.assetDefinition.key, variationKey: request.assetVariation?.key, quantity: 1, source: "PAID_REWARD", sourceId: `paid-reward-request:${id}`, metadata: { requestId: id, redemptionKey: code.code, redeemCode: code.code, actorId, reason: dto.adminNote?.trim() || "Paid reward request approved" } }, tx)
+      const legacyInventory = request.inventoryItemId ? null : (await tx.inventoryItem.findMany({ where: { userId: request.userId, assetDefinitionId: request.assetDefinitionId, assetVariationId: request.assetVariationId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 100 })).find((item) => {
+        const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? item.metadata as Record<string, unknown> : {}
+        return typeof metadata.redemptionKey !== "string" || !metadata.redemptionKey
+      })
+      const targetInventoryId = request.inventoryItemId ?? legacyInventory?.id
+      const inventory = targetInventoryId
+        ? await this.attachRedeemCodeToInventory(tx, targetInventoryId, request.userId, id, code.code, actorId, dto.adminNote)
+        : await this.grantInventoryTransaction.runWithinTransaction({ userId: request.userId, assetKey: request.assetDefinition.key, variationKey: request.assetVariation?.key, quantity: 1, source: "PAID_REWARD", sourceId: `paid-reward-request:${id}`, metadata: { requestId: id, redemptionKey: code.code, redeemCode: code.code, actorId, reason: dto.adminNote?.trim() || "Paid reward request approved" } }, tx)
       await tx.assetRedeemCode.update({ where: { id: code.id }, data: { status: "ASSIGNED", assignedUserId: request.userId, assignedAt: now, requestId: id } })
       const updated = await tx.paidRewardRequest.update({ where: { id }, data: { status: "FULFILLED", adminNote: dto.adminNote?.trim() || undefined, inventoryItemId: inventory.id, decidedById: actorId, decidedAt: now }, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, assetDefinition: true, assetVariation: true, redeemCode: true, decidedBy: { select: { id: true, username: true } } } })
       await writeAdminAudit(tx, { actorId, action: "PAID_REWARD_FULFILLED", entityType: "PaidRewardRequest", entityId: id, reason: dto.adminNote, metadata: { userId: request.userId, assetKey: request.assetDefinition.key, redeemCodeId: code.id, inventoryItemId: inventory.id } })
@@ -221,11 +233,18 @@ export class CommerceService {
   }
 
   private itemInclude() { return { assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true } }, prices: { where: { active: true }, include: { currency: { select: { code: true, name: true, precision: true, active: true } } } }, rewards: { orderBy: { sortOrder: "asc" as const }, include: { assetDefinition: { select: { key: true, name: true, imageUrl: true } }, assetVariation: { select: { key: true, name: true, imageUrl: true } }, currency: { select: { code: true, name: true } }, progressionDefinition: { select: { key: true, name: true } } } } } }
+  private async attachRedeemCodeToInventory(tx: Prisma.TransactionClient, inventoryItemId: string, userId: string, requestId: string, code: string, actorId: string, adminNote?: string) {
+    const item = await tx.inventoryItem.findFirst({ where: { id: inventoryItemId, userId } })
+    if (!item) throw new NotFoundException("The requested inventory item was not found")
+    const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? item.metadata as Record<string, unknown> : {}
+    if (typeof metadata.redemptionKey === "string" && metadata.redemptionKey) throw new ConflictException("This inventory item already has a redeem code")
+    return tx.inventoryItem.update({ where: { id: item.id }, data: { metadata: { ...metadata, requestId, redemptionKey: code, redeemCode: code, actorId, reason: adminNote?.trim() || "Paid reward request approved" } as Prisma.InputJsonValue } })
+  }
   private date(value?: string) { return value ? new Date(value) : undefined }
   private assetKey(value: string) { return value.trim().toLowerCase() }
   private isAvailable(startsAt: Date | null, endsAt: Date | null) { const now = Date.now(); return (!startsAt || startsAt.getTime() <= now) && (!endsAt || endsAt.getTime() > now) }
   private serialize<T>(value: T): T { return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) as T }
-  private playerPaidReward(row: any) { return this.serialize({ id: row.id, status: row.status, requestKey: row.requestKey, message: row.message, adminNote: row.adminNote, requestedAt: row.requestedAt, decidedAt: row.decidedAt, asset: row.assetDefinition ? { id: row.assetDefinition.id, key: row.assetDefinition.key, name: row.assetDefinition.name, imageUrl: row.assetDefinition.imageUrl } : undefined, variation: row.assetVariation ? { id: row.assetVariation.id, key: row.assetVariation.key, name: row.assetVariation.name } : null, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
+  private playerPaidReward(row: any) { return this.serialize({ id: row.id, status: row.status, requestKey: row.requestKey, inventoryItemId: row.inventoryItemId, message: row.message, adminNote: row.adminNote, requestedAt: row.requestedAt, decidedAt: row.decidedAt, asset: row.assetDefinition ? { id: row.assetDefinition.id, key: row.assetDefinition.key, name: row.assetDefinition.name, imageUrl: row.assetDefinition.imageUrl } : undefined, variation: row.assetVariation ? { id: row.assetVariation.id, key: row.assetVariation.key, name: row.assetVariation.name } : null, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
   private adminPaidReward(row: any) { return this.serialize({ ...this.playerPaidReward(row), user: row.user, adminNote: row.adminNote, decidedBy: row.decidedBy, inventoryItemId: row.inventoryItemId, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: this.maskCode(row.redeemCode.code), status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
   private maskCode(code: string) { const normalized = code.trim(); return normalized.length <= 4 ? "••••" : `${"•".repeat(Math.min(8, normalized.length - 4))}${normalized.slice(-4)}` }
 }
