@@ -66,6 +66,42 @@ export class PlayersService {
     return this.findById(userId)
   }
 
+  async gameStats(userId: string) {
+    const stats = await this.prisma.playerGameStats.findMany({
+      where: { userId },
+      orderBy: { gameDefinition: { key: "asc" } },
+      select: {
+        gamesPlayed: true,
+        wins: true,
+        losses: true,
+        draws: true,
+        forfeits: true,
+        totalCorrect: true,
+        totalQuestions: true,
+        totalTimeMs: true,
+        totalScore: true,
+        bestScore: true,
+        lastPlayedAt: true,
+        gameDefinition: { select: { key: true, name: true } },
+      },
+    })
+    return stats.map((stat) => ({
+      gameKey: stat.gameDefinition.key,
+      gameName: stat.gameDefinition.name,
+      gamesPlayed: stat.gamesPlayed,
+      wins: stat.wins,
+      losses: stat.losses,
+      draws: stat.draws,
+      forfeits: stat.forfeits,
+      totalCorrect: stat.totalCorrect,
+      totalQuestions: stat.totalQuestions,
+      totalTimeMs: stat.totalTimeMs.toString(),
+      totalScore: stat.totalScore.toString(),
+      bestScore: stat.bestScore.toString(),
+      lastPlayedAt: stat.lastPlayedAt,
+    }))
+  }
+
   addXp(userId: string, xp: number | bigint) {
     return this.addXpTransaction.run({ userId, amount: BigInt(xp) })
   }

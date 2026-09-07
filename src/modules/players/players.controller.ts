@@ -19,6 +19,12 @@ export class PlayersController {
     return this.playersService.findById(user.id)
   }
 
+  @Get("me/game-stats")
+  @ApiOperation({ summary: "Get server-derived per-game statistics for the authenticated player" })
+  gameStats(@CurrentUser() user: UserResponseDto) {
+    return this.playersService.gameStats(user.id)
+  }
+
   @Get("me/progressions")
   @ApiOperation({ summary: "Get all current progressions for the authenticated player" })
   progressions(@CurrentUser() user: UserResponseDto) { return this.progressionService.getForPlayer(user.id) }
