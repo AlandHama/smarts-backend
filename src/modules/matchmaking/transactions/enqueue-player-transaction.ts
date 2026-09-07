@@ -33,6 +33,8 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const game = await transaction.gameDefinition.findUnique({ where: { key: dto.gameKey.trim().toLowerCase() }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     const config = game?.configs[0]
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
+    const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
+    if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
     if (dto.constraints && (Object.keys(dto.constraints).length > 12 || JSON.stringify(dto.constraints).length > 2000)) throw new BadRequestException("Matchmaking constraints are too large")
 

@@ -18,6 +18,8 @@ export class CreateFriendInviteTransaction extends PrismaTransaction<{ userId: s
     if (!friendship) throw new ConflictException("Players must be friends before sending a match invite")
     const game = await transaction.gameDefinition.findUnique({ where: { key: input.dto.gameKey.trim().toLowerCase() }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     if (!game || !game.active || !game.configs[0]) throw new NotFoundException("Game definition or configuration is inactive")
+    const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
+    if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
     const pending = await transaction.matchmakingInvite.findFirst({ where: { OR: [{ inviterId: input.userId, inviteeId: input.dto.friendId }, { inviterId: input.dto.friendId, inviteeId: input.userId }], status: "PENDING", expiresAt: { gt: new Date() } } })
     if (pending) throw new ConflictException("A friend match invite is already pending")
     const now = new Date()

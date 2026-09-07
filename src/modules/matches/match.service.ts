@@ -22,16 +22,27 @@ export class MatchService {
   forfeit(matchId: string, userId: string) { return this.forfeitMatch.run({ matchId, userId }).then((value) => this.serialize(value)) }
 
   async get(matchId: string, userId: string) {
-    const match = await this.prisma.match.findFirst({ where: { id: matchId, participants: { some: { userId } } }, include: { gameDefinition: { select: { key: true, name: true } }, participants: { include: { user: { select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true } } } } } }, assignments: { where: { participant: { userId } }, orderBy: { position: "asc" }, include: { participant: { select: { userId: true } }, contentItem: { select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } } } }, settlement: true } })
+    const match = await this.prisma.match.findFirst({ where: { id: matchId, participants: { some: { userId } } }, include: { gameDefinition: { select: { key: true, name: true } }, participants: { include: { user: { select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true } } } } } }, assignments: { where: { participant: { userId } }, orderBy: { position: "asc" }, include: { participant: { select: { userId: true } }, contentItem: { select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } } } }, rounds: { where: { status: { in: ["CREATED", "STARTED"] } }, orderBy: { roundIndex: "desc" }, take: 1, select: { challengeSeedHash: true } }, settlement: true } })
     if (!match) throw new NotFoundException("Match not found")
+    const { rounds, ...matchWithoutRounds } = match
     return this.serializeMatch({
-      ...match,
+      ...matchWithoutRounds,
+      // Seed-based legacy game screens still need a deterministic seed. The
+      // server only stores the commitment hash, so expose a bounded numeric
+      // projection rather than the hash itself or the server nonce.
+      challengeSeed: this.challengeSeedFromHash(rounds[0]?.challengeSeedHash),
       participants: match.participants.map((participant) => this.publicParticipant(participant, userId, undefined, match.id)),
       // Assignment tokens are derived on demand for the authenticated
       // participant. The database stores only their hashes, so GET /matches
       // must rebuild the opaque token without exposing the match nonce.
       assignments: match.assignments.map((assignment) => this.publicAssignment(assignment, match.serverNonce)),
     })
+  }
+
+  private challengeSeedFromHash(hash?: string) {
+    if (!hash) return undefined
+    const seed = Number.parseInt(hash.slice(0, 8), 16) % 2147483647
+    return seed || 1
   }
 
   async getSettlement(matchId: string, userId: string) {

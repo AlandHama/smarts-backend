@@ -20,6 +20,8 @@ export class AcceptFriendInviteTransaction extends PrismaTransaction<{ inviteId:
       throw new ConflictException("This friend match invite has expired")
     }
     if (invite.inviter.status !== "ACTIVE" || invite.invitee.status !== "ACTIVE" || !invite.gameDefinition.active || !invite.gameDefinition.configs[0]) throw new ConflictException("The friend match is no longer available")
+    const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: invite.gameDefinitionId, active: true } })
+    if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
     const now = new Date()
     const config = invite.gameDefinition.configs[0]
     const match = await transaction.match.create({ data: { gameDefinitionId: invite.gameDefinitionId, gameConfigId: config.id, mode: "CASUAL", status: "CREATED", serverNonce: randomBytes(32).toString("base64url"), createdByUserId: invite.inviterId, metadata: { source: "FRIEND_INVITE", inviteId: invite.id } as Prisma.InputJsonValue } })
