@@ -473,12 +473,56 @@ export class SystemAdminService implements OnModuleInit {
       },
     })
     if (!match) throw new NotFoundException("Match not found")
+    const assignmentsById = new Map(match.assignments.map((assignment) => [assignment.id, assignment]))
+    const answerEvents = match.events.filter((event) => event.eventType === "ANSWER" && event.accepted)
+    const detailsForEvent = (event: (typeof match.events)[number]) => {
+      const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+        ? event.payload as Record<string, unknown>
+        : {}
+      const assignmentId = typeof payload.assignmentId === "string" ? payload.assignmentId : undefined
+      const assignment = assignmentId ? assignmentsById.get(assignmentId) : undefined
+      const timeTakenMs = typeof payload.timeTakenMs === "number" ? payload.timeTakenMs : undefined
+      const pointsEarned = typeof payload.pointsEarned === "string" || typeof payload.pointsEarned === "number"
+        ? Number(payload.pointsEarned)
+        : undefined
+      return {
+        assignmentId,
+        questionNumber: assignment ? assignment.position + 1 : undefined,
+        prompt: assignment?.contentItem.prompt,
+        category: assignment?.contentItem.category,
+        difficulty: assignment?.contentItem.difficulty,
+        correct: typeof payload.correct === "boolean" ? payload.correct : undefined,
+        pointsEarned: Number.isFinite(pointsEarned) ? pointsEarned : undefined,
+        timeTakenMs,
+        source: typeof payload.source === "string" ? payload.source : undefined,
+      }
+    }
+    const enrichedEvents = match.events.map((event) => ({ ...event, answerDetails: event.eventType === "ANSWER" ? detailsForEvent(event) : null }))
+    const enrichedAssignments = match.assignments.map((assignment) => {
+      const answer = answerEvents.find((event) => {
+        const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {}
+        return payload.assignmentId === assignment.id
+      })
+      return { ...assignment, answerDetails: answer ? detailsForEvent(answer) : null }
+    })
+    const statsByParticipant = new Map<string, { correct: number; wrong: number; totalTimeMs: number }>()
+    for (const event of answerEvents) {
+      const details = detailsForEvent(event)
+      const stats = statsByParticipant.get(event.participantId) ?? { correct: 0, wrong: 0, totalTimeMs: 0 }
+      if (details.correct === true) stats.correct += 1
+      if (details.correct === false) stats.wrong += 1
+      if (typeof details.timeTakenMs === "number") stats.totalTimeMs += details.timeTakenMs
+      statsByParticipant.set(event.participantId, stats)
+    }
     return this.serialize({
       ...match,
       participants: match.participants.map((participant) => ({
         ...participant,
         displayName: participant.user?.profile?.displayName || participant.user?.username || (participant.participantType === "BOT" ? botDisplayName(match.id, participant.id) : null),
+        answerStats: statsByParticipant.get(participant.id) ?? { correct: 0, wrong: 0, totalTimeMs: 0 },
       })),
+      events: enrichedEvents,
+      assignments: enrichedAssignments,
     })
   }
 

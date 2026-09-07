@@ -1,4 +1,4 @@
-export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'BANNED';
+export type UserStatus = "ACTIVE" | "INACTIVE" | "BANNED";
 
 export interface AdminUser {
   id: string;
@@ -11,8 +11,27 @@ export interface AdminUser {
   createdAt: string;
   lastOnline: string | null;
   _count?: { sessions: number };
-  profile: { displayName: string; avatarUrl: string | null; countryCode: string | null; bio?: string | null; level: number; xp: string; elo: number; isPublic?: boolean; metadata?: Record<string, unknown> | null } | null;
-  stats: { gamesPlayed: number; wins: number; losses: number; draws: number; currentWinStreak: number; highestWinStreak: number; highestElo: number; totalScore: string } | null;
+  profile: {
+    displayName: string;
+    avatarUrl: string | null;
+    countryCode: string | null;
+    bio?: string | null;
+    level: number;
+    xp: string;
+    elo: number;
+    isPublic?: boolean;
+    metadata?: Record<string, unknown> | null;
+  } | null;
+  stats: {
+    gamesPlayed: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    currentWinStreak: number;
+    highestWinStreak: number;
+    highestElo: number;
+    totalScore: string;
+  } | null;
   wallet?: WalletSummary;
   progressions?: PlayerProgression[];
   sessions?: SessionSummary[];
@@ -33,7 +52,7 @@ export interface WalletBalance {
 
 export interface WalletLedgerEntry {
   id: string;
-  direction: 'CREDIT' | 'DEBIT' | 'REVERSAL';
+  direction: "CREDIT" | "DEBIT" | "REVERSAL";
   amount: string;
   balanceBefore: string;
   balanceAfter: string;
@@ -107,7 +126,7 @@ export interface LeaderboardSeason {
   id: string;
   startsAt: string;
   endsAt: string;
-  status: 'SCHEDULED' | 'ACTIVE' | 'CLOSED';
+  status: "SCHEDULED" | "ACTIVE" | "CLOSED";
   resetAt?: string | null;
 }
 
@@ -115,10 +134,10 @@ export interface LeaderboardDefinition {
   id: string;
   key: string;
   name: string;
-  memberType: 'PLAYER' | 'COUNTRY' | 'GENERIC';
-  period: 'ALL_TIME' | 'WEEKLY' | 'MONTHLY' | 'SEASONAL';
-  direction: 'ASCENDING' | 'DESCENDING';
-  writePolicy: 'SERVER_ONLY' | 'AUTHENTICATED_COMMAND';
+  memberType: "PLAYER" | "COUNTRY" | "GENERIC";
+  period: "ALL_TIME" | "WEEKLY" | "MONTHLY" | "SEASONAL";
+  direction: "ASCENDING" | "DESCENDING";
+  writePolicy: "SERVER_ONLY" | "AUTHENTICATED_COMMAND";
   active: boolean;
   seasons?: LeaderboardSeason[];
   _count?: { seasons: number; entries: number };
@@ -130,7 +149,12 @@ export interface LeaderboardEntry {
   playerId: string | null;
   score: string;
   rank: string | number;
-  player: { username: string; displayName: string | null; avatarUrl: string | null; countryCode: string | null } | null;
+  player: {
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    countryCode: string | null;
+  } | null;
 }
 
 export interface GameConfigRecord {
@@ -186,34 +210,247 @@ export interface TopPlayer {
   currency?: { code: string; name: string };
 }
 
-export interface OverviewMetrics { totalUsers: number; activeUsers: number; bannedUsers: number; activeAdmins: number; activeSessions: number; onlinePlayers: number; queueTickets: number; activeMatches: number; failedOutbox: number; pendingOutbox: number; failedPurchases: number; openFeedback: number; }
+export interface OverviewMetrics {
+  totalUsers: number;
+  activeUsers: number;
+  bannedUsers: number;
+  activeAdmins: number;
+  activeSessions: number;
+  onlinePlayers: number;
+  queueTickets: number;
+  activeMatches: number;
+  failedOutbox: number;
+  pendingOutbox: number;
+  failedPurchases: number;
+  openFeedback: number;
+}
 
 export interface AdminOperations {
   checkedAt: string;
-  health: { api: string; database: string; migrations: string; presenceWindowSeconds: number };
+  health: {
+    api: string;
+    database: string;
+    migrations: string;
+    presenceWindowSeconds: number;
+  };
   queue: { searchingTickets: number };
   matches: { active: number; review: number; settled: number };
   outbox: { pending: number; processing: number; failed: number };
   notifications: { pending: number; failed: number };
-  commerce: { failedPurchases: number; completedPurchases: number; inventoryRows: number };
-  rewards: { rejectedClaims: number; grantedClaims: number; activePolicies: number };
+  commerce: {
+    failedPurchases: number;
+    completedPurchases: number;
+    inventoryRows: number;
+  };
+  rewards: {
+    rejectedClaims: number;
+    grantedClaims: number;
+    activePolicies: number;
+  };
   feedback: { open: number };
   ledger: { leaderboardScoreEvents: number; walletTransactions: number };
-  recentOutbox: Array<{ id: string; eventType: string; aggregateType: string; aggregateId: string; status: string; attempts: number; lastError: string | null; createdAt: string; processedAt: string | null }>;
+  recentOutbox: Array<{
+    id: string;
+    eventType: string;
+    aggregateType: string;
+    aggregateId: string;
+    status: string;
+    attempts: number;
+    lastError: string | null;
+    createdAt: string;
+    processedAt: string | null;
+  }>;
   recentAudit: AdminAuditEvent[];
 }
 
-export interface AdminAuditEvent { id: string; action: string; entityType: string; entityId: string | null; reason: string; metadata: Record<string, unknown> | null; createdAt: string; actor: { id: string; username: string; email: string | null; profile: { displayName: string } | null } }
-export interface PlayerAuditChange { old: unknown; new: unknown; description?: string }
-export interface PlayerAuditEvent { id: string; userId: string; actorType: 'PLAYER' | 'SYSTEM' | 'ADMIN'; action: string; entityType: string; entityId: string | null; summary: string; changes: Record<string, PlayerAuditChange> | null; metadata: Record<string, unknown> | null; createdAt: string; user?: { id: string; username: string; email: string | null; firstName?: string | null; lastName?: string | null; isSystemAdmin?: boolean; profile?: { displayName: string; avatarUrl: string | null } | null } }
+export interface AdminAuditEvent {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  reason: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  actor: {
+    id: string;
+    username: string;
+    email: string | null;
+    profile: { displayName: string } | null;
+  };
+}
+export interface PlayerAuditChange {
+  old: unknown;
+  new: unknown;
+  description?: string;
+}
+export interface PlayerAuditEvent {
+  id: string;
+  userId: string;
+  actorType: "PLAYER" | "SYSTEM" | "ADMIN";
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  summary: string;
+  changes: Record<string, PlayerAuditChange> | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  user?: {
+    id: string;
+    username: string;
+    email: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    isSystemAdmin?: boolean;
+    profile?: { displayName: string; avatarUrl: string | null } | null;
+  };
+}
 
-export interface CommerceAsset { id: string; key: string; name: string; description: string | null; assetType: string; ownershipPolicy: string; imageUrl: string | null; imageAlt: string | null; imageUrls?: string[] | null; active: boolean; variations?: Array<{ id: string; key: string; name: string | null }> }
-export interface CommerceCatalogItem { id: string; catalogId: string; key: string; name: string; description: string | null; assetDefinitionId: string | null; assetDefinition?: { id: string; key: string; name: string; imageUrl: string | null } | null; imageUrl: string | null; imageAlt: string | null; imageUrls?: string[] | null; purchasable: boolean; active: boolean; prices: Array<{ id: string; amount: string; active: boolean; currency: { code: string; name: string; precision?: number } }>; rewards: Array<{ id: string; rewardType: string; amount: string | null; quantity: number; targetKey: string | null; assetDefinition: { key: string; name: string; imageUrl: string | null } | null; assetVariation: { key: string; name: string | null; imageUrl?: string | null } | null; currency: { code: string; name: string } | null; progressionDefinition: { key: string; name: string } | null }> }
-export interface CommerceCatalog { id: string; key: string; name: string; description: string | null; active: boolean; items: CommerceCatalogItem[] }
-export interface CommerceInventoryItem { id: string; instanceId: string; userId: string; quantity: number; acquisitionSource: string; sourceId: string; createdAt: string; user: { username: string; email: string | null; profile: { displayName: string } | null }; assetDefinition: { key: string; name: string; imageUrl: string | null; ownershipPolicy: string }; assetVariation: { key: string; name: string | null } | null }
-export interface CommercePurchase { id: string; status: string; totalAmount: string; createdAt: string; completedAt: string | null; user: { username: string; email: string | null; profile: { displayName: string } | null }; currency: { code: string; name: string }; lines: Array<{ itemKeySnapshot: string; itemNameSnapshot: string; quantity: number; totalAmount: string }> }
-export interface PaidRewardRequest { id: string; status: 'PENDING' | 'FULFILLED' | 'REFUSED'; requestKey: string; message: string | null; adminNote: string | null; requestedAt: string; decidedAt: string | null; inventoryItemId: string | null; user: { id: string; username: string; email: string | null; profile: { displayName: string } | null }; asset: { id: string; key: string; name: string; imageUrl: string | null }; variation: { id: string; key: string; name: string | null } | null; redeemCode: { id: string; code: string; status: string; assignedAt: string | null } | null; decidedBy: { id: string; username: string } | null }
-export interface AssetRedeemCode { id: string; code: string; status: 'AVAILABLE' | 'ASSIGNED' | 'VOID'; createdAt: string; assignedAt: string | null; assetDefinition: { id: string; key: string; name: string }; assetVariation: { id: string; key: string; name: string | null } | null; assignedUser: { id: string; username: string; email: string | null; profile: { displayName: string } | null } | null; request: { id: string; status: string; requestedAt: string } | null }
+export interface CommerceAsset {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  assetType: string;
+  ownershipPolicy: string;
+  imageUrl: string | null;
+  imageAlt: string | null;
+  imageUrls?: string[] | null;
+  active: boolean;
+  variations?: Array<{ id: string; key: string; name: string | null }>;
+}
+export interface CommerceCatalogItem {
+  id: string;
+  catalogId: string;
+  key: string;
+  name: string;
+  description: string | null;
+  assetDefinitionId: string | null;
+  assetDefinition?: {
+    id: string;
+    key: string;
+    name: string;
+    imageUrl: string | null;
+  } | null;
+  imageUrl: string | null;
+  imageAlt: string | null;
+  imageUrls?: string[] | null;
+  purchasable: boolean;
+  active: boolean;
+  prices: Array<{
+    id: string;
+    amount: string;
+    active: boolean;
+    currency: { code: string; name: string; precision?: number };
+  }>;
+  rewards: Array<{
+    id: string;
+    rewardType: string;
+    amount: string | null;
+    quantity: number;
+    targetKey: string | null;
+    assetDefinition: {
+      key: string;
+      name: string;
+      imageUrl: string | null;
+    } | null;
+    assetVariation: {
+      key: string;
+      name: string | null;
+      imageUrl?: string | null;
+    } | null;
+    currency: { code: string; name: string } | null;
+    progressionDefinition: { key: string; name: string } | null;
+  }>;
+}
+export interface CommerceCatalog {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  items: CommerceCatalogItem[];
+}
+export interface CommerceInventoryItem {
+  id: string;
+  instanceId: string;
+  userId: string;
+  quantity: number;
+  acquisitionSource: string;
+  sourceId: string;
+  createdAt: string;
+  user: {
+    username: string;
+    email: string | null;
+    profile: { displayName: string } | null;
+  };
+  assetDefinition: {
+    key: string;
+    name: string;
+    imageUrl: string | null;
+    ownershipPolicy: string;
+  };
+  assetVariation: { key: string; name: string | null } | null;
+}
+export interface CommercePurchase {
+  id: string;
+  status: string;
+  totalAmount: string;
+  createdAt: string;
+  completedAt: string | null;
+  user: {
+    username: string;
+    email: string | null;
+    profile: { displayName: string } | null;
+  };
+  currency: { code: string; name: string };
+  lines: Array<{
+    itemKeySnapshot: string;
+    itemNameSnapshot: string;
+    quantity: number;
+    totalAmount: string;
+  }>;
+}
+export interface PaidRewardRequest {
+  id: string;
+  status: "PENDING" | "FULFILLED" | "REFUSED";
+  requestKey: string;
+  message: string | null;
+  adminNote: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+  inventoryItemId: string | null;
+  user: {
+    id: string;
+    username: string;
+    email: string | null;
+    profile: { displayName: string } | null;
+  };
+  asset: { id: string; key: string; name: string; imageUrl: string | null };
+  variation: { id: string; key: string; name: string | null } | null;
+  redeemCode: {
+    id: string;
+    code: string;
+    status: string;
+    assignedAt: string | null;
+  } | null;
+  decidedBy: { id: string; username: string } | null;
+}
+export interface AssetRedeemCode {
+  id: string;
+  code: string;
+  status: "AVAILABLE" | "ASSIGNED" | "VOID";
+  createdAt: string;
+  assignedAt: string | null;
+  assetDefinition: { id: string; key: string; name: string };
+  assetVariation: { id: string; key: string; name: string | null } | null;
+  assignedUser: {
+    id: string;
+    username: string;
+    email: string | null;
+    profile: { displayName: string } | null;
+  } | null;
+  request: { id: string; status: string; requestedAt: string } | null;
+}
 
 export interface Player360Data {
   user: AdminUser;
@@ -226,8 +463,20 @@ export interface Player360Data {
     rentalExpiresAt: string | null;
     createdAt: string;
     updatedAt: string;
-    assetDefinition: { id: string; key: string; name: string; assetType: string; ownershipPolicy: string; imageUrl: string | null };
-    assetVariation: { id: string; key: string; name: string | null; imageUrl: string | null } | null;
+    assetDefinition: {
+      id: string;
+      key: string;
+      name: string;
+      assetType: string;
+      ownershipPolicy: string;
+      imageUrl: string | null;
+    };
+    assetVariation: {
+      id: string;
+      key: string;
+      name: string | null;
+      imageUrl: string | null;
+    } | null;
   }>;
   entitlements: Array<{
     id: string;
@@ -237,7 +486,11 @@ export interface Player360Data {
     sourceId: string;
     expiresAt: string | null;
     createdAt: string;
-    assetDefinition: { key: string; name: string; imageUrl: string | null } | null;
+    assetDefinition: {
+      key: string;
+      name: string;
+      imageUrl: string | null;
+    } | null;
   }>;
   purchases: Array<{
     id: string;
@@ -246,22 +499,163 @@ export interface Player360Data {
     createdAt: string;
     completedAt: string | null;
     currency: { code: string; name: string };
-    lines: Array<{ id: string; itemKeySnapshot: string; itemNameSnapshot: string; quantity: number; unitAmount: string; totalAmount: string; createdAt: string; catalogItem: { key: string; name: string; imageUrl: string | null } | null }>;
+    lines: Array<{
+      id: string;
+      itemKeySnapshot: string;
+      itemNameSnapshot: string;
+      quantity: number;
+      unitAmount: string;
+      totalAmount: string;
+      createdAt: string;
+      catalogItem: {
+        key: string;
+        name: string;
+        imageUrl: string | null;
+      } | null;
+    }>;
   }>;
-  leaderboardEntries: Array<{ id: string; memberKey: string; score: string; createdAt: string; updatedAt: string; leaderboard: { key: string; name: string; period: string; direction: string }; season: { id: string; status: string; startsAt: string; endsAt: string } }>;
-  leaderboardScoreEvents: Array<{ id: string; delta: string; scoreBefore: string; scoreAfter: string; sourceType: string; sourceId: string; createdAt: string; leaderboard: { key: string; name: string }; season: { id: string; status: string } }>;
-  progressionEvents: Array<{ id: string; delta: string; balanceBefore: string; balanceAfter: string; sourceType: string; sourceId: string; createdAt: string; progression: { key: string; name: string; kind: string } }>;
-  rewardGrants: Array<{ id: string; sourceType: string; sourceId: string; rewardType: string; grantKey: string; amount: string | null; targetKey: string | null; status: string; createdAt: string; currency: { code: string; name: string } | null; progressionDefinition: { key: string; name: string } | null }>;
-  gameStats: Array<{ id: string; gamesPlayed: number; wins: number; losses: number; draws: number; forfeits: number; totalCorrect: number; totalQuestions: number; totalTimeMs: string; totalScore: string; bestScore: string; lastPlayedAt: string | null; gameDefinition: { key: string; name: string } }>;
-  matches: Array<{ id: string; finalScore: number | null; answeredCount: number; result: string; submittedAt: string | null; createdAt: string; match: { id: string; mode: string; status: string; startedAt: string | null; endedAt: string | null; settledAt: string | null; createdAt: string; gameDefinition: { key: string; name: string } } }>;
-  storageItems: Array<{ id: string; key: string; value: string; visibility: string; valueType: string; version: number; updatedAt: string }>;
-  files: Array<{ id: string; objectKey: string; originalName: string; contentType: string; byteSize: string; checksum: string | null; purpose: string; visibility: string; status: string; createdAt: string; deletedAt: string | null }>;
-  feedback: Array<{ id: string; entity: string; description: string; status: string; adminNote: string | null; createdAt: string; category: { key: string; name: string } }>;
+  leaderboardEntries: Array<{
+    id: string;
+    memberKey: string;
+    score: string;
+    createdAt: string;
+    updatedAt: string;
+    leaderboard: {
+      key: string;
+      name: string;
+      period: string;
+      direction: string;
+    };
+    season: { id: string; status: string; startsAt: string; endsAt: string };
+  }>;
+  leaderboardScoreEvents: Array<{
+    id: string;
+    delta: string;
+    scoreBefore: string;
+    scoreAfter: string;
+    sourceType: string;
+    sourceId: string;
+    createdAt: string;
+    leaderboard: { key: string; name: string };
+    season: { id: string; status: string };
+  }>;
+  progressionEvents: Array<{
+    id: string;
+    delta: string;
+    balanceBefore: string;
+    balanceAfter: string;
+    sourceType: string;
+    sourceId: string;
+    createdAt: string;
+    progression: { key: string; name: string; kind: string };
+  }>;
+  rewardGrants: Array<{
+    id: string;
+    sourceType: string;
+    sourceId: string;
+    rewardType: string;
+    grantKey: string;
+    amount: string | null;
+    targetKey: string | null;
+    status: string;
+    createdAt: string;
+    currency: { code: string; name: string } | null;
+    progressionDefinition: { key: string; name: string } | null;
+  }>;
+  gameStats: Array<{
+    id: string;
+    gamesPlayed: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    forfeits: number;
+    totalCorrect: number;
+    totalQuestions: number;
+    totalTimeMs: string;
+    totalScore: string;
+    bestScore: string;
+    lastPlayedAt: string | null;
+    gameDefinition: { key: string; name: string };
+  }>;
+  matches: Array<{
+    id: string;
+    finalScore: number | null;
+    answeredCount: number;
+    result: string;
+    submittedAt: string | null;
+    createdAt: string;
+    match: {
+      id: string;
+      mode: string;
+      status: string;
+      startedAt: string | null;
+      endedAt: string | null;
+      settledAt: string | null;
+      createdAt: string;
+      gameDefinition: { key: string; name: string };
+    };
+  }>;
+  storageItems: Array<{
+    id: string;
+    key: string;
+    value: string;
+    visibility: string;
+    valueType: string;
+    version: number;
+    updatedAt: string;
+  }>;
+  files: Array<{
+    id: string;
+    objectKey: string;
+    originalName: string;
+    contentType: string;
+    byteSize: string;
+    checksum: string | null;
+    purpose: string;
+    visibility: string;
+    status: string;
+    createdAt: string;
+    deletedAt: string | null;
+  }>;
+  feedback: Array<{
+    id: string;
+    entity: string;
+    description: string;
+    status: string;
+    adminNote: string | null;
+    createdAt: string;
+    category: { key: string; name: string };
+  }>;
   playerAuditEvents: PlayerAuditEvent[];
-  friends: Array<{ id: string; playerId: string; username: string; name: string; online: boolean; lastSeen: string | null; acceptedAt: string; avatarUrl: string | null }>;
-  incomingRequests: Array<{ id: string; playerId: string; username: string; name: string; createdAt: string }>;
-  outgoingRequests: Array<{ id: string; playerId: string; username: string; name: string; createdAt: string }>;
-  presence: { online: boolean; lastSeenAt: string | null; lastHeartbeatAt: string | null };
+  friends: Array<{
+    id: string;
+    playerId: string;
+    username: string;
+    name: string;
+    online: boolean;
+    lastSeen: string | null;
+    acceptedAt: string;
+    avatarUrl: string | null;
+  }>;
+  incomingRequests: Array<{
+    id: string;
+    playerId: string;
+    username: string;
+    name: string;
+    createdAt: string;
+  }>;
+  outgoingRequests: Array<{
+    id: string;
+    playerId: string;
+    username: string;
+    name: string;
+    createdAt: string;
+  }>;
+  presence: {
+    online: boolean;
+    lastSeenAt: string | null;
+    lastHeartbeatAt: string | null;
+  };
 }
 
 export interface MatchSummary {
@@ -274,29 +668,214 @@ export interface MatchSummary {
   createdAt: string;
   metadata: Record<string, unknown> | null;
   gameDefinition: { key: string; name: string };
-  createdBy: { id: string; username: string; email: string | null; profile: { displayName: string; avatarUrl: string | null } | null };
-  participants: Array<{ id: string; userId: string | null; participantType: string; displayName: string | null; finalScore: number | null; answeredCount: number; result: string; submittedAt: string | null; user: { id: string; username: string; email: string | null; profile: { displayName: string; avatarUrl: string | null; countryCode: string | null } | null } | null }>;
+  createdBy: {
+    id: string;
+    username: string;
+    email: string | null;
+    profile: { displayName: string; avatarUrl: string | null } | null;
+  };
+  participants: Array<{
+    id: string;
+    userId: string | null;
+    participantType: string;
+    displayName: string | null;
+    finalScore: number | null;
+    answeredCount: number;
+    result: string;
+    submittedAt: string | null;
+    user: {
+      id: string;
+      username: string;
+      email: string | null;
+      profile: {
+        displayName: string;
+        avatarUrl: string | null;
+        countryCode: string | null;
+      } | null;
+    } | null;
+  }>;
   _count: { events: number; assignments: number; rounds: number };
 }
 
-export interface Match360Data extends Omit<MatchSummary, 'gameDefinition' | 'createdBy' | 'participants'> {
+export interface Match360Data extends Omit<
+  MatchSummary,
+  "gameDefinition" | "createdBy" | "participants"
+> {
   updatedAt: string;
   gameDefinition: { id: string; key: string; name: string; active: boolean };
-  gameConfig: { id: string; version: number; active: boolean; rankingEnabled: boolean; maxQuestions: number; maxMatchDurationSeconds: number; rewardCurrencyCode: string };
-  createdBy: { id: string; username: string; email: string | null; status: string; profile: { displayName: string; avatarUrl: string | null; countryCode: string | null } | null };
-  participants: Array<{ id: string; userId: string | null; participantType: string; displayName: string | null; finalScore: number | null; answeredCount: number; result: string; submittedAt: string | null; createdAt: string; updatedAt: string; user: { id: string; username: string; email: string | null; status: string; isSystemAdmin: boolean; firstName: string | null; lastName: string | null; profile: { displayName: string; avatarUrl: string | null; countryCode: string | null; level: number; xp: string; elo: number } | null } | null; _count: { events: number; assignments: number } }>;
-  rounds: Array<{ id: string; roundIndex: number; status: string; startedAt: string | null; endedAt: string | null; createdAt: string; gameDefinition: { key: string; name: string } }>;
-  events: Array<{ id: string; participantId: string; roundId: string | null; sequence: number; eventType: string; clientEventId: string; payload: unknown; clientOccurredAt: string | null; serverReceivedAt: string; accepted: boolean; rejectionReason: string | null; participant: { userId: string | null; participantType: string; user: { username: string; profile: { displayName: string } | null } | null } }>;
-  assignments: Array<{ id: string; participantId: string; roundId: string | null; position: number; servedAt: string; expiresAt: string | null; answeredAt: string | null; participant: { userId: string | null; user: { username: string; profile: { displayName: string } | null } | null }; contentItem: { id: string; contentType: string; prompt: unknown; options: unknown; difficulty: number; category: string | null } }>;
-  settlement: { id: string; policyVersion: string; settlementJson: unknown; createdAt: string; winnerParticipantId: string | null } | null;
-  matchmakingTickets: Array<{ id: string; userId: string; mode: string; status: string; isRankingMatch: boolean; levelSnapshot: number; eloSnapshot: string; countryCodeSnapshot: string | null; constraints: unknown; createdAt: string; matchedAt: string | null; cancelledAt: string | null; user: { username: string; profile: { displayName: string } | null } }>;
-  matchmakingInvite: { id: string; status: string; createdAt: string; acceptedAt: string | null; respondedAt: string | null; expiresAt: string; inviter: { id: string; username: string; profile: { displayName: string } | null }; invitee: { id: string; username: string; profile: { displayName: string } | null } } | null;
+  gameConfig: {
+    id: string;
+    version: number;
+    active: boolean;
+    rankingEnabled: boolean;
+    maxQuestions: number;
+    maxMatchDurationSeconds: number;
+    rewardCurrencyCode: string;
+  };
+  createdBy: {
+    id: string;
+    username: string;
+    email: string | null;
+    status: string;
+    profile: {
+      displayName: string;
+      avatarUrl: string | null;
+      countryCode: string | null;
+    } | null;
+  };
+  participants: Array<{
+    id: string;
+    userId: string | null;
+    participantType: string;
+    displayName: string | null;
+    finalScore: number | null;
+    answeredCount: number;
+    result: string;
+    submittedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+    answerStats: { correct: number; wrong: number; totalTimeMs: number };
+    user: {
+      id: string;
+      username: string;
+      email: string | null;
+      status: string;
+      isSystemAdmin: boolean;
+      firstName: string | null;
+      lastName: string | null;
+      profile: {
+        displayName: string;
+        avatarUrl: string | null;
+        countryCode: string | null;
+        level: number;
+        xp: string;
+        elo: number;
+      } | null;
+    } | null;
+    _count: { events: number; assignments: number };
+  }>;
+  rounds: Array<{
+    id: string;
+    roundIndex: number;
+    status: string;
+    startedAt: string | null;
+    endedAt: string | null;
+    createdAt: string;
+    gameDefinition: { key: string; name: string };
+  }>;
+  events: Array<{
+    id: string;
+    participantId: string;
+    roundId: string | null;
+    sequence: number;
+    eventType: string;
+    clientEventId: string;
+    payload: unknown;
+    answerDetails: {
+      assignmentId?: string;
+      questionNumber?: number;
+      prompt?: unknown;
+      category?: string | null;
+      difficulty?: number;
+      correct?: boolean;
+      pointsEarned?: number;
+      timeTakenMs?: number;
+      source?: string;
+    } | null;
+    clientOccurredAt: string | null;
+    serverReceivedAt: string;
+    accepted: boolean;
+    rejectionReason: string | null;
+    participant: {
+      userId: string | null;
+      participantType: string;
+      user: {
+        username: string;
+        profile: { displayName: string } | null;
+      } | null;
+    };
+  }>;
+  assignments: Array<{
+    id: string;
+    participantId: string;
+    roundId: string | null;
+    position: number;
+    servedAt: string;
+    expiresAt: string | null;
+    answeredAt: string | null;
+    answerDetails: {
+      assignmentId?: string;
+      questionNumber?: number;
+      prompt?: unknown;
+      category?: string | null;
+      difficulty?: number;
+      correct?: boolean;
+      pointsEarned?: number;
+      timeTakenMs?: number;
+      source?: string;
+    } | null;
+    participant: {
+      userId: string | null;
+      user: {
+        username: string;
+        profile: { displayName: string } | null;
+      } | null;
+    };
+    contentItem: {
+      id: string;
+      contentType: string;
+      prompt: unknown;
+      options: unknown;
+      difficulty: number;
+      category: string | null;
+    };
+  }>;
+  settlement: {
+    id: string;
+    policyVersion: string;
+    settlementJson: unknown;
+    createdAt: string;
+    winnerParticipantId: string | null;
+  } | null;
+  matchmakingTickets: Array<{
+    id: string;
+    userId: string;
+    mode: string;
+    status: string;
+    isRankingMatch: boolean;
+    levelSnapshot: number;
+    eloSnapshot: string;
+    countryCodeSnapshot: string | null;
+    constraints: unknown;
+    createdAt: string;
+    matchedAt: string | null;
+    cancelledAt: string | null;
+    user: { username: string; profile: { displayName: string } | null };
+  }>;
+  matchmakingInvite: {
+    id: string;
+    status: string;
+    createdAt: string;
+    acceptedAt: string | null;
+    respondedAt: string | null;
+    expiresAt: string;
+    inviter: {
+      id: string;
+      username: string;
+      profile: { displayName: string } | null;
+    };
+    invitee: {
+      id: string;
+      username: string;
+      profile: { displayName: string } | null;
+    };
+  } | null;
 }
 
 export interface AdminSession {
   id: string;
-  sessionStatus: 'ACTIVE' | 'TERMINATED';
-  effectiveStatus: 'ACTIVE' | 'EXPIRED' | 'TERMINATED';
+  sessionStatus: "ACTIVE" | "TERMINATED";
+  effectiveStatus: "ACTIVE" | "EXPIRED" | "TERMINATED";
   isMobileSession: boolean;
   clientVersion: string | null;
   deviceName: string | null;
@@ -306,5 +885,11 @@ export interface AdminSession {
   loginTimestamp: string;
   lastActiveTimestamp: string;
   expiresAt: string;
-  user: { id: string; username: string; email: string | null; isSystemAdmin: boolean; profile: { displayName: string } | null };
+  user: {
+    id: string;
+    username: string;
+    email: string | null;
+    isSystemAdmin: boolean;
+    profile: { displayName: string } | null;
+  };
 }

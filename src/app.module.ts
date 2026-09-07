@@ -18,9 +18,10 @@ import { MatchmakingModule } from "./modules/matchmaking/matchmaking.module"
 import { ConfigModule } from "./modules/config/config.module"
 import { AdRewardsModule } from "./modules/ad-rewards/ad-rewards.module"
 import { NotificationsModule } from "./modules/notifications/notifications.module"
+import { RealtimeModule } from "./modules/realtime/realtime.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

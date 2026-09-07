@@ -28,6 +28,6 @@ import { TokenService } from "./services/token.service"
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
-  exports: [AuthService, TokenService, JwtStrategy, PassportModule],
+  exports: [AuthService, TokenService, JwtStrategy, PassportModule, JwtModule],
 })
 export class AuthModule {}

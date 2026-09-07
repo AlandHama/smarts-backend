@@ -3,6 +3,7 @@ import { join } from "node:path"
 
 import { ValidationPipe } from "@nestjs/common"
 import { NestFactory } from "@nestjs/core"
+import { WsAdapter } from "@nestjs/platform-ws"
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger"
 import express from "express"
 
@@ -10,6 +11,7 @@ import { AppModule } from "./app.module"
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule)
+  app.useWebSocketAdapter(new WsAdapter(app))
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("Smarts NestJs Backend API")
