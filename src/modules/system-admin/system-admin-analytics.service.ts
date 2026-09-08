@@ -39,7 +39,7 @@ export class SystemAdminAnalyticsService {
     const averageDau = trend.length ? Math.round(trend.reduce((sum, row) => sum + this.number(row.dau), 0) / trend.length) : 0
     const latestDau = trend.length ? this.number(trend[trend.length - 1].dau) : 0
     const answers = this.number(answerSummary[0]?.answers)
-    const correctAnswers = this.number(answerSummary[0]?.correctAnswers)
+    const correctAnswers = this.number(answerSummary[0]?.correct_answers)
     const periodMatches = this.number(matchSummary[0]?.created)
     const settledMatches = this.number(matchSummary[0]?.settled)
     const walletCredits = this.number(trend.reduce((sum, row) => sum + this.number(row.walletCredits), 0))
@@ -114,7 +114,7 @@ export class SystemAdminAnalyticsService {
         reviewMatches: this.number(matchSummary[0]?.review),
         cancelledMatches: this.number(matchSummary[0]?.cancelled),
         drawMatches: this.number(matchSummary[0]?.draws),
-        botMatches: this.number(matchSummary[0]?.botMatches),
+        botMatches: this.number(matchSummary[0]?.bot_matches),
       },
       economy: {
         adClaims: this.number(commerceSummary[0]?.ad_claims),
@@ -163,7 +163,7 @@ export class SystemAdminAnalyticsService {
         UNION ALL SELECT "userId", "loginTimestamp" FROM "Session" WHERE "loginTimestamp" <= ${to}
         UNION ALL SELECT p."userId", e."serverReceivedAt" FROM "MatchEvent" e JOIN "MatchParticipant" p ON p."id" = e."participantId" WHERE p."userId" IS NOT NULL AND e."serverReceivedAt" <= ${to}
       )
-      SELECT count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${from}) AS period_active_users, count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${to} - interval '7 days') AS wau, count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${to} - interval '30 days') AS mau, (SELECT count(*) FROM "User" WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}) AS new_players FROM activity
+      SELECT count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${from}) AS period_active_users, count(DISTINCT "userId") FILTER (WHERE occurred_at >= (${to} - interval '7 days')) AS wau, count(DISTINCT "userId") FILTER (WHERE occurred_at >= (${to} - interval '30 days')) AS mau, (SELECT count(*) FROM "User" WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}) AS new_players FROM activity
     `)
   }
 
@@ -225,7 +225,7 @@ export class SystemAdminAnalyticsService {
         UNION ALL SELECT "userId", "loginTimestamp" FROM "Session"
         UNION ALL SELECT p."userId", e."serverReceivedAt" FROM "MatchEvent" e JOIN "MatchParticipant" p ON p."id" = e."participantId" WHERE p."userId" IS NOT NULL
       )
-      SELECT count(*) FILTER (WHERE u."createdAt" <= ${to} - interval '1 day') AS day1_eligible, count(*) FILTER (WHERE u."createdAt" <= ${to} - interval '1 day' AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND a.occurred_at >= u."createdAt" + interval '1 day' AND a.occurred_at < u."createdAt" + interval '2 days')) AS day1_retained, count(*) FILTER (WHERE u."createdAt" <= ${to} - interval '7 days') AS day7_eligible, count(*) FILTER (WHERE u."createdAt" <= ${to} - interval '7 days' AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND a.occurred_at >= u."createdAt" + interval '7 days' AND a.occurred_at < u."createdAt" + interval '8 days')) AS day7_retained, count(*) FILTER (WHERE u."createdAt" <= ${to} - interval '30 days') AS day30_eligible, count(*) FILTER (WHERE u."createdAt" <= ${to} - interval '30 days' AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND a.occurred_at >= u."createdAt" + interval '30 days' AND a.occurred_at < u."createdAt" + interval '31 days')) AS day30_retained FROM "User" u WHERE u."createdAt" BETWEEN ${from} AND ${to}
+      SELECT count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '1 day')) AS day1_eligible, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '1 day') AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND a.occurred_at >= (u."createdAt" + interval '1 day') AND a.occurred_at < (u."createdAt" + interval '2 days'))) AS day1_retained, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '7 days')) AS day7_eligible, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '7 days') AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND a.occurred_at >= (u."createdAt" + interval '7 days') AND a.occurred_at < (u."createdAt" + interval '8 days'))) AS day7_retained, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '30 days')) AS day30_eligible, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '30 days') AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND a.occurred_at >= (u."createdAt" + interval '30 days') AND a.occurred_at < (u."createdAt" + interval '31 days'))) AS day30_retained FROM "User" u WHERE u."createdAt" BETWEEN ${from} AND ${to}
     `)
   }
 
