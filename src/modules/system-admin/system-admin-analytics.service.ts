@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common"
+import { Injectable, Logger } from "@nestjs/common"
 import { Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
@@ -14,6 +14,8 @@ type NumericRow = Record<string, unknown>
  */
 @Injectable()
 export class SystemAdminAnalyticsService {
+  private readonly logger = new Logger(SystemAdminAnalyticsService.name)
+
   constructor(private readonly prisma: PrismaService) {}
 
   async overview(requestedDays = 30) {
@@ -23,17 +25,17 @@ export class SystemAdminAnalyticsService {
     const retentionTo = new Date(to)
 
     const [trend, summary, answerSummary, matchSummary, commerceSummary, gameRows, progressionRows, retention, countries, devices, health] = await Promise.all([
-      this.trend(from, to),
-      this.summary(from, to),
-      this.answerSummary(from, to),
-      this.matchSummary(from, to),
-      this.commerceSummary(from, to),
-      this.gameBreakdown(from, to),
-      this.progressionBreakdown(from, to),
-      this.retention(from, retentionTo),
-      this.countryBreakdown(from, to),
-      this.deviceBreakdown(from, to),
-      this.health(),
+      this.safeQuery("daily trend", this.trend(from, to), []),
+      this.safeQuery("active-user summary", this.summary(from, to), []),
+      this.safeQuery("answer summary", this.answerSummary(from, to), []),
+      this.safeQuery("match summary", this.matchSummary(from, to), []),
+      this.safeQuery("commerce summary", this.commerceSummary(from, to), []),
+      this.safeQuery("game breakdown", this.gameBreakdown(from, to), []),
+      this.safeQuery("progression breakdown", this.progressionBreakdown(from, to), []),
+      this.safeQuery("retention", this.retention(from, retentionTo), []),
+      this.safeQuery("country breakdown", this.countryBreakdown(from, to), []),
+      this.safeQuery("device breakdown", this.deviceBreakdown(from, to), []),
+      this.safeQuery("live health", this.health(), { onlinePlayers: 0, searchingTickets: 0, activeMatches: 0, failedOutbox: 0, openFeedback: 0 }),
     ])
 
     const averageDau = trend.length ? Math.round(trend.reduce((sum, row) => sum + this.number(row.dau), 0) / trend.length) : 0
@@ -163,7 +165,7 @@ export class SystemAdminAnalyticsService {
         UNION ALL SELECT "userId", "loginTimestamp" FROM "Session" WHERE "loginTimestamp" <= ${to}
         UNION ALL SELECT p."userId", e."serverReceivedAt" FROM "MatchEvent" e JOIN "MatchParticipant" p ON p."id" = e."participantId" WHERE p."userId" IS NOT NULL AND e."serverReceivedAt" <= ${to}
       )
-      SELECT count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${from}) AS period_active_users, count(DISTINCT "userId") FILTER (WHERE occurred_at >= (${to} - interval '7 days')) AS wau, count(DISTINCT "userId") FILTER (WHERE occurred_at >= (${to} - interval '30 days')) AS mau, (SELECT count(*) FROM "User" WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}) AS new_players FROM activity
+      SELECT count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${from}) AS period_active_users, count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${this.daysBefore(to, 7)}) AS wau, count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${this.daysBefore(to, 30)}) AS mau, (SELECT count(*) FROM "User" WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}) AS new_players FROM activity
     `)
   }
 
@@ -225,7 +227,7 @@ export class SystemAdminAnalyticsService {
         UNION ALL SELECT "userId", "loginTimestamp" FROM "Session"
         UNION ALL SELECT p."userId", e."serverReceivedAt" FROM "MatchEvent" e JOIN "MatchParticipant" p ON p."id" = e."participantId" WHERE p."userId" IS NOT NULL
       )
-      SELECT count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '1 day')) AS day1_eligible, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '1 day') AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND a.occurred_at >= (u."createdAt" + interval '1 day') AND a.occurred_at < (u."createdAt" + interval '2 days'))) AS day1_retained, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '7 days')) AS day7_eligible, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '7 days') AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND a.occurred_at >= (u."createdAt" + interval '7 days') AND a.occurred_at < (u."createdAt" + interval '8 days'))) AS day7_retained, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '30 days')) AS day30_eligible, count(*) FILTER (WHERE u."createdAt" <= (${to} - interval '30 days') AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND a.occurred_at >= (u."createdAt" + interval '30 days') AND a.occurred_at < (u."createdAt" + interval '31 days'))) AS day30_retained FROM "User" u WHERE u."createdAt" BETWEEN ${from} AND ${to}
+      SELECT count(*) FILTER (WHERE u."createdAt" <= ${this.daysBefore(to, 1)}) AS day1_eligible, count(*) FILTER (WHERE u."createdAt" <= ${this.daysBefore(to, 1)} AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND (a.occurred_at - u."createdAt") >= interval '1 day' AND (a.occurred_at - u."createdAt") < interval '2 days')) AS day1_retained, count(*) FILTER (WHERE u."createdAt" <= ${this.daysBefore(to, 7)}) AS day7_eligible, count(*) FILTER (WHERE u."createdAt" <= ${this.daysBefore(to, 7)} AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND (a.occurred_at - u."createdAt") >= interval '7 days' AND (a.occurred_at - u."createdAt") < interval '8 days')) AS day7_retained, count(*) FILTER (WHERE u."createdAt" <= ${this.daysBefore(to, 30)}) AS day30_eligible, count(*) FILTER (WHERE u."createdAt" <= ${this.daysBefore(to, 30)} AND EXISTS (SELECT 1 FROM activity a WHERE a."userId" = u."id" AND (a.occurred_at - u."createdAt") >= interval '30 days' AND (a.occurred_at - u."createdAt") < interval '31 days')) AS day30_retained FROM "User" u WHERE u."createdAt" BETWEEN ${from} AND ${to}
     `)
   }
 
@@ -247,6 +249,19 @@ export class SystemAdminAnalyticsService {
       this.prisma.playerFeedback.count({ where: { status: { in: ["OPEN", "IN_REVIEW"] } } }),
     ])
     return { onlinePlayers, searchingTickets, activeMatches, failedOutbox, openFeedback }
+  }
+
+  private daysBefore(value: Date, days: number) {
+    return new Date(value.getTime() - days * 24 * 60 * 60 * 1000)
+  }
+
+  private async safeQuery<T>(label: string, query: Promise<T>, fallback: T) {
+    try {
+      return await query
+    } catch (error) {
+      this.logger.error(`Analytics report failed: ${label}`, error instanceof Error ? error.stack : String(error))
+      return fallback
+    }
   }
 
   private retentionRate(row: NumericRow, key: "day1" | "day7" | "day30") {
