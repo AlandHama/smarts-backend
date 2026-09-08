@@ -225,6 +225,72 @@ export interface OverviewMetrics {
   openFeedback: number;
 }
 
+export interface RetentionMetric {
+  eligible: number;
+  retained: number;
+  rate: number;
+}
+
+export interface GameAnalyticsRow {
+  key: string;
+  name: string;
+  matches: number;
+  settled: number;
+  review: number;
+  acceptedAnswers: number;
+  correctAnswers: number;
+  accuracy: number;
+  averageScore: number;
+}
+
+export interface SystemAdminAnalytics {
+  period: { from: string; to: string; days: number; timezone: string };
+  kpis: {
+    dau: number;
+    averageDau: number;
+    periodActiveUsers: number;
+    wau: number;
+    mau: number;
+    newPlayers: number;
+    matchesStarted: number;
+    matchesCreated: number;
+    matchesSettled: number;
+    completionRate: number;
+    acceptedAnswers: number;
+    correctAnswers: number;
+    accuracy: number;
+    averageAnswerTimeMs: number;
+    xpAwarded: number;
+    walletCredits: number;
+    walletDebits: number;
+    completedPurchases: number;
+    purchaseValue: number;
+    grantedAdClaims: number;
+    fulfilledPaidRewards: number;
+  };
+  trends: Array<{
+    date: string;
+    dau: number;
+    newPlayers: number;
+    matchesCreated: number;
+    matchesSettled: number;
+    answers: number;
+    correctAnswers: number;
+    xpAwarded: number;
+    walletCredits: number;
+    walletDebits: number;
+    purchases: number;
+  }>;
+  games: GameAnalyticsRow[];
+  retention: { day1: RetentionMetric; day7: RetentionMetric; day30: RetentionMetric };
+  progression: Array<{ key: string; name: string; players: number; averagePoints: number; highestStep: number; periodDelta: number }>;
+  countries: Array<{ countryCode: string; activeUsers: number; newPlayers: number }>;
+  devices: Array<{ type: string; users: number; sessions: number }>;
+  gameplay: { averageMatchDurationSeconds: number; reviewMatches: number; cancelledMatches: number; drawMatches: number; botMatches: number };
+  economy: { adClaims: number; rejectedAdClaims: number; paidRewardRequests: number; refusedPaidRewards: number };
+  health: { onlinePlayers: number; searchingTickets: number; activeMatches: number; failedOutbox: number; openFeedback: number };
+}
+
 export interface AdminOperations {
   checkedAt: string;
   health: {

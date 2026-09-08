@@ -94,7 +94,7 @@ export default function AdminPage() {
   const backToMatches = () => go('matches', null, true);
 
   return <ThemeProvider theme={adminTheme}><CssBaseline />{checking ? null : !admin ? <LoginView onLogin={signIn} /> : <AdminShell view={view} onViewChange={(nextView) => go(nextView)} onLogout={signOut} adminName={admin.username || admin.email || 'Administrator'}>
-    {view === 'overview' && <OverviewView onNavigate={go} />}
+    {view === 'overview' && <OverviewView />}
     {view === 'operations' && <OperationsView />}
     {view === 'players' && <UsersView onOpenPlayer360={openPlayer360} />}
     {view === 'player360' && player360Id && <Player360View userId={player360Id} onBack={backToPlayers} onOpenMatch360={openMatch360} />}

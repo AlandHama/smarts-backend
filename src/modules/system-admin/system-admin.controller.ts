@@ -8,7 +8,7 @@ import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { SystemAdminGuard } from "./system-admin.guard"
 import { SystemAdminService } from "./system-admin.service"
 import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminMatchesQueryDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
+import { PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminAnalyticsQueryDto, SystemAdminLoginDto, SystemAdminMatchesQueryDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
 import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
 import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
 import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
@@ -116,6 +116,14 @@ export class SystemAdminController {
   @ApiOperation({ summary: "Get system administrator dashboard counts" })
   overview() {
     return this.systemAdminService.overview()
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Get server-owned SMARTS engagement, retention, gameplay, progression, economy, and reliability analytics" })
+  analytics(@Query() query: SystemAdminAnalyticsQueryDto) {
+    return this.systemAdminService.analytics(query.days)
   }
 
   @UseGuards(SystemAdminGuard)

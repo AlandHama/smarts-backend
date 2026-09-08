@@ -21,6 +21,7 @@ import { StorageModule } from "../storage/storage.module"
 import { FriendsModule } from "../friends/friends.module"
 import { ConfigModule } from "../config/config.module"
 import { AdRewardsModule } from "../ad-rewards/ad-rewards.module"
+import { SystemAdminAnalyticsService } from "./system-admin-analytics.service"
 
 @Module({
   imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule],
@@ -34,6 +35,7 @@ import { AdRewardsModule } from "../ad-rewards/ad-rewards.module"
     UpdateUserProfileTransaction,
     UpdateUserStatusTransaction,
     TerminateAdminSessionTransaction,
+    SystemAdminAnalyticsService,
   ],
 })
 export class SystemAdminModule {}

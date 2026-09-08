@@ -35,6 +35,7 @@ import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
 import { FriendsService } from "../friends/friends.service"
 import { ConfigService } from "../config/config.service"
 import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto"
+import { SystemAdminAnalyticsService } from "./system-admin-analytics.service"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -63,6 +64,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly storageService: StorageService,
     private readonly friendsService: FriendsService,
     private readonly configService: ConfigService,
+    private readonly analyticsService: SystemAdminAnalyticsService,
   ) {}
 
   async onModuleInit() {
@@ -174,6 +176,8 @@ export class SystemAdminService implements OnModuleInit {
     ])
     return { totalUsers: total, activeUsers: active, bannedUsers: banned, activeAdmins: admins, activeSessions: sessions, onlinePlayers, queueTickets: queue, activeMatches: matches, failedOutbox, pendingOutbox, failedPurchases, openFeedback }
   }
+
+  analytics(days = 30) { return this.analyticsService.overview(days) }
 
   /** Operational counters intentionally come from server-owned records, not mobile telemetry. */
   async operations() {
