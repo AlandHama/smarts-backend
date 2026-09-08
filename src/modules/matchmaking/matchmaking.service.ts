@@ -32,7 +32,28 @@ export class MatchmakingService {
 
   async status(userId: string) {
     const ticket = await this.prisma.matchmakingTicket.findFirst({ where: { userId, status: { in: ["SEARCHING", "MATCHED"] } }, orderBy: { createdAt: "desc" }, include: { gameDefinition: { select: { key: true, name: true } }, match: { select: { id: true, status: true, mode: true, startedAt: true, createdAt: true, participants: { select: { id: true, userId: true, participantType: true, result: true } } } } } })
-    return this.serialize({ ticket, match: ticket?.match ?? null })
+    const activeFriendMatch = ticket?.match
+      ? null
+      : await this.prisma.match.findFirst({
+          where: {
+            participants: { some: { userId } },
+            status: { in: ["CREATED", "STARTED"] },
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            status: true,
+            mode: true,
+            startedAt: true,
+            createdAt: true,
+            participants: {
+              select: { id: true, userId: true, participantType: true, result: true },
+            },
+            gameDefinition: { select: { key: true, name: true } },
+          },
+        })
+
+    return this.serialize({ ticket, match: ticket?.match ?? activeFriendMatch ?? null })
   }
 
   async invites(userId: string) {
