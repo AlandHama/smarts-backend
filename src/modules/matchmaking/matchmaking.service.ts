@@ -35,28 +35,30 @@ export class MatchmakingService {
     // still starting or playing. Excluding settled/cancelled matches prevents
     // a previous game from being resurrected after the player queues again.
     const ticket = await this.prisma.matchmakingTicket.findFirst({ where: { userId, OR: [{ status: "SEARCHING" }, { status: "MATCHED", match: { is: { status: { in: ["CREATED", "STARTED"] } } } }] }, orderBy: { createdAt: "desc" }, include: { gameDefinition: { select: { key: true, name: true } }, match: { select: { id: true, status: true, mode: true, startedAt: true, createdAt: true, participants: { select: { id: true, userId: true, participantType: true, result: true } } } } } })
-    const activeFriendMatch = ticket?.match
-      ? null
-      : await this.prisma.match.findFirst({
-          where: {
-            participants: { some: { userId } },
-            status: { in: ["CREATED", "STARTED"] },
-          },
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            status: true,
-            mode: true,
-            startedAt: true,
-            createdAt: true,
-            participants: {
-              select: { id: true, userId: true, participantType: true, result: true },
-            },
-            gameDefinition: { select: { key: true, name: true } },
-          },
-        })
+    // A friend match has no queue ticket. Always prefer the newest active
+    // match for this player, even when an old queue ticket is still present;
+    // otherwise the invitee can be directed back to an unrelated match and
+    // wait forever for the inviter's match to start.
+    const activeMatch = await this.prisma.match.findFirst({
+      where: {
+        participants: { some: { userId } },
+        status: { in: ["CREATED", "STARTED"] },
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        mode: true,
+        startedAt: true,
+        createdAt: true,
+        participants: {
+          select: { id: true, userId: true, participantType: true, result: true },
+        },
+        gameDefinition: { select: { key: true, name: true } },
+      },
+    })
 
-    return this.serialize({ ticket, match: ticket?.match ?? activeFriendMatch ?? null })
+    return this.serialize({ ticket, match: activeMatch ?? ticket?.match ?? null })
   }
 
   async invites(userId: string) {

@@ -54,7 +54,11 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
         AND "gameDefinitionId" = ${first.gameDefinitionId}
         AND "mode"::text = ${first.mode}
         AND "isRankingMatch" = ${first.isRankingMatch}
-        AND ABS("eloSnapshot" - ${first.eloSnapshot}) <= ${eloTolerance}
+        -- Casual players should be paired whenever they selected the same
+        -- game. ELO is a ranked matchmaking constraint only; applying it to
+        -- casual queue tickets can leave two real players waiting until both
+        -- independently fall through to bot matches.
+        AND (${first.isRankingMatch} = false OR ABS("eloSnapshot" - ${first.eloSnapshot}) <= ${eloTolerance})
       ORDER BY "createdAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
