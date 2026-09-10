@@ -4,7 +4,7 @@ import { GameMode, MatchmakingTicketMode, Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
-import { botFallbackSeconds } from "../utilities/matchmaking-policy"
+import { botFallbackSeconds, queueHeartbeatTimeoutSeconds } from "../utilities/matchmaking-policy"
 
 type TicketRow = {
   id: string
@@ -34,7 +34,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
       FROM "MatchmakingTicket"
       WHERE "status" = 'SEARCHING'
         AND "expiresAt" > NOW()
-        AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${this.heartbeatTimeoutSeconds()})
+        AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
       ORDER BY "createdAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
@@ -48,7 +48,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
       FROM "MatchmakingTicket"
       WHERE "status" = 'SEARCHING'
         AND "expiresAt" > NOW()
-        AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${this.heartbeatTimeoutSeconds()})
+        AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
         AND "id" <> ${first.id}
         AND "userId" <> ${first.userId}
         AND "gameDefinitionId" = ${first.gameDefinitionId}
@@ -89,10 +89,5 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
     const ids = second ? [first.id, second.id] : [first.id]
     await transaction.matchmakingTicket.updateMany({ where: { id: { in: ids }, status: "SEARCHING" }, data: { status: "MATCHED", matchedAt: now, matchId: match.id } })
     return { ticketIds: ids, matchId: match.id, status: "MATCHED", matchStatus: match.status, gameKey: game.key, mode: matchMode }
-  }
-
-  private heartbeatTimeoutSeconds() {
-    const value = Number(process.env.MATCHMAKING_HEARTBEAT_TIMEOUT_SECONDS)
-    return Number.isFinite(value) && value >= 15 && value <= 600 ? Math.floor(value) : 45
   }
 }

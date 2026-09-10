@@ -31,7 +31,10 @@ export class MatchmakingService {
   cancelInvite(userId: string, inviteId: string) { return this.respondInviteTransaction.run({ userId, inviteId, response: "CANCELED" }).then((value) => this.serialize(value)) }
 
   async status(userId: string) {
-    const ticket = await this.prisma.matchmakingTicket.findFirst({ where: { userId, status: { in: ["SEARCHING", "MATCHED"] } }, orderBy: { createdAt: "desc" }, include: { gameDefinition: { select: { key: true, name: true } }, match: { select: { id: true, status: true, mode: true, startedAt: true, createdAt: true, participants: { select: { id: true, userId: true, participantType: true, result: true } } } } } })
+    // A MATCHED ticket belongs to the active match only while that match is
+    // still starting or playing. Excluding settled/cancelled matches prevents
+    // a previous game from being resurrected after the player queues again.
+    const ticket = await this.prisma.matchmakingTicket.findFirst({ where: { userId, OR: [{ status: "SEARCHING" }, { status: "MATCHED", match: { is: { status: { in: ["CREATED", "STARTED"] } } } }] }, orderBy: { createdAt: "desc" }, include: { gameDefinition: { select: { key: true, name: true } }, match: { select: { id: true, status: true, mode: true, startedAt: true, createdAt: true, participants: { select: { id: true, userId: true, participantType: true, result: true } } } } } })
     const activeFriendMatch = ticket?.match
       ? null
       : await this.prisma.match.findFirst({

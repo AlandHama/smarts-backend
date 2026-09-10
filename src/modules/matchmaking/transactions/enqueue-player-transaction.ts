@@ -38,10 +38,34 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
     if (dto.constraints && (Object.keys(dto.constraints).length > 12 || JSON.stringify(dto.constraints).length > 2000)) throw new BadRequestException("Matchmaking constraints are too large")
 
-    const current = await transaction.matchmakingTicket.findFirst({ where: { userId: input.userId, status: "SEARCHING" } })
-    if (current) {
-      if (current.expiresAt <= now || current.lastHeartbeatAt.getTime() <= now.getTime() - queueHeartbeatTimeoutSeconds() * 1000) await transaction.matchmakingTicket.update({ where: { id: current.id }, data: { status: "EXPIRED" } })
-      else throw new ConflictException("Player is already in the matchmaking queue")
+    // Serialize queue creation per player. Without this lock two quick taps
+    // or two app retries can both observe no ticket and leave duplicate
+    // SEARCHING rows that later get matched independently.
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.userId}, 0))`
+    const currentTickets = await transaction.matchmakingTicket.findMany({
+      where: {
+        userId: input.userId,
+        OR: [
+          { status: "SEARCHING" },
+          { status: "MATCHED", match: { is: { status: { in: ["CREATED", "STARTED"] } } } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    })
+    const heartbeatCutoff = now.getTime() - queueHeartbeatTimeoutSeconds() * 1000
+    const activeTickets = []
+    for (const current of currentTickets) {
+      if (current.status === "SEARCHING" && (current.expiresAt <= now || current.lastHeartbeatAt.getTime() <= heartbeatCutoff)) {
+        await transaction.matchmakingTicket.update({ where: { id: current.id }, data: { status: "EXPIRED" } })
+        continue
+      }
+      activeTickets.push(current)
+    }
+    if (activeTickets.some((ticket) => ticket.status === "MATCHED")) {
+      throw new ConflictException("Player already has an active match")
+    }
+    if (activeTickets.length) {
+      throw new ConflictException("Player is already in the matchmaking queue")
     }
 
     const idempotency = key ? await transaction.idempotencyKey.create({ data: { userId: input.userId, scope, key, requestHash, status: "PROCESSING" } }) : null

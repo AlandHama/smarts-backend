@@ -25,17 +25,32 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
     if (this.running) return
     this.running = true
     try {
-      await this.expireTickets.run()
-      await this.expireMatches.run()
-      await this.botGameplay.progressActiveMatches()
+      // Maintenance must never be able to starve the matcher. A malformed
+      // bot match or one expired-match race is isolated to that phase so
+      // healthy queue tickets are still claimed on the same tick.
+      await this.runStep("expire matchmaking tickets", () => this.expireTickets.run())
+      await this.runStep("expire matches", () => this.expireMatches.run())
+      await this.runStep("advance bot matches", () => this.botGameplay.progressActiveMatches())
       for (let index = 0; index < matchmakerBatchSize(); index += 1) {
-        const result = await this.claimPair.run()
+        let result
+        try {
+          result = await this.claimPair.run()
+        } catch (error) {
+          this.logger.warn(`Matchmaking pair claim failed: ${error instanceof Error ? error.message : String(error)}`)
+          break
+        }
         if (!result) break
       }
-    } catch (error) {
-      this.logger.warn(`Matchmaking worker tick failed: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       this.running = false
+    }
+  }
+
+  private async runStep(label: string, operation: () => Promise<unknown>) {
+    try {
+      await operation()
+    } catch (error) {
+      this.logger.warn(`Matchmaking worker step failed (${label}): ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 }
