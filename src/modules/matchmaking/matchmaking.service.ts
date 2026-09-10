@@ -6,6 +6,7 @@ import { AcceptFriendInviteTransaction } from "./transactions/accept-friend-invi
 import { CancelTicketTransaction } from "./transactions/cancel-ticket-transaction"
 import { CreateFriendInviteTransaction } from "./transactions/create-friend-invite-transaction"
 import { EnqueuePlayerTransaction } from "./transactions/enqueue-player-transaction"
+import { ClaimMatchmakingPairTransaction } from "./transactions/claim-matchmaking-pair-transaction"
 import { HeartbeatTicketTransaction } from "./transactions/heartbeat-ticket-transaction"
 import { RespondFriendInviteTransaction } from "./transactions/respond-friend-invite-transaction"
 import { EnqueuePlayerDto, CreateFriendInviteDto } from "./dtos"
@@ -15,6 +16,7 @@ export class MatchmakingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly enqueueTransaction: EnqueuePlayerTransaction,
+    private readonly claimPairTransaction: ClaimMatchmakingPairTransaction,
     private readonly heartbeatTransaction: HeartbeatTicketTransaction,
     private readonly cancelTransaction: CancelTicketTransaction,
     private readonly createInviteTransaction: CreateFriendInviteTransaction,
@@ -22,7 +24,15 @@ export class MatchmakingService {
     private readonly respondInviteTransaction: RespondFriendInviteTransaction,
   ) {}
 
-  enqueue(userId: string, dto: EnqueuePlayerDto) { return this.enqueueTransaction.run({ userId, dto }).then((value) => this.serialize(value)) }
+  async enqueue(userId: string, dto: EnqueuePlayerDto) {
+    const value = await this.enqueueTransaction.run({ userId, dto })
+    // The worker normally performs this on its one-second tick. Claiming once
+    // after enqueue removes that timing dependency, especially when both
+    // friends enter the queue at nearly the same time or a worker tick is
+    // briefly delayed by database maintenance.
+    await this.claimPairTransaction.run()
+    return this.serialize(value)
+  }
   heartbeat(userId: string, ticketId: string) { return this.heartbeatTransaction.run({ userId, ticketId }).then((value) => this.serialize(value)) }
   cancel(userId: string, ticketId: string) { return this.cancelTransaction.run({ userId, ticketId }).then((value) => this.serialize(value)) }
   createInvite(userId: string, dto: CreateFriendInviteDto) { return this.createInviteTransaction.run({ userId, dto }).then((value) => this.serialize(value)) }
@@ -31,6 +41,10 @@ export class MatchmakingService {
   cancelInvite(userId: string, inviteId: string) { return this.respondInviteTransaction.run({ userId, inviteId, response: "CANCELED" }).then((value) => this.serialize(value)) }
 
   async status(userId: string) {
+    // Status is polled by mobile clients while waiting. Let a status request
+    // opportunistically pair compatible tickets so a delayed worker cannot
+    // leave both players waiting until bot fallback.
+    await this.claimPairTransaction.run()
     // A MATCHED ticket belongs to the active match only while that match is
     // still starting or playing. Excluding settled/cancelled matches prevents
     // a previous game from being resurrected after the player queues again.
