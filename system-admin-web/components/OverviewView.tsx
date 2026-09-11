@@ -48,6 +48,11 @@ const gameplaySeries: Series[] = [
   { key: 'correctAnswers', label: 'Correct answers', color: '#f4c95d' },
 ];
 
+const playTimeSeries: Series[] = [
+  { key: 'playHours', label: 'Active play hours', color: '#45d5a2' },
+  { key: 'matchPlayHours', label: 'Match hours', color: '#f4c95d' },
+];
+
 export function OverviewView() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<SystemAdminAnalytics | null>(null);
@@ -102,7 +107,15 @@ export function OverviewView() {
       ['Answer accuracy', kpis?.accuracy, `${fmt(kpis?.acceptedAnswers ?? 0)} accepted answers`, <CheckCircleRoundedIcon />, '#45d5a2'],
       ['XP awarded', kpis?.xpAwarded, 'Progression movement', <EmojiEventsRoundedIcon />, '#f4c95d'],
       ['Purchase value', kpis?.purchaseValue, `${fmt(kpis?.completedPurchases ?? 0)} completed purchases`, <MonetizationOnRoundedIcon />, '#52c7f5'],
-    ].map(([label, value, caption, icon, color]) => <Grid key={String(label)} size={{ xs: 12, sm: 6, md: 3 }}><MetricCard label={String(label)} value={loading && !data ? null : typeof value === 'number' ? (String(label) === 'Answer accuracy' ? percent(value) : fmtCompact(value)) : '0'} caption={String(caption)} icon={icon as ReactNode} color={String(color)} /></Grid>)}</Grid>
+      ['Hours played', kpis?.totalPlayHours, 'Estimated active player time', <AccessTimeRoundedIcon />, '#45d5a2'],
+      ['Daily play average', kpis?.averageDailyPlayHours, 'Hours per selected day', <TrendingUpRoundedIcon />, '#c58cff'],
+      ['Average session', kpis?.averageSessionMinutes, 'Minutes per player session', <AccessTimeRoundedIcon />, '#f4c95d'],
+    ].map(([label, value, caption, icon, color]) => <Grid key={String(label)} size={{ xs: 12, sm: 6, md: 3 }}><MetricCard label={String(label)} value={loading && !data ? null : typeof value === 'number' ? formatMetric(String(label), value) : '0'} caption={String(caption)} icon={icon as ReactNode} color={String(color)} /></Grid>)}</Grid>
+
+    <Grid container spacing={2}>
+      <Grid size={{ xs: 12, lg: 8 }}><ReportCard title="Play-time trend" subtitle="Estimated active player hours and verified match time by UTC day."><TrendChart points={trends} series={playTimeSeries} valueFormatter={(value) => `${value.toFixed(1)}h`} /></ReportCard></Grid>
+      <Grid size={{ xs: 12, lg: 4 }}><PlayTimeReport data={data} loading={loading} /></Grid>
+    </Grid>
 
     <Grid container spacing={2}>
       <Grid size={{ xs: 12, lg: 8 }}><ReportCard title="Engagement and growth" subtitle="Daily active users, new registrations, and completed matches."><TrendChart points={trends} series={engagementSeries} /></ReportCard></Grid>
@@ -134,11 +147,19 @@ function MetricCard({ label, value, caption, icon, color }: { label: string; val
   return <Card sx={{ p: 2.2, height: '100%' }}><Stack direction="row" justifyContent="space-between" alignItems="flex-start"><Box sx={{ width: 40, height: 40, display: 'grid', placeItems: 'center', borderRadius: 2.5, bgcolor: `${color}22`, color }}>{icon}</Box><Typography variant="caption" color="text.secondary">REPORT</Typography></Stack>{value === null ? <Skeleton width={100} height={48} sx={{ mt: 1.3 }} /> : <Typography variant="h4" sx={{ mt: 1.3, fontWeight: 850 }}>{value}</Typography>}<Typography fontWeight={700}>{label}</Typography><Typography variant="caption" color="text.secondary">{caption}</Typography></Card>;
 }
 
+function formatMetric(label: string, value: number) {
+  if (label === 'Answer accuracy') return percent(value);
+  if (label === 'Hours played') return `${value.toFixed(2)}h`;
+  if (label === 'Daily play average') return `${value.toFixed(2)}h`;
+  if (label === 'Average session') return `${value.toFixed(1)}m`;
+  return fmtCompact(value);
+}
+
 function ReportCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return <Card><CardHeader title={title} subheader={subtitle} titleTypographyProps={{ fontWeight: 800 }} subheaderTypographyProps={{ sx: { mt: .5 } }} /><CardContent sx={{ pt: 0 }}>{children}</CardContent></Card>;
 }
 
-function TrendChart({ points, series }: { points: SystemAdminAnalytics['trends']; series: Series[] }) {
+function TrendChart({ points, series, valueFormatter = (value) => fmtCompact(value) }: { points: SystemAdminAnalytics['trends']; series: Series[]; valueFormatter?: (value: number) => string }) {
   const height = 250;
   const width = 900;
   const padding = { top: 18, right: 16, bottom: 28, left: 38 };
@@ -148,10 +169,23 @@ function TrendChart({ points, series }: { points: SystemAdminAnalytics['trends']
   const y = (value: number) => height - padding.bottom - (value / max) * (height - padding.top - padding.bottom);
   if (!points.length) return <EmptyState text="No events have been recorded for this period." />;
   return <Stack spacing={1.5}><Box sx={{ width: '100%', overflow: 'hidden' }}><svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} role="img" aria-label="Analytics trend chart">
-    {[0, .25, .5, .75, 1].map((ratio) => <g key={ratio}><line x1={padding.left} x2={width - padding.right} y1={y(max * ratio)} y2={y(max * ratio)} stroke="rgba(148,163,184,.16)" strokeDasharray="4 5" /><text x={padding.left - 8} y={y(max * ratio) + 4} textAnchor="end" fill="#91a0b8" fontSize="11">{fmtCompact(max * ratio)}</text></g>)}
+    {[0, .25, .5, .75, 1].map((ratio) => <g key={ratio}><line x1={padding.left} x2={width - padding.right} y1={y(max * ratio)} y2={y(max * ratio)} stroke="rgba(148,163,184,.16)" strokeDasharray="4 5" /><text x={padding.left - 8} y={y(max * ratio) + 4} textAnchor="end" fill="#91a0b8" fontSize="11">{valueFormatter(max * ratio)}</text></g>)}
     {series.map((item) => <polyline key={item.key} fill="none" stroke={item.color} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" points={points.map((point, index) => `${x(index)},${y(Number(point[item.key as keyof typeof point]) || 0)}`).join(' ')} />)}
     {points.map((point, index) => index === 0 || index === points.length - 1 || index === Math.floor(points.length / 2) ? <text key={point.date} x={x(index)} y={height - 6} textAnchor={index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle'} fill="#91a0b8" fontSize="11">{date(point.date)}</text> : null)}
   </svg></Box><Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>{series.map((item) => <Stack key={item.key} direction="row" spacing={.7} alignItems="center"><Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: item.color }} /><Typography variant="caption" color="text.secondary">{item.label}</Typography></Stack>)}</Stack></Stack>;
+}
+
+function PlayTimeReport({ data, loading }: { data: SystemAdminAnalytics | null; loading: boolean }) {
+  const rows = data ? [
+    ['Total active time', `${data.playTime.totalHours.toFixed(2)}h`],
+    ['Average per selected day', `${data.playTime.averageDailyHours.toFixed(2)}h`],
+    ['Active player-days', fmt(data.playTime.activeDays)],
+    ['Tracked sessions', fmt(data.playTime.sessions)],
+    ['Players with session activity', fmt(data.playTime.players)],
+    ['Longest session', formatDuration(data.playTime.longestSessionMinutes * 60)],
+    ['Verified match time', `${data.playTime.matchPlayHours.toFixed(2)}h`],
+  ] as const : [];
+  return <ReportCard title="Time spent" subtitle="Session activity is capped at 12 hours per session; match time is shown separately."><Stack spacing={1.15}>{loading && !data ? <Skeleton variant="rectangular" height={245} /> : rows.map(([label, value]) => <Stack key={label} direction="row" justifyContent="space-between" sx={{ py: .45 }}><Typography color="text.secondary">{label}</Typography><Typography fontWeight={850}>{value}</Typography></Stack>)}</Stack></ReportCard>;
 }
 
 function RetentionCard({ data, loading }: { data: SystemAdminAnalytics | null; loading: boolean }) {

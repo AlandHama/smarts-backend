@@ -24,7 +24,7 @@ export class SystemAdminAnalyticsService {
     const from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate() - (days - 1)))
     const retentionTo = new Date(to)
 
-    const [trend, summary, answerSummary, matchSummary, commerceSummary, gameRows, progressionRows, retention, countries, devices, health] = await Promise.all([
+    const [trend, summary, answerSummary, matchSummary, commerceSummary, gameRows, progressionRows, retention, countries, devices, timeSummary, health] = await Promise.all([
       this.safeQuery("daily trend", this.trend(from, to), []),
       this.safeQuery("active-user summary", this.summary(from, to), []),
       this.safeQuery("answer summary", this.answerSummary(from, to), []),
@@ -35,6 +35,7 @@ export class SystemAdminAnalyticsService {
       this.safeQuery("retention", this.retention(from, retentionTo), []),
       this.safeQuery("country breakdown", this.countryBreakdown(from, to), []),
       this.safeQuery("device breakdown", this.deviceBreakdown(from, to), []),
+      this.safeQuery("play-time summary", this.timeSummary(from, to), []),
       this.safeQuery("live health", this.health(), { onlinePlayers: 0, searchingTickets: 0, activeMatches: 0, failedOutbox: 0, openFeedback: 0 }),
     ])
 
@@ -46,6 +47,9 @@ export class SystemAdminAnalyticsService {
     const settledMatches = this.number(matchSummary[0]?.settled)
     const walletCredits = this.number(trend.reduce((sum, row) => sum + this.number(row.walletCredits), 0))
     const walletDebits = this.number(trend.reduce((sum, row) => sum + this.number(row.walletDebits), 0))
+    const time = timeSummary[0] ?? {}
+    const totalPlaySeconds = this.number(time.total_play_seconds)
+    const averageDailyPlayHours = days ? Math.round((totalPlaySeconds / 3600 / days) * 100) / 100 : 0
 
     return this.serialize({
       period: { from, to, days, timezone: "UTC" },
@@ -71,6 +75,9 @@ export class SystemAdminAnalyticsService {
         purchaseValue: this.number(commerceSummary[0]?.purchase_value),
         grantedAdClaims: this.number(commerceSummary[0]?.granted_ad_claims),
         fulfilledPaidRewards: this.number(commerceSummary[0]?.fulfilled_paid_rewards),
+        totalPlayHours: Math.round((totalPlaySeconds / 3600) * 100) / 100,
+        averageDailyPlayHours,
+        averageSessionMinutes: Math.round((this.number(time.average_session_seconds) / 60) * 10) / 10,
       },
       trends: trend.map((row) => ({
         date: row.day,
@@ -84,6 +91,8 @@ export class SystemAdminAnalyticsService {
         walletCredits: this.number(row.wallet_credits),
         walletDebits: this.number(row.wallet_debits),
         purchases: this.number(row.purchases),
+        playHours: Math.round((this.number(row.play_seconds) / 3600) * 100) / 100,
+        matchPlayHours: Math.round((this.number(row.match_play_seconds) / 3600) * 100) / 100,
       })),
       games: gameRows.map((row) => ({
         key: String(row.key),
@@ -117,6 +126,17 @@ export class SystemAdminAnalyticsService {
         cancelledMatches: this.number(matchSummary[0]?.cancelled),
         drawMatches: this.number(matchSummary[0]?.draws),
         botMatches: this.number(matchSummary[0]?.bot_matches),
+      },
+      playTime: {
+        totalSeconds: totalPlaySeconds,
+        totalHours: Math.round((totalPlaySeconds / 3600) * 100) / 100,
+        averageDailyHours: averageDailyPlayHours,
+        activeDays: this.number(time.active_days),
+        sessions: this.number(time.sessions),
+        players: this.number(time.players),
+        averageSessionMinutes: Math.round((this.number(time.average_session_seconds) / 60) * 10) / 10,
+        longestSessionMinutes: Math.round((this.number(time.longest_session_seconds) / 60) * 10) / 10,
+        matchPlayHours: Math.round((this.number(time.match_play_seconds) / 3600) * 100) / 100,
       },
       economy: {
         adClaims: this.number(commerceSummary[0]?.ad_claims),
@@ -152,9 +172,64 @@ export class SystemAdminAnalyticsService {
         SELECT date_trunc('day', "createdAt") AS day, COALESCE(sum("amount") FILTER (WHERE "direction" = 'CREDIT'), 0) AS wallet_credits, COALESCE(sum("amount") FILTER (WHERE "direction" = 'DEBIT'), 0) AS wallet_debits FROM "WalletTransaction" WHERE "createdAt" >= ${from} AND "createdAt" <= ${to} GROUP BY 1
       ), daily_purchases AS (
         SELECT date_trunc('day', COALESCE("completedAt", "createdAt")) AS day, count(*) FILTER (WHERE "status" = 'COMPLETED') AS purchases FROM "Purchase" WHERE COALESCE("completedAt", "createdAt") >= ${from} AND COALESCE("completedAt", "createdAt") <= ${to} GROUP BY 1
+      ), daily_play AS (
+        SELECT days.day,
+          COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM (
+            LEAST(COALESCE(s."lastActiveTimestamp", ${to}), s."loginTimestamp" + interval '12 hours', days.day + interval '1 day', ${to})
+            - GREATEST(s."loginTimestamp", days.day, ${from})
+          )))), 0) AS play_seconds
+        FROM days
+        LEFT JOIN "Session" s ON s."loginTimestamp" < days.day + interval '1 day'
+          AND COALESCE(s."lastActiveTimestamp", ${to}) > days.day
+        JOIN "User" session_user ON session_user."id" = s."userId" AND session_user."isSystemAdmin" = false
+        GROUP BY days.day
+      ), daily_match_play AS (
+        SELECT days.day,
+          COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM (
+            LEAST(m."endedAt", days.day + interval '1 day', ${to})
+            - GREATEST(m."startedAt", days.day, ${from})
+          )))), 0) AS match_play_seconds
+        FROM days
+        LEFT JOIN "Match" m ON m."startedAt" IS NOT NULL AND m."endedAt" IS NOT NULL
+          AND m."startedAt" < days.day + interval '1 day'
+          AND m."endedAt" > days.day
+        GROUP BY days.day
       )
-      SELECT days.day, COALESCE(daily_activity.dau, 0) AS dau, COALESCE(daily_new.new_players, 0) AS new_players, COALESCE(daily_matches.matches_created, 0) AS matches_created, COALESCE(daily_settled.matches_settled, 0) AS matches_settled, COALESCE(daily_answers.answers, 0) AS answers, COALESCE(daily_answers.correct_answers, 0) AS correct_answers, COALESCE(daily_xp.xp_awarded, 0) AS xp_awarded, COALESCE(daily_wallet.wallet_credits, 0) AS wallet_credits, COALESCE(daily_wallet.wallet_debits, 0) AS wallet_debits, COALESCE(daily_purchases.purchases, 0) AS purchases
-      FROM days LEFT JOIN daily_activity USING (day) LEFT JOIN daily_new USING (day) LEFT JOIN daily_matches USING (day) LEFT JOIN daily_settled USING (day) LEFT JOIN daily_answers USING (day) LEFT JOIN daily_xp USING (day) LEFT JOIN daily_wallet USING (day) LEFT JOIN daily_purchases USING (day) ORDER BY days.day ASC
+      SELECT days.day, COALESCE(daily_activity.dau, 0) AS dau, COALESCE(daily_new.new_players, 0) AS new_players, COALESCE(daily_matches.matches_created, 0) AS matches_created, COALESCE(daily_settled.matches_settled, 0) AS matches_settled, COALESCE(daily_answers.answers, 0) AS answers, COALESCE(daily_answers.correct_answers, 0) AS correct_answers, COALESCE(daily_xp.xp_awarded, 0) AS xp_awarded, COALESCE(daily_wallet.wallet_credits, 0) AS wallet_credits, COALESCE(daily_wallet.wallet_debits, 0) AS wallet_debits, COALESCE(daily_purchases.purchases, 0) AS purchases, COALESCE(daily_play.play_seconds, 0) AS play_seconds, COALESCE(daily_match_play.match_play_seconds, 0) AS match_play_seconds
+      FROM days LEFT JOIN daily_activity USING (day) LEFT JOIN daily_new USING (day) LEFT JOIN daily_matches USING (day) LEFT JOIN daily_settled USING (day) LEFT JOIN daily_answers USING (day) LEFT JOIN daily_xp USING (day) LEFT JOIN daily_wallet USING (day) LEFT JOIN daily_purchases USING (day) LEFT JOIN daily_play USING (day) LEFT JOIN daily_match_play USING (day) ORDER BY days.day ASC
+    `)
+  }
+
+  private timeSummary(from: Date, to: Date) {
+    return this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`
+      WITH session_rows AS (
+        SELECT
+          GREATEST(0, EXTRACT(EPOCH FROM (
+            LEAST(s."lastActiveTimestamp", s."loginTimestamp" + interval '12 hours', ${to})
+            - GREATEST(s."loginTimestamp", ${from})
+          ))) AS duration_seconds,
+          s."userId" AS user_id,
+          s."loginTimestamp" AS login_at
+        FROM "Session" s
+        JOIN "User" u ON u."id" = s."userId" AND u."isSystemAdmin" = false
+        WHERE s."loginTimestamp" <= ${to} AND s."lastActiveTimestamp" >= ${from}
+      ), match_rows AS (
+        SELECT GREATEST(0, EXTRACT(EPOCH FROM (
+          LEAST(m."endedAt", ${to}) - GREATEST(m."startedAt", ${from})
+        ))) AS duration_seconds
+        FROM "Match" m
+        WHERE m."startedAt" IS NOT NULL AND m."endedAt" IS NOT NULL
+          AND m."startedAt" <= ${to} AND m."endedAt" >= ${from}
+      )
+      SELECT
+        COALESCE(SUM(duration_seconds), 0) AS total_play_seconds,
+        COALESCE(AVG(duration_seconds), 0) AS average_session_seconds,
+        COALESCE(MAX(duration_seconds), 0) AS longest_session_seconds,
+        COUNT(*) AS sessions,
+        COUNT(DISTINCT user_id) AS players,
+        COUNT(DISTINCT date_trunc('day', login_at)) AS active_days,
+        (SELECT COALESCE(SUM(duration_seconds), 0) FROM match_rows) AS match_play_seconds
+      FROM session_rows
     `)
   }
 

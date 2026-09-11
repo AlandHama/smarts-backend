@@ -267,6 +267,9 @@ export interface SystemAdminAnalytics {
     purchaseValue: number;
     grantedAdClaims: number;
     fulfilledPaidRewards: number;
+    totalPlayHours: number;
+    averageDailyPlayHours: number;
+    averageSessionMinutes: number;
   };
   trends: Array<{
     date: string;
@@ -280,6 +283,8 @@ export interface SystemAdminAnalytics {
     walletCredits: number;
     walletDebits: number;
     purchases: number;
+    playHours: number;
+    matchPlayHours: number;
   }>;
   games: GameAnalyticsRow[];
   retention: { day1: RetentionMetric; day7: RetentionMetric; day30: RetentionMetric };
@@ -287,6 +292,7 @@ export interface SystemAdminAnalytics {
   countries: Array<{ countryCode: string; activeUsers: number; newPlayers: number }>;
   devices: Array<{ type: string; users: number; sessions: number }>;
   gameplay: { averageMatchDurationSeconds: number; reviewMatches: number; cancelledMatches: number; drawMatches: number; botMatches: number };
+  playTime: { totalSeconds: number; totalHours: number; averageDailyHours: number; activeDays: number; sessions: number; players: number; averageSessionMinutes: number; longestSessionMinutes: number; matchPlayHours: number };
   economy: { adClaims: number; rejectedAdClaims: number; paidRewardRequests: number; refusedPaidRewards: number };
   health: { onlinePlayers: number; searchingTickets: number; activeMatches: number; failedOutbox: number; openFeedback: number };
 }
