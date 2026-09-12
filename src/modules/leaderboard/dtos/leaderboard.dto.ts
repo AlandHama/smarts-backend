@@ -1,10 +1,70 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger"
-import { Transform } from "class-transformer"
-import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from "class-validator"
-import { LeaderboardDirection, LeaderboardMemberType, LeaderboardPeriod, LeaderboardScoreSourceType, LeaderboardWritePolicy } from "@prisma/client"
+import { Transform, Type } from "class-transformer"
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested } from "class-validator"
+import { LeaderboardDirection, LeaderboardMemberType, LeaderboardPeriod, LeaderboardScoreSourceType, LeaderboardWritePolicy, ProgressionRewardType } from "@prisma/client"
 
 const SIGNED_INTEGER = /^-?\d+$/
 const MEMBER_KEY = /^[A-Za-z0-9:_-]{1,128}$/
+
+export class LeaderboardRewardDto {
+  @ApiProperty({ example: 1, minimum: 1, maximum: 100 })
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  rank!: number
+
+  @ApiProperty({ enum: ProgressionRewardType, example: ProgressionRewardType.CURRENCY })
+  @IsEnum(ProgressionRewardType)
+  rewardType!: ProgressionRewardType
+
+  @ApiPropertyOptional({ example: "GLD", description: "Currency code for a CURRENCY reward." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  currencyCode?: string
+
+  @ApiPropertyOptional({ example: "steam_gift_card", description: "Asset key for an ASSET reward." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  assetKey?: string
+
+  @ApiPropertyOptional({ example: "main", description: "Progression key for a PROGRESSION_POINTS reward." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  progressionKey?: string
+
+  @ApiPropertyOptional({ example: "standard" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  variationKey?: string
+
+  @ApiPropertyOptional({ example: "1000", description: "Positive integer amount for currency rewards." })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/)
+  amount?: string
+
+  @ApiPropertyOptional({ example: 1, minimum: 1, maximum: 1000 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  quantity?: number
+
+  @ApiPropertyOptional({ example: "premium_badge", description: "Entitlement key for an ENTITLEMENT reward." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  targetKey?: string
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>
+}
 
 export class CreateLeaderboardDto {
   @ApiProperty({ example: "players_weekly" })
@@ -44,6 +104,14 @@ export class CreateLeaderboardDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, unknown>
+
+  @ApiPropertyOptional({ type: () => [LeaderboardRewardDto], description: "One or more payouts for each configured finishing rank." })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => LeaderboardRewardDto)
+  rewards?: LeaderboardRewardDto[]
 }
 
 export class UpdateLeaderboardDto extends PartialType(CreateLeaderboardDto) {}

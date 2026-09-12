@@ -590,6 +590,7 @@ model CurrencyDefinition {
   catalogRewards CatalogReward[]
   purchases      Purchase[]
   adRewardClaims AdRewardClaim[]
+  leaderboardRewards LeaderboardReward[]
 }
 
 model AssetDefinition {
@@ -613,6 +614,7 @@ model AssetDefinition {
   entitlements    Entitlement[]
   redeemCodes     AssetRedeemCode[]
   paidRewardRequests PaidRewardRequest[]
+  leaderboardRewards LeaderboardReward[]
 
   @@index([active, assetType])
 }
@@ -634,6 +636,7 @@ model AssetVariation {
   rewards           CatalogReward[]
   redeemCodes       AssetRedeemCode[]
   paidRewardRequests PaidRewardRequest[]
+  leaderboardRewards LeaderboardReward[]
 
   @@unique([assetDefinitionId, key])
   @@index([assetDefinitionId, active])
@@ -921,6 +924,7 @@ model ProgressionDefinition {
   events         ProgressionEvent[]
   grants         RewardGrant[]
   catalogRewards CatalogReward[]
+  leaderboardRewards LeaderboardReward[]
 }
 
 model ProgressionTier {
@@ -1061,6 +1065,32 @@ model Leaderboard {
   seasons     LeaderboardSeason[]
   entries     LeaderboardEntry[]
   scoreEvents LeaderboardScoreEvent[]
+  rewards     LeaderboardReward[]
+}
+
+model LeaderboardReward {
+  id                String                @id @default(uuid()) @db.Uuid
+  leaderboardId     String                @db.Uuid
+  rank              Int
+  sortOrder         Int                   @default(0)
+  rewardType        ProgressionRewardType
+  currencyId        String?               @db.Uuid
+  assetDefinitionId String?               @db.Uuid
+  assetVariationId  String?               @db.Uuid
+  progressionDefinitionId String?         @db.Uuid
+  amount            BigInt?
+  targetKey         String?               @db.VarChar(160)
+  metadata          Json?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  leaderboard       Leaderboard           @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  currency          CurrencyDefinition?  @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  assetDefinition   AssetDefinition?     @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  assetVariation    AssetVariation?      @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
+  progressionDefinition ProgressionDefinition? @relation(fields: [progressionDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([leaderboardId, rank, sortOrder])
+  @@index([leaderboardId, rank])
 }
 
 model LeaderboardSeason {

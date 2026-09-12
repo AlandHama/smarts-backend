@@ -2,13 +2,14 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import { LeaderboardPeriod } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
+import { LeaderboardRewardService } from "./leaderboard-reward.service"
 
 @Injectable()
 export class LeaderboardSeasonService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LeaderboardSeasonService.name)
   private timer?: ReturnType<typeof setInterval>
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly rewards: LeaderboardRewardService) {}
 
   onModuleInit() {
     void this.rollover().catch((error) => this.logger.warn(`Initial leaderboard season rollover skipped: ${error instanceof Error ? error.message : String(error)}`))
@@ -24,7 +25,11 @@ export class LeaderboardSeasonService implements OnModuleInit, OnModuleDestroy {
       const boards = await transaction.leaderboard.findMany({ where: { active: true, period: { in: [LeaderboardPeriod.WEEKLY, LeaderboardPeriod.MONTHLY] } }, select: { id: true, period: true }, take: 100 })
       const now = new Date()
       for (const board of boards) {
-        await transaction.leaderboardSeason.updateMany({ where: { leaderboardId: board.id, status: "ACTIVE", endsAt: { lte: now } }, data: { status: "CLOSED", resetAt: now } })
+        const expired = await transaction.leaderboardSeason.findMany({ where: { leaderboardId: board.id, status: "ACTIVE", endsAt: { lte: now } }, select: { id: true } })
+        for (const season of expired) {
+          await this.rewards.settleSeasonInTransaction(transaction, season.id)
+          await transaction.leaderboardSeason.update({ where: { id: season.id }, data: { status: "CLOSED", resetAt: now } })
+        }
         const window = this.currentWindow(board.period, now)
         const current = await transaction.leaderboardSeason.findUnique({ where: { leaderboardId_startsAt: { leaderboardId: board.id, startsAt: window.startsAt } }, select: { id: true, status: true } })
         if (!current) await transaction.leaderboardSeason.create({ data: { leaderboardId: board.id, startsAt: window.startsAt, endsAt: window.endsAt, status: "ACTIVE" } })

@@ -64,8 +64,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       admins.forEach((admin) => userIds.add(admin.id))
     }
     if (!userIds.size) return
-    const title = event.eventType === "commerce.purchase.completed" ? "Purchase completed" : event.eventType === "ad-reward.granted" ? "Ad reward granted" : "Account activity"
-    const body = event.eventType === "commerce.purchase.completed" ? `Purchase ${event.aggregateId} was completed.` : event.eventType === "ad-reward.granted" ? "Your rewarded ad credit is now available." : "A server event was processed for your account."
+    const title = event.eventType === "commerce.purchase.completed" ? "Purchase completed" : event.eventType === "ad-reward.granted" ? "Ad reward granted" : event.eventType === "leaderboard.reward.granted" ? "Leaderboard reward earned" : "Account activity"
+    const body = event.eventType === "commerce.purchase.completed" ? `Purchase ${event.aggregateId} was completed.` : event.eventType === "ad-reward.granted" ? "Your rewarded ad credit is now available." : event.eventType === "leaderboard.reward.granted" ? `You placed #${String(payload.rank ?? "")} and earned a leaderboard reward.` : "A server event was processed for your account."
     await this.prisma.notification.createMany({ data: [...userIds].map((userId) => ({ userId, outboxEventId: event.id, notificationType: event.eventType, title, body, data: { ...payload, outboxEventId: event.id } as Prisma.InputJsonValue, status: NotificationStatus.DISPATCHED, dispatchedAt: new Date() })), skipDuplicates: true })
   }
 

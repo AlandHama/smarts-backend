@@ -140,7 +140,21 @@ export interface LeaderboardDefinition {
   writePolicy: "SERVER_ONLY" | "AUTHENTICATED_COMMAND";
   active: boolean;
   seasons?: LeaderboardSeason[];
-  _count?: { seasons: number; entries: number };
+  _count?: { seasons: number; entries: number; rewards?: number };
+  rewards?: LeaderboardReward[];
+}
+
+export interface LeaderboardReward {
+  id?: string;
+  rank: number;
+  sortOrder?: number;
+  rewardType: "CURRENCY" | "ASSET" | "ENTITLEMENT" | "PROGRESSION_POINTS" | string;
+  amount: string | null;
+  targetKey: string | null;
+  currency?: { code: string; name: string } | null;
+  assetDefinition?: { key: string; name: string } | null;
+  assetVariation?: { key: string; name: string | null } | null;
+  progressionDefinition?: { key: string; name: string } | null;
 }
 
 export interface LeaderboardEntry {

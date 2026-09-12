@@ -3,6 +3,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
 import PlayCircleOutlineRoundedIcon from "@mui/icons-material/PlayCircleOutlineRounded";
 import Box from "@mui/material/Box";
@@ -27,13 +29,26 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { api } from "../lib/api";
-import type { LeaderboardDefinition, LeaderboardEntry } from "../lib/types";
+import type { LeaderboardDefinition, LeaderboardEntry, LeaderboardReward } from "../lib/types";
 import { UserSelector, type SelectableUser } from "./UserSelector";
 
 const valueOf = (form: HTMLFormElement, name: string) =>
   String(
     (form.elements.namedItem(name) as HTMLInputElement)?.value ?? "",
   ).trim();
+
+type RewardDraft = { rank: string; rewardType: "CURRENCY" | "ASSET" | "ENTITLEMENT" | "PROGRESSION_POINTS"; amount: string; currencyCode: string; assetKey: string; variationKey: string; quantity: string; targetKey: string; progressionKey: string };
+const emptyReward = (): RewardDraft => ({ rank: "1", rewardType: "CURRENCY", amount: "", currencyCode: "GLD", assetKey: "", variationKey: "", quantity: "1", targetKey: "", progressionKey: "main" });
+const draftsFromRewards = (rewards: LeaderboardReward[] = []) => rewards.map((reward) => ({ rank: String(reward.rank), rewardType: reward.rewardType as RewardDraft["rewardType"], amount: reward.amount ?? "", currencyCode: reward.currency?.code ?? "", assetKey: reward.assetDefinition?.key ?? "", variationKey: reward.assetVariation?.key ?? "", quantity: reward.rewardType === "ASSET" ? reward.amount ?? "1" : "1", targetKey: reward.targetKey ?? "", progressionKey: reward.progressionDefinition?.key ?? "" }));
+const serializeRewards = (rewards: RewardDraft[]) => rewards.map((reward) => ({ rank: Number(reward.rank), rewardType: reward.rewardType, ...(reward.rewardType === "CURRENCY" ? { amount: reward.amount, currencyCode: reward.currencyCode } : {}), ...(reward.rewardType === "ASSET" ? { assetKey: reward.assetKey, variationKey: reward.variationKey || undefined, quantity: Number(reward.quantity || "1") } : {}), ...(reward.rewardType === "ENTITLEMENT" ? { targetKey: reward.targetKey, assetKey: reward.assetKey || undefined } : {}), ...(reward.rewardType === "PROGRESSION_POINTS" ? { progressionKey: reward.progressionKey, amount: reward.amount } : {}) }));
+
+function RewardScheduleEditor({ rewards, onChange }: { rewards: RewardDraft[]; onChange: (next: RewardDraft[]) => void }) {
+  const update = (index: number, patch: Partial<RewardDraft>) => onChange(rewards.map((reward, itemIndex) => itemIndex === index ? { ...reward, ...patch } : reward));
+  return <Stack spacing={1.5}>
+    <Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography variant="subtitle2" fontWeight={800}>Leaderboard rewards</Typography><Typography variant="caption" color="text.secondary">Player boards pay every configured reward when their weekly or monthly season closes.</Typography></Box><Button size="small" startIcon={<AddRoundedIcon />} onClick={() => onChange([...rewards, emptyReward()])}>Add reward</Button></Stack>
+    {rewards.map((reward, index) => <Card key={index} variant="outlined" sx={{ p: 1.5 }}><Grid container spacing={1.2} alignItems="center"><Grid size={{ xs: 6, sm: 2 }}><TextField size="small" fullWidth label="Rank" type="number" value={reward.rank} onChange={(event) => update(index, { rank: event.target.value })} /></Grid><Grid size={{ xs: 6, sm: 3 }}><Select size="small" fullWidth value={reward.rewardType} onChange={(event) => update(index, { rewardType: event.target.value as RewardDraft["rewardType"] })}><MenuItem value="CURRENCY">Currency</MenuItem><MenuItem value="ASSET">Asset</MenuItem><MenuItem value="ENTITLEMENT">Entitlement</MenuItem><MenuItem value="PROGRESSION_POINTS">Progression points</MenuItem></Select></Grid>{reward.rewardType === "CURRENCY" && <><Grid size={{ xs: 6, sm: 3 }}><TextField size="small" fullWidth label="Currency code" value={reward.currencyCode} onChange={(event) => update(index, { currencyCode: event.target.value })} /></Grid><Grid size={{ xs: 6, sm: 3 }}><TextField size="small" fullWidth label="Amount" value={reward.amount} onChange={(event) => update(index, { amount: event.target.value })} /></Grid></>}{reward.rewardType === "ASSET" && <><Grid size={{ xs: 6, sm: 3 }}><TextField size="small" fullWidth label="Asset key" value={reward.assetKey} onChange={(event) => update(index, { assetKey: event.target.value })} /></Grid><Grid size={{ xs: 6, sm: 2 }}><TextField size="small" fullWidth label="Quantity" type="number" value={reward.quantity} onChange={(event) => update(index, { quantity: event.target.value })} /></Grid><Grid size={{ xs: 6, sm: 2 }}><TextField size="small" fullWidth label="Variation" value={reward.variationKey} onChange={(event) => update(index, { variationKey: event.target.value })} /></Grid></>}{reward.rewardType === "ENTITLEMENT" && <Grid size={{ xs: 12, sm: 5 }}><TextField size="small" fullWidth label="Entitlement key" value={reward.targetKey} onChange={(event) => update(index, { targetKey: event.target.value })} /></Grid>}{reward.rewardType === "PROGRESSION_POINTS" && <><Grid size={{ xs: 6, sm: 3 }}><TextField size="small" fullWidth label="Progression key" value={reward.progressionKey} onChange={(event) => update(index, { progressionKey: event.target.value })} /></Grid><Grid size={{ xs: 6, sm: 3 }}><TextField size="small" fullWidth label="Points" value={reward.amount} onChange={(event) => update(index, { amount: event.target.value })} /></Grid></>}<Grid size={{ xs: 12, sm: 1 }}><Button color="error" onClick={() => onChange(rewards.filter((_, itemIndex) => itemIndex !== index))}><DeleteOutlineRoundedIcon /></Button></Grid></Grid></Card>)}
+  </Stack>;
+}
 
 function CreateLeaderboardDialog({
   onClose,
@@ -43,6 +58,7 @@ function CreateLeaderboardDialog({
   onSaved: () => void;
 }) {
   const [error, setError] = useState("");
+  const [rewards, setRewards] = useState<RewardDraft[]>([]);
   return (
     <Dialog open maxWidth="sm" fullWidth onClose={onClose}>
       <DialogTitle>Create leaderboard definition</DialogTitle>
@@ -61,6 +77,7 @@ function CreateLeaderboardDialog({
                 direction: valueOf(form, "direction"),
                 writePolicy: "SERVER_ONLY",
                 active: true,
+                rewards: serializeRewards(rewards),
               }),
             });
             onSaved();
@@ -128,6 +145,8 @@ function CreateLeaderboardDialog({
                 </Select>
               </Grid>
             </Grid>
+            <Divider />
+            <RewardScheduleEditor rewards={rewards} onChange={setRewards} />
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -141,18 +160,25 @@ function CreateLeaderboardDialog({
   );
 }
 
+function EditLeaderboardDialog({ board, onClose, onSaved }: { board: LeaderboardDefinition; onClose: () => void; onSaved: () => void }) {
+  const [error, setError] = useState("");
+  const [rewards, setRewards] = useState<RewardDraft[]>(draftsFromRewards(board.rewards));
+  return <Dialog open maxWidth="md" fullWidth onClose={onClose}><DialogTitle>Edit leaderboard</DialogTitle><form onSubmit={async (event) => { event.preventDefault(); const form = event.currentTarget; try { await api(`/leaderboards/${board.id}`, { method: "PATCH", body: JSON.stringify({ name: valueOf(form, "name"), memberType: valueOf(form, "memberType"), period: valueOf(form, "period"), direction: valueOf(form, "direction"), active: valueOf(form, "active") === "true", rewards: serializeRewards(rewards) }) }); onSaved(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to update leaderboard"); } }}><DialogContent><Stack spacing={2}>{error && <Typography color="error.main">{error}</Typography>}<TextField name="name" label="Display name" defaultValue={board.name} required fullWidth size="small" /><Grid container spacing={2}><Grid size={{ xs: 12, sm: 4 }}><Select name="memberType" defaultValue={board.memberType} fullWidth size="small"><MenuItem value="PLAYER">Players</MenuItem><MenuItem value="COUNTRY">Countries</MenuItem><MenuItem value="GENERIC">Generic members</MenuItem></Select></Grid><Grid size={{ xs: 12, sm: 4 }}><Select name="period" defaultValue={board.period} fullWidth size="small"><MenuItem value="ALL_TIME">All time</MenuItem><MenuItem value="WEEKLY">Weekly</MenuItem><MenuItem value="MONTHLY">Monthly</MenuItem><MenuItem value="SEASONAL">Seasonal</MenuItem></Select></Grid><Grid size={{ xs: 12, sm: 4 }}><Select name="direction" defaultValue={board.direction} fullWidth size="small"><MenuItem value="DESCENDING">Highest score first</MenuItem><MenuItem value="ASCENDING">Lowest score first</MenuItem></Select></Grid><Grid size={{ xs: 12 }}><Select name="active" defaultValue={String(board.active)} fullWidth size="small"><MenuItem value="true">Active</MenuItem><MenuItem value="false">Inactive</MenuItem></Select></Grid></Grid><Divider /><RewardScheduleEditor rewards={rewards} onChange={setRewards} /></Stack></DialogContent><DialogActions><Button onClick={onClose}>Cancel</Button><Button type="submit" variant="contained">Save changes</Button></DialogActions></form></Dialog>;
+}
+
 export function LeaderboardView() {
   const [boards, setBoards] = useState<LeaderboardDefinition[]>([]);
   const [selected, setSelected] = useState<LeaderboardDefinition | null>(null);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [error, setError] = useState("");
   const [scorePlayer, setScorePlayer] = useState<SelectableUser | null>(null);
   const load = () =>
     api<LeaderboardDefinition[]>("/leaderboards?includeInactive=true")
       .then((items) => {
         setBoards(items);
-        if (!selected && items[0]) setSelected(items[0]);
+        setSelected((current) => current ? items.find((item) => item.id === current.id) ?? items[0] ?? null : items[0] ?? null);
       })
       .catch((e) =>
         setError(
@@ -285,10 +311,14 @@ export function LeaderboardView() {
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1}>
+                <Button size="small" variant="outlined" startIcon={<EditRoundedIcon />} onClick={() => setEditDialogOpen(true)}>Edit</Button>
                 <Chip label={selected.memberType} variant="outlined" />
                 <Chip label={selected.period} variant="outlined" />
               </Stack>
             </Stack>
+            <Divider />
+            <Typography variant="subtitle2" fontWeight={800}>Reward schedule</Typography>
+            {selected.rewards?.length ? <Stack direction="row" flexWrap="wrap" gap={1}>{selected.rewards.map((reward, index) => <Chip key={reward.id ?? index} color="secondary" variant="outlined" label={`#${reward.rank} · ${reward.rewardType === "CURRENCY" ? `${reward.amount} ${reward.currency?.code ?? ""}` : reward.rewardType === "ASSET" ? `${reward.assetDefinition?.name ?? reward.targetKey} × ${reward.amount ?? 1}` : reward.targetKey}`} />)}</Stack> : <Typography variant="body2" color="text.secondary">No rewards configured. Add rewards to pay the top ranked players at season renewal.</Typography>}
             <Divider />
             <Typography variant="subtitle2" fontWeight={800}>
               Top players / members
@@ -426,6 +456,7 @@ export function LeaderboardView() {
           }}
         />
       )}
+      {editDialogOpen && selected && <EditLeaderboardDialog board={selected} onClose={() => setEditDialogOpen(false)} onSaved={() => { setEditDialogOpen(false); load(); }} />}
     </Stack>
   );
 }

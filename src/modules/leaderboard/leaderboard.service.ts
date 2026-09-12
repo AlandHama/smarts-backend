@@ -21,11 +21,11 @@ export class LeaderboardService {
   ) {}
 
   listDefinitions(includeInactive = false) {
-    return this.prisma.leaderboard.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { key: "asc" }, take: 100, include: { _count: { select: { seasons: true, entries: true } }, seasons: { where: { status: "ACTIVE" }, orderBy: { startsAt: "desc" }, take: 1 } } }).then((items) => this.serialize(items))
+    return this.prisma.leaderboard.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { key: "asc" }, take: 100, include: { _count: { select: { seasons: true, entries: true, rewards: true } }, seasons: { where: { status: "ACTIVE" }, orderBy: { startsAt: "desc" }, take: 1 }, rewards: this.rewardInclude() } }).then((items) => this.serialize(items))
   }
 
   async getDefinition(keyOrId: string, includeInactive = true) {
-    const item = await this.prisma.leaderboard.findFirst({ where: { OR: [{ key: keyOrId.trim().toLowerCase() }, { id: keyOrId }] }, include: { seasons: { orderBy: { startsAt: "desc" }, take: 20 }, _count: { select: { seasons: true, entries: true } } } })
+    const item = await this.prisma.leaderboard.findFirst({ where: { OR: [{ key: keyOrId.trim().toLowerCase() }, { id: keyOrId }] }, include: { seasons: { orderBy: { startsAt: "desc" }, take: 20 }, rewards: this.rewardInclude(), _count: { select: { seasons: true, entries: true, rewards: true } } } })
     if (!item || (!includeInactive && !item.active)) throw new NotFoundException("Leaderboard not found")
     return this.serialize(item)
   }
@@ -50,7 +50,7 @@ export class LeaderboardService {
     ])
     const total = Number(countRows[0]?.count ?? 0n)
     const currentUserRank = userId && board.memberType === "PLAYER" ? await this.memberRank(board.id, season.id, userId, order) : null
-    return this.serialize({ leaderboard: { id: board.id, key: board.key, name: board.name, memberType: board.memberType, period: board.period, direction: board.direction }, season, items: rows, pagination: { total, limit, offset, nextOffset: offset + limit < total ? offset + limit : null }, currentUserRank })
+    return this.serialize({ leaderboard: { id: board.id, key: board.key, name: board.name, memberType: board.memberType, period: board.period, direction: board.direction, rewards: board.rewards }, season, items: rows, pagination: { total, limit, offset, nextOffset: offset + limit < total ? offset + limit : null }, currentUserRank })
   }
 
   async members(key: string, dto: LeaderboardMembersDto) {
@@ -59,10 +59,10 @@ export class LeaderboardService {
     if (!season && board.period === "ALL_TIME") season = await this.ensureAllTimeSeason(board.id)
     if (!season) throw new NotFoundException("Leaderboard has no active season")
     const keys = [...new Set(dto.memberKeys.map((item) => item.trim()).filter(Boolean))].slice(0, 100)
-    if (!keys.length) return this.serialize({ leaderboard: board, season, items: [] })
+    if (!keys.length) return this.serialize({ leaderboard: { ...board, rewards: board.rewards }, season, items: [] })
     const order = board.direction === "ASCENDING" ? "ASC" : "DESC"
     const items = await this.entryRows(board.id, season.id, order, 100, 0, keys)
-    return this.serialize({ leaderboard: { key: board.key, name: board.name, memberType: board.memberType, period: board.period, direction: board.direction }, season, items })
+    return this.serialize({ leaderboard: { key: board.key, name: board.name, memberType: board.memberType, period: board.period, direction: board.direction, rewards: board.rewards }, season, items })
   }
 
   async topForAdmin(key: string, limit = 10) { return this.list(key, { limit: Math.min(Math.max(limit, 1), 100), offset: 0 }) }
@@ -79,7 +79,7 @@ export class LeaderboardService {
   }
 
   private async findActiveBoard(key: string) {
-    const board = await this.prisma.leaderboard.findUnique({ where: { key: key.trim().toLowerCase() } })
+    const board = await this.prisma.leaderboard.findUnique({ where: { key: key.trim().toLowerCase() }, include: { rewards: this.rewardInclude() } })
     if (!board || !board.active) throw new NotFoundException("Leaderboard not found")
     return board
   }
@@ -104,6 +104,10 @@ export class LeaderboardService {
   private async memberRank(leaderboardId: string, seasonId: string, memberKey: string, order: "ASC" | "DESC") {
     const rows = await this.prisma.$queryRaw<Array<{ rank: bigint }>>(Prisma.sql`SELECT "rank" FROM (SELECT e."memberKey", RANK() OVER (ORDER BY e."score" ${Prisma.raw(order)})::bigint AS "rank" FROM "LeaderboardEntry" e WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId}) ranked WHERE "memberKey" = ${memberKey} LIMIT 1`)
     return rows[0]?.rank ?? null
+  }
+
+  private rewardInclude() {
+    return { orderBy: [{ rank: "asc" as const }, { sortOrder: "asc" as const }], include: { currency: { select: { code: true, name: true } }, assetDefinition: { select: { key: true, name: true } }, assetVariation: { select: { key: true, name: true } }, progressionDefinition: { select: { key: true, name: true } } } }
   }
 
   private serialize<T>(value: T): T { return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) as T }
