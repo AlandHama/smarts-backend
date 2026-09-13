@@ -8,6 +8,7 @@ import { ConfigService } from "../../config/config.service"
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 import { ClaimAdRewardDto } from "../dtos/ad-reward.dto"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
+import { GldEmissionService } from "../../gld/gld.emission.service"
 
 type AdPolicy = {
   currencyCode?: string
@@ -23,6 +24,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<{ dto: ClaimAdRe
     prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly creditWallet: CreditWalletTransaction,
+    private readonly gldEmission: GldEmissionService,
   ) { super(prisma) }
 
   protected async execute(input: { dto: ClaimAdRewardDto; signature?: string }, transaction: Prisma.TransactionClient) {
@@ -51,7 +53,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<{ dto: ClaimAdRe
     const country = claim.user.profile?.countryCode?.trim().toUpperCase()
     const multiplier = country ? reward?.multiplierByCountry?.[country] : undefined
     if (multiplier) amount = this.applyMultiplier(amount, multiplier)
-    if (amount <= 0n) return this.reject(transaction, claim.id, "Ad reward amount is invalid")
+    if (amount <= 0n && currencyCode !== "GLD") return this.reject(transaction, claim.id, "Ad reward amount is invalid")
 
     // Serialize claims per player so cooldown and daily caps cannot be bypassed
     // by concurrent provider callbacks.
@@ -63,27 +65,34 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<{ dto: ClaimAdRe
     if (duplicate) throw new ConflictException("This provider ad event was already claimed")
     const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
     const grantedToday = await transaction.adRewardClaim.findMany({ where: { userId: claim.userId, status: "GRANTED", grantedAt: { gte: startOfDay } }, select: { rewardAmount: true } })
-    if (policy.privateConfig.dailyCap !== undefined && grantedToday.length >= policy.privateConfig.dailyCap) return this.reject(transaction, claim.id, "Daily ad reward limit reached")
-    if (policy.privateConfig.dailyCapAmount && /^\d+$/.test(policy.privateConfig.dailyCapAmount) && grantedToday.reduce((sum, row) => sum + (row.rewardAmount ?? 0n), 0n) + amount > BigInt(policy.privateConfig.dailyCapAmount)) return this.reject(transaction, claim.id, "Daily ad reward amount limit reached")
+    if (currencyCode !== "GLD" && policy.privateConfig.dailyCap !== undefined && grantedToday.length >= policy.privateConfig.dailyCap) return this.reject(transaction, claim.id, "Daily ad reward limit reached")
+    if (currencyCode !== "GLD" && policy.privateConfig.dailyCapAmount && /^\d+$/.test(policy.privateConfig.dailyCapAmount) && grantedToday.reduce((sum, row) => sum + (row.rewardAmount ?? 0n), 0n) + amount > BigInt(policy.privateConfig.dailyCapAmount)) return this.reject(transaction, claim.id, "Daily ad reward amount limit reached")
     const latest = await transaction.adRewardClaim.findFirst({ where: { userId: claim.userId, status: "GRANTED" }, orderBy: { grantedAt: "desc" }, select: { grantedAt: true } })
     const cooldown = Math.max(0, policy.privateConfig.cooldownSeconds ?? 0)
     if (latest?.grantedAt && latest.grantedAt.getTime() + cooldown * 1000 > now.getTime()) return this.reject(transaction, claim.id, "Ad reward cooldown is active")
 
-    const ledger = await this.creditWallet.runWithinTransaction({
-      userId: claim.userId,
-      currencyCode,
-      amount,
-      sourceId: claim.id,
-      sourceType: WalletTransactionSourceType.AD,
-      rewardGrantKey: `AD:${claim.id}`,
-      policyVersion: String(policy.version),
-      metadata: { provider: claim.provider, providerEventId, adFormat: claim.adFormat, countryCode: country ?? null },
-    }, transaction)
+    let emission: Awaited<ReturnType<GldEmissionService["issueAdReward"]>> | undefined
+    if (currencyCode === "GLD") {
+      emission = await this.gldEmission.issueAdReward(transaction, { userId: claim.userId, baseAmount: amount, sourceId: claim.id, metadata: { provider: claim.provider, providerEventId, adFormat: claim.adFormat, countryCode: country ?? null } })
+      amount = emission.amount
+    }
+    const ledger = amount > 0n
+      ? await this.creditWallet.runWithinTransaction({
+          userId: claim.userId,
+          currencyCode,
+          amount,
+          sourceId: claim.id,
+          sourceType: WalletTransactionSourceType.AD,
+          rewardGrantKey: `AD:${claim.id}`,
+          policyVersion: String(policy.version),
+          metadata: { provider: claim.provider, providerEventId, adFormat: claim.adFormat, countryCode: country ?? null, ...(emission ? { emissionReason: emission.reason } : {}) },
+        }, transaction)
+      : null
     const currency = await transaction.currencyDefinition.findUnique({ where: { code: currencyCode }, select: { id: true } })
-    const updated = await transaction.adRewardClaim.update({ where: { id: claim.id }, data: { providerEventId, countryCode: country ?? null, currencyId: currency?.id, rewardAmount: amount, status: "GRANTED", verificationPayload: { providerVerified: true }, verifiedAt: now, grantedAt: now } })
-    await transaction.outboxEvent.create({ data: { eventType: "ad-reward.granted", aggregateType: "AdRewardClaim", aggregateId: claim.id, payload: { claimId: claim.id, userId: claim.userId, amount: amount.toString(), currencyCode, ledger } as unknown as Prisma.InputJsonValue } })
+    const updated = await transaction.adRewardClaim.update({ where: { id: claim.id }, data: { providerEventId, countryCode: country ?? null, currencyId: currency?.id, rewardAmount: amount, status: "GRANTED", verificationPayload: { providerVerified: true, ...(emission ? { rewarded: amount > 0n, remainingDailyAds: emission.remainingDailyAds, remainingDailyGldCap: emission.remainingDailyGldCap.toString(), reason: emission.reason } : {}) }, verifiedAt: now, grantedAt: now } })
+    await transaction.outboxEvent.create({ data: { eventType: "ad-reward.granted", aggregateType: "AdRewardClaim", aggregateId: claim.id, payload: { claimId: claim.id, userId: claim.userId, amount: amount.toString(), currencyCode, ledger, ...(emission ? { remainingDailyAds: emission.remainingDailyAds, remainingDailyGldCap: emission.remainingDailyGldCap.toString(), rewarded: amount > 0n, reason: emission.reason } : {}) } as unknown as Prisma.InputJsonValue } })
     await writePlayerAudit(transaction, { userId: claim.userId, actorType: PlayerAuditActorType.SYSTEM, action: "AD_REWARD_GRANTED", entityType: "AdRewardClaim", entityId: claim.id, summary: `Granted ${amount.toString()} ${currencyCode} for a verified ad`, changes: { status: { old: claim.status, new: "GRANTED" }, rewardAmount: { old: claim.rewardAmount ?? 0n, new: amount } }, metadata: { provider: claim.provider, adFormat: claim.adFormat, providerEventId, currencyCode, policyVersion: policy.version } })
-    return { claimId: updated.id, status: updated.status, amount: amount.toString(), currencyCode, grantedAt: updated.grantedAt }
+    return { claimId: updated.id, status: updated.status, amount: amount.toString(), currencyCode, grantedAt: updated.grantedAt, rewarded: amount > 0n, ...(emission ? { remainingDailyAds: emission.remainingDailyAds, remainingDailyGldCap: emission.remainingDailyGldCap.toString(), reason: emission.reason } : {}) }
   }
 
   private async reject(transaction: Prisma.TransactionClient, claimId: string, reason: string) {

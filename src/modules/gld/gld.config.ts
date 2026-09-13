@@ -14,6 +14,17 @@ const DEFAULTS = {
   maximumDailyEmission: 1_000_000_000n,
   maxDailyGrowthBps: 1_500,
   maxDailyDropBps: 2_000,
+  adDailyGldCap: 25n,
+  adMaxValidatedAds: 20,
+  adMaxRewardPerClaim: 10n,
+  adHealthMultiplierBps: { VERY_HEALTHY: 10_000, HEALTHY: 10_000, CAUTION: 8_000, RESTRICTED: 5_000, CRITICAL: 2_000 },
+  adCurve: [
+    { from: 1, to: 5, multiplierBps: 10_000 },
+    { from: 6, to: 10, multiplierBps: 7_500 },
+    { from: 11, to: 15, multiplierBps: 5_000 },
+    { from: 16, to: 20, multiplierBps: 2_500 },
+  ],
+  giftBurnBps: 10_000,
 }
 
 function bigintEnv(name: string, fallback: bigint) {
@@ -30,6 +41,21 @@ function bigintEnv(name: string, fallback: bigint) {
 function bpsEnv(name: string, fallback: number) {
   const parsed = Number(process.env[name])
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= 10_000 ? parsed : fallback
+}
+
+function curveEnv() {
+  const fallback = DEFAULTS.adCurve
+  try {
+    const parsed = JSON.parse(process.env.GLD_AD_REWARD_CURVE_JSON ?? "") as unknown
+    if (!Array.isArray(parsed)) return fallback
+    const rows = parsed.map((item) => {
+      const row = item as Record<string, unknown>
+      return { from: Number(row.from), to: Number(row.to), multiplierBps: Number(row.multiplierBps) }
+    })
+    return rows.every((row) => Number.isInteger(row.from) && Number.isInteger(row.to) && row.from >= 1 && row.to >= row.from && Number.isInteger(row.multiplierBps) && row.multiplierBps >= 0 && row.multiplierBps <= 10_000) ? rows : fallback
+  } catch {
+    return fallback
+  }
 }
 
 export function getGldConfig() {
@@ -56,5 +82,11 @@ export function getGldConfig() {
     maximumDailyEmission: bigintEnv("GLD_MAX_DAILY_EMISSION", DEFAULTS.maximumDailyEmission),
     maxDailyGrowthBps: bpsEnv("GLD_MAX_DAILY_EMISSION_GROWTH_BPS", DEFAULTS.maxDailyGrowthBps),
     maxDailyDropBps: bpsEnv("GLD_MAX_DAILY_EMISSION_DROP_BPS", DEFAULTS.maxDailyDropBps),
+    adDailyGldCap: bigintEnv("GLD_AD_DAILY_CAP", DEFAULTS.adDailyGldCap),
+    adMaxValidatedAds: Math.max(1, Number(process.env.GLD_AD_MAX_VALIDATED_ADS) || DEFAULTS.adMaxValidatedAds),
+    adMaxRewardPerClaim: bigintEnv("GLD_AD_MAX_REWARD_PER_CLAIM", DEFAULTS.adMaxRewardPerClaim),
+    adHealthMultiplierBps: DEFAULTS.adHealthMultiplierBps,
+    adCurve: curveEnv(),
+    giftBurnBps: bpsEnv("GLD_DIGITAL_GIFT_BURN_BPS", DEFAULTS.giftBurnBps),
   }
 }

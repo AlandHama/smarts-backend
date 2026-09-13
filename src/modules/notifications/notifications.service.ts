@@ -59,13 +59,14 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const payload = (event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload : {}) as Record<string, Prisma.JsonValue>
     const userIds = new Set<string>()
     if (typeof payload.userId === "string") userIds.add(payload.userId)
+    if (typeof payload.recipientUserId === "string") userIds.add(payload.recipientUserId)
     if (event.eventType === "commerce.purchase.completed") {
       const admins = await this.prisma.user.findMany({ where: { isSystemAdmin: true, status: "ACTIVE" }, select: { id: true }, take: 100 })
       admins.forEach((admin) => userIds.add(admin.id))
     }
     if (!userIds.size) return
-    const title = event.eventType === "commerce.purchase.completed" ? "Purchase completed" : event.eventType === "ad-reward.granted" ? "Ad reward granted" : event.eventType === "leaderboard.reward.granted" ? "Leaderboard reward earned" : "Account activity"
-    const body = event.eventType === "commerce.purchase.completed" ? `Purchase ${event.aggregateId} was completed.` : event.eventType === "ad-reward.granted" ? "Your rewarded ad credit is now available." : event.eventType === "leaderboard.reward.granted" ? `You placed #${String(payload.rank ?? "")} and earned a leaderboard reward.` : "A server event was processed for your account."
+    const title = event.eventType === "commerce.purchase.completed" ? "Purchase completed" : event.eventType === "ad-reward.granted" ? "Ad reward granted" : event.eventType === "leaderboard.reward.granted" ? "Leaderboard reward earned" : event.eventType === "gift.received" ? "Gift received" : "Account activity"
+    const body = event.eventType === "commerce.purchase.completed" ? `Purchase ${event.aggregateId} was completed.` : event.eventType === "ad-reward.granted" ? "Your rewarded ad credit is now available." : event.eventType === "leaderboard.reward.granted" ? `You placed #${String(payload.rank ?? "")} and earned a leaderboard reward.` : event.eventType === "gift.received" ? `${String(payload.senderName ?? "A player")} sent you ${String(payload.catalogItemName ?? "a gift")}.` : "A server event was processed for your account."
     await this.prisma.notification.createMany({ data: [...userIds].map((userId) => ({ userId, outboxEventId: event.id, notificationType: event.eventType, title, body, data: { ...payload, outboxEventId: event.id } as Prisma.InputJsonValue, status: NotificationStatus.DISPATCHED, dispatchedAt: new Date() })), skipDuplicates: true })
   }
 

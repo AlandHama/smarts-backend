@@ -7,9 +7,10 @@ import { AdRewardsController } from "./ad-rewards.controller"
 import { AdRewardsService } from "./ad-rewards.service"
 import { ClaimAdRewardTransaction } from "./transactions/claim-ad-reward-transaction"
 import { VerifyAdImpressionTransaction } from "./transactions/verify-ad-impression-transaction"
+import { GldModule } from "../gld/gld.module"
 
 @Module({
-  imports: [DatabaseModule, ConfigModule, EconomyModule],
+  imports: [DatabaseModule, ConfigModule, EconomyModule, GldModule],
   controllers: [AdRewardsController],
   providers: [AdRewardsService, VerifyAdImpressionTransaction, ClaimAdRewardTransaction],
   exports: [AdRewardsService],

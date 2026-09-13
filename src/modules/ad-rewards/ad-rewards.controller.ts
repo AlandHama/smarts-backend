@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, Post } from "@nestjs/common"
+import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post } from "@nestjs/common"
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
@@ -21,4 +21,9 @@ export class AdRewardsController {
   @Post("claims")
   @ApiOperation({ summary: "Verify a provider callback and atomically grant the ad reward" })
   claim(@Body() dto: ClaimAdRewardDto, @Headers("x-ad-reward-signature") signature?: string) { return this.adRewardsService.claim(dto, signature) }
+
+  @Get("claims/:claimId")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Read the authenticated player's server-committed ad reward claim" })
+  getClaim(@CurrentUser() user: UserResponseDto, @Param("claimId", ParseUUIDPipe) claimId: string) { return this.adRewardsService.getClaim(user.id, claimId) }
 }

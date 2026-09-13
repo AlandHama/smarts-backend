@@ -183,6 +183,13 @@ GLD_MIN_DAILY_EMISSION=0
 GLD_MAX_DAILY_EMISSION=1000000000
 GLD_MAX_DAILY_EMISSION_GROWTH_BPS=1500
 GLD_MAX_DAILY_EMISSION_DROP_BPS=2000
+GLD_AD_DAILY_CAP=25
+GLD_AD_MAX_VALIDATED_ADS=20
+GLD_AD_MAX_REWARD_PER_CLAIM=10
+GLD_AD_REWARD_CURVE_JSON=[{"from":1,"to":5,"multiplierBps":10000},{"from":6,"to":10,"multiplierBps":7500},{"from":11,"to":15,"multiplierBps":5000},{"from":16,"to":20,"multiplierBps":2500}]
+GLD_DIGITAL_GIFT_BURN_BPS=10000
+GLD_GIFT_DAILY_SEND_LIMIT=50
+GLD_GIFT_REQUIRE_FRIENDSHIP=false
 ```
 
 The three allocation values must total `10000` BPS. AdMob revenue is only
@@ -215,7 +222,10 @@ custom data. The provider callback calls `POST /ad-rewards/claims` with the
 claim id, provider event id, claim token, and an HMAC-SHA256
 `x-ad-reward-signature` over `claimId:providerEventId:adFormat:claimToken`.
 The server resolves the player region and policy, enforces cooldown/daily caps,
-and credits the wallet exactly once. Configure the policy from the system-admin
+and credits the wallet exactly once. For GLD claims, it additionally applies the
+daily emission budget, diminishing curve, reserve-health multiplier, and player
+caps. The mobile client polls `GET /ad-rewards/claims/:claimId` for the committed
+result and never calculates the amount. Configure the policy from the system-admin
 `Reward policies` page; leave the webhook secret out of the database and mobile
 app. Durable in-app notifications are available at `GET /notifications` and
 `POST /notifications/:id/read`, while purchase and reward events are processed
