@@ -25,6 +25,10 @@ const DEFAULTS = {
     { from: 16, to: 20, multiplierBps: 2_500 },
   ],
   giftBurnBps: 10_000,
+  paidRewardSafetyMarginBps: 12_000,
+  paidRewardDailyRequestLimit: 3,
+  paidRewardPauseOnCritical: true,
+  paidRewardDefaultCostUsdMicros: 50_000n,
 }
 
 function bigintEnv(name: string, fallback: bigint) {
@@ -88,5 +92,9 @@ export function getGldConfig() {
     adHealthMultiplierBps: DEFAULTS.adHealthMultiplierBps,
     adCurve: curveEnv(),
     giftBurnBps: bpsEnv("GLD_DIGITAL_GIFT_BURN_BPS", DEFAULTS.giftBurnBps),
+    paidRewardSafetyMarginBps: bpsEnv("GLD_PAID_REWARD_SAFETY_MARGIN_BPS", DEFAULTS.paidRewardSafetyMarginBps),
+    paidRewardDailyRequestLimit: Math.max(1, Number(process.env.GLD_PAID_REWARD_DAILY_REQUEST_LIMIT) || DEFAULTS.paidRewardDailyRequestLimit),
+    paidRewardPauseOnCritical: process.env.GLD_PAID_REWARD_PAUSE_ON_CRITICAL !== "false",
+    paidRewardDefaultCostUsdMicros: bigintEnv("GLD_PAID_REWARD_DEFAULT_COST_USD_MICROS", DEFAULTS.paidRewardDefaultCostUsdMicros),
   }
 }

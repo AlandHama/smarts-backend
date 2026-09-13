@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from "@nestjs/common"
+import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common"
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
@@ -17,5 +17,6 @@ export class CommerceController {
   @Get("purchases") purchases(@CurrentUser() user: UserResponseDto) { return this.commerce.listPurchases(user.id) }
   @Post("purchases") @ApiOperation({ summary: "Purchase a catalog item with a virtual wallet" }) purchase(@CurrentUser() user: UserResponseDto, @Body() dto: PurchaseDto) { return this.commerce.purchase(user.id, dto) }
   @Get("paid-reward-requests") @ApiOperation({ summary: "List the authenticated player's paid reward requests" }) paidRewardRequests(@CurrentUser() user: UserResponseDto) { return this.commerce.listPaidRewardRequests(user.id) }
+  @Get("paid-reward-quote/:assetKey") @ApiOperation({ summary: "Get the server-calculated GLD price for a paid reward" }) paidRewardQuote(@Param("assetKey") assetKey: string, @Query("variationKey") variationKey?: string) { return this.commerce.getPaidRewardQuote(assetKey, variationKey) }
   @Post("paid-reward-requests") @ApiOperation({ summary: "Request a redeem-code-backed paid reward for administrator review" }) requestPaidReward(@CurrentUser() user: UserResponseDto, @Body() dto: PaidRewardRequestDto) { return this.commerce.requestPaidReward(user.id, dto) }
 }

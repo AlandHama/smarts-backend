@@ -164,6 +164,7 @@ export function PaidRewardsView({
                     <TableCell>Player</TableCell>
                     <TableCell>Asset</TableCell>
                     <TableCell>Request</TableCell>
+                    <TableCell>GLD</TableCell>
                     <TableCell>Status</TableCell>
                     <TableCell>Code</TableCell>
                     <TableCell align="right">Actions</TableCell>
@@ -192,6 +193,20 @@ export function PaidRewardsView({
                         >
                           {request.user.email || `@${request.user.username}`}
                         </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {request.gldPrice
+                          ? `${request.gldPrice} reserved`
+                          : "Legacy"}
+                        {request.gldRefundedAmount !== "0" && (
+                          <Typography
+                            variant="caption"
+                            display="block"
+                            color="success.main"
+                          >
+                            {request.gldRefundedAmount} refunded
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Typography fontWeight={700}>
@@ -249,7 +264,7 @@ export function PaidRewardsView({
                   ))}
                   {!requests.length && !loading && (
                     <TableRow>
-                      <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                      <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
                         <Typography color="text.secondary">
                           No requests in this status.
                         </Typography>

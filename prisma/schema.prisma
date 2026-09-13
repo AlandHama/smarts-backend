@@ -811,6 +811,10 @@ model PaidRewardRequest {
   assetDefinitionId String                  @db.Uuid
   assetVariationId  String?                 @db.Uuid
   status            PaidRewardRequestStatus @default(PENDING)
+  /// GLD reserved from the player when this request is created. Null is kept
+  /// for requests created before GLD-priced paid rewards were enabled.
+  gldPrice          BigInt?
+  gldRefundedAmount BigInt                  @default(0)
   requestKey        String                  @unique @db.VarChar(128)
   message           String?                 @db.VarChar(500)
   adminNote         String?                 @db.VarChar(500)

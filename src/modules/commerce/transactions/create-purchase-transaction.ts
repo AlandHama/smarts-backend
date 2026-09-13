@@ -50,6 +50,15 @@ export class CreatePurchaseTransaction extends PrismaTransaction<CreatePurchaseI
     const rewardSnapshot = { primaryAsset: item.assetDefinition ? { key: item.assetDefinition.key, name: item.assetDefinition.name, quantity: input.quantity } : null, rewards: item.rewards.map((reward) => ({ id: reward.id, rewardType: reward.rewardType, assetKey: reward.assetDefinition?.key ?? null, variationKey: reward.assetVariation?.key ?? null, currencyCode: reward.currency?.code ?? null, progressionKey: reward.progressionDefinition?.key ?? null, targetKey: reward.targetKey, amount: reward.amount?.toString() ?? null, quantity: reward.quantity, sortOrder: reward.sortOrder, metadata: reward.metadata ?? null })) }
     await transaction.purchaseLine.create({ data: { purchaseId: purchase.id, catalogItemId: item.id, itemKeySnapshot: item.key, itemNameSnapshot: item.name, quantity: input.quantity, unitAmount: price.amount, totalAmount: total, rewardSnapshot: rewardSnapshot as Prisma.InputJsonValue } })
     await this.debitWallet.runWithinTransaction({ userId: input.userId, currencyCode, amount: total, sourceId: purchase.id, sourceType: WalletTransactionSourceType.PURCHASE, metadata: { catalogItemKey: item.key, quantity: input.quantity } }, transaction)
+    if (currencyCode === "GLD") {
+      const ledger = await transaction.walletTransaction.findUnique({ where: { grantKey: `${WalletTransactionSourceType.PURCHASE}:${purchase.id}:${input.userId}:GLD` }, select: { id: true } })
+      const burn = await transaction.gldBurnEvent.findFirst({ where: { sourceType: "CATALOG_PURCHASE", sourceId: purchase.id }, select: { id: true } })
+      if (!burn) {
+        await transaction.gldBurnEvent.create({ data: { userId: input.userId, amount: total, sourceType: "CATALOG_PURCHASE", sourceId: purchase.id, reason: `GLD catalog purchase ${item.key}`, ledgerEntryId: ledger?.id, metadata: { catalogItemKey: item.key, quantity: input.quantity } } })
+        const dateKey = new Date().toISOString().slice(0, 10)
+        await transaction.gldEmissionDay.upsert({ where: { dateKey }, create: { dateKey, emissionBudget: 0n, burnedAmount: total }, update: { burnedAmount: { increment: total } } })
+      }
+    }
     if (item.assetDefinition) {
       const grantKey = `PURCHASE:${purchase.id}:primary`
       const grant = await this.createGrant(transaction, input.userId, purchase.id, grantKey, ProgressionRewardType.ASSET, item.assetDefinition.key, BigInt(input.quantity), null)

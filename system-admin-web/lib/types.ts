@@ -602,6 +602,9 @@ export interface PaidRewardRequest {
   requestedAt: string;
   decidedAt: string | null;
   inventoryItemId: string | null;
+  gldPrice: string | null;
+  gldRefundedAmount: string;
+  gldStatus: "RESERVED" | "SPENT" | "REFUNDED" | "LEGACY";
   user: {
     id: string;
     username: string;

@@ -190,11 +190,26 @@ GLD_AD_REWARD_CURVE_JSON=[{"from":1,"to":5,"multiplierBps":10000},{"from":6,"to"
 GLD_DIGITAL_GIFT_BURN_BPS=10000
 GLD_GIFT_DAILY_SEND_LIMIT=50
 GLD_GIFT_REQUIRE_FRIENDSHIP=false
+GLD_PAID_REWARD_SAFETY_MARGIN_BPS=12000
+GLD_PAID_REWARD_DEFAULT_COST_USD_MICROS=50000
+GLD_PAID_REWARD_DAILY_REQUEST_LIMIT=3
+GLD_PAID_REWARD_PAUSE_ON_CRITICAL=true
 ```
 
 The three allocation values must total `10000` BPS. AdMob revenue is only
 materialized after a two-day maturity delay and only when the connected AdMob
 account reports USD; zero earnings create no phantom GLD backing.
+
+GLD-5 catalog sinks use the normal server-selected catalog price. Add an active
+`GLD` catalog price to a digital item; every completed purchase debits the
+player wallet, records a `GldBurnEvent`, and grants the configured inventory or
+catalog rewards in the same transaction. For GLD-6 paid rewards, optionally
+set an asset metadata value such as `usdCostMicros` (or `usdCost` in dollars);
+otherwise `GLD_PAID_REWARD_DEFAULT_COST_USD_MICROS` is used. The server rounds
+the price upward using the safety margin, reserves GLD on request, refunds it
+through a `REFUND` wallet ledger entry on refusal, and burns it once when an
+administrator fulfills the request. The quote is available at
+`GET /commerce/paid-reward-quote/:assetKey`.
 
 Phase 7 storage uses organized object keys such as `player-avatar/{userId}/{uuid}.png`,
 `commerce-asset/admin/{uuid}.png`, and `catalog-item/admin/{uuid}.png`. Private
