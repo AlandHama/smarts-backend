@@ -269,6 +269,7 @@ export interface AdMobBreakdownRow {
 
 export interface AdMobAnalytics {
   connected: boolean;
+  syncHealthy: boolean;
   connection: {
     publisherId: string;
     googleAccountEmail: string | null;

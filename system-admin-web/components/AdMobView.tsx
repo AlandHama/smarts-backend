@@ -146,9 +146,11 @@ export function AdMobView() {
             {data?.connected && (
               <Chip
                 size="small"
-                color="success"
-                icon={<CheckCircleRoundedIcon />}
-                label="Connected"
+                color={data.syncHealthy ? "success" : "warning"}
+                icon={
+                  data.syncHealthy ? <CheckCircleRoundedIcon /> : undefined
+                }
+                label={data.syncHealthy ? "Connected" : "Sync needs attention"}
               />
             )}
           </Stack>
@@ -391,7 +393,7 @@ function ConnectionCard({
           color="text.secondary"
           sx={{ mt: 2 }}
         >
-          Only the AdMob reporting scope is used. Tokens stay on the NestJS
+          Read-only AdMob reporting scopes are used. Tokens stay on the NestJS
           server.
         </Typography>
       </CardContent>

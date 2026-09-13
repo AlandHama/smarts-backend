@@ -150,7 +150,11 @@ export class AdMobService implements OnModuleInit, OnModuleDestroy {
     ])
     const totals = summary[0] ?? {}
     return this.serialize({
-      connected: connection.status === "CONNECTED",
+      // OAuth remains authorized while a report sync is unhealthy.  Keep the
+      // connection visible so administrators can see the sync error and retry
+      // it instead of being incorrectly sent back through OAuth.
+      connected: connection.status !== "DISCONNECTED",
+      syncHealthy: connection.status === "CONNECTED",
       connection: { ...connection, encryptedRefreshToken: undefined },
       period: { from, to: now, days: boundedDays },
       kpis: {
@@ -178,7 +182,7 @@ export class AdMobService implements OnModuleInit, OnModuleDestroy {
 
   private normalizeBreakdown(rows: Array<Record<string, unknown>>) { return rows.map((row) => ({ key: row.key ?? "UNKNOWN", label: row.label ?? row.key ?? "Unknown", impressions: this.number(row.impressions), clicks: this.number(row.clicks), matchedRequests: this.number(row.matched_requests), estimatedEarnings: this.number(row.earnings) / 1_000_000 })) }
 
-  private emptyAnalytics(days: number, from: Date, to: Date) { return { connected: false, connection: null, period: { from, to, days }, kpis: { adRequests: 0, matchedRequests: 0, impressions: 0, clicks: 0, estimatedEarningsMicros: 0, estimatedEarnings: 0, impressionCtr: 0, matchRate: 0, showRate: 0, impressionRpm: 0, rewardClaims: 0, grantedRewardClaims: 0, rejectedRewardClaims: 0 }, trends: [], apps: [], formats: [], countries: [], adUnits: [] } }
+  private emptyAnalytics(days: number, from: Date, to: Date) { return { connected: false, syncHealthy: false, connection: null, period: { from, to, days }, kpis: { adRequests: 0, matchedRequests: 0, impressions: 0, clicks: 0, estimatedEarningsMicros: 0, estimatedEarnings: 0, impressionCtr: 0, matchRate: 0, showRate: 0, impressionRpm: 0, rewardClaims: 0, grantedRewardClaims: 0, rejectedRewardClaims: 0 }, trends: [], apps: [], formats: [], countries: [], adUnits: [] } }
 
   private async generateNetworkReport(publisherId: string, currencyCode: string, start: Date, end: Date, accessToken: string) {
     // AD_UNIT automatically includes APP in the network report response.
