@@ -96,6 +96,29 @@ enum AdMobConnectionStatus {
   ERROR
 }
 
+enum GldEconomyHealth {
+  VERY_HEALTHY
+  HEALTHY
+  CAUTION
+  RESTRICTED
+  CRITICAL
+}
+
+enum GldRevenueRecognitionStatus {
+  PENDING
+  RECOGNIZED
+  RESTATED
+  REJECTED
+}
+
+enum GldTreasuryEntryType {
+  REWARD_BACKING
+  RESERVE
+  COMPANY
+  COST
+  ADJUSTMENT
+}
+
 enum NotificationStatus {
   PENDING
   READ
@@ -379,11 +402,15 @@ model User {
   matchmakingInvitesReceived MatchmakingInvite[]     @relation("MatchmakingInviteInvitee")
   adRewardClaims             AdRewardClaim[]
   notifications              Notification[]
-  adminAuditEvents            AdminAuditEvent[]
-  playerAuditEvents           PlayerAuditEvent[]
+  adminAuditEvents           AdminAuditEvent[]
+  playerAuditEvents          PlayerAuditEvent[]
   paidRewardRequests         PaidRewardRequest[]
-  paidRewardDecisions        PaidRewardRequest[] @relation("PaidRewardRequestDecider")
-  assignedRedeemCodes        AssetRedeemCode[] @relation("RedeemCodeAssignedUser")
+  paidRewardDecisions        PaidRewardRequest[]     @relation("PaidRewardRequestDecider")
+  assignedRedeemCodes        AssetRedeemCode[]       @relation("RedeemCodeAssignedUser")
+  gldBurnEvents              GldBurnEvent[]
+  gldDailyAdStates           GldPlayerDailyAdState[]
+  sentGifts                  PlayerGift[]            @relation("SentGifts")
+  receivedGifts              PlayerGift[]            @relation("ReceivedGifts")
 }
 
 model Session {
@@ -579,46 +606,47 @@ model PlayerStats {
 }
 
 model CurrencyDefinition {
-  id             String                  @id @default(uuid()) @db.Uuid
-  code           String                  @unique @db.VarChar(32)
-  name           String                  @db.VarChar(100)
-  kind           CurrencyKind
-  precision      Int                     @default(0)
-  active         Boolean                 @default(true)
-  metadata       Json?
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
-  balances       WalletBalance[]
-  tierRewards    ProgressionTierReward[]
-  rewardGrants   RewardGrant[]
-  transactions   WalletTransaction[]
-  catalogPrices  CatalogPrice[]
-  catalogRewards CatalogReward[]
-  purchases      Purchase[]
-  adRewardClaims AdRewardClaim[]
+  id                 String                  @id @default(uuid()) @db.Uuid
+  code               String                  @unique @db.VarChar(32)
+  name               String                  @db.VarChar(100)
+  kind               CurrencyKind
+  precision          Int                     @default(0)
+  active             Boolean                 @default(true)
+  metadata           Json?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  balances           WalletBalance[]
+  tierRewards        ProgressionTierReward[]
+  rewardGrants       RewardGrant[]
+  transactions       WalletTransaction[]
+  catalogPrices      CatalogPrice[]
+  catalogRewards     CatalogReward[]
+  purchases          Purchase[]
+  adRewardClaims     AdRewardClaim[]
   leaderboardRewards LeaderboardReward[]
+  gldEconomyState    GldEconomyState?
 }
 
 model AssetDefinition {
-  id              String               @id @default(uuid()) @db.Uuid
-  key             String               @unique @db.VarChar(100)
-  name            String               @db.VarChar(120)
-  description     String?              @db.Text
-  assetType       AssetType
-  ownershipPolicy AssetOwnershipPolicy @default(STACKABLE)
-  imageUrl        String?              @db.Text
-  imageAlt        String?              @db.VarChar(160)
-  imageUrls       Json?
-  active          Boolean              @default(true)
-  metadata        Json?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  variations      AssetVariation[]
-  inventoryItems  InventoryItem[]
-  catalogItems    CatalogItem[]
-  rewards         CatalogReward[]
-  entitlements    Entitlement[]
-  redeemCodes     AssetRedeemCode[]
+  id                 String               @id @default(uuid()) @db.Uuid
+  key                String               @unique @db.VarChar(100)
+  name               String               @db.VarChar(120)
+  description        String?              @db.Text
+  assetType          AssetType
+  ownershipPolicy    AssetOwnershipPolicy @default(STACKABLE)
+  imageUrl           String?              @db.Text
+  imageAlt           String?              @db.VarChar(160)
+  imageUrls          Json?
+  active             Boolean              @default(true)
+  metadata           Json?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  variations         AssetVariation[]
+  inventoryItems     InventoryItem[]
+  catalogItems       CatalogItem[]
+  rewards            CatalogReward[]
+  entitlements       Entitlement[]
+  redeemCodes        AssetRedeemCode[]
   paidRewardRequests PaidRewardRequest[]
   leaderboardRewards LeaderboardReward[]
 
@@ -626,21 +654,21 @@ model AssetDefinition {
 }
 
 model AssetVariation {
-  id                String          @id @default(uuid()) @db.Uuid
-  assetDefinitionId String          @db.Uuid
-  key               String          @db.VarChar(100)
-  name              String?         @db.VarChar(120)
-  imageUrl          String?         @db.Text
-  imageAlt          String?         @db.VarChar(160)
-  imageUrls         Json?
-  active            Boolean         @default(true)
-  metadata          Json?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  assetDefinition   AssetDefinition @relation(fields: [assetDefinitionId], references: [id], onDelete: Cascade)
-  inventoryItems    InventoryItem[]
-  rewards           CatalogReward[]
-  redeemCodes       AssetRedeemCode[]
+  id                 String              @id @default(uuid()) @db.Uuid
+  assetDefinitionId  String              @db.Uuid
+  key                String              @db.VarChar(100)
+  name               String?             @db.VarChar(120)
+  imageUrl           String?             @db.Text
+  imageAlt           String?             @db.VarChar(160)
+  imageUrls          Json?
+  active             Boolean             @default(true)
+  metadata           Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  assetDefinition    AssetDefinition     @relation(fields: [assetDefinitionId], references: [id], onDelete: Cascade)
+  inventoryItems     InventoryItem[]
+  rewards            CatalogReward[]
+  redeemCodes        AssetRedeemCode[]
   paidRewardRequests PaidRewardRequest[]
   leaderboardRewards LeaderboardReward[]
 
@@ -686,6 +714,7 @@ model CatalogItem {
   prices            CatalogPrice[]
   rewards           CatalogReward[]
   purchaseLines     PurchaseLine[]
+  gifts             PlayerGift[]
 
   @@unique([catalogId, key])
   @@index([catalogId, active, startsAt, endsAt])
@@ -756,48 +785,48 @@ model InventoryItem {
 }
 
 model AssetRedeemCode {
-  id                String                  @id @default(uuid()) @db.Uuid
-  assetDefinitionId String                  @db.Uuid
-  assetVariationId  String?                 @db.Uuid
-  code              String                  @db.Text
-  codeHash          String                  @unique @db.Char(64)
-  status            AssetRedeemCodeStatus   @default(AVAILABLE)
-  assignedUserId    String?                 @db.Uuid
+  id                String                @id @default(uuid()) @db.Uuid
+  assetDefinitionId String                @db.Uuid
+  assetVariationId  String?               @db.Uuid
+  code              String                @db.Text
+  codeHash          String                @unique @db.Char(64)
+  status            AssetRedeemCodeStatus @default(AVAILABLE)
+  assignedUserId    String?               @db.Uuid
   assignedAt        DateTime?
-  requestId         String?                 @unique @db.Uuid
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-  assetDefinition   AssetDefinition         @relation(fields: [assetDefinitionId], references: [id], onDelete: Cascade)
-  assetVariation    AssetVariation?        @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
-  assignedUser      User?                   @relation("RedeemCodeAssignedUser", fields: [assignedUserId], references: [id], onDelete: SetNull)
-  request           PaidRewardRequest?      @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  requestId         String?               @unique @db.Uuid
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  assetDefinition   AssetDefinition       @relation(fields: [assetDefinitionId], references: [id], onDelete: Cascade)
+  assetVariation    AssetVariation?       @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
+  assignedUser      User?                 @relation("RedeemCodeAssignedUser", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  request           PaidRewardRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
 
   @@index([assetDefinitionId, assetVariationId, status, createdAt])
   @@index([assignedUserId, status, createdAt])
 }
 
 model PaidRewardRequest {
-  id                String                   @id @default(uuid()) @db.Uuid
-  userId            String                   @db.Uuid
-  assetDefinitionId String                   @db.Uuid
-  assetVariationId  String?                  @db.Uuid
-  status            PaidRewardRequestStatus  @default(PENDING)
-  requestKey        String                   @unique @db.VarChar(128)
-  message           String?                  @db.VarChar(500)
-  adminNote         String?                  @db.VarChar(500)
-  inventoryItemId   String?                  @db.Uuid
-  idempotencyKeyId  String                   @unique @db.Uuid
-  decidedById       String?                  @db.Uuid
-  requestedAt       DateTime                 @default(now())
+  id                String                  @id @default(uuid()) @db.Uuid
+  userId            String                  @db.Uuid
+  assetDefinitionId String                  @db.Uuid
+  assetVariationId  String?                 @db.Uuid
+  status            PaidRewardRequestStatus @default(PENDING)
+  requestKey        String                  @unique @db.VarChar(128)
+  message           String?                 @db.VarChar(500)
+  adminNote         String?                 @db.VarChar(500)
+  inventoryItemId   String?                 @db.Uuid
+  idempotencyKeyId  String                  @unique @db.Uuid
+  decidedById       String?                 @db.Uuid
+  requestedAt       DateTime                @default(now())
   decidedAt         DateTime?
-  createdAt         DateTime                 @default(now())
-  updatedAt         DateTime                 @updatedAt
-  user              User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assetDefinition   AssetDefinition          @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
-  assetVariation    AssetVariation?          @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
-  redeemCode        AssetRedeemCode?         @relation
-  idempotencyKey    IdempotencyKey            @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
-  decidedBy         User?                    @relation("PaidRewardRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetDefinition   AssetDefinition         @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  assetVariation    AssetVariation?         @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
+  redeemCode        AssetRedeemCode?        @relation
+  idempotencyKey    IdempotencyKey          @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
+  decidedBy         User?                   @relation("PaidRewardRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
 
   @@index([status, requestedAt])
   @@index([userId, status, requestedAt])
@@ -908,28 +937,48 @@ model IdempotencyKey {
   purchase           Purchase?
   matchmakingTickets MatchmakingTicket[]
   paidRewardRequest  PaidRewardRequest?
+  playerGift         PlayerGift?
 
   @@unique([scope, key])
   @@index([userId, scope])
 }
 
+model PlayerGift {
+  id               String         @id @default(uuid()) @db.Uuid
+  senderUserId     String         @db.Uuid
+  recipientUserId  String         @db.Uuid
+  catalogItemId    String         @db.Uuid
+  gldPrice         BigInt
+  burnedAmount     BigInt
+  retainedAmount   BigInt
+  idempotencyKeyId String         @unique @db.Uuid
+  createdAt        DateTime       @default(now())
+  sender           User           @relation("SentGifts", fields: [senderUserId], references: [id])
+  recipient        User           @relation("ReceivedGifts", fields: [recipientUserId], references: [id])
+  catalogItem      CatalogItem    @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  idempotencyKey   IdempotencyKey @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
+
+  @@index([senderUserId, createdAt])
+  @@index([recipientUserId, createdAt])
+}
+
 model ProgressionDefinition {
-  id             String                  @id @default(uuid()) @db.Uuid
-  key            String                  @unique @db.VarChar(64)
-  name           String                  @db.VarChar(100)
-  kind           ProgressionKind
-  active         Boolean                 @default(true)
-  allowNegative  Boolean                 @default(false)
-  resetPolicy    ProgressionResetPolicy  @default(NEVER)
-  metadata       Json?
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
-  tiers          ProgressionTier[]
-  playerRows     PlayerProgression[]
-  rewards        ProgressionTierReward[] @relation("TargetProgression")
-  events         ProgressionEvent[]
-  grants         RewardGrant[]
-  catalogRewards CatalogReward[]
+  id                 String                  @id @default(uuid()) @db.Uuid
+  key                String                  @unique @db.VarChar(64)
+  name               String                  @db.VarChar(100)
+  kind               ProgressionKind
+  active             Boolean                 @default(true)
+  allowNegative      Boolean                 @default(false)
+  resetPolicy        ProgressionResetPolicy  @default(NEVER)
+  metadata           Json?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  tiers              ProgressionTier[]
+  playerRows         PlayerProgression[]
+  rewards            ProgressionTierReward[] @relation("TargetProgression")
+  events             ProgressionEvent[]
+  grants             RewardGrant[]
+  catalogRewards     CatalogReward[]
   leaderboardRewards LeaderboardReward[]
 }
 
@@ -1075,25 +1124,25 @@ model Leaderboard {
 }
 
 model LeaderboardReward {
-  id                String                @id @default(uuid()) @db.Uuid
-  leaderboardId     String                @db.Uuid
-  rank              Int
-  sortOrder         Int                   @default(0)
-  rewardType        ProgressionRewardType
-  currencyId        String?               @db.Uuid
-  assetDefinitionId String?               @db.Uuid
-  assetVariationId  String?               @db.Uuid
-  progressionDefinitionId String?         @db.Uuid
-  amount            BigInt?
-  targetKey         String?               @db.VarChar(160)
-  metadata          Json?
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-  leaderboard       Leaderboard           @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
-  currency          CurrencyDefinition?  @relation(fields: [currencyId], references: [id], onDelete: Restrict)
-  assetDefinition   AssetDefinition?     @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
-  assetVariation    AssetVariation?      @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
-  progressionDefinition ProgressionDefinition? @relation(fields: [progressionDefinitionId], references: [id], onDelete: Restrict)
+  id                      String                 @id @default(uuid()) @db.Uuid
+  leaderboardId           String                 @db.Uuid
+  rank                    Int
+  sortOrder               Int                    @default(0)
+  rewardType              ProgressionRewardType
+  currencyId              String?                @db.Uuid
+  assetDefinitionId       String?                @db.Uuid
+  assetVariationId        String?                @db.Uuid
+  progressionDefinitionId String?                @db.Uuid
+  amount                  BigInt?
+  targetKey               String?                @db.VarChar(160)
+  metadata                Json?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  leaderboard             Leaderboard            @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  currency                CurrencyDefinition?    @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  assetDefinition         AssetDefinition?       @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  assetVariation          AssetVariation?        @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
+  progressionDefinition   ProgressionDefinition? @relation(fields: [progressionDefinitionId], references: [id], onDelete: Restrict)
 
   @@unique([leaderboardId, rank, sortOrder])
   @@index([leaderboardId, rank])
@@ -1506,6 +1555,142 @@ model AdRewardClaim {
   @@index([expiresAt, status])
 }
 
+/// Global policy/state for the server-owned GLD economy.
+model GldEconomyState {
+  id                       String             @id @default(uuid()) @db.Uuid
+  currencyId               String             @unique @db.Uuid
+  displayedValueUsdMicros  BigInt
+  targetValueUsdMicros     BigInt
+  treasuryReserveUsdMicros BigInt
+  circulatingSupply        BigInt
+  reserveRatioBps          Int
+  smoothingFactorBps       Int
+  minPriceUsdMicros        BigInt?
+  maxPriceUsdMicros        BigInt?
+  dailyEmissionBudget      BigInt
+  dailyEmissionUsed        BigInt
+  lastRevenueSnapshotAt    DateTime?
+  lastRecalculatedAt       DateTime?
+  health                   GldEconomyHealth   @default(CRITICAL)
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  currency                 CurrencyDefinition @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+
+  @@index([health])
+  @@index([lastRecalculatedAt])
+}
+
+/// Immutable revenue input used to fund GLD emission and reserve capacity.
+model GldRevenueSnapshot {
+  id                        String                      @id @default(uuid()) @db.Uuid
+  periodStart               DateTime
+  periodEnd                 DateTime
+  grossAdRevenueUsdMicros   BigInt
+  adCostsUsdMicros          BigInt
+  eligibleProfitUsdMicros   BigInt
+  playerRewardAllocationBps Int
+  reserveAllocationBps      Int
+  companyAllocationBps      Int
+  rewardBackingUsdMicros    BigInt
+  reserveAddedUsdMicros     BigInt
+  companyShareUsdMicros     BigInt
+  source                    String                      @db.VarChar(80)
+  sourceReference           String?                     @db.VarChar(255)
+  recognitionStatus         GldRevenueRecognitionStatus @default(PENDING)
+  recognitionHaircutBps     Int                         @default(8000)
+  metadata                  Json?
+  createdById               String?                     @db.Uuid
+  createdAt                 DateTime                    @default(now())
+  treasuryEntries           GldTreasuryEntry[]
+
+  @@unique([source, periodStart, periodEnd])
+  @@index([periodStart, periodEnd])
+  @@index([recognitionStatus, periodEnd])
+}
+
+/// Immutable historical economy points for charts and audit.
+model GldEconomySnapshot {
+  id                       String   @id @default(uuid()) @db.Uuid
+  displayedValueUsdMicros  BigInt
+  targetValueUsdMicros     BigInt
+  treasuryReserveUsdMicros BigInt
+  circulatingSupply        BigInt
+  reserveRatioBps          Int
+  dailyEmissionBudget      BigInt
+  dailyEmissionUsed        BigInt
+  reason                   String   @db.VarChar(120)
+  metadata                 Json?
+  createdAt                DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Per-UTC-day budget and accounting for all GLD issuance and burns.
+model GldEmissionDay {
+  id                   String   @id @default(uuid()) @db.Uuid
+  dateKey              String   @unique @db.Char(10)
+  emissionBudget       BigInt
+  emittedAmount        BigInt   @default(0)
+  burnedAmount         BigInt   @default(0)
+  adRewardAmount       BigInt   @default(0)
+  gameplayRewardAmount BigInt   @default(0)
+  promotionalAmount    BigInt   @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+/// Explicit destruction of GLD through an approved economy sink.
+model GldBurnEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String?  @db.Uuid
+  amount        BigInt
+  sourceType    String   @db.VarChar(60)
+  sourceId      String?  @db.VarChar(255)
+  reason        String   @db.VarChar(255)
+  ledgerEntryId String?  @db.Uuid
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([sourceType, sourceId])
+}
+
+/// Per-player daily controls for validated rewarded-ad issuance.
+model GldPlayerDailyAdState {
+  id                   String    @id @default(uuid()) @db.Uuid
+  userId               String    @db.Uuid
+  dateKey              String    @db.Char(10)
+  validatedAds         Int       @default(0)
+  rewardedAds          Int       @default(0)
+  gldEarned            BigInt    @default(0)
+  rewardValueUsdMicros BigInt    @default(0)
+  lastRewardedAt       DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dateKey])
+  @@index([dateKey])
+}
+
+/// Double-entry-adjacent audit record for treasury allocations. Amounts may be
+/// negative only for a documented restatement adjustment.
+model GldTreasuryEntry {
+  id                String               @id @default(uuid()) @db.Uuid
+  revenueSnapshotId String               @db.Uuid
+  entryType         GldTreasuryEntryType
+  amountUsdMicros   BigInt
+  currencyCode      String               @default("USD") @db.Char(3)
+  idempotencyKey    String               @unique @db.VarChar(160)
+  metadata          Json?
+  createdAt         DateTime             @default(now())
+  revenueSnapshot   GldRevenueSnapshot   @relation(fields: [revenueSnapshotId], references: [id], onDelete: Restrict)
+
+  @@index([revenueSnapshotId, entryType])
+  @@index([createdAt])
+}
+
 /// One tenant-wide AdMob OAuth connection. The refresh token is encrypted at
 /// rest and is never returned by an API response.
 model AdMobConnection {
@@ -1522,8 +1707,8 @@ model AdMobConnection {
   lastSyncAt            DateTime?
   lastSyncError         String?               @db.Text
   createdById           String?               @db.Uuid
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
   reportRows            AdMobReportRow[]
 
   @@index([status])
@@ -1533,30 +1718,30 @@ model AdMobConnection {
 /// Normalized rows returned by the AdMob network report. Rows are replaced for
 /// the synchronized date window because AdMob can revise recent figures.
 model AdMobReportRow {
-  id                         String          @id @default(uuid()) @db.Uuid
-  connectionId               String          @db.Uuid
-  reportDate                 DateTime        @db.Date
-  dimensionKey               String          @db.VarChar(1000)
-  appId                     String?         @db.VarChar(160)
-  appName                   String?         @db.VarChar(255)
-  platform                  String?         @db.VarChar(40)
-  countryCode               String?         @db.Char(2)
-  format                    String?         @db.VarChar(80)
-  adUnitId                  String?         @db.VarChar(160)
-  adUnitName                String?         @db.VarChar(255)
-  adRequests                BigInt          @default(0)
-  matchedRequests           BigInt          @default(0)
-  impressions               BigInt          @default(0)
-  clicks                    BigInt          @default(0)
-  estimatedEarningsMicros    BigInt         @default(0)
-  impressionCtrBps          Int             @default(0)
-  impressionRpmMicros       BigInt          @default(0)
-  matchRateBps              Int             @default(0)
-  showRateBps               Int             @default(0)
-  raw                       Json?
-  createdAt                 DateTime        @default(now())
-  updatedAt                 DateTime        @updatedAt
-  connection                AdMobConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  id                      String          @id @default(uuid()) @db.Uuid
+  connectionId            String          @db.Uuid
+  reportDate              DateTime        @db.Date
+  dimensionKey            String          @db.VarChar(1000)
+  appId                   String?         @db.VarChar(160)
+  appName                 String?         @db.VarChar(255)
+  platform                String?         @db.VarChar(40)
+  countryCode             String?         @db.Char(2)
+  format                  String?         @db.VarChar(80)
+  adUnitId                String?         @db.VarChar(160)
+  adUnitName              String?         @db.VarChar(255)
+  adRequests              BigInt          @default(0)
+  matchedRequests         BigInt          @default(0)
+  impressions             BigInt          @default(0)
+  clicks                  BigInt          @default(0)
+  estimatedEarningsMicros BigInt          @default(0)
+  impressionCtrBps        Int             @default(0)
+  impressionRpmMicros     BigInt          @default(0)
+  matchRateBps            Int             @default(0)
+  showRateBps             Int             @default(0)
+  raw                     Json?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  connection              AdMobConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
   @@unique([connectionId, reportDate, dimensionKey])
   @@index([connectionId, reportDate])
@@ -1608,17 +1793,17 @@ model AdminAuditEvent {
 /// Append-only, server-owned history of actions and state changes for one player.
 /// Do not write passwords, token hashes, provider secrets, or sensitive answers.
 model PlayerAuditEvent {
-  id         String             @id @default(uuid()) @db.Uuid
-  userId     String             @db.Uuid
+  id         String               @id @default(uuid()) @db.Uuid
+  userId     String               @db.Uuid
   actorType  PlayerAuditActorType @default(SYSTEM)
-  action     String             @db.VarChar(120)
-  entityType String             @db.VarChar(80)
-  entityId   String?            @db.VarChar(255)
-  summary    String             @db.VarChar(500)
+  action     String               @db.VarChar(120)
+  entityType String               @db.VarChar(80)
+  entityId   String?              @db.VarChar(255)
+  summary    String               @db.VarChar(500)
   changes    Json?
   metadata   Json?
-  createdAt  DateTime           @default(now())
-  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime             @default(now())
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([userId, action, createdAt])

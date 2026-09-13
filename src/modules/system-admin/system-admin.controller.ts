@@ -22,6 +22,9 @@ import { RefreshTokenRequestDto } from "../auth/dtos/refresh-token-request.dto"
 import { TokenService } from "../auth/services/token.service"
 import { AdMobService } from "../admob/admob.service"
 import { AdMobReportQueryDto } from "../admob/dtos/admob.dto"
+import { GldService } from "../gld/gld.service"
+import { GldRevenueService } from "../gld/gld.revenue.service"
+import { GldReconciliationService } from "../gld/gld.reconciliation.service"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -30,6 +33,9 @@ export class SystemAdminController {
     private readonly systemAdminService: SystemAdminService,
     private readonly tokenService: TokenService,
     private readonly adMobService: AdMobService,
+    private readonly gldService: GldService,
+    private readonly gldRevenueService: GldRevenueService,
+    private readonly gldReconciliationService: GldReconciliationService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -165,6 +171,33 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Disconnect the AdMob reporting account" })
   admobDisconnect() { return this.adMobService.disconnect() }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/gld")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Inspect the GLD economy state, reserve, supply, emissions, and revenue snapshots" })
+  gld() { return this.gldService.getAdminState() }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/gld/recalculate")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Recalculate the GLD market value and daily emission budget" })
+  gldRecalculate() { return this.gldService.recalculate("admin") }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/gld/revenue/materialize")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Materialize mature AdMob earnings into the GLD treasury" })
+  async gldMaterializeRevenue() {
+    const materialized = await this.gldRevenueService.materializeMaturedAdMobRevenue()
+    return { materialized, economy: await this.gldService.recalculate("admin-revenue-materialization") }
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/gld/reconcile")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Reconcile cached GLD supply against active wallet balances" })
+  gldReconcile() { return this.gldReconciliationService.reconcile() }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/operations")

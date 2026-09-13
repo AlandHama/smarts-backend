@@ -1,0 +1,135 @@
+import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common"
+import { Prisma } from "@prisma/client"
+
+import { PrismaService } from "../../prisma.service"
+import { getGldConfig } from "./gld.config"
+import { GldRevenueService } from "./gld.revenue.service"
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+@Injectable()
+export class GldService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(GldService.name)
+  private timer?: ReturnType<typeof setInterval>
+  private recalculating = false
+
+  constructor(private readonly prisma: PrismaService, private readonly revenue: GldRevenueService) {}
+
+  onModuleInit() {
+    this.timer = setInterval(() => void this.runScheduledCycle(), DAY_MS)
+    void this.runScheduledCycle()
+  }
+
+  onModuleDestroy() { if (this.timer) clearInterval(this.timer) }
+
+  async runScheduledCycle() {
+    try {
+      await this.revenue.materializeMaturedAdMobRevenue()
+      await this.recalculate("scheduled")
+    } catch (error) {
+      this.logger.error(`GLD scheduled cycle failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  async getPublicState() {
+    const state = await this.getOrCreateState()
+    const now = new Date()
+    const dayAgo = new Date(now.getTime() - DAY_MS)
+    const weekAgo = new Date(now.getTime() - 7 * DAY_MS)
+    const [previous, daySnapshot, weekSnapshot] = await Promise.all([
+      this.prisma.gldEconomySnapshot.findFirst({ where: { createdAt: { lt: state.lastRecalculatedAt ?? now } }, orderBy: { createdAt: "desc" } }),
+      this.prisma.gldEconomySnapshot.findFirst({ where: { createdAt: { lte: dayAgo } }, orderBy: { createdAt: "desc" } }),
+      this.prisma.gldEconomySnapshot.findFirst({ where: { createdAt: { lte: weekAgo } }, orderBy: { createdAt: "desc" } }),
+    ])
+    return this.serialize({
+      currency: { key: "GLD", symbol: "GLD", code: "GLD", unit: "GLD", usdMicros: state.displayedValueUsdMicros },
+      displayedValue: { usdMicros: state.displayedValueUsdMicros, formattedUsd: this.formatUsd(state.displayedValueUsdMicros) },
+      value: { usdMicros: state.displayedValueUsdMicros, previousUsdMicros: previous?.displayedValueUsdMicros ?? state.displayedValueUsdMicros },
+      change: { dayBps: this.changeBps(state.displayedValueUsdMicros, daySnapshot?.displayedValueUsdMicros), weekBps: this.changeBps(state.displayedValueUsdMicros, weekSnapshot?.displayedValueUsdMicros) },
+      health: state.health,
+      updatedAt: state.updatedAt,
+      lastRecalculatedAt: state.lastRecalculatedAt,
+    })
+  }
+
+  async getHistory(days = 30) {
+    const bounded = Math.min(Math.max(Number(days) || 30, 1), 365)
+    const from = new Date(Date.now() - bounded * DAY_MS)
+    const rows = await this.prisma.gldEconomySnapshot.findMany({ where: { createdAt: { gte: from } }, orderBy: { createdAt: "asc" }, take: 1000 })
+    return this.serialize({ days: bounded, points: rows.map((row) => ({ timestamp: row.createdAt, valueUsdMicros: row.displayedValueUsdMicros, createdAt: row.createdAt, displayedValueUsdMicros: row.displayedValueUsdMicros })) })
+  }
+
+  async getAdminState() {
+    const state = await this.getOrCreateState()
+    const config = getGldConfig()
+    const [snapshots, revenueSnapshots] = await Promise.all([this.prisma.gldEconomySnapshot.findMany({ orderBy: { createdAt: "desc" }, take: 30 }), this.revenue.listSnapshots(30)])
+    return this.serialize({ state, config, snapshots, revenueSnapshots })
+  }
+
+  async recalculate(reason = "manual") {
+    if (this.recalculating) return { skipped: true, reason: "recalculation-in-progress" }
+    this.recalculating = true
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('SMARTS_GLD_ECONOMY_RECALCULATION'))`)
+        const config = getGldConfig()
+        const currency = await tx.currencyDefinition.findUnique({ where: { code: "GLD" }, select: { id: true, active: true } })
+        if (!currency?.active) throw new NotFoundException("GLD currency is not configured")
+        const current = await tx.gldEconomyState.upsert({ where: { currencyId: currency.id }, create: { currencyId: currency.id, displayedValueUsdMicros: config.initialPriceUsdMicros, targetValueUsdMicros: config.initialPriceUsdMicros, treasuryReserveUsdMicros: 0n, circulatingSupply: 0n, reserveRatioBps: 0, smoothingFactorBps: config.smoothingFactorBps, minPriceUsdMicros: config.minPriceUsdMicros, maxPriceUsdMicros: config.maxPriceUsdMicros, dailyEmissionBudget: 0n, dailyEmissionUsed: 0n }, update: {} })
+        const supplyResult = await tx.walletBalance.aggregate({ where: { currencyId: currency.id, wallet: { status: "ACTIVE" } }, _sum: { amount: true } })
+        const circulatingSupply = supplyResult._sum.amount ?? 0n
+        const reserveResult = await tx.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`SELECT COALESCE(SUM(CASE WHEN "entryType" = 'RESERVE' OR ("entryType" = 'ADJUSTMENT' AND "metadata"->>'allocation' = 'RESERVE') THEN "amountUsdMicros" ELSE 0 END), 0)::bigint AS total FROM "GldTreasuryEntry"`)
+        const treasuryReserve = reserveResult[0]?.total ?? 0n
+        const target = circulatingSupply > 0n ? this.clamp((treasuryReserve * 1_000_000n) / circulatingSupply, config.minPriceUsdMicros, config.maxPriceUsdMicros) : current.displayedValueUsdMicros
+        const displayed = this.clamp(this.smooth(current.displayedValueUsdMicros, target, config.smoothingFactorBps), config.minPriceUsdMicros, config.maxPriceUsdMicros)
+        const liability = circulatingSupply * displayed
+        const reserveRatioBps = liability > 0n ? Number((treasuryReserve * 10_000n) / liability) : 0
+        const health = this.health(reserveRatioBps)
+        const dateKey = new Date().toISOString().slice(0, 10)
+        const dailyBudget = await this.calculateDailyBudget(tx, dateKey, displayed, config)
+        const emissionDay = await tx.gldEmissionDay.findUnique({ where: { dateKey }, select: { emittedAmount: true } })
+        const latestRevenue = await tx.gldRevenueSnapshot.findFirst({ where: { recognitionStatus: { in: ["RECOGNIZED", "RESTATED"] } }, orderBy: { periodEnd: "desc" }, select: { periodEnd: true } })
+        const recalculatedAt = new Date()
+        const updated = await tx.gldEconomyState.update({ where: { id: current.id }, data: { displayedValueUsdMicros: displayed, targetValueUsdMicros: target, treasuryReserveUsdMicros: treasuryReserve, circulatingSupply, reserveRatioBps, health, dailyEmissionBudget: dailyBudget, dailyEmissionUsed: emissionDay?.emittedAmount ?? 0n, smoothingFactorBps: config.smoothingFactorBps, minPriceUsdMicros: config.minPriceUsdMicros, maxPriceUsdMicros: config.maxPriceUsdMicros, lastRevenueSnapshotAt: latestRevenue?.periodEnd ?? null, lastRecalculatedAt: recalculatedAt } })
+        await tx.gldEconomySnapshot.create({ data: { displayedValueUsdMicros: displayed, targetValueUsdMicros: target, treasuryReserveUsdMicros: treasuryReserve, circulatingSupply, reserveRatioBps, dailyEmissionBudget: dailyBudget, dailyEmissionUsed: emissionDay?.emittedAmount ?? 0n, reason, metadata: { algorithm: "reserve-over-circulating-supply", version: 1 } } })
+        return updated
+      })
+      return this.serialize(result)
+    } finally { this.recalculating = false }
+  }
+
+  private async calculateDailyBudget(tx: Prisma.TransactionClient, dateKey: string, displayed: bigint, config: ReturnType<typeof getGldConfig>) {
+    const start = new Date(`${dateKey}T00:00:00.000Z`)
+    const end = new Date(start.getTime() + DAY_MS)
+    const backing = await tx.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`SELECT COALESCE(SUM(CASE WHEN "entryType" = 'REWARD_BACKING' OR ("entryType" = 'ADJUSTMENT' AND "metadata"->>'allocation' = 'REWARD_BACKING') THEN "amountUsdMicros" ELSE 0 END), 0)::bigint AS total FROM "GldTreasuryEntry" WHERE "createdAt" >= ${start} AND "createdAt" < ${end}`)
+    const raw = displayed > 0n ? (backing[0]?.total ?? 0n) / displayed : 0n
+    const prior = await tx.gldEmissionDay.findFirst({ where: { dateKey: { lt: dateKey } }, orderBy: { dateKey: "desc" }, select: { emissionBudget: true } })
+    const hasPriorBudget = Boolean(prior && prior.emissionBudget > 0n)
+    const growthCap = hasPriorBudget ? (prior!.emissionBudget * BigInt(10_000 + config.maxDailyGrowthBps)) / 10_000n : config.maximumDailyEmission
+    const dropFloor = hasPriorBudget ? (prior!.emissionBudget * BigInt(Math.max(0, 10_000 - config.maxDailyDropBps))) / 10_000n : 0n
+    const budget = this.clamp(raw, config.minimumDailyEmission, config.maximumDailyEmission)
+    const bounded = hasPriorBudget ? this.clamp(budget, dropFloor, growthCap) : budget
+    await tx.gldEmissionDay.upsert({ where: { dateKey }, create: { dateKey, emissionBudget: bounded }, update: { emissionBudget: bounded } })
+    return bounded
+  }
+
+  private async getOrCreateState() {
+    const config = getGldConfig()
+    const currency = await this.prisma.currencyDefinition.findUnique({ where: { code: "GLD" }, select: { id: true, active: true } })
+    if (!currency?.active) throw new NotFoundException("GLD currency is not configured")
+    return this.prisma.gldEconomyState.upsert({ where: { currencyId: currency.id }, create: { currencyId: currency.id, displayedValueUsdMicros: config.initialPriceUsdMicros, targetValueUsdMicros: config.initialPriceUsdMicros, treasuryReserveUsdMicros: 0n, circulatingSupply: 0n, reserveRatioBps: 0, smoothingFactorBps: config.smoothingFactorBps, minPriceUsdMicros: config.minPriceUsdMicros, maxPriceUsdMicros: config.maxPriceUsdMicros, dailyEmissionBudget: 0n, dailyEmissionUsed: 0n }, update: {} })
+  }
+
+  private clamp(value: bigint, min: bigint, max: bigint) { return value < min ? min : value > max ? max : value }
+  private smooth(previous: bigint, target: bigint, factorBps: number) { return previous + ((target - previous) * BigInt(factorBps)) / 10_000n }
+  private health(ratio: number) { return ratio >= 12_000 ? "VERY_HEALTHY" : ratio >= 10_000 ? "HEALTHY" : ratio >= 8_000 ? "CAUTION" : ratio >= 6_000 ? "RESTRICTED" : "CRITICAL" }
+  private changeBps(current: bigint, historical?: bigint) { return !historical || historical === 0n ? 0 : Number(((current - historical) * 10_000n) / historical) }
+  private formatUsd(micros: bigint) { return `$${(micros / 1_000_000n).toString()}.${(micros % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "").padEnd(2, "0")}` }
+  private serialize(value: unknown): any {
+    if (typeof value === "bigint") return value.toString()
+    if (value instanceof Date) return value.toISOString()
+    if (Array.isArray(value)) return value.map((item) => this.serialize(item))
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.serialize(item)]))
+    return value
+  }
+}

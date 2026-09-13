@@ -139,6 +139,7 @@ npm run dev
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `DATABASE_URL` | yes | Postgres connection string |
+
 | `PORT` | no | Defaults to 8080 |
 | `JWT_SECRET` | fallback | Shared signing secret fallback; prefer separate secrets in production |
 | `JWT_ACCESS_SECRET` | production | HMAC secret for access tokens |
@@ -159,6 +160,34 @@ npm run dev
 | `S3_PUBLIC_BASE_URL` | optional | Only use if the bucket is intentionally public; private buckets are supported |
 | `PUBLIC_API_URL` | recommended | Absolute Railway API URL used for stable public media links, for example `https://api-production-xxxx.up.railway.app` |
 | `AD_REWARD_WEBHOOK_SECRET` | Phase 9B | Private HMAC secret used to verify ad-provider callbacks; configure only in Railway Variables |
+
+### GLD economy configuration
+
+GLD is initialized from the existing active `GLD` currency. The economy engine
+uses integer USD micros and safe defaults, so no values are required for a
+first deployment. Override these Railway variables when configuring policy:
+
+```text
+GLD_INITIAL_PRICE_USD_MICROS=50000
+GLD_MIN_PRICE_USD_MICROS=5000
+GLD_MAX_PRICE_USD_MICROS=1000000
+GLD_SMOOTHING_FACTOR_BPS=500
+GLD_MAX_PRICE_INCREASE_BPS=250
+GLD_MAX_PRICE_DECREASE_BPS=250
+GLD_PLAYER_REWARD_ALLOCATION_BPS=4000
+GLD_RESERVE_ALLOCATION_BPS=2000
+GLD_COMPANY_ALLOCATION_BPS=4000
+GLD_RECOGNITION_HAIRCUT_BPS=8000
+GLD_DAILY_AD_COSTS_USD_MICROS=0
+GLD_MIN_DAILY_EMISSION=0
+GLD_MAX_DAILY_EMISSION=1000000000
+GLD_MAX_DAILY_EMISSION_GROWTH_BPS=1500
+GLD_MAX_DAILY_EMISSION_DROP_BPS=2000
+```
+
+The three allocation values must total `10000` BPS. AdMob revenue is only
+materialized after a two-day maturity delay and only when the connected AdMob
+account reports USD; zero earnings create no phantom GLD backing.
 
 Phase 7 storage uses organized object keys such as `player-avatar/{userId}/{uuid}.png`,
 `commerce-asset/admin/{uuid}.png`, and `catalog-item/admin/{uuid}.png`. Private

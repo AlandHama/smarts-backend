@@ -13,7 +13,11 @@ export class WalletService {
   async getWalletForUser(userId: string) {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId }, include: { balances: { orderBy: { currency: { code: "asc" } }, include: { currency: { select: { code: true, name: true, kind: true, precision: true } } } } } })
     if (!wallet) throw new NotFoundException("Wallet not found")
-    return this.serialize({ id: wallet.id, status: wallet.status, balances: wallet.balances.map((balance) => ({ currency: balance.currency, amount: balance.amount })) })
+    const gld = await this.prisma.currencyDefinition.findUnique({ where: { code: "GLD" }, select: { id: true, gldEconomyState: { select: { displayedValueUsdMicros: true } } } })
+    return this.serialize({ id: wallet.id, status: wallet.status, balances: wallet.balances.map((balance) => {
+      const displayedValue = balance.currency.code === "GLD" ? gld?.gldEconomyState?.displayedValueUsdMicros ?? null : null
+      return { currency: balance.currency, amount: balance.amount, ...(displayedValue === null ? {} : { displayedValueUsdMicros: displayedValue, estimatedDisplayValueUsdMicros: balance.amount * displayedValue }) }
+    }) })
   }
 
   async listTransactions(userId: string, query: WalletQueryDto) {
