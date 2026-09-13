@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common"
 import { Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
+import { AdMobService } from "../admob/admob.service"
 
 type NumericRow = Record<string, unknown>
 
@@ -16,7 +17,7 @@ type NumericRow = Record<string, unknown>
 export class SystemAdminAnalyticsService {
   private readonly logger = new Logger(SystemAdminAnalyticsService.name)
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly adMobService: AdMobService) {}
 
   async overview(requestedDays = 30) {
     const days = Math.min(Math.max(Number(requestedDays) || 30, 7), 365)
@@ -24,7 +25,7 @@ export class SystemAdminAnalyticsService {
     const from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate() - (days - 1)))
     const retentionTo = new Date(to)
 
-    const [trend, summary, answerSummary, matchSummary, commerceSummary, gameRows, progressionRows, retention, countries, devices, timeSummary, health] = await Promise.all([
+    const [trend, summary, answerSummary, matchSummary, commerceSummary, gameRows, progressionRows, retention, countries, devices, timeSummary, health, admob] = await Promise.all([
       this.safeQuery("daily trend", this.trend(from, to), []),
       this.safeQuery("active-user summary", this.summary(from, to), []),
       this.safeQuery("answer summary", this.answerSummary(from, to), []),
@@ -37,6 +38,7 @@ export class SystemAdminAnalyticsService {
       this.safeQuery("device breakdown", this.deviceBreakdown(from, to), []),
       this.safeQuery("play-time summary", this.timeSummary(from, to), []),
       this.safeQuery("live health", this.health(), { onlinePlayers: 0, searchingTickets: 0, activeMatches: 0, failedOutbox: 0, openFeedback: 0 }),
+      this.safeQuery("AdMob analytics", this.adMobService.analytics(days), this.adMobService.emptyAnalyticsForSystemAdmin(days)),
     ])
 
     const averageDau = trend.length ? Math.round(trend.reduce((sum, row) => sum + this.number(row.dau), 0) / trend.length) : 0
@@ -144,6 +146,7 @@ export class SystemAdminAnalyticsService {
         paidRewardRequests: this.number(commerceSummary[0]?.paid_reward_requests),
         refusedPaidRewards: this.number(commerceSummary[0]?.refused_paid_rewards),
       },
+      admob,
       health,
     })
   }

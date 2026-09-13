@@ -22,9 +22,10 @@ import { FriendsModule } from "../friends/friends.module"
 import { ConfigModule } from "../config/config.module"
 import { AdRewardsModule } from "../ad-rewards/ad-rewards.module"
 import { SystemAdminAnalyticsService } from "./system-admin-analytics.service"
+import { AdMobModule } from "../admob/admob.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,

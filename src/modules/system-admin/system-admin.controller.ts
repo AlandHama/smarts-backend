@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common"
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger"
 
@@ -20,6 +20,8 @@ import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
 import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto"
 import { RefreshTokenRequestDto } from "../auth/dtos/refresh-token-request.dto"
 import { TokenService } from "../auth/services/token.service"
+import { AdMobService } from "../admob/admob.service"
+import { AdMobReportQueryDto } from "../admob/dtos/admob.dto"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -27,6 +29,7 @@ export class SystemAdminController {
   constructor(
     private readonly systemAdminService: SystemAdminService,
     private readonly tokenService: TokenService,
+    private readonly adMobService: AdMobService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -125,6 +128,43 @@ export class SystemAdminController {
   analytics(@Query() query: SystemAdminAnalyticsQueryDto) {
     return this.systemAdminService.analytics(query.days)
   }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/admob/connect")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Create the Google OAuth URL for the AdMob reporting account" })
+  admobConnect(@CurrentUser() admin: UserResponseDto) { return this.adMobService.getAuthorizationUrl(admin.id) }
+
+  @SkipAuth()
+  @Get("api/admob/oauth/callback")
+  @ApiOperation({ summary: "Complete the Google OAuth callback for AdMob reporting" })
+  async admobOAuthCallback(@Query("code") code: string, @Query("state") state: string, @Query("error") error: string | undefined, @Res() response: any) {
+    try {
+      await this.adMobService.handleCallback(code, state, error)
+      return response.redirect("/system-admin/admob/?admob=connected")
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "AdMob authorization failed"
+      return response.redirect(`/system-admin/admob/?admob=error&message=${encodeURIComponent(message)}`)
+    }
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/admob")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Get synchronized AdMob connection, performance, and earnings analytics" })
+  admob(@Query() query: AdMobReportQueryDto) { return this.adMobService.analytics(query.days) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/admob/sync")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Synchronize recent AdMob network report rows" })
+  admobSync(@Query() query: AdMobReportQueryDto) { return this.adMobService.sync(query.days) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/admob")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Disconnect the AdMob reporting account" })
+  admobDisconnect() { return this.adMobService.disconnect() }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/operations")

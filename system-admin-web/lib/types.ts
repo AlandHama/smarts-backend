@@ -148,7 +148,8 @@ export interface LeaderboardReward {
   id?: string;
   rank: number;
   sortOrder?: number;
-  rewardType: "CURRENCY" | "ASSET" | "ENTITLEMENT" | "PROGRESSION_POINTS" | string;
+  rewardType:
+    "CURRENCY" | "ASSET" | "ENTITLEMENT" | "PROGRESSION_POINTS" | string;
   amount: string | null;
   targetKey: string | null;
   currency?: { code: string; name: string } | null;
@@ -257,6 +258,58 @@ export interface GameAnalyticsRow {
   averageScore: number;
 }
 
+export interface AdMobBreakdownRow {
+  key: string;
+  label: string;
+  impressions: number;
+  clicks: number;
+  matchedRequests: number;
+  estimatedEarnings: number;
+}
+
+export interface AdMobAnalytics {
+  connected: boolean;
+  connection: {
+    publisherId: string;
+    googleAccountEmail: string | null;
+    reportingTimezone: string | null;
+    currencyCode: string | null;
+    status: string;
+    connectedAt: string;
+    lastSyncAt: string | null;
+    lastSyncStartedAt: string | null;
+    lastSyncError: string | null;
+  } | null;
+  period: { from: string; to: string; days: number };
+  kpis: {
+    adRequests: number;
+    matchedRequests: number;
+    impressions: number;
+    clicks: number;
+    estimatedEarningsMicros: number;
+    estimatedEarnings: number;
+    impressionCtr: number;
+    matchRate: number;
+    showRate: number;
+    impressionRpm: number;
+    rewardClaims: number;
+    grantedRewardClaims: number;
+    rejectedRewardClaims: number;
+  };
+  trends: Array<{
+    date: string;
+    adRequests: number;
+    matchedRequests: number;
+    impressions: number;
+    clicks: number;
+    estimatedEarnings: number;
+  }>;
+  apps: AdMobBreakdownRow[];
+  formats: AdMobBreakdownRow[];
+  countries: AdMobBreakdownRow[];
+  adUnits: AdMobBreakdownRow[];
+}
+
 export interface SystemAdminAnalytics {
   period: { from: string; to: string; days: number; timezone: string };
   kpis: {
@@ -301,14 +354,57 @@ export interface SystemAdminAnalytics {
     matchPlayHours: number;
   }>;
   games: GameAnalyticsRow[];
-  retention: { day1: RetentionMetric; day7: RetentionMetric; day30: RetentionMetric };
-  progression: Array<{ key: string; name: string; players: number; averagePoints: number; highestStep: number; periodDelta: number }>;
-  countries: Array<{ countryCode: string; activeUsers: number; newPlayers: number }>;
+  retention: {
+    day1: RetentionMetric;
+    day7: RetentionMetric;
+    day30: RetentionMetric;
+  };
+  progression: Array<{
+    key: string;
+    name: string;
+    players: number;
+    averagePoints: number;
+    highestStep: number;
+    periodDelta: number;
+  }>;
+  countries: Array<{
+    countryCode: string;
+    activeUsers: number;
+    newPlayers: number;
+  }>;
   devices: Array<{ type: string; users: number; sessions: number }>;
-  gameplay: { averageMatchDurationSeconds: number; reviewMatches: number; cancelledMatches: number; drawMatches: number; botMatches: number };
-  playTime: { totalSeconds: number; totalHours: number; averageDailyHours: number; activeDays: number; sessions: number; players: number; averageSessionMinutes: number; longestSessionMinutes: number; matchPlayHours: number };
-  economy: { adClaims: number; rejectedAdClaims: number; paidRewardRequests: number; refusedPaidRewards: number };
-  health: { onlinePlayers: number; searchingTickets: number; activeMatches: number; failedOutbox: number; openFeedback: number };
+  gameplay: {
+    averageMatchDurationSeconds: number;
+    reviewMatches: number;
+    cancelledMatches: number;
+    drawMatches: number;
+    botMatches: number;
+  };
+  playTime: {
+    totalSeconds: number;
+    totalHours: number;
+    averageDailyHours: number;
+    activeDays: number;
+    sessions: number;
+    players: number;
+    averageSessionMinutes: number;
+    longestSessionMinutes: number;
+    matchPlayHours: number;
+  };
+  economy: {
+    adClaims: number;
+    rejectedAdClaims: number;
+    paidRewardRequests: number;
+    refusedPaidRewards: number;
+  };
+  admob: AdMobAnalytics;
+  health: {
+    onlinePlayers: number;
+    searchingTickets: number;
+    activeMatches: number;
+    failedOutbox: number;
+    openFeedback: number;
+  };
 }
 
 export interface AdminOperations {

@@ -90,6 +90,12 @@ enum AdRewardClaimStatus {
   GRANTED
 }
 
+enum AdMobConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
 enum NotificationStatus {
   PENDING
   READ
@@ -1498,6 +1504,66 @@ model AdRewardClaim {
   @@index([userId, status, createdAt])
   @@index([userId, grantedAt])
   @@index([expiresAt, status])
+}
+
+/// One tenant-wide AdMob OAuth connection. The refresh token is encrypted at
+/// rest and is never returned by an API response.
+model AdMobConnection {
+  id                    String                @id @default(uuid()) @db.Uuid
+  provider              String                @unique @default("ADMOB") @db.VarChar(40)
+  publisherId           String                @unique @db.VarChar(80)
+  googleAccountEmail    String?               @db.VarChar(255)
+  reportingTimezone     String?               @db.VarChar(80)
+  currencyCode          String?               @db.Char(3)
+  encryptedRefreshToken String                @db.Text
+  status                AdMobConnectionStatus @default(CONNECTED)
+  connectedAt           DateTime              @default(now())
+  lastSyncStartedAt     DateTime?
+  lastSyncAt            DateTime?
+  lastSyncError         String?               @db.Text
+  createdById           String?               @db.Uuid
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  reportRows            AdMobReportRow[]
+
+  @@index([status])
+  @@index([lastSyncAt])
+}
+
+/// Normalized rows returned by the AdMob network report. Rows are replaced for
+/// the synchronized date window because AdMob can revise recent figures.
+model AdMobReportRow {
+  id                         String          @id @default(uuid()) @db.Uuid
+  connectionId               String          @db.Uuid
+  reportDate                 DateTime        @db.Date
+  dimensionKey               String          @db.VarChar(1000)
+  appId                     String?         @db.VarChar(160)
+  appName                   String?         @db.VarChar(255)
+  platform                  String?         @db.VarChar(40)
+  countryCode               String?         @db.Char(2)
+  format                    String?         @db.VarChar(80)
+  adUnitId                  String?         @db.VarChar(160)
+  adUnitName                String?         @db.VarChar(255)
+  adRequests                BigInt          @default(0)
+  matchedRequests           BigInt          @default(0)
+  impressions               BigInt          @default(0)
+  clicks                    BigInt          @default(0)
+  estimatedEarningsMicros    BigInt         @default(0)
+  impressionCtrBps          Int             @default(0)
+  impressionRpmMicros       BigInt          @default(0)
+  matchRateBps              Int             @default(0)
+  showRateBps               Int             @default(0)
+  raw                       Json?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+  connection                AdMobConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, reportDate, dimensionKey])
+  @@index([connectionId, reportDate])
+  @@index([reportDate])
+  @@index([appId, reportDate])
+  @@index([adUnitId, reportDate])
+  @@index([countryCode, reportDate])
 }
 
 model Notification {
