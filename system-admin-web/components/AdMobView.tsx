@@ -51,9 +51,9 @@ export function AdMobView() {
   const [error, setError] = useState("");
   const currency = data?.connection?.currencyCode || "USD";
 
-  const load = () => {
+  const load = (preservedError = "") => {
     setLoading(true);
-    setError("");
+    if (!preservedError) setError("");
     void api<AdMobAnalytics>(`/admob?days=${days}`)
       .then(setData)
       .catch((reason) =>
@@ -63,18 +63,23 @@ export function AdMobView() {
             : "Unable to load AdMob analytics",
         ),
       )
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (preservedError) setError(preservedError);
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const callbackStatus = params.get("admob");
     const callbackMessage = params.get("message");
-    if (callbackStatus === "error")
-      setError(callbackMessage || "AdMob authorization failed");
+    const callbackError =
+      callbackStatus === "error"
+        ? callbackMessage || "AdMob authorization failed"
+        : "";
     if (callbackStatus)
       window.history.replaceState({}, "", "/system-admin/admob/");
-    load();
+    load(callbackError);
     // The backend refreshes AdMob hourly. Refreshing this view every minute
     // keeps the admin console current after a manual or scheduled sync.
     const timer = window.setInterval(load, 60_000);

@@ -64,7 +64,16 @@ export class AdMobService implements OnModuleInit, OnModuleDestroy {
     const configuredPublisher = process.env.ADMOB_PUBLISHER_ID?.trim()
     const account = (configuredPublisher ? accounts.find((item) => item.publisherId === configuredPublisher) : undefined) ?? accounts[0]
     if (!account.publisherId) throw new BadRequestException("AdMob did not return a publisher ID")
-    const details = await this.getAccount(account.publisherId, token.access_token)
+    // Account listing is sufficient to establish the connection. Some AdMob
+    // accounts can list successfully while the optional account-details call
+    // is temporarily unavailable, so do not discard valid OAuth credentials
+    // merely because metadata could not be read.
+    let details: GoogleAccount = {}
+    try {
+      details = await this.getAccount(account.publisherId, token.access_token)
+    } catch (error) {
+      this.logger.warn(`AdMob account metadata unavailable: ${error instanceof Error ? error.message : String(error)}`)
+    }
 
     await this.prisma.adMobConnection.upsert({
       where: { provider: "ADMOB" },
