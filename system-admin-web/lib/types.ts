@@ -603,8 +603,13 @@ export interface PaidRewardRequest {
   decidedAt: string | null;
   inventoryItemId: string | null;
   gldPrice: string | null;
+  gldBasePrice?: string | null;
+  gldUnitPriceUsdMicros?: string | null;
+  reserveCostUsdMicros?: string | null;
+  gldFeeAmount?: string | null;
+  gldChargedAmount?: string | null;
   gldRefundedAmount: string;
-  gldStatus: "RESERVED" | "SPENT" | "REFUNDED" | "LEGACY";
+  gldStatus: "NOT_CHARGED" | "SPENT" | "REFUNDED" | "LEGACY";
   user: {
     id: string;
     username: string;

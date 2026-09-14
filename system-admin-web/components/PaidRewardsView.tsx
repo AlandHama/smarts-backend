@@ -21,6 +21,21 @@ import Button from "@mui/material/Button";
 import { api } from "../lib/api";
 import type { PaidRewardRequest } from "../lib/types";
 
+const formatUsdMicros = (value: string | null | undefined) => {
+  if (!value) return null;
+  try {
+    const micros = BigInt(value);
+    const whole = micros / BigInt(1_000_000);
+    const fraction = (micros % BigInt(1_000_000))
+      .toString()
+      .padStart(6, "0")
+      .replace(/0+$/, "");
+    return `$${whole.toString()}${fraction ? `.${fraction}` : ""}`;
+  } catch {
+    return null;
+  }
+};
+
 export function PaidRewardsView({
   onOpenPlayer360,
 }: {
@@ -195,20 +210,6 @@ export function PaidRewardsView({
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        {request.gldPrice
-                          ? `${request.gldPrice} reserved`
-                          : "Legacy"}
-                        {request.gldRefundedAmount !== "0" && (
-                          <Typography
-                            variant="caption"
-                            display="block"
-                            color="success.main"
-                          >
-                            {request.gldRefundedAmount} refunded
-                          </Typography>
-                        )}
-                      </TableCell>
-                      <TableCell>
                         <Typography fontWeight={700}>
                           {request.asset.name}
                         </Typography>
@@ -223,6 +224,40 @@ export function PaidRewardsView({
                         {request.message && (
                           <Typography variant="caption" color="text.secondary">
                             {request.message}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {request.gldPrice
+                          ? `${request.gldPrice} GLD charge`
+                          : "Legacy"}
+                        {request.gldBasePrice && request.gldFeeAmount && (
+                          <Typography
+                            variant="caption"
+                            display="block"
+                            color="text.secondary"
+                          >
+                            {request.gldBasePrice} base + {request.gldFeeAmount}{" "}
+                            fee
+                          </Typography>
+                        )}
+                        {formatUsdMicros(request.reserveCostUsdMicros) && (
+                          <Typography
+                            variant="caption"
+                            display="block"
+                            color="text.secondary"
+                          >
+                            Reserve cost:{" "}
+                            {formatUsdMicros(request.reserveCostUsdMicros)}
+                          </Typography>
+                        )}
+                        {request.gldRefundedAmount !== "0" && (
+                          <Typography
+                            variant="caption"
+                            display="block"
+                            color="success.main"
+                          >
+                            {request.gldRefundedAmount} refunded
                           </Typography>
                         )}
                       </TableCell>
