@@ -11,6 +11,7 @@ import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
@@ -18,6 +19,7 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import Grid from "@mui/material/Grid2";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
@@ -415,9 +417,20 @@ function ItemDialog({
     typeof itemMetadata.gldCustomPrice === "string"
       ? itemMetadata.gldCustomPrice
       : item?.prices.find((price) => price.currency.code === "GLD")?.amount ?? "";
+  const defaultGiftEnabled =
+    itemMetadata.gift === true ||
+    itemMetadata.isGift === true ||
+    itemMetadata.kind === "GIFT" ||
+    itemMetadata.type === "GIFT";
+  const defaultGiftCategory =
+    typeof itemMetadata.category === "string" && itemMetadata.category.trim()
+      ? itemMetadata.category
+      : "Popular";
   const [prices, setPrices] = useState<CatalogPriceForm[]>(defaultPrices);
   const [rewards, setRewards] =
     useState<CatalogRewardForm[]>(defaultRewards);
+  const [giftEnabled, setGiftEnabled] = useState(defaultGiftEnabled);
+  const [giftCategory, setGiftCategory] = useState(defaultGiftCategory);
   const updateReward = (index: number, patch: Partial<CatalogRewardForm>) => {
     setRewards((current) =>
       current.map((reward, currentIndex) =>
@@ -444,6 +457,9 @@ function ItemDialog({
               throw new Error("At least one price is required");
             const gldPricingMode = field(form, "gldPricingMode");
             const gldCustomPrice = field(form, "gldCustomPrice");
+            const linkedAssetKey = field(form, "assetKey");
+            if (giftEnabled && !linkedAssetKey)
+              throw new Error("Gift items must have a primary asset selected.");
             if (gldPricingMode === "FIXED" && gldCustomPrice && !isPositiveInteger(gldCustomPrice))
               throw new Error("Custom GLD price must be a positive whole number.");
             const normalizedPrices = prices.map((price) => {
@@ -467,6 +483,8 @@ function ItemDialog({
                 active: price.active,
               };
             });
+            if (giftEnabled && !normalizedPrices.some((price) => price.currencyCode === "GLD" && price.active))
+              throw new Error("Gift items need an active GLD price.");
             const normalizedRewards = rewards.map((reward, index) => {
               const payload: Record<string, unknown> = {
                 rewardType: reward.rewardType,
@@ -505,6 +523,16 @@ function ItemDialog({
               return payload;
             });
             const imageUpload = imageFile[0] ? await uploadFile<{ url: string }>("/uploads", imageFile[0], "catalog-item", "PUBLIC") : undefined;
+            const nextMetadata: Record<string, unknown> = { ...itemMetadata };
+            delete nextMetadata.gift;
+            delete nextMetadata.isGift;
+            delete nextMetadata.kind;
+            delete nextMetadata.type;
+            delete nextMetadata.category;
+            if (giftEnabled) {
+              nextMetadata.gift = true;
+              nextMetadata.category = giftCategory.trim() || "Popular";
+            }
             const payload = {
               ...(item ? {} : { catalogId: field(form, "catalogId") }),
               key: stableKey(field(form, "key")),
@@ -519,6 +547,7 @@ function ItemDialog({
               purchasable: true,
               gldPricingMode,
               gldCustomPrice: gldCustomPrice || undefined,
+              metadata: nextMetadata,
             };
             await api(item ? `/commerce/items/${item.id}` : "/commerce/items", {
               method: item ? "PATCH" : "POST",
@@ -614,6 +643,28 @@ function ItemDialog({
                   helperText="Used only in fixed mode. Automatic mode derives the price from the linked asset USD cost and current GLD value."
                   fullWidth
                 />
+              </Grid>
+              <Grid size={12}>
+                <Card variant="outlined" sx={{ p: 1.5 }}>
+                  <FormControlLabel
+                    control={<Checkbox checked={giftEnabled} onChange={(event) => setGiftEnabled(event.target.checked)} />}
+                    label="Available as a player-to-player GLD gift"
+                  />
+                  <Typography variant="body2" color="text.secondary" sx={{ ml: 4.5 }}>
+                    Gift items must link to a primary asset and have an active GLD price. They will appear in the mobile gift screen.
+                  </Typography>
+                  {giftEnabled && (
+                    <TextField
+                      label="Gift category"
+                      value={giftCategory}
+                      onChange={(event) => setGiftCategory(event.target.value)}
+                      placeholder="Popular"
+                      size="small"
+                      sx={{ mt: 1.5, ml: 4.5, maxWidth: 360 }}
+                      helperText="Used for filtering gifts in the mobile app."
+                    />
+                  )}
+                </Card>
               </Grid>
               <Grid size={12}>
                 <TextField

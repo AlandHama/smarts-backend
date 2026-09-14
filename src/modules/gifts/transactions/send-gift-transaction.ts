@@ -8,6 +8,7 @@ import { PrismaService } from "../../../prisma.service"
 import { ConfigService } from "../../config/config.service"
 import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { GrantInventoryItemTransaction } from "../../commerce/transactions/grant-inventory-item-transaction"
+import { catalogGldPrice, catalogGldPricingMode } from "../../commerce/catalog-gld-pricing"
 import { getGldConfig } from "../../gld/gld.config"
 import { SendGiftDto } from "../dtos/gift.dto"
 
@@ -56,11 +57,21 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
 
     const item = await transaction.catalogItem.findFirst({
       where: { key: itemKey, active: true, purchasable: true, catalog: { key: catalogKey, active: true } },
-      include: { catalog: true, assetDefinition: { select: { key: true, name: true, imageUrl: true } }, prices: { where: { active: true }, include: { currency: { select: { id: true, code: true, active: true } } } } },
+      include: { catalog: true, assetDefinition: { select: { key: true, name: true, imageUrl: true, metadata: true } }, prices: { where: { active: true }, include: { currency: { select: { id: true, code: true, active: true } } } } },
     })
     if (!item || !this.isAvailable(item.startsAt, item.endsAt) || !this.isAvailable(item.catalog.startsAt, item.catalog.endsAt)) throw new NotFoundException("Gift catalog item is not available")
     if (!this.isGiftItem(item.metadata)) throw new BadRequestException("This catalog item is not configured as a gift")
-    const price = item.prices.find((entry) => entry.currency.code === "GLD" && entry.currency.active)
+    if (!item.assetDefinition) throw new BadRequestException("This gift is missing its primary asset configuration")
+    let price: any = item.prices.find((entry) => entry.currency.code === "GLD" && entry.currency.active)
+    const state = await transaction.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { displayedValueUsdMicros: true } })
+    const dynamicAmount = state?.displayedValueUsdMicros
+      ? catalogGldPrice({ catalogMetadata: item.metadata, assetMetadata: item.assetDefinition.metadata, currentGldValueUsdMicros: state.displayedValueUsdMicros, storedGldPrice: price?.amount ?? null })
+      : null
+    if (catalogGldPricingMode(item.metadata) === "AUTO" && dynamicAmount === null) throw new BadRequestException("Automatic GLD pricing requires an asset USD cost and a current GLD value")
+    if (dynamicAmount !== null) {
+      const currency = price?.currency ?? await transaction.currencyDefinition.findUnique({ where: { code: "GLD" } })
+      if (currency?.active) price = { ...(price ?? {}), amount: dynamicAmount, currencyId: currency.id, currency }
+    }
     if (!price || price.amount <= 0n) throw new BadRequestException("This gift is not priced in GLD")
 
     const requestHash = createHash("sha256").update(JSON.stringify({ senderUserId, recipientUserId, catalogKey, itemKey })).digest("hex")

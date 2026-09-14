@@ -2,15 +2,25 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { PrismaService } from "../../prisma.service"
 import { SendGiftTransaction } from "./transactions/send-gift-transaction"
 import { SendGiftDto } from "./dtos/gift.dto"
+import { CommerceService } from "../commerce/commerce.service"
 
 @Injectable()
 export class GiftsService {
-  constructor(private readonly prisma: PrismaService, private readonly sendGiftTransaction: SendGiftTransaction) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sendGiftTransaction: SendGiftTransaction,
+    private readonly commerceService: CommerceService,
+  ) {}
 
   async listCatalog(catalogKey = "main") {
-    const now = new Date()
-    const items = await this.prisma.catalogItem.findMany({ where: { active: true, purchasable: true, catalog: { key: catalogKey.trim().toLowerCase(), active: true }, AND: [{ OR: [{ startsAt: null }, { startsAt: { lte: now } }] }, { OR: [{ endsAt: null }, { endsAt: { gt: now } }] }] }, orderBy: { name: "asc" }, take: 500, include: { catalog: true, assetDefinition: { select: { key: true, name: true, imageUrl: true } }, prices: { where: { active: true }, include: { currency: { select: { code: true, active: true } } } } } })
-    return this.serialize(items.map((item) => ({ item, price: item.prices.find((price) => price.currency.code === "GLD" && price.currency.active)?.amount ?? null })).filter(({ item, price }) => this.isGiftItem(item.metadata) && price !== null && price > 0n).map(({ item, price }) => ({ id: item.id, key: item.key, name: item.name, description: item.description, category: this.metadataString(item.metadata, "category") ?? "Popular", imageUrl: item.imageUrl ?? item.assetDefinition?.imageUrl ?? null, assetKey: item.assetDefinition?.key ?? null, gldPrice: price })))
+    // Reuse the public Commerce pricing path so AUTO GLD prices follow the
+    // current GLD value instead of becoming stale in the gift store.
+    const catalog = await this.commerceService.listCatalog(catalogKey)
+    const items = Array.isArray((catalog as any).items) ? (catalog as any).items : []
+    return items
+      .map((item: any) => ({ item, price: item.prices?.find((price: any) => price.currency?.code === "GLD" && price.currency?.active) ?? null }))
+      .filter(({ item, price }: { item: any; price: any }) => this.isGiftItem(item.metadata) && item.assetDefinition && price && this.positiveAmount(price.amount))
+      .map(({ item, price }: { item: any; price: any }) => ({ id: item.id, key: item.key, name: item.name, description: item.description, category: this.metadataString(item.metadata, "category") ?? "Popular", imageUrl: item.imageUrl ?? item.assetDefinition.imageUrl ?? null, assetKey: item.assetDefinition.key, gldPrice: price.amount }))
   }
 
   send(senderUserId: string, dto: SendGiftDto) { return this.sendGiftTransaction.run({ senderUserId, dto }) }
@@ -38,5 +48,6 @@ export class GiftsService {
 
   private isGiftItem(metadata: any) { return Boolean(metadata && typeof metadata === "object" && !Array.isArray(metadata) && (metadata.gift === true || metadata.isGift === true || metadata.kind === "GIFT" || metadata.type === "GIFT")) }
   private metadataString(metadata: any, key: string) { return metadata && typeof metadata === "object" && !Array.isArray(metadata) && typeof metadata[key] === "string" ? metadata[key].trim() || null : null }
+  private positiveAmount(value: unknown) { try { return BigInt(String(value)) > 0n } catch { return false } }
   private serialize(value: unknown): any { return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) }
 }
