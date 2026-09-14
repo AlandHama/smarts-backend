@@ -184,7 +184,7 @@ export class SystemAdminAnalyticsService {
         FROM days
         LEFT JOIN "Session" s ON s."loginTimestamp" < days.day + interval '1 day'
           AND COALESCE(s."lastActiveTimestamp", ${to}) > days.day
-        JOIN "User" session_user ON session_user."id" = s."userId" AND session_user."isSystemAdmin" = false
+        JOIN "User" session_actor ON session_actor."id" = s."userId" AND session_actor."isSystemAdmin" = false
         GROUP BY days.day
       ), daily_match_play AS (
         SELECT days.day,

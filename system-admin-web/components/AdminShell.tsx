@@ -158,6 +158,7 @@ export function AdminShell({
         display: "flex",
         flexDirection: "column",
         p: 2,
+        overflow: "hidden",
       }}
     >
       <Stack
@@ -195,34 +196,52 @@ export function AdminShell({
       >
         Workspace
       </Typography>
-      <List sx={{ mt: 1 }}>
-        {navigation.map((item) => (
-          <ListItemButton
-            key={item.key}
-            selected={view === item.key}
-            onClick={() => {
-              onViewChange(item.key);
-              setMobileOpen(false);
-            }}
-            sx={{
-              borderRadius: 2.5,
-              mb: 0.5,
-              py: 1.2,
-              "&.Mui-selected": {
-                bgcolor: "rgba(139,125,255,.18)",
-                color: "primary.light",
-                "& .MuiListItemIcon-root": { color: "primary.light" },
-              },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 38, color: "text.secondary" }}>
-              {item.icon}
-            </ListItemIcon>
-            <ListItemText primary={item.label} />
-          </ListItemButton>
-        ))}
-      </List>
-      <Box sx={{ flex: 1 }} />
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          overflowX: "hidden",
+          mt: 1,
+          pr: 0.5,
+          scrollbarWidth: "thin",
+          scrollbarColor: "rgba(139,125,255,.55) transparent",
+          "&::-webkit-scrollbar": { width: 8 },
+          "&::-webkit-scrollbar-thumb": {
+            backgroundColor: "rgba(139,125,255,.55)",
+            borderRadius: 8,
+          },
+          "&::-webkit-scrollbar-track": { background: "transparent" },
+        }}
+      >
+        <List>
+          {navigation.map((item) => (
+            <ListItemButton
+              key={item.key}
+              selected={view === item.key}
+              onClick={() => {
+                onViewChange(item.key);
+                setMobileOpen(false);
+              }}
+              sx={{
+                borderRadius: 2.5,
+                mb: 0.5,
+                py: 1.2,
+                "&.Mui-selected": {
+                  bgcolor: "rgba(139,125,255,.18)",
+                  color: "primary.light",
+                  "& .MuiListItemIcon-root": { color: "primary.light" },
+                },
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 38, color: "text.secondary" }}>
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText primary={item.label} />
+            </ListItemButton>
+          ))}
+        </List>
+      </Box>
       <Button
         startIcon={<LogoutRoundedIcon />}
         onClick={onLogout}

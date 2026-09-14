@@ -11,7 +11,7 @@ export class GldEmissionService {
     if (input.baseAmount <= 0n) throw new BadRequestException("Ad reward amount is invalid")
     const config = getGldConfig()
     const dateKey = new Date().toISOString().slice(0, 10)
-    await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`gld-ad:${input.userId}:${dateKey}`}))`
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`gld-ad:${input.userId}:${dateKey}`}))`
     const controls = await transaction.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} })
     if (controls.emissionsPaused) return { amount: 0n, validatedAds: 0, remainingDailyAds: config.adMaxValidatedAds, remainingDailyGldCap: config.adDailyGldCap, reason: "emissions-paused" }
     const state = await transaction.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { health: true, dailyEmissionBudget: true } })

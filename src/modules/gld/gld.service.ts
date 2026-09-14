@@ -99,7 +99,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     this.recalculating = true
     try {
       const result = await this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('SMARTS_GLD_ECONOMY_RECALCULATION'))`)
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('SMARTS_GLD_ECONOMY_RECALCULATION'))`)
         const config = getGldConfig()
         const currency = await tx.currencyDefinition.findUnique({ where: { code: "GLD" }, select: { id: true, active: true } })
         if (!currency?.active) throw new NotFoundException("GLD currency is not configured")
