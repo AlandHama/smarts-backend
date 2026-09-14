@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger"
+import { Transform, Type } from "class-transformer"
 import { IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min } from "class-validator"
 
 import { CurrencyKind, WalletTransactionSourceType } from "@prisma/client"
@@ -95,6 +96,11 @@ export class ReverseWalletDto {
 export class WalletQueryDto {
   @ApiPropertyOptional({ default: 25 })
   @IsOptional()
+  @Transform(({ value }) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), 100) : value
+  })
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
@@ -102,6 +108,7 @@ export class WalletQueryDto {
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   offset?: number
