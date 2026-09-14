@@ -136,6 +136,7 @@ enum WalletTransactionSourceType {
   SIGNUP
   MATCH
   AD
+  REFERRAL
   PURCHASE
   REFUND
   ADMIN
@@ -359,6 +360,18 @@ enum FriendRequestStatus {
   CANCELED
 }
 
+enum ReferralStatus {
+  ACTIVE
+  QUALIFIED
+  CAPPED
+  REVOKED
+}
+
+enum ReferralRewardStatus {
+  GRANTED
+  REVERSED
+}
+
 model User {
   id                         String                  @id @default(uuid()) @db.Uuid
   username                   String                  @unique @db.VarChar(50)
@@ -413,6 +426,12 @@ model User {
   gldDailyAdStates           GldPlayerDailyAdState[]
   sentGifts                  PlayerGift[]            @relation("SentGifts")
   receivedGifts              PlayerGift[]            @relation("ReceivedGifts")
+  referralCode               ReferralCode?
+  referralsAsReferrer        Referral[]              @relation("ReferralReferrer")
+  referralAsReferred         Referral?               @relation("ReferralReferred")
+  referralRewardsAsReferrer  ReferralReward[]        @relation("ReferralRewardReferrer")
+  referralRewardsAsReferred  ReferralReward[]        @relation("ReferralRewardReferred")
+  referralConfigUpdates      ReferralConfig[]        @relation("ReferralConfigUpdater")
 }
 
 model Session {
@@ -492,6 +511,82 @@ model FriendBlock {
 
   @@unique([blockerId, blockedId])
   @@index([blockedId])
+}
+
+/// One server-generated, shareable invitation code per player.
+model ReferralCode {
+  id          String     @id @default(uuid()) @db.Uuid
+  userId      String     @unique @db.Uuid
+  code        String     @unique @db.VarChar(32)
+  inviteCount Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referrals   Referral[]
+}
+
+/// Global referral policy. Referral GLD is a split of an eligible referred ad
+/// reward, never an additional emission outside the GLD ad budget.
+model ReferralConfig {
+  id                   String   @id @default(uuid()) @db.Uuid
+  singletonKey         String   @unique @default("default") @db.VarChar(32)
+  enabled              Boolean  @default(true)
+  maxInvitesPerUser    Int      @default(25)
+  rewardBps            Int      @default(1000)
+  maxRewardPerReferral BigInt   @default(1000)
+  minQualifyingAds     Int      @default(1)
+  updatedById          String?  @db.Uuid
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  updatedBy            User?    @relation("ReferralConfigUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+/// A player can be attributed to at most one referrer for the lifetime of the
+/// account. Attribution is intentionally independent from Friendship.
+model Referral {
+  id               String        @id @default(uuid()) @db.Uuid
+  referralCodeId   String        @db.Uuid
+  referrerId       String        @db.Uuid
+  referredId       String        @unique @db.Uuid
+  status           ReferralStatus @default(ACTIVE)
+  referredAdCount  Int           @default(0)
+  totalRewardedGld BigInt        @default(0)
+  rewardCount      Int           @default(0)
+  invitedAt        DateTime      @default(now())
+  qualifiedAt      DateTime?
+  cappedAt         DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  referralCode     ReferralCode  @relation(fields: [referralCodeId], references: [id], onDelete: Restrict)
+  referrer         User          @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred         User          @relation("ReferralReferred", fields: [referredId], references: [id], onDelete: Cascade)
+  rewards          ReferralReward[]
+
+  @@unique([referrerId, referredId])
+  @@index([referrerId, status, createdAt])
+  @@index([status, createdAt])
+}
+
+/// Each referral reward is linked to exactly one verified ad claim for
+/// idempotency and reconciliation.
+model ReferralReward {
+  id              String              @id @default(uuid()) @db.Uuid
+  referralId      String              @db.Uuid
+  adRewardClaimId String              @unique @db.Uuid
+  referrerId      String              @db.Uuid
+  referredId      String              @db.Uuid
+  grossAdReward   BigInt
+  rewardAmount    BigInt
+  status          ReferralRewardStatus @default(GRANTED)
+  createdAt       DateTime            @default(now())
+  referral        Referral            @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  adRewardClaim   AdRewardClaim       @relation(fields: [adRewardClaimId], references: [id], onDelete: Restrict)
+  referrer        User                @relation("ReferralRewardReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred        User                @relation("ReferralRewardReferred", fields: [referredId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId, createdAt])
+  @@index([referredId, createdAt])
+  @@index([referralId, createdAt])
 }
 
 model PlayerProfile {
@@ -1564,6 +1659,7 @@ model AdRewardClaim {
   updatedAt           DateTime            @updatedAt
   user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   currency            CurrencyDefinition? @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  referralReward      ReferralReward?
 
   @@unique([provider, providerEventId])
   @@index([userId, status, createdAt])

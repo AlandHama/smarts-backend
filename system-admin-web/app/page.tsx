@@ -36,6 +36,7 @@ import { MatchesView } from "../components/MatchesView";
 import { Match360View } from "../components/Match360View";
 import { AdMobView } from "../components/AdMobView";
 import { GldEconomyView } from "../components/GldEconomyView";
+import { ReferralsView } from "../components/ReferralsView";
 import { api, clearSession, hasSession, login } from "../lib/api";
 import { adminTheme } from "../lib/theme";
 
@@ -61,6 +62,7 @@ const viewPaths: Record<
   admob: "/admob/",
   storage: "/storage/",
   feedback: "/feedback/",
+  referrals: "/referrals/",
 };
 
 function routeState() {
@@ -200,6 +202,7 @@ export default function AdminPage() {
           )}
           {view === "admob" && <AdMobView />}
           {view === "feedback" && <FeedbackView />}
+          {view === "referrals" && <ReferralsView />}
         </AdminShell>
       )}
     </ThemeProvider>

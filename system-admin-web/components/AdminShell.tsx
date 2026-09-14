@@ -20,6 +20,7 @@ import MonitorHeartRoundedIcon from "@mui/icons-material/MonitorHeartRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
+import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -53,7 +54,8 @@ export type AdminView =
   | "reward-policies"
   | "admob"
   | "storage"
-  | "feedback";
+  | "feedback"
+  | "referrals";
 
 const navigation = [
   {
@@ -134,6 +136,7 @@ const navigation = [
     icon: <InsightsRoundedIcon />,
   },
   { key: "feedback" as const, label: "Feedback", icon: <ForumRoundedIcon /> },
+  { key: "referrals" as const, label: "Referrals", icon: <ShareRoundedIcon /> },
 ];
 
 export function AdminShell({

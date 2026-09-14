@@ -36,6 +36,7 @@ import { FriendsService } from "../friends/friends.service"
 import { ConfigService } from "../config/config.service"
 import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto"
 import { SystemAdminAnalyticsService } from "./system-admin-analytics.service"
+import { ReferralsService } from "../referrals/referrals.service"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -65,6 +66,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly friendsService: FriendsService,
     private readonly configService: ConfigService,
     private readonly analyticsService: SystemAdminAnalyticsService,
+    private readonly referralsService: ReferralsService,
   ) {}
 
   async onModuleInit() {
@@ -650,6 +652,8 @@ export class SystemAdminService implements OnModuleInit {
   listFeedback(query: FeedbackQueryDto) { return this.storageService.listFeedback(query) }
   updateFeedback(id: string, dto: UpdateFeedbackDto, adminId: string) { return this.storageService.updateFeedback(id, dto, adminId) }
   listFriends(query: AdminFriendsQueryDto) { return this.friendsService.adminList(query) }
+  listReferrals() { return this.referralsService.getAdminState() }
+  updateReferralConfig(dto: import("../referrals/dtos").UpdateReferralConfigDto, adminId: string) { return this.referralsService.updateConfig(dto, adminId) }
   makeFriends(userId: string, friendId: string) { return this.friendsService.makeFriends(userId, friendId) }
   removeFriend(userId: string, friendId: string) { return this.friendsService.removeFriend(userId, friendId) }
   blockFriend(userId: string, friendId: string) { return this.friendsService.blockPlayer(userId, friendId) }

@@ -9,6 +9,7 @@ import { CreditWalletTransaction } from "../../economy/transactions/credit-walle
 import { ClaimAdRewardDto } from "../dtos/ad-reward.dto"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
 import { GldEmissionService } from "../../gld/gld.emission.service"
+import { ReferralsService } from "../../referrals/referrals.service"
 
 type AdPolicy = {
   currencyCode?: string
@@ -25,6 +26,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<{ dto: ClaimAdRe
     private readonly configService: ConfigService,
     private readonly creditWallet: CreditWalletTransaction,
     private readonly gldEmission: GldEmissionService,
+    private readonly referralsService: ReferralsService,
   ) { super(prisma) }
 
   protected async execute(input: { dto: ClaimAdRewardDto; signature?: string }, transaction: Prisma.TransactionClient) {
@@ -76,6 +78,10 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<{ dto: ClaimAdRe
       emission = await this.gldEmission.issueAdReward(transaction, { userId: claim.userId, baseAmount: amount, sourceId: claim.id, metadata: { provider: claim.provider, providerEventId, adFormat: claim.adFormat, countryCode: country ?? null } })
       amount = emission.amount
     }
+    const referralSplit = currencyCode === "GLD"
+      ? await this.referralsService.applyAdRewardShare(transaction, { referredUserId: claim.userId, adRewardClaimId: claim.id, grossAmount: amount, currencyCode })
+      : { playerAmount: amount, referralRewardAmount: 0n, referralId: null as string | null }
+    amount = referralSplit.playerAmount
     const ledger = amount > 0n
       ? await this.creditWallet.runWithinTransaction({
           userId: claim.userId,
@@ -90,7 +96,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<{ dto: ClaimAdRe
       : null
     const currency = await transaction.currencyDefinition.findUnique({ where: { code: currencyCode }, select: { id: true } })
     const updated = await transaction.adRewardClaim.update({ where: { id: claim.id }, data: { providerEventId, countryCode: country ?? null, currencyId: currency?.id, rewardAmount: amount, status: "GRANTED", verificationPayload: { providerVerified: true, ...(emission ? { rewarded: amount > 0n, remainingDailyAds: emission.remainingDailyAds, remainingDailyGldCap: emission.remainingDailyGldCap.toString(), reason: emission.reason } : {}) }, verifiedAt: now, grantedAt: now } })
-    await transaction.outboxEvent.create({ data: { eventType: "ad-reward.granted", aggregateType: "AdRewardClaim", aggregateId: claim.id, payload: { claimId: claim.id, userId: claim.userId, amount: amount.toString(), currencyCode, ledger, ...(emission ? { remainingDailyAds: emission.remainingDailyAds, remainingDailyGldCap: emission.remainingDailyGldCap.toString(), rewarded: amount > 0n, reason: emission.reason } : {}) } as unknown as Prisma.InputJsonValue } })
+    await transaction.outboxEvent.create({ data: { eventType: "ad-reward.granted", aggregateType: "AdRewardClaim", aggregateId: claim.id, payload: { claimId: claim.id, userId: claim.userId, amount: amount.toString(), currencyCode, ledger, ...(referralSplit.referralRewardAmount > 0n ? { grossAmount: (amount + referralSplit.referralRewardAmount).toString(), referralRewardAmount: referralSplit.referralRewardAmount.toString(), referralId: referralSplit.referralId } : {}), ...(emission ? { remainingDailyAds: emission.remainingDailyAds, remainingDailyGldCap: emission.remainingDailyGldCap.toString(), rewarded: amount > 0n, reason: emission.reason } : {}) } as unknown as Prisma.InputJsonValue } })
     await writePlayerAudit(transaction, { userId: claim.userId, actorType: PlayerAuditActorType.SYSTEM, action: "AD_REWARD_GRANTED", entityType: "AdRewardClaim", entityId: claim.id, summary: `Granted ${amount.toString()} ${currencyCode} for a verified ad`, changes: { status: { old: claim.status, new: "GRANTED" }, rewardAmount: { old: claim.rewardAmount ?? 0n, new: amount } }, metadata: { provider: claim.provider, adFormat: claim.adFormat, providerEventId, currencyCode, policyVersion: policy.version } })
     return { claimId: updated.id, status: updated.status, amount: amount.toString(), currencyCode, grantedAt: updated.grantedAt, rewarded: amount > 0n, ...(emission ? { remainingDailyAds: emission.remainingDailyAds, remainingDailyGldCap: emission.remainingDailyGldCap.toString(), reason: emission.reason } : {}) }
   }

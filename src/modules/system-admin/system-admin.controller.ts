@@ -28,6 +28,7 @@ import { GldReconciliationService } from "../gld/gld.reconciliation.service"
 import { UpdateGldControlsDto } from "../gld/dtos/gld-admin.dto"
 import { GldSimulationDto } from "../gld/dtos/gld-simulation.dto"
 import { GldManualBackingDto } from "../gld/dtos/gld-manual-backing.dto"
+import { UpdateReferralConfigDto } from "../referrals/dtos"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -72,6 +73,18 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List friendships, requests, and online presence" })
   listFriends(@Query() query: AdminFriendsQueryDto) { return this.systemAdminService.listFriends(query) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/referrals")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Inspect referral configuration, attribution, and rewards" })
+  listReferrals() { return this.systemAdminService.listReferrals() }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/referrals/config")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Update the server-owned referral policy" })
+  updateReferralConfig(@Body() dto: UpdateReferralConfigDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.updateReferralConfig(dto, admin.id) }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/friends/:userId/:friendId")

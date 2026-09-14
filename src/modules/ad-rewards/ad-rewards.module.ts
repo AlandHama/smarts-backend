@@ -8,9 +8,10 @@ import { AdRewardsService } from "./ad-rewards.service"
 import { ClaimAdRewardTransaction } from "./transactions/claim-ad-reward-transaction"
 import { VerifyAdImpressionTransaction } from "./transactions/verify-ad-impression-transaction"
 import { GldModule } from "../gld/gld.module"
+import { ReferralsModule } from "../referrals/referrals.module"
 
 @Module({
-  imports: [DatabaseModule, ConfigModule, EconomyModule, GldModule],
+  imports: [DatabaseModule, ConfigModule, EconomyModule, GldModule, ReferralsModule],
   controllers: [AdRewardsController],
   providers: [AdRewardsService, VerifyAdImpressionTransaction, ClaimAdRewardTransaction],
   exports: [AdRewardsService],
