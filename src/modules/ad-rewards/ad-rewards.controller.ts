@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post } from "@nestjs/common"
+import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common"
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
@@ -16,6 +16,11 @@ export class AdRewardsController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Create a one-time server challenge before showing a rewarded ad" })
   impression(@CurrentUser() user: UserResponseDto, @Body() dto: CreateAdImpressionDto) { return this.adRewardsService.createImpression(user.id, dto) }
+
+  @Get("estimate")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Get the server-estimated GLD reward and remaining daily limits" })
+  estimate(@CurrentUser() user: UserResponseDto, @Query("adFormat") adFormat = "rewarded") { return this.adRewardsService.estimate(user.id, adFormat) }
 
   @SkipAuth()
   @Post("claims")

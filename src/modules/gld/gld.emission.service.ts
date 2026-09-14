@@ -4,9 +4,37 @@ import { Prisma } from "@prisma/client"
 import { getGldConfig } from "./gld.config"
 
 type EmissionInput = { userId: string; baseAmount: bigint; sourceId: string; metadata?: Record<string, unknown> }
+type AdRewardEstimateInput = { userId: string; baseAmount: bigint }
 
 @Injectable()
 export class GldEmissionService {
+  async estimateAdReward(transaction: Prisma.TransactionClient, input: AdRewardEstimateInput) {
+    const config = getGldConfig()
+    const dateKey = new Date().toISOString().slice(0, 10)
+    const controls = await transaction.gldAdminControl.findUnique({ where: { singletonKey: "default" }, select: { emissionsPaused: true } })
+    const state = await transaction.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { health: true, dailyEmissionBudget: true } })
+    const playerState = await transaction.gldPlayerDailyAdState.findUnique({ where: { userId_dateKey: { userId: input.userId, dateKey } }, select: { validatedAds: true, gldEarned: true } })
+    const validatedAds = playerState?.validatedAds ?? 0
+    const earned = playerState?.gldEarned ?? 0n
+    const adNumber = validatedAds + 1
+    const remainingDailyAds = Math.max(config.adMaxValidatedAds - adNumber, 0)
+    const remainingCap = config.adDailyGldCap > earned ? config.adDailyGldCap - earned : 0n
+    if (controls?.emissionsPaused) return { amount: 0n, remainingDailyAds, remainingDailyGldCap: remainingCap, reason: "emissions-paused" }
+
+    const healthMultiplier = config.adHealthMultiplierBps[state?.health ?? "CRITICAL"] ?? 2_000
+    const curve = adNumber <= config.adMaxValidatedAds ? config.adCurve.find((row) => adNumber >= row.from && adNumber <= row.to) : undefined
+    const curveMultiplier = curve?.multiplierBps ?? 0
+    let amount = input.baseAmount * BigInt(curveMultiplier) * BigInt(healthMultiplier) / 100_000_000n
+    if (amount > config.adMaxRewardPerClaim) amount = config.adMaxRewardPerClaim
+    if (amount > remainingCap) amount = remainingCap
+
+    const day = await transaction.gldEmissionDay.findUnique({ where: { dateKey }, select: { emissionBudget: true, emittedAmount: true } })
+    const configuredBudget = state?.dailyEmissionBudget ?? day?.emissionBudget ?? 0n
+    const available = configuredBudget > (day?.emittedAmount ?? 0n) ? configuredBudget - (day?.emittedAmount ?? 0n) : 0n
+    if (amount > available) amount = available
+    return { amount, remainingDailyAds, remainingDailyGldCap: remainingCap - amount, reason: amount > 0n ? null : available <= 0n ? "daily-emission-budget-exhausted" : curveMultiplier === 0 ? "daily-ad-limit-reached" : "daily-gld-cap-reached" }
+  }
+
   async issueAdReward(transaction: Prisma.TransactionClient, input: EmissionInput) {
     if (input.baseAmount <= 0n) throw new BadRequestException("Ad reward amount is invalid")
     const config = getGldConfig()
