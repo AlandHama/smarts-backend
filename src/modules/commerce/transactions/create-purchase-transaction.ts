@@ -10,6 +10,7 @@ import { CreditWalletTransaction } from "../../economy/transactions/credit-walle
 import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { GrantInventoryItemTransaction } from "./grant-inventory-item-transaction"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
+import { catalogGldPrice, catalogGldPricingMode } from "../catalog-gld-pricing"
 
 export type CreatePurchaseInput = { userId: string; catalogKey?: string; catalogItemKey: string; currencyCode: string; quantity: number; idempotencyKey: string }
 
@@ -36,7 +37,18 @@ export class CreatePurchaseTransaction extends PrismaTransaction<CreatePurchaseI
       include: { catalog: true, assetDefinition: true, prices: { where: { active: true }, include: { currency: true } }, rewards: { orderBy: { sortOrder: "asc" }, include: { assetDefinition: true, assetVariation: true, currency: true, progressionDefinition: true } } },
     })
     if (!item || !this.isAvailable(item.startsAt, item.endsAt) || !this.isAvailable(item.catalog.startsAt, item.catalog.endsAt)) throw new NotFoundException("Catalog item is not available")
-    const price = item.prices.find((entry) => entry.currency.code === currencyCode && entry.currency.active)
+    let price: any = item.prices.find((entry) => entry.currency.code === currencyCode && entry.currency.active)
+    if (currencyCode === "GLD") {
+      const state = await transaction.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { displayedValueUsdMicros: true } })
+      const dynamicAmount = state?.displayedValueUsdMicros
+        ? catalogGldPrice({ catalogMetadata: item.metadata, assetMetadata: item.assetDefinition?.metadata, currentGldValueUsdMicros: state.displayedValueUsdMicros, storedGldPrice: price?.amount ?? null })
+        : null
+      if (catalogGldPricingMode(item.metadata) === "AUTO" && dynamicAmount === null) throw new BadRequestException("Automatic GLD pricing requires an asset USD cost and a current GLD value")
+      if (dynamicAmount !== null) {
+        const currency = price?.currency ?? await transaction.currencyDefinition.findUnique({ where: { code: "GLD" } })
+        if (currency?.active) price = { ...(price ?? {}), amount: dynamicAmount, currencyId: currency.id, currency }
+      }
+    }
     if (!price) throw new BadRequestException("This catalog item is not priced in the requested currency")
     if (currencyCode === "GLD") {
       const controls = await transaction.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} })

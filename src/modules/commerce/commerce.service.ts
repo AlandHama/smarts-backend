@@ -14,6 +14,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-transaction"
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
 import { getGldConfig } from "../gld/gld.config"
+import { catalogGldPrice } from "./catalog-gld-pricing"
 
 @Injectable()
 export class CommerceService {
@@ -32,10 +33,10 @@ export class CommerceService {
     const now = new Date()
     const catalog = await this.prisma.catalog.findUnique({ where: { key: key.trim().toLowerCase() }, include: { items: { where: includeInactive ? undefined : { active: true, purchasable: true, AND: [{ OR: [{ startsAt: null }, { startsAt: { lte: now } }] }, { OR: [{ endsAt: null }, { endsAt: { gt: now } }] }] }, orderBy: { name: "asc" }, take: 500, include: this.itemInclude() } } })
     if (!catalog || (!includeInactive && (!catalog.active || !this.isAvailable(catalog.startsAt, catalog.endsAt)))) throw new NotFoundException("Catalog not found")
-    return this.storageService.normalizePublicImageUrls(this.serialize(catalog))
+    return this.storageService.normalizePublicImageUrls(this.serialize(await this.withDynamicCatalogPrices(catalog)))
   }
 
-  listCatalogs(includeInactive = false) { return this.prisma.catalog.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { key: "asc" }, take: 100, include: { items: { orderBy: { name: "asc" }, take: 500, include: this.itemInclude() } } }).then((value) => this.storageService.normalizePublicImageUrls(this.serialize(value))) }
+  listCatalogs(includeInactive = false) { return this.prisma.catalog.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { key: "asc" }, take: 100, include: { items: { orderBy: { name: "asc" }, take: 500, include: this.itemInclude() } } }).then(async (value) => this.storageService.normalizePublicImageUrls(this.serialize(await Promise.all(value.map((catalog) => this.withDynamicCatalogPrices(catalog)))))) }
 
   async createCatalog(dto: CreateCatalogDto) {
     return this.prisma.$transaction(async (tx) => this.serialize(await tx.catalog.create({ data: { key: dto.key.trim().toLowerCase(), name: dto.name.trim(), description: dto.description, active: dto.active ?? true, startsAt: this.date(dto.startsAt), endsAt: this.date(dto.endsAt), metadata: dto.metadata as Prisma.InputJsonValue | undefined } })))
@@ -88,7 +89,15 @@ export class CommerceService {
         if (!asset) throw new NotFoundException("Asset definition not found")
         assetDefinitionId = asset.id
       }
-      const updated = await tx.catalogItem.update({ where: { id }, data: { ...(dto.key === undefined ? {} : { key: dto.key.trim().toLowerCase() }), ...(dto.name === undefined ? {} : { name: dto.name.trim() }), ...(dto.description === undefined ? {} : { description: dto.description }), ...(assetDefinitionId === undefined ? {} : { assetDefinitionId }), ...(dto.imageUrl === undefined ? {} : { imageUrl: dto.imageUrl }), ...(dto.imageAlt === undefined ? {} : { imageAlt: dto.imageAlt }), ...(dto.imageUrls === undefined ? {} : { imageUrls: dto.imageUrls as Prisma.InputJsonValue }), ...(dto.purchasable === undefined ? {} : { purchasable: dto.purchasable }), ...(dto.active === undefined ? {} : { active: dto.active }), ...(dto.startsAt === undefined ? {} : { startsAt: this.date(dto.startsAt) }), ...(dto.endsAt === undefined ? {} : { endsAt: this.date(dto.endsAt) }), ...(dto.metadata === undefined ? {} : { metadata: dto.metadata as Prisma.InputJsonValue }) } })
+      const hasGldPricingUpdate = dto.gldPricingMode !== undefined || dto.gldCustomPrice !== undefined
+      const effectiveAssetDefinitionId = assetDefinitionId === undefined ? item.assetDefinitionId : assetDefinitionId
+      if (dto.gldPricingMode === "AUTO") {
+        const linkedAsset = effectiveAssetDefinitionId ? await tx.assetDefinition.findUnique({ where: { id: effectiveAssetDefinitionId }, select: { metadata: true } }) : null
+        const state = await tx.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { displayedValueUsdMicros: true } })
+        const computed = linkedAsset && state?.displayedValueUsdMicros ? catalogGldPrice({ catalogMetadata: this.catalogMetadata(dto, item.metadata), assetMetadata: linkedAsset.metadata, currentGldValueUsdMicros: state.displayedValueUsdMicros }) : null
+        if (!linkedAsset || computed === null) throw new BadRequestException("Automatic GLD pricing requires a linked primary asset with a USD cost")
+      }
+      const updated = await tx.catalogItem.update({ where: { id }, data: { ...(dto.key === undefined ? {} : { key: dto.key.trim().toLowerCase() }), ...(dto.name === undefined ? {} : { name: dto.name.trim() }), ...(dto.description === undefined ? {} : { description: dto.description }), ...(assetDefinitionId === undefined ? {} : { assetDefinitionId }), ...(dto.imageUrl === undefined ? {} : { imageUrl: dto.imageUrl }), ...(dto.imageAlt === undefined ? {} : { imageAlt: dto.imageAlt }), ...(dto.imageUrls === undefined ? {} : { imageUrls: dto.imageUrls as Prisma.InputJsonValue }), ...(dto.purchasable === undefined ? {} : { purchasable: dto.purchasable }), ...(dto.active === undefined ? {} : { active: dto.active }), ...(dto.startsAt === undefined ? {} : { startsAt: this.date(dto.startsAt) }), ...(dto.endsAt === undefined ? {} : { endsAt: this.date(dto.endsAt) }), ...(dto.metadata === undefined && !hasGldPricingUpdate ? {} : { metadata: this.catalogMetadata(dto, item.metadata) }) } })
       if (dto.prices) {
         await tx.catalogPrice.deleteMany({ where: { catalogItemId: id } })
         for (const price of dto.prices) {
@@ -313,7 +322,26 @@ export class CommerceService {
     return rows.map((row) => ({ ...row, code: row.code }))
   }
 
-  private itemInclude() { return { assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true } }, prices: { where: { active: true }, include: { currency: { select: { code: true, name: true, precision: true, active: true } } } }, rewards: { orderBy: { sortOrder: "asc" as const }, include: { assetDefinition: { select: { key: true, name: true, imageUrl: true } }, assetVariation: { select: { key: true, name: true, imageUrl: true } }, currency: { select: { code: true, name: true } }, progressionDefinition: { select: { key: true, name: true } } } } } }
+  private itemInclude() { return { assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true, metadata: true } }, prices: { where: { active: true }, include: { currency: { select: { code: true, name: true, precision: true, active: true } } } }, rewards: { orderBy: { sortOrder: "asc" as const }, include: { assetDefinition: { select: { key: true, name: true, imageUrl: true } }, assetVariation: { select: { key: true, name: true, imageUrl: true } }, currency: { select: { code: true, name: true } }, progressionDefinition: { select: { key: true, name: true } } } } } }
+  private catalogMetadata(input: CreateCatalogItemDto | UpdateCatalogItemDto, existing?: unknown) {
+    const base = existing && typeof existing === "object" && !Array.isArray(existing) ? existing as Record<string, unknown> : {}
+    const metadata = { ...base, ...(input.metadata ?? {}) }
+    if (input.gldPricingMode !== undefined) metadata.gldPricingMode = input.gldPricingMode
+    if (input.gldCustomPrice !== undefined) metadata.gldCustomPrice = input.gldCustomPrice
+    return Object.keys(metadata).length ? metadata as Prisma.InputJsonValue : undefined
+  }
+  private async withDynamicCatalogPrices<T extends { items?: any[] }>(catalog: T) {
+    const state = await this.prisma.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { displayedValueUsdMicros: true } })
+    if (!state?.displayedValueUsdMicros || !catalog.items?.length) return catalog
+    const items = catalog.items.map((item) => {
+      const gldPrice = item.prices?.find((price: any) => price.currency?.code === "GLD")
+      const amount = catalogGldPrice({ catalogMetadata: item.metadata, assetMetadata: item.assetDefinition?.metadata, currentGldValueUsdMicros: state.displayedValueUsdMicros, storedGldPrice: gldPrice?.amount ?? null })
+      if (amount === null) return item
+      if (gldPrice) return { ...item, prices: item.prices.map((price: any) => price === gldPrice ? { ...price, amount } : price) }
+      return { ...item, prices: [...(item.prices ?? []), { id: `${item.id}:dynamic-gld`, amount, active: true, currency: { code: "GLD", name: "GLD", precision: 0 } }] }
+    })
+    return { ...catalog, items }
+  }
   private async attachRedeemCodeToInventory(tx: Prisma.TransactionClient, inventoryItemId: string, userId: string, requestId: string, code: string, actorId: string, adminNote?: string) {
     const item = await tx.inventoryItem.findFirst({ where: { id: inventoryItemId, userId } })
     if (!item) throw new NotFoundException("The requested inventory item was not found")

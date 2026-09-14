@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { CatalogPriceInput, CatalogRewardInput } from "../dtos"
+import { catalogGldPrice } from "../catalog-gld-pricing"
 
 export type CreateCatalogItemInput = {
   catalogId: string
@@ -21,6 +22,8 @@ export type CreateCatalogItemInput = {
   prices: CatalogPriceInput[]
   rewards?: CatalogRewardInput[]
   metadata?: Record<string, unknown>
+  gldPricingMode?: "FIXED" | "AUTO"
+  gldCustomPrice?: string
 }
 
 @Injectable()
@@ -33,6 +36,12 @@ export class CreateCatalogItemTransaction extends PrismaTransaction<CreateCatalo
     if (!catalog) throw new NotFoundException("Catalog not found")
     const asset = input.assetKey ? await transaction.assetDefinition.findUnique({ where: { key: input.assetKey.trim().toLowerCase() } }) : null
     if (input.assetKey && !asset) throw new NotFoundException("Asset definition not found")
+    if (input.gldPricingMode === "FIXED" && input.gldCustomPrice !== undefined && (!/^\d+$/.test(input.gldCustomPrice) || BigInt(input.gldCustomPrice) <= 0n)) throw new BadRequestException("Custom GLD price must be a positive integer")
+    if (input.gldPricingMode === "AUTO") {
+      const state = await transaction.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { displayedValueUsdMicros: true } })
+      const computed = state?.displayedValueUsdMicros && asset ? catalogGldPrice({ catalogMetadata: this.catalogMetadata(input), assetMetadata: asset.metadata, currentGldValueUsdMicros: state.displayedValueUsdMicros }) : null
+      if (!asset || computed === null) throw new BadRequestException("Automatic GLD pricing requires a linked primary asset with a USD cost")
+    }
     const prices = await this.resolvePrices(input.prices, transaction)
     const rewards = await this.resolveRewards(input.rewards ?? [], transaction)
     try {
@@ -40,7 +49,7 @@ export class CreateCatalogItemTransaction extends PrismaTransaction<CreateCatalo
         data: {
           catalogId: catalog.id, key: input.key.trim().toLowerCase(), name: input.name.trim(), description: input.description,
           assetDefinitionId: asset?.id, imageUrl: input.imageUrl, imageAlt: input.imageAlt, imageUrls: input.imageUrls as Prisma.InputJsonValue | undefined,
-          purchasable: input.purchasable ?? true, active: input.active ?? true, startsAt: this.date(input.startsAt), endsAt: this.date(input.endsAt), metadata: input.metadata as Prisma.InputJsonValue | undefined,
+          purchasable: input.purchasable ?? true, active: input.active ?? true, startsAt: this.date(input.startsAt), endsAt: this.date(input.endsAt), metadata: this.catalogMetadata(input),
           prices: { create: prices }, rewards: { create: rewards },
         }, include: this.include(),
       })
@@ -89,5 +98,11 @@ export class CreateCatalogItemTransaction extends PrismaTransaction<CreateCatalo
   }
 
   private date(value?: string) { return value ? new Date(value) : undefined }
+  private catalogMetadata(input: CreateCatalogItemInput) {
+    const metadata = { ...(input.metadata ?? {}) }
+    if (input.gldPricingMode !== undefined) metadata.gldPricingMode = input.gldPricingMode
+    if (input.gldCustomPrice !== undefined) metadata.gldCustomPrice = input.gldCustomPrice
+    return Object.keys(metadata).length ? metadata as Prisma.InputJsonValue : undefined
+  }
   private include() { return { catalog: true, assetDefinition: true, prices: { include: { currency: true } }, rewards: { orderBy: { sortOrder: "asc" as const }, include: { assetDefinition: true, assetVariation: true, currency: true, progressionDefinition: true } } } }
 }

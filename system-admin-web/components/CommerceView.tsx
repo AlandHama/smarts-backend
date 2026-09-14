@@ -407,6 +407,14 @@ function ItemDialog({
       amount: reward.amount ?? "",
       quantity: String(reward.quantity ?? 1),
     })) ?? [];
+  const itemMetadata =
+    item?.metadata && typeof item.metadata === "object" ? item.metadata : {};
+  const defaultGldPricingMode =
+    itemMetadata.gldPricingMode === "AUTO" ? "AUTO" : "FIXED";
+  const defaultGldCustomPrice =
+    typeof itemMetadata.gldCustomPrice === "string"
+      ? itemMetadata.gldCustomPrice
+      : item?.prices.find((price) => price.currency.code === "GLD")?.amount ?? "";
   const [prices, setPrices] = useState<CatalogPriceForm[]>(defaultPrices);
   const [rewards, setRewards] =
     useState<CatalogRewardForm[]>(defaultRewards);
@@ -422,7 +430,7 @@ function ItemDialog({
       <DialogTitle>
         {item ? "Edit catalog item" : "Create catalog item"}
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          The server snapshots this price and reward bundle at purchase time.
+          The server resolves the selected GLD price and reward bundle at purchase time.
           Never trust price data from the mobile client.
         </Typography>
       </DialogTitle>
@@ -434,6 +442,10 @@ function ItemDialog({
             setError("");
             if (!prices.length)
               throw new Error("At least one price is required");
+            const gldPricingMode = field(form, "gldPricingMode");
+            const gldCustomPrice = field(form, "gldCustomPrice");
+            if (gldPricingMode === "FIXED" && gldCustomPrice && !isPositiveInteger(gldCustomPrice))
+              throw new Error("Custom GLD price must be a positive whole number.");
             const normalizedPrices = prices.map((price) => {
               const amount = price.amount.trim();
               if (
@@ -446,7 +458,12 @@ function ItemDialog({
               }
               return {
                 currencyCode: price.currencyCode,
-                amount,
+                amount:
+                  price.currencyCode === "GLD" && gldPricingMode === "FIXED" && gldCustomPrice
+                    ? gldCustomPrice
+                    : price.currencyCode === "GLD" && gldPricingMode === "AUTO"
+                      ? "1"
+                      : amount,
                 active: price.active,
               };
             });
@@ -500,6 +517,8 @@ function ItemDialog({
               rewards: normalizedRewards,
               active: true,
               purchasable: true,
+              gldPricingMode,
+              gldCustomPrice: gldCustomPrice || undefined,
             };
             await api(item ? `/commerce/items/${item.id}` : "/commerce/items", {
               method: item ? "PATCH" : "POST",
@@ -573,6 +592,28 @@ function ItemDialog({
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <ImageUploadField label="Upload catalog image" files={imageFile} onChange={setImageFile} existingUrl={item?.imageUrl} />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Select
+                  name="gldPricingMode"
+                  defaultValue={defaultGldPricingMode}
+                  fullWidth
+                >
+                  <MenuItem value="FIXED">Custom fixed GLD price</MenuItem>
+                  <MenuItem value="AUTO">Automatic from asset USD cost</MenuItem>
+                </Select>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  name="gldCustomPrice"
+                  label="Custom GLD price"
+                  defaultValue={defaultGldCustomPrice}
+                  placeholder="2000"
+                  type="number"
+                  inputProps={{ min: 1, step: 1 }}
+                  helperText="Used only in fixed mode. Automatic mode derives the price from the linked asset USD cost and current GLD value."
+                  fullWidth
+                />
               </Grid>
               <Grid size={12}>
                 <TextField

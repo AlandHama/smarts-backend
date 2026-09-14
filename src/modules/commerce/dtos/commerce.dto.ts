@@ -58,6 +58,10 @@ export class CreateCatalogItemDto {
   @ApiProperty({ type: [Object], description: "Prices in minor units, for example [{currencyCode:'MCN', amount:'500'}]." }) @IsArray() @ArrayMaxSize(20) @IsObject({ each: true }) prices!: CatalogPriceInput[]
   @ApiPropertyOptional({ type: [Object] }) @IsOptional() @IsArray() @ArrayMaxSize(30) @IsObject({ each: true }) rewards?: CatalogRewardInput[]
   @ApiPropertyOptional({ type: Object }) @IsOptional() @IsObject() metadata?: Record<string, unknown>
+  @ApiPropertyOptional({ enum: ["FIXED", "AUTO"], default: "FIXED", description: "FIXED uses the custom GLD amount; AUTO derives GLD from the linked asset USD cost and current GLD value." }) @IsOptional() @IsIn(["FIXED", "AUTO"])
+  gldPricingMode?: "FIXED" | "AUTO"
+  @ApiPropertyOptional({ example: "2000", description: "Custom GLD price used when gldPricingMode is FIXED." }) @IsOptional() @IsString() @Matches(/^\d+$/)
+  gldCustomPrice?: string
 }
 
 export class UpdateCatalogItemDto extends PartialType(CreateCatalogItemDto) {

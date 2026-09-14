@@ -518,6 +518,7 @@ export interface CommerceCatalogItem {
   imageUrl: string | null;
   imageAlt: string | null;
   imageUrls?: string[] | null;
+  metadata?: Record<string, unknown> | null;
   purchasable: boolean;
   active: boolean;
   prices: Array<{
