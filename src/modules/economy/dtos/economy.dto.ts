@@ -106,3 +106,20 @@ export class WalletQueryDto {
   @Min(0)
   offset?: number
 }
+
+export class GldTransferDto {
+  @ApiProperty({ description: "Railway UUID of the receiving player" })
+  @IsString()
+  @MaxLength(64)
+  recipientUserId!: string
+
+  @ApiProperty({ example: "250", description: "Whole GLD units to send" })
+  @IsString()
+  @Matches(/^\d+$/)
+  amount!: string
+
+  @ApiProperty({ example: "gld-transfer-device-2026-001" })
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey!: string
+}

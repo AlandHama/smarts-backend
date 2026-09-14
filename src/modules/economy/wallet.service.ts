@@ -1,14 +1,15 @@
-import { Injectable, NotFoundException } from "@nestjs/common"
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common"
 import { Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
-import { CreateCurrencyDto, UpdateCurrencyDto, WalletQueryDto } from "./dtos"
+import { CreateCurrencyDto, GldTransferDto, UpdateCurrencyDto, WalletQueryDto } from "./dtos"
 import { CreateCurrencyTransaction } from "./transactions/create-currency-transaction"
 import { UpdateCurrencyTransaction } from "./transactions/update-currency-transaction"
+import { TransferGldTransaction } from "./transactions/transfer-gld-transaction"
 
 @Injectable()
 export class WalletService {
-  constructor(private readonly prisma: PrismaService, private readonly createCurrencyTransaction: CreateCurrencyTransaction, private readonly updateCurrencyTransaction: UpdateCurrencyTransaction) {}
+  constructor(private readonly prisma: PrismaService, private readonly createCurrencyTransaction: CreateCurrencyTransaction, private readonly updateCurrencyTransaction: UpdateCurrencyTransaction, private readonly transferGldTransaction: TransferGldTransaction) {}
 
   async getWalletForUser(userId: string) {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId }, include: { balances: { orderBy: { currency: { code: "asc" } }, include: { currency: { select: { code: true, name: true, kind: true, precision: true } } } } } })
@@ -31,6 +32,17 @@ export class WalletService {
     ])
     return this.serialize({ items, pagination: { total, limit, offset, nextOffset: offset + limit < total ? offset + limit : null } })
   }
+
+  async quoteGldTransfer(amount: string) {
+    if (!/^\d+$/.test(amount.trim()) || BigInt(amount) <= 0n) throw new BadRequestException("Transfer amount must be a positive whole number")
+    const controls = await this.prisma.gldAdminControl.findUnique({ where: { singletonKey: "default" }, select: { gldTransferFeeBps: true } })
+    const feeBps = controls?.gldTransferFeeBps ?? 0
+    const requested = BigInt(amount)
+    const fee = (requested * BigInt(feeBps) + 9_999n) / 10_000n
+    return this.serialize({ amount: requested, feeAmount: fee, totalDebit: requested + fee, feeBps, feePercent: feeBps / 100 })
+  }
+
+  transferGld(senderUserId: string, dto: GldTransferDto) { return this.transferGldTransaction.run({ senderUserId, dto }) }
 
   listCurrencies(includeInactive = false) { return this.prisma.currencyDefinition.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { code: "asc" }, take: 100, include: { _count: { select: { balances: true, transactions: true } } } }).then((items) => this.serialize(items)) }
   createCurrency(dto: CreateCurrencyDto) { return this.createCurrencyTransaction.run(dto).then((item) => this.serialize(item)) }

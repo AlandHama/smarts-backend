@@ -40,6 +40,7 @@ type GldData = {
     catalogSinksPaused: boolean;
     giftsPaused: boolean;
     paidRewardsPaused: boolean;
+    gldTransferFeeBps: number;
     reason: string | null;
   };
   revenueSnapshots: Array<{
@@ -123,17 +124,41 @@ export function GldEconomyView() {
   const [backingReason, setBackingReason] = useState("");
   const [backingError, setBackingError] = useState("");
   const [backingLoading, setBackingLoading] = useState(false);
+  const [transferFeePercent, setTransferFeePercent] = useState("0");
+  const [transferFeeLoading, setTransferFeeLoading] = useState(false);
   const load = async () => {
     setLoading(true);
     try {
       setError("");
-      setData(await api<GldData>("/gld"));
+      const next = await api<GldData>("/gld");
+      setData(next);
+      setTransferFeePercent(((next.controls.gldTransferFeeBps ?? 0) / 100).toString());
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Unable to load GLD economy",
       );
     } finally {
       setLoading(false);
+    }
+  };
+  const saveTransferFee = async () => {
+    const percent = Number(transferFeePercent);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      setError("Player transfer fee must be between 0 and 100 percent.");
+      return;
+    }
+    setTransferFeeLoading(true);
+    try {
+      const controls = await api<GldData["controls"]>("/gld/controls", {
+        method: "PATCH",
+        body: JSON.stringify({ gldTransferFeeBps: Math.round(percent * 100) }),
+      });
+      setData((current) => current ? { ...current, controls } : current);
+      setMessage("GLD transfer fee updated.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update GLD transfer fee");
+    } finally {
+      setTransferFeeLoading(false);
     }
   };
   useEffect(() => {
@@ -435,6 +460,26 @@ export function GldEconomyView() {
                     Reason: {data.controls.reason}
                   </Typography>
                 )}
+                <Divider sx={{ my: 1.5 }} />
+                <Typography variant="body2" fontWeight={700}>
+                  Player GLD transfer fee
+                </Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                  <TextField
+                    size="small"
+                    label="Fee (%)"
+                    type="number"
+                    value={transferFeePercent}
+                    onChange={(event) => setTransferFeePercent(event.target.value)}
+                    inputProps={{ min: 0, max: 100, step: 0.01 }}
+                  />
+                  <Button variant="outlined" onClick={() => void saveTransferFee()} disabled={transferFeeLoading}>
+                    {transferFeeLoading ? "Saving…" : "Save"}
+                  </Button>
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  The fee is added to the sender’s debit; the recipient receives exactly the entered amount.
+                </Typography>
               </Card>
             </Grid>
           </Grid>

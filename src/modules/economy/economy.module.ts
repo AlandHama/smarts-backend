@@ -8,11 +8,12 @@ import { CreditWalletTransaction } from "./transactions/credit-wallet-transactio
 import { DebitWalletTransaction } from "./transactions/debit-wallet-transaction"
 import { ReverseWalletTransaction } from "./transactions/reverse-wallet-transaction"
 import { UpdateCurrencyTransaction } from "./transactions/update-currency-transaction"
+import { TransferGldTransaction } from "./transactions/transfer-gld-transaction"
 
 @Module({
   imports: [DatabaseModule],
   controllers: [WalletController, CurrencyController],
-  providers: [WalletService, CreateCurrencyTransaction, UpdateCurrencyTransaction, CreditWalletTransaction, DebitWalletTransaction, ReverseWalletTransaction],
+  providers: [WalletService, CreateCurrencyTransaction, UpdateCurrencyTransaction, CreditWalletTransaction, DebitWalletTransaction, ReverseWalletTransaction, TransferGldTransaction],
   exports: [WalletService, CreditWalletTransaction, DebitWalletTransaction, ReverseWalletTransaction],
 })
 export class EconomyModule {}

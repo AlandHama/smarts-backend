@@ -426,11 +426,17 @@ function ItemDialog({
     typeof itemMetadata.category === "string" && itemMetadata.category.trim()
       ? itemMetadata.category
       : "Popular";
+  const defaultGiftFeePercent =
+    typeof itemMetadata.giftFeePercent === "number" ||
+    typeof itemMetadata.giftFeePercent === "string"
+      ? String(itemMetadata.giftFeePercent)
+      : "0";
   const [prices, setPrices] = useState<CatalogPriceForm[]>(defaultPrices);
   const [rewards, setRewards] =
     useState<CatalogRewardForm[]>(defaultRewards);
   const [giftEnabled, setGiftEnabled] = useState(defaultGiftEnabled);
   const [giftCategory, setGiftCategory] = useState(defaultGiftCategory);
+  const [giftFeePercent, setGiftFeePercent] = useState(defaultGiftFeePercent);
   const updateReward = (index: number, patch: Partial<CatalogRewardForm>) => {
     setRewards((current) =>
       current.map((reward, currentIndex) =>
@@ -485,6 +491,9 @@ function ItemDialog({
             });
             if (giftEnabled && !normalizedPrices.some((price) => price.currencyCode === "GLD" && price.active))
               throw new Error("Gift items need an active GLD price.");
+            const parsedGiftFee = Number(giftFeePercent);
+            if (giftEnabled && (!Number.isInteger(parsedGiftFee) || parsedGiftFee < 0 || parsedGiftFee > 100))
+              throw new Error("Gift fee must be a whole percentage between 0 and 100.");
             const normalizedRewards = rewards.map((reward, index) => {
               const payload: Record<string, unknown> = {
                 rewardType: reward.rewardType,
@@ -529,9 +538,11 @@ function ItemDialog({
             delete nextMetadata.kind;
             delete nextMetadata.type;
             delete nextMetadata.category;
+            delete nextMetadata.giftFeePercent;
             if (giftEnabled) {
               nextMetadata.gift = true;
               nextMetadata.category = giftCategory.trim() || "Popular";
+              nextMetadata.giftFeePercent = parsedGiftFee;
             }
             const payload = {
               ...(item ? {} : { catalogId: field(form, "catalogId") }),
@@ -654,15 +665,26 @@ function ItemDialog({
                     Gift items must link to a primary asset and have an active GLD price. They will appear in the mobile gift screen.
                   </Typography>
                   {giftEnabled && (
-                    <TextField
-                      label="Gift category"
-                      value={giftCategory}
-                      onChange={(event) => setGiftCategory(event.target.value)}
-                      placeholder="Popular"
-                      size="small"
-                      sx={{ mt: 1.5, ml: 4.5, maxWidth: 360 }}
-                      helperText="Used for filtering gifts in the mobile app."
-                    />
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 1.5, ml: 4.5 }}>
+                      <TextField
+                        label="Gift category"
+                        value={giftCategory}
+                        onChange={(event) => setGiftCategory(event.target.value)}
+                        placeholder="Popular"
+                        size="small"
+                        sx={{ maxWidth: 360 }}
+                        helperText="Used for filtering gifts in the mobile app."
+                      />
+                      <TextField
+                        label="Gift fee (%)"
+                        value={giftFeePercent}
+                        onChange={(event) => setGiftFeePercent(event.target.value)}
+                        type="number"
+                        size="small"
+                        inputProps={{ min: 0, max: 100, step: 1 }}
+                        helperText="Added to the sender’s GLD debit."
+                      />
+                    </Stack>
                   )}
                 </Card>
               </Grid>

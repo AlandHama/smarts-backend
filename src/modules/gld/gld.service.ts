@@ -136,10 +136,11 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
         ...(dto.catalogSinksPaused === undefined ? {} : { catalogSinksPaused: dto.catalogSinksPaused }),
         ...(dto.giftsPaused === undefined ? {} : { giftsPaused: dto.giftsPaused }),
         ...(dto.paidRewardsPaused === undefined ? {} : { paidRewardsPaused: dto.paidRewardsPaused }),
+        ...(dto.gldTransferFeeBps === undefined ? {} : { gldTransferFeeBps: dto.gldTransferFeeBps }),
         ...(dto.reason === undefined ? {} : { reason: dto.reason.trim() || null }),
         updatedById: actorId,
       } })
-      await writeAdminAudit(tx, { actorId, action: "GLD_CONTROLS_UPDATED", entityType: "GldAdminControl", entityId: updated.id, reason: dto.reason, metadata: { before: { emissionsPaused: before.emissionsPaused, catalogSinksPaused: before.catalogSinksPaused, giftsPaused: before.giftsPaused, paidRewardsPaused: before.paidRewardsPaused }, after: { emissionsPaused: updated.emissionsPaused, catalogSinksPaused: updated.catalogSinksPaused, giftsPaused: updated.giftsPaused, paidRewardsPaused: updated.paidRewardsPaused } } })
+      await writeAdminAudit(tx, { actorId, action: "GLD_CONTROLS_UPDATED", entityType: "GldAdminControl", entityId: updated.id, reason: dto.reason, metadata: { before: { emissionsPaused: before.emissionsPaused, catalogSinksPaused: before.catalogSinksPaused, giftsPaused: before.giftsPaused, paidRewardsPaused: before.paidRewardsPaused, gldTransferFeeBps: before.gldTransferFeeBps }, after: { emissionsPaused: updated.emissionsPaused, catalogSinksPaused: updated.catalogSinksPaused, giftsPaused: updated.giftsPaused, paidRewardsPaused: updated.paidRewardsPaused, gldTransferFeeBps: updated.gldTransferFeeBps } } })
       return this.serialize(updated)
     })
   }

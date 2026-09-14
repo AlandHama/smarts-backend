@@ -963,6 +963,8 @@ model PlayerGift {
   recipientUserId  String         @db.Uuid
   catalogItemId    String         @db.Uuid
   gldPrice         BigInt
+  giftFeeAmount    BigInt         @default(0)
+  chargedAmount    BigInt         @default(0)
   burnedAmount     BigInt
   retainedAmount   BigInt
   idempotencyKeyId String         @unique @db.Uuid
@@ -1602,6 +1604,7 @@ model GldAdminControl {
   catalogSinksPaused Boolean  @default(false)
   giftsPaused        Boolean  @default(false)
   paidRewardsPaused  Boolean  @default(false)
+  gldTransferFeeBps  Int      @default(0)
   reason             String?  @db.VarChar(500)
   updatedById        String?  @db.Uuid
   createdAt          DateTime @default(now())

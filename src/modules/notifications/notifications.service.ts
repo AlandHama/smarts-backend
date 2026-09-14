@@ -59,14 +59,17 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const payload = (event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload : {}) as Record<string, Prisma.JsonValue>
     const userIds = new Set<string>()
     if (typeof payload.userId === "string") userIds.add(payload.userId)
-    if (typeof payload.recipientUserId === "string") userIds.add(payload.recipientUserId)
+    // `recipientUserId` identifies the recipient on gift events. Transfer
+    // events have separate sent/received outbox records, so do not leak the
+    // sender's notification to the recipient a second time.
+    if (typeof payload.recipientUserId === "string" && event.eventType === "gift.received") userIds.add(payload.recipientUserId)
     if (event.eventType === "commerce.purchase.completed") {
       const admins = await this.prisma.user.findMany({ where: { isSystemAdmin: true, status: "ACTIVE" }, select: { id: true }, take: 100 })
       admins.forEach((admin) => userIds.add(admin.id))
     }
     if (!userIds.size) return
-    const title = event.eventType === "commerce.purchase.completed" ? "Purchase completed" : event.eventType === "ad-reward.granted" ? "Ad reward granted" : event.eventType === "leaderboard.reward.granted" ? "Leaderboard reward earned" : event.eventType === "gift.received" ? "Gift received" : "Account activity"
-    const body = event.eventType === "commerce.purchase.completed" ? `Purchase ${event.aggregateId} was completed.` : event.eventType === "ad-reward.granted" ? "Your rewarded ad credit is now available." : event.eventType === "leaderboard.reward.granted" ? `You placed #${String(payload.rank ?? "")} and earned a leaderboard reward.` : event.eventType === "gift.received" ? `${String(payload.senderName ?? "A player")} sent you ${String(payload.catalogItemName ?? "a gift")}.` : "A server event was processed for your account."
+    const title = event.eventType === "commerce.purchase.completed" ? "Purchase completed" : event.eventType === "commerce.paid-reward.fulfilled" ? "Reward fulfilled" : event.eventType === "commerce.paid-reward.refused" ? "Reward request refused" : event.eventType === "ad-reward.granted" ? "Ad reward granted" : event.eventType === "leaderboard.reward.granted" ? "Leaderboard reward earned" : event.eventType === "gift.received" ? "Gift received" : event.eventType === "gift.sent" ? "Gift sent" : event.eventType === "gld.transfer.sent" ? "GLD sent" : event.eventType === "gld.transfer.received" ? "GLD received" : "Account activity"
+    const body = event.eventType === "commerce.purchase.completed" ? `Purchase ${event.aggregateId} was completed.` : event.eventType === "commerce.paid-reward.fulfilled" ? "Your paid reward was approved and is ready to redeem." : event.eventType === "commerce.paid-reward.refused" ? "Your paid reward request was refused and its GLD was refunded." : event.eventType === "ad-reward.granted" ? "Your rewarded ad credit is now available." : event.eventType === "leaderboard.reward.granted" ? `You placed #${String(payload.rank ?? "")} and earned a leaderboard reward.` : event.eventType === "gift.received" ? `${String(payload.senderName ?? "A player")} sent you ${String(payload.catalogItemName ?? "a gift")}.` : event.eventType === "gift.sent" ? `Your ${String(payload.catalogItemName ?? "gift")} was sent to ${String(payload.recipientName ?? "another player")}.` : event.eventType === "gld.transfer.sent" ? `You sent ${String(payload.amount ?? "0")} GLD to ${String(payload.recipientName ?? "another player")}.` : event.eventType === "gld.transfer.received" ? `${String(payload.senderName ?? "A player")} sent you ${String(payload.amount ?? "0")} GLD.` : "A server event was processed for your account."
     await this.prisma.notification.createMany({ data: [...userIds].map((userId) => ({ userId, outboxEventId: event.id, notificationType: event.eventType, title, body, data: { ...payload, outboxEventId: event.id } as Prisma.InputJsonValue, status: NotificationStatus.DISPATCHED, dispatchedAt: new Date() })), skipDuplicates: true })
   }
 
