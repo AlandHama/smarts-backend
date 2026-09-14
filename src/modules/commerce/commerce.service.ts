@@ -191,7 +191,7 @@ export class CommerceService {
       const config = getGldConfig()
       if (dailyRequests >= config.paidRewardDailyRequestLimit) throw new ConflictException("The daily paid reward request limit has been reached")
       const requestId = randomUUID()
-      const request = await tx.paidRewardRequest.create({ data: { id: requestId, userId, assetDefinitionId: asset.id, assetVariationId: variation?.id, inventoryItemId: inventoryItem?.id, gldPrice: quote.gldPrice, requestKey: createHash("sha256").update(`${userId}:${idempotencyKey}`).digest("hex"), message: dto.message?.trim() || undefined, idempotencyKeyId: idem.id }, include: { assetDefinition: true, assetVariation: true, redeemCode: true } })
+      const request = await tx.paidRewardRequest.create({ data: { id: requestId, userId, assetDefinitionId: asset.id, assetVariationId: variation?.id, inventoryItemId: inventoryItem?.id, gldPrice: quote.gldPrice, gldUnitPriceUsdMicros: quote.displayedValueUsdMicros, reserveCostUsdMicros: quote.reserveCostUsdMicros, gldFeeAmount: quote.feeGldAmount, requestKey: createHash("sha256").update(`${userId}:${idempotencyKey}`).digest("hex"), message: dto.message?.trim() || undefined, idempotencyKeyId: idem.id }, include: { assetDefinition: true, assetVariation: true, redeemCode: true } })
       await this.debitWallet.runWithinTransaction({ userId, currencyCode: "GLD", amount: quote.gldPrice, sourceId: request.id, sourceType: WalletTransactionSourceType.PURCHASE, metadata: { reason: "GLD_PAID_REWARD_REQUEST", assetKey: asset.key, inventoryItemId: inventoryItem?.id ?? null, safetyMarginBps: quote.safetyMarginBps } }, tx)
       const result = this.playerPaidReward(request)
       await tx.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as Prisma.InputJsonValue, completedAt: new Date() } })
@@ -229,6 +229,17 @@ export class CommerceService {
         return this.adminPaidReward(updated)
       }
       if (request.assetDefinition.ownershipPolicy !== "UNIQUE") throw new BadRequestException("Paid redeem-code assets must use UNIQUE ownership")
+      const legacyPrice = request.gldPrice && !request.gldUnitPriceUsdMicros
+        ? (await tx.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { displayedValueUsdMicros: true } }))?.displayedValueUsdMicros
+        : null
+      const gldUnitPriceUsdMicros = request.gldUnitPriceUsdMicros ?? legacyPrice ?? null
+      const reserveCostUsdMicros = request.reserveCostUsdMicros ?? (request.gldPrice && gldUnitPriceUsdMicros ? this.gldToUsdMicros(request.gldPrice, gldUnitPriceUsdMicros) : 0n)
+      if (reserveCostUsdMicros > 0n) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('SMARTS_GLD_TREASURY'))`
+        const reserveResult = await tx.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`SELECT COALESCE(SUM(CASE WHEN "entryType" = 'RESERVE' OR ("entryType" = 'ADJUSTMENT' AND "metadata"->>'allocation' = 'RESERVE') OR "entryType" = 'COST' THEN "amountUsdMicros" ELSE 0 END), 0)::bigint AS total FROM "GldTreasuryEntry"`)
+        const availableReserve = reserveResult[0]?.total ?? 0n
+        if (availableReserve < reserveCostUsdMicros) throw new ConflictException("The GLD reserve cannot cover this reward's reserve cost")
+      }
       const lockKey = `${request.assetDefinitionId}:${request.assetVariationId ?? "base"}`
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`
       const code = await tx.assetRedeemCode.findFirst({ where: { assetDefinitionId: request.assetDefinitionId, assetVariationId: request.assetVariationId, status: "AVAILABLE" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })
@@ -246,9 +257,12 @@ export class CommerceService {
       if ((request.gldPrice ?? 0n) > 0n) {
         const existingBurn = await tx.gldBurnEvent.findFirst({ where: { sourceType: "PAID_REWARD_FULFILLMENT", sourceId: id }, select: { id: true } })
         if (!existingBurn) {
-          await tx.gldBurnEvent.create({ data: { userId: request.userId, amount: request.gldPrice!, sourceType: "PAID_REWARD_FULFILLMENT", sourceId: id, reason: `Fulfilled paid reward ${request.assetDefinition.key}`, metadata: { assetKey: request.assetDefinition.key, redeemCodeId: code.id } } })
+          await tx.gldBurnEvent.create({ data: { userId: request.userId, amount: request.gldPrice!, sourceType: "PAID_REWARD_FULFILLMENT", sourceId: id, reason: `Fulfilled paid reward ${request.assetDefinition.key}`, metadata: { assetKey: request.assetDefinition.key, redeemCodeId: code.id, gldUnitPriceUsdMicros: gldUnitPriceUsdMicros?.toString() ?? null, reserveCostUsdMicros: reserveCostUsdMicros.toString() } } })
           const dateKey = now.toISOString().slice(0, 10)
           await tx.gldEmissionDay.upsert({ where: { dateKey }, create: { dateKey, emissionBudget: 0n, burnedAmount: request.gldPrice! }, update: { burnedAmount: { increment: request.gldPrice! } } })
+        }
+        if (reserveCostUsdMicros > 0n) {
+          await tx.gldTreasuryEntry.create({ data: { entryType: "COST", amountUsdMicros: -reserveCostUsdMicros, idempotencyKey: `paid-reward-reserve-cost:${id}`, metadata: { source: "PAID_REWARD_FULFILLMENT", paidRewardRequestId: id, assetKey: request.assetDefinition.key, redeemCodeId: code.id, gldAmount: request.gldPrice!.toString(), gldUnitPriceUsdMicros: gldUnitPriceUsdMicros?.toString() ?? null, feeGldAmount: request.gldFeeAmount?.toString() ?? null } } })
         }
       }
       await writeAdminAudit(tx, { actorId, action: "PAID_REWARD_FULFILLED", entityType: "PaidRewardRequest", entityId: id, reason: dto.adminNote, metadata: { userId: request.userId, assetKey: request.assetDefinition.key, redeemCodeId: code.id, inventoryItemId: inventory.id } })
@@ -304,12 +318,19 @@ export class CommerceService {
     if (usdCostMicros === null && typeof metadata.usdCost === "string" && /^\d+(\.\d{1,6})?$/.test(metadata.usdCost)) usdCostMicros = BigInt(Math.ceil(Number(metadata.usdCost) * 1_000_000))
     usdCostMicros = usdCostMicros && usdCostMicros > 0n ? usdCostMicros : config.paidRewardDefaultCostUsdMicros
     const safeDisplayedValue = displayedValueUsdMicros > 0n ? displayedValueUsdMicros : config.initialPriceUsdMicros
-    const gldPrice = (usdCostMicros * BigInt(config.paidRewardSafetyMarginBps) + safeDisplayedValue - 1n) / safeDisplayedValue
+    // Both values are USD micros, so their direct ratio is the GLD amount.
+    const baseGldPrice = (usdCostMicros + safeDisplayedValue - 1n) / safeDisplayedValue
+    const marginGldPrice = (baseGldPrice * BigInt(config.paidRewardSafetyMarginBps) + 10_000n - 1n) / 10_000n
+    const directGldPrice = (usdCostMicros * BigInt(config.paidRewardSafetyMarginBps) + safeDisplayedValue - 1n) / safeDisplayedValue
+    const gldPrice = [baseGldPrice, marginGldPrice, directGldPrice].reduce((maximum, value) => value > maximum ? value : maximum, 0n)
+    const reserveCostUsdMicros = this.gldToUsdMicros(baseGldPrice, safeDisplayedValue)
+    const feeGldAmount = gldPrice > baseGldPrice ? gldPrice - baseGldPrice : 0n
     const availableCodes = await tx.assetRedeemCode.count({ where: { assetDefinitionId: asset.id, assetVariationId: variationId, status: "AVAILABLE" } })
     const blockedByHealth = config.paidRewardPauseOnCritical && (state?.health ?? "CRITICAL") === "CRITICAL"
     const reason = controls.paidRewardsPaused ? "Paid rewards are temporarily paused by an administrator" : blockedByHealth ? "Paid rewards are temporarily paused while the GLD reserve is critical" : availableCodes < 1 ? "This asset is temporarily out of redeem codes" : "Eligible"
-    return { gldPrice: gldPrice > 0n ? gldPrice : 1n, currencyCode: "GLD", usdCostMicros, displayedValueUsdMicros: safeDisplayedValue, safetyMarginBps: config.paidRewardSafetyMarginBps, economyHealth: state?.health ?? "CRITICAL", availableCodes, eligible: !controls.paidRewardsPaused && !blockedByHealth && availableCodes > 0, reason }
+    return { gldPrice: gldPrice > 0n ? gldPrice : 1n, baseGldPrice, feeGldAmount, reserveCostUsdMicros, currencyCode: "GLD", usdCostMicros, displayedValueUsdMicros: safeDisplayedValue, safetyMarginBps: config.paidRewardSafetyMarginBps, economyHealth: state?.health ?? "CRITICAL", availableCodes, eligible: !controls.paidRewardsPaused && !blockedByHealth && availableCodes > 0, reason }
   }
-  private playerPaidReward(row: any) { const gldPrice = row.gldPrice ?? null; const refunded = row.gldRefundedAmount ?? 0n; return this.serialize({ id: row.id, status: row.status, requestKey: row.requestKey, inventoryItemId: row.inventoryItemId, message: row.message, adminNote: row.adminNote, gldPrice, gldRefundedAmount: refunded, gldStatus: row.status === "REFUSED" && refunded > 0n ? "REFUNDED" : row.status === "FULFILLED" ? "SPENT" : gldPrice !== null ? "RESERVED" : "LEGACY", requestedAt: row.requestedAt, decidedAt: row.decidedAt, asset: row.assetDefinition ? { id: row.assetDefinition.id, key: row.assetDefinition.key, name: row.assetDefinition.name, imageUrl: row.assetDefinition.imageUrl } : undefined, variation: row.assetVariation ? { id: row.assetVariation.id, key: row.assetVariation.key, name: row.assetVariation.name } : null, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
+  private playerPaidReward(row: any) { const gldPrice = row.gldPrice ?? null; const refunded = row.gldRefundedAmount ?? 0n; return this.serialize({ id: row.id, status: row.status, requestKey: row.requestKey, inventoryItemId: row.inventoryItemId, message: row.message, adminNote: row.adminNote, gldPrice, gldUnitPriceUsdMicros: row.gldUnitPriceUsdMicros ?? null, reserveCostUsdMicros: row.reserveCostUsdMicros ?? null, gldFeeAmount: row.gldFeeAmount ?? null, gldRefundedAmount: refunded, gldStatus: row.status === "REFUSED" && refunded > 0n ? "REFUNDED" : row.status === "FULFILLED" ? "SPENT" : gldPrice !== null ? "RESERVED" : "LEGACY", requestedAt: row.requestedAt, decidedAt: row.decidedAt, asset: row.assetDefinition ? { id: row.assetDefinition.id, key: row.assetDefinition.key, name: row.assetDefinition.name, imageUrl: row.assetDefinition.imageUrl } : undefined, variation: row.assetVariation ? { id: row.assetVariation.id, key: row.assetVariation.key, name: row.assetVariation.name } : null, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
   private adminPaidReward(row: any) { return this.serialize({ ...this.playerPaidReward(row), user: row.user, adminNote: row.adminNote, decidedBy: row.decidedBy, inventoryItemId: row.inventoryItemId, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
+  private gldToUsdMicros(gldAmount: bigint, unitPriceUsdMicros: bigint) { return (gldAmount * unitPriceUsdMicros + 1_000_000n - 1n) / 1_000_000n }
 }

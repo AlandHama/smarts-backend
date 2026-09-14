@@ -816,6 +816,13 @@ model PaidRewardRequest {
   /// GLD reserved from the player when this request is created. Null is kept
   /// for requests created before GLD-priced paid rewards were enabled.
   gldPrice          BigInt?
+  /// The GLD USD-micros price locked when the request was created.
+  gldUnitPriceUsdMicros BigInt?
+  /// USD-micros reserve cost consumed when this request is fulfilled. This is
+  /// based on the pre-fee GLD amount, so the charged GLD includes a margin.
+  reserveCostUsdMicros BigInt?
+  /// The extra GLD charged above the reserve-cost conversion as the platform fee.
+  gldFeeAmount      BigInt?
   gldRefundedAmount BigInt                  @default(0)
   requestKey        String                  @unique @db.VarChar(128)
   message           String?                 @db.VarChar(500)
@@ -1695,8 +1702,8 @@ model GldPlayerDailyAdState {
   @@index([dateKey])
 }
 
-/// Double-entry-adjacent audit record for treasury allocations. Amounts may be
-/// negative only for a documented restatement adjustment.
+/// Double-entry-adjacent audit record for treasury allocations. COST entries
+/// are negative because they consume reserve backing for fulfilled rewards.
 model GldTreasuryEntry {
   id                String               @id @default(uuid()) @db.Uuid
   revenueSnapshotId String?              @db.Uuid

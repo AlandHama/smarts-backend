@@ -29,6 +29,7 @@ const DEFAULTS = {
   paidRewardDailyRequestLimit: 3,
   paidRewardPauseOnCritical: true,
   paidRewardDefaultCostUsdMicros: 50_000n,
+  recalculationIntervalMinutes: 30,
 }
 
 function bigintEnv(name: string, fallback: bigint) {
@@ -45,6 +46,16 @@ function bigintEnv(name: string, fallback: bigint) {
 function bpsEnv(name: string, fallback: number) {
   const parsed = Number(process.env[name])
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= 10_000 ? parsed : fallback
+}
+
+function paidRewardMarginBpsEnv(name: string, fallback: number) {
+  const parsed = Number(process.env[name])
+  return Number.isInteger(parsed) && parsed > 10_000 && parsed <= 100_000 ? parsed : fallback
+}
+
+function intervalMinutesEnv(name: string, fallback: number) {
+  const parsed = Number(process.env[name])
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 1_440 ? parsed : fallback
 }
 
 function curveEnv() {
@@ -92,9 +103,10 @@ export function getGldConfig() {
     adHealthMultiplierBps: DEFAULTS.adHealthMultiplierBps,
     adCurve: curveEnv(),
     giftBurnBps: bpsEnv("GLD_DIGITAL_GIFT_BURN_BPS", DEFAULTS.giftBurnBps),
-    paidRewardSafetyMarginBps: bpsEnv("GLD_PAID_REWARD_SAFETY_MARGIN_BPS", DEFAULTS.paidRewardSafetyMarginBps),
+    paidRewardSafetyMarginBps: paidRewardMarginBpsEnv("GLD_PAID_REWARD_SAFETY_MARGIN_BPS", DEFAULTS.paidRewardSafetyMarginBps),
     paidRewardDailyRequestLimit: Math.max(1, Number(process.env.GLD_PAID_REWARD_DAILY_REQUEST_LIMIT) || DEFAULTS.paidRewardDailyRequestLimit),
     paidRewardPauseOnCritical: process.env.GLD_PAID_REWARD_PAUSE_ON_CRITICAL !== "false",
     paidRewardDefaultCostUsdMicros: bigintEnv("GLD_PAID_REWARD_DEFAULT_COST_USD_MICROS", DEFAULTS.paidRewardDefaultCostUsdMicros),
+    recalculationIntervalMinutes: intervalMinutesEnv("GLD_RECALCULATION_INTERVAL_MINUTES", DEFAULTS.recalculationIntervalMinutes),
   }
 }

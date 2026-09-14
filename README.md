@@ -194,11 +194,22 @@ GLD_PAID_REWARD_SAFETY_MARGIN_BPS=12000
 GLD_PAID_REWARD_DEFAULT_COST_USD_MICROS=50000
 GLD_PAID_REWARD_DAILY_REQUEST_LIMIT=3
 GLD_PAID_REWARD_PAUSE_ON_CRITICAL=true
+GLD_RECALCULATION_INTERVAL_MINUTES=30
 ```
+
+GLD recalculates immediately when the service starts and then every 30 minutes
+by default. Set the interval as low as 1 minute when needed.
 
 The three allocation values must total `10000` BPS. AdMob revenue is only
 materialized after a two-day maturity delay and only when the connected AdMob
 account reports USD; zero earnings create no phantom GLD backing.
+
+Paid reward safety margin must be greater than `10000` BPS. The default `12000`
+charges a 20% GLD fee above the reserve-cost conversion. When a paid reward is
+fulfilled, its reserve cost is recorded as a negative treasury `COST` entry
+using the locked GLD price; the fee GLD is burned without consuming additional
+external reserve. Fulfillment is blocked when the available reserve cannot
+cover the reward cost.
 
 GLD-5 catalog sinks use the normal server-selected catalog price. Add an active
 `GLD` catalog price to a digital item; every completed purchase debits the

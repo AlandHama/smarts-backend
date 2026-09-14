@@ -72,6 +72,7 @@ type GldData = {
       snapshots: number;
     };
     manualBacking: { totalUsdMicros: string; count: number };
+    paidRewardCosts: { totalUsdMicros: string; count: number };
   };
 };
 
@@ -317,6 +318,10 @@ export function GldEconomyView() {
                 numberValue(data.metrics.emissionDay?.emittedAmount),
               ],
               ["Today burned", numberValue(data.metrics.burns.today)],
+              [
+                "Paid reward costs",
+                usdValue(data.metrics.paidRewardCosts.totalUsdMicros),
+              ],
             ].map(([label, value]) => (
               <Grid key={label} size={{ xs: 12, sm: 6, lg: 4 }}>
                 <Card sx={{ p: 2.5, height: "100%" }}>
@@ -369,6 +374,10 @@ export function GldEconomyView() {
                     [
                       "Burn events",
                       `${data.metrics.burns.count} (${numberValue(data.metrics.burns.total)} GLD)`,
+                    ],
+                    [
+                      "Paid reward costs",
+                      usdValue(data.metrics.paidRewardCosts.totalUsdMicros),
                     ],
                   ].map(([label, value]) => (
                     <Grid key={label} size={{ xs: 6 }}>

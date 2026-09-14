@@ -20,7 +20,8 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly prisma: PrismaService, private readonly revenue: GldRevenueService) {}
 
   onModuleInit() {
-    this.timer = setInterval(() => void this.runScheduledCycle(), DAY_MS)
+    const intervalMinutes = getGldConfig().recalculationIntervalMinutes
+    this.timer = setInterval(() => void this.runScheduledCycle(), intervalMinutes * 60 * 1000)
     void this.runScheduledCycle()
   }
 
@@ -94,7 +95,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     const config = getGldConfig()
     const dateKey = new Date().toISOString().slice(0, 10)
     const dayStart = new Date(`${dateKey}T00:00:00.000Z`)
-    const [snapshots, revenueSnapshots, controls, emissionDay, burnTotals, revenueTotals, manualBackings, manualBackingTotals] = await Promise.all([
+    const [snapshots, revenueSnapshots, controls, emissionDay, burnTotals, revenueTotals, manualBackings, manualBackingTotals, paidRewardCosts] = await Promise.all([
       this.prisma.gldEconomySnapshot.findMany({ orderBy: { createdAt: "desc" }, take: 30 }),
       this.revenue.listSnapshots(30),
       this.prisma.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} }),
@@ -103,9 +104,10 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
       this.prisma.gldRevenueSnapshot.aggregate({ where: { recognitionStatus: { in: ["RECOGNIZED", "RESTATED"] } }, _sum: { grossAdRevenueUsdMicros: true, rewardBackingUsdMicros: true, reserveAddedUsdMicros: true }, _count: { id: true } }),
       this.prisma.gldManualBacking.findMany({ orderBy: { createdAt: "desc" }, take: 25, include: { createdBy: { select: { id: true, username: true, email: true } } } }),
       this.prisma.gldManualBacking.aggregate({ _sum: { amountUsdMicros: true }, _count: { id: true } }),
+      this.prisma.gldTreasuryEntry.aggregate({ where: { entryType: "COST" }, _sum: { amountUsdMicros: true }, _count: { id: true } }),
     ])
     const todayBurns = await this.prisma.gldBurnEvent.aggregate({ where: { createdAt: { gte: dayStart } }, _sum: { amount: true }, _count: { id: true } })
-    return this.serialize({ state, config, controls, snapshots, revenueSnapshots, manualBackings, metrics: { dateKey, emissionDay, burns: { total: burnTotals._sum.amount ?? 0n, count: burnTotals._count.id, today: todayBurns._sum.amount ?? 0n, todayCount: todayBurns._count.id }, revenue: { grossAdRevenueUsdMicros: revenueTotals._sum.grossAdRevenueUsdMicros ?? 0n, rewardBackingUsdMicros: revenueTotals._sum.rewardBackingUsdMicros ?? 0n, reserveAddedUsdMicros: revenueTotals._sum.reserveAddedUsdMicros ?? 0n, snapshots: revenueTotals._count.id }, manualBacking: { totalUsdMicros: manualBackingTotals._sum.amountUsdMicros ?? 0n, count: manualBackingTotals._count.id } } })
+    return this.serialize({ state, config, controls, snapshots, revenueSnapshots, manualBackings, metrics: { dateKey, emissionDay, burns: { total: burnTotals._sum.amount ?? 0n, count: burnTotals._count.id, today: todayBurns._sum.amount ?? 0n, todayCount: todayBurns._count.id }, revenue: { grossAdRevenueUsdMicros: revenueTotals._sum.grossAdRevenueUsdMicros ?? 0n, rewardBackingUsdMicros: revenueTotals._sum.rewardBackingUsdMicros ?? 0n, reserveAddedUsdMicros: revenueTotals._sum.reserveAddedUsdMicros ?? 0n, snapshots: revenueTotals._count.id }, manualBacking: { totalUsdMicros: manualBackingTotals._sum.amountUsdMicros ?? 0n, count: manualBackingTotals._count.id }, paidRewardCosts: { totalUsdMicros: (paidRewardCosts._sum.amountUsdMicros ?? 0n) < 0n ? -(paidRewardCosts._sum.amountUsdMicros ?? 0n) : paidRewardCosts._sum.amountUsdMicros ?? 0n, count: paidRewardCosts._count.id } } })
   }
 
   async addManualBacking(dto: GldManualBackingDto, actorId: string) {
@@ -154,7 +156,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
         const current = await tx.gldEconomyState.upsert({ where: { currencyId: currency.id }, create: { currencyId: currency.id, displayedValueUsdMicros: config.initialPriceUsdMicros, targetValueUsdMicros: config.initialPriceUsdMicros, treasuryReserveUsdMicros: 0n, circulatingSupply: 0n, reserveRatioBps: 0, smoothingFactorBps: config.smoothingFactorBps, minPriceUsdMicros: config.minPriceUsdMicros, maxPriceUsdMicros: config.maxPriceUsdMicros, dailyEmissionBudget: 0n, dailyEmissionUsed: 0n }, update: {} })
         const supplyResult = await tx.walletBalance.aggregate({ where: { currencyId: currency.id, wallet: { status: "ACTIVE" } }, _sum: { amount: true } })
         const circulatingSupply = supplyResult._sum.amount ?? 0n
-        const reserveResult = await tx.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`SELECT COALESCE(SUM(CASE WHEN "entryType" = 'RESERVE' OR ("entryType" = 'ADJUSTMENT' AND "metadata"->>'allocation' = 'RESERVE') THEN "amountUsdMicros" ELSE 0 END), 0)::bigint AS total FROM "GldTreasuryEntry"`)
+        const reserveResult = await tx.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`SELECT COALESCE(SUM(CASE WHEN "entryType" = 'RESERVE' OR ("entryType" = 'ADJUSTMENT' AND "metadata"->>'allocation' = 'RESERVE') OR "entryType" = 'COST' THEN "amountUsdMicros" ELSE 0 END), 0)::bigint AS total FROM "GldTreasuryEntry"`)
         const treasuryReserve = reserveResult[0]?.total ?? 0n
         // Reserve and price are both represented in USD micros. The division
         // therefore directly gives the reserve-backed USD-micros price per GLD.
