@@ -1,7 +1,7 @@
 const DEFAULTS = {
   initialPriceUsdMicros: 50_000n,
-  minPriceUsdMicros: 5_000n,
-  maxPriceUsdMicros: 1_000_000n,
+  minPriceUsdMicros: 1n,
+  maxPriceUsdMicros: 100_000_000_000n,
   smoothingFactorBps: 500,
   maxIncreaseBps: 250,
   maxDecreaseBps: 250,

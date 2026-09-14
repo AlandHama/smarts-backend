@@ -82,7 +82,10 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     const reserve = BigInt(dto.reserveUsdMicros)
     const supply = BigInt(dto.circulatingSupply)
     const config = getGldConfig()
-    const target = supply > 0n ? this.clamp((reserve * 1_000_000n) / supply, config.minPriceUsdMicros, config.maxPriceUsdMicros) : config.maxPriceUsdMicros
+    // Reserve and price are both represented in USD micros. Dividing the
+    // reserve micros by the number of GLD units already produces USD micros
+    // per GLD; multiplying by another million would overstate the price.
+    const target = supply > 0n ? this.clamp(reserve / supply, config.minPriceUsdMicros, config.maxPriceUsdMicros) : config.maxPriceUsdMicros
     return this.serialize({ reserveUsdMicros: reserve, circulatingSupply: supply, priceUsdMicros: target, formattedUsd: this.formatUsd(target), minPriceUsdMicros: config.minPriceUsdMicros, maxPriceUsdMicros: config.maxPriceUsdMicros })
   }
 
@@ -153,7 +156,9 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
         const circulatingSupply = supplyResult._sum.amount ?? 0n
         const reserveResult = await tx.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`SELECT COALESCE(SUM(CASE WHEN "entryType" = 'RESERVE' OR ("entryType" = 'ADJUSTMENT' AND "metadata"->>'allocation' = 'RESERVE') THEN "amountUsdMicros" ELSE 0 END), 0)::bigint AS total FROM "GldTreasuryEntry"`)
         const treasuryReserve = reserveResult[0]?.total ?? 0n
-        const target = circulatingSupply > 0n ? this.clamp((treasuryReserve * 1_000_000n) / circulatingSupply, config.minPriceUsdMicros, config.maxPriceUsdMicros) : current.displayedValueUsdMicros
+        // Reserve and price are both represented in USD micros. The division
+        // therefore directly gives the reserve-backed USD-micros price per GLD.
+        const target = circulatingSupply > 0n ? this.clamp(treasuryReserve / circulatingSupply, config.minPriceUsdMicros, config.maxPriceUsdMicros) : current.displayedValueUsdMicros
         const displayed = this.clamp(this.smooth(current.displayedValueUsdMicros, target, config.smoothingFactorBps), config.minPriceUsdMicros, config.maxPriceUsdMicros)
         const liability = circulatingSupply * displayed
         const reserveRatioBps = liability > 0n ? Number((treasuryReserve * 10_000n) / liability) : 0
