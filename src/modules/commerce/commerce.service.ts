@@ -167,6 +167,12 @@ export class CommerceService {
 
   async requestPaidReward(userId: string, dto: PaidRewardRequestDto) {
     return this.prisma.$transaction(async (tx) => {
+      const requester = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true, status: true },
+      })
+      if (!requester) throw new NotFoundException("Player account not found")
+      if (requester.status !== "ACTIVE") throw new ConflictException("This player's account is not active")
       const asset = await tx.assetDefinition.findUnique({ where: { key: dto.assetKey.trim().toLowerCase() } })
       if (!asset || !asset.active) throw new NotFoundException("Asset definition not found or inactive")
       if (asset.ownershipPolicy !== "UNIQUE") throw new BadRequestException("Paid redeem-code assets must use UNIQUE ownership")
@@ -225,7 +231,7 @@ export class CommerceService {
   async decidePaidRewardRequest(id: string, dto: PaidRewardDecisionDto, actorId: string) {
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT "id" FROM "PaidRewardRequest" WHERE "id" = ${id} FOR UPDATE`
-      const request = await tx.paidRewardRequest.findUnique({ where: { id }, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, assetDefinition: true, assetVariation: true, redeemCode: true } })
+      const request = await tx.paidRewardRequest.findUnique({ where: { id }, include: { user: { select: { id: true, username: true, email: true, status: true, profile: { select: { displayName: true } } } }, assetDefinition: true, assetVariation: true, redeemCode: true } })
       if (!request) throw new NotFoundException("Paid reward request not found")
       if (request.status !== "PENDING") return this.adminPaidReward(request)
       const now = new Date()
@@ -240,6 +246,7 @@ export class CommerceService {
         await tx.outboxEvent.create({ data: { eventType: "commerce.paid-reward.refused", aggregateType: "PaidRewardRequest", aggregateId: id, payload: { userId: request.userId, requestId: id, assetKey: request.assetDefinition.key, refundedGld: refundable.toString() } as Prisma.InputJsonValue } })
         return this.adminPaidReward(updated)
       }
+      if (request.user.status !== "ACTIVE") throw new ConflictException("This player's account is not active")
       if (request.assetDefinition.ownershipPolicy !== "UNIQUE") throw new BadRequestException("Paid redeem-code assets must use UNIQUE ownership")
       const quote = await this.paidRewardQuote(tx, request.assetDefinition, request.assetVariationId)
       // Requests created while the old USD fallback was active could contain
@@ -289,9 +296,9 @@ export class CommerceService {
           const dateKey = now.toISOString().slice(0, 10)
           await tx.gldEmissionDay.upsert({ where: { dateKey }, create: { dateKey, emissionBudget: 0n, burnedAmount: effectiveGldPrice! }, update: { burnedAmount: { increment: effectiveGldPrice! } } })
         }
-        if (reserveCostUsdMicros > 0n) {
-          await tx.gldTreasuryEntry.create({ data: { entryType: "COST", amountUsdMicros: -reserveCostUsdMicros, idempotencyKey: `paid-reward-reserve-cost:${id}`, metadata: { source: "PAID_REWARD_FULFILLMENT", paidRewardRequestId: id, assetKey: request.assetDefinition.key, redeemCodeId: code.id, gldAmount: effectiveGldPrice!.toString(), gldUnitPriceUsdMicros: gldUnitPriceUsdMicros?.toString() ?? null, feeGldAmount: effectiveFeeGldAmount?.toString() ?? null } } })
-        }
+      }
+      if (reserveCostUsdMicros > 0n) {
+        await tx.gldTreasuryEntry.create({ data: { entryType: "COST", amountUsdMicros: -reserveCostUsdMicros, idempotencyKey: `paid-reward-reserve-cost:${id}`, metadata: { source: "PAID_REWARD_FULFILLMENT", paidRewardRequestId: id, assetKey: request.assetDefinition.key, redeemCodeId: code.id, gldAmount: (effectiveGldPrice ?? 0n).toString(), gldUnitPriceUsdMicros: gldUnitPriceUsdMicros?.toString() ?? null, feeGldAmount: effectiveFeeGldAmount?.toString() ?? null } } })
       }
       await writeAdminAudit(tx, { actorId, action: "PAID_REWARD_FULFILLED", entityType: "PaidRewardRequest", entityId: id, reason: dto.adminNote, metadata: { userId: request.userId, assetKey: request.assetDefinition.key, redeemCodeId: code.id, inventoryItemId: inventory.id } })
       await writePlayerAudit(tx, { userId: request.userId, actorType: PlayerAuditActorType.ADMIN, action: "PAID_REWARD_FULFILLED", entityType: "PaidRewardRequest", entityId: id, summary: `Paid reward ${request.assetDefinition.name} fulfilled`, changes: { status: { old: "PENDING", new: "FULFILLED" } }, metadata: { assetKey: request.assetDefinition.key, redeemCodeId: code.id, gldSpent: (effectiveGldPrice ?? 0n).toString() } })
