@@ -15,8 +15,8 @@ export class GldController {
 
   @Get("history")
   @ApiOperation({ summary: "Get public GLD value history" })
-  history(@Query("days") days?: string, @Query("period") period?: string) {
+  history(@Query("days") days?: string, @Query("period") period?: string, @Query("granularity") granularity?: string) {
     const value = days ?? period?.replace(/\D/g, "") ?? "30"
-    return this.gld.getHistory(Number(value))
+    return this.gld.getHistory(Number(value), granularity)
   }
 }

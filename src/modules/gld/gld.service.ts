@@ -5,6 +5,7 @@ import { PrismaService } from "../../prisma.service"
 import { getGldConfig } from "./gld.config"
 import { GldRevenueService } from "./gld.revenue.service"
 import { UpdateGldControlsDto } from "./dtos/gld-admin.dto"
+import { GldSimulationDto } from "./dtos/gld-simulation.dto"
 import { writeAdminAudit } from "../../common/helpers/admin-audit"
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -54,11 +55,34 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     })
   }
 
-  async getHistory(days = 30) {
+  async getHistory(days = 30, requestedGranularity = "day") {
     const bounded = Math.min(Math.max(Number(days) || 30, 1), 365)
+    const granularity = requestedGranularity === "minute" || requestedGranularity === "hour" ? requestedGranularity : "day"
     const from = new Date(Date.now() - bounded * DAY_MS)
-    const rows = await this.prisma.gldEconomySnapshot.findMany({ where: { createdAt: { gte: from } }, orderBy: { createdAt: "asc" }, take: 1000 })
-    return this.serialize({ days: bounded, points: rows.map((row) => ({ timestamp: row.createdAt, valueUsdMicros: row.displayedValueUsdMicros, createdAt: row.createdAt, displayedValueUsdMicros: row.displayedValueUsdMicros })) })
+    const [state, rows] = await Promise.all([
+      this.getOrCreateState(),
+      this.prisma.gldEconomySnapshot.findMany({ where: { createdAt: { gte: from } }, orderBy: { createdAt: "asc" }, take: 10000 }),
+    ])
+    const samples = [...rows, { createdAt: state.updatedAt, displayedValueUsdMicros: state.displayedValueUsdMicros }]
+    const buckets = new Map<number, { timestamp: Date; valueUsdMicros: bigint }>()
+    for (const sample of samples) {
+      if (sample.createdAt < from) continue
+      const bucket = new Date(sample.createdAt)
+      if (granularity === "minute") bucket.setUTCSeconds(0, 0)
+      else if (granularity === "hour") bucket.setUTCMinutes(0, 0, 0)
+      else bucket.setUTCHours(0, 0, 0, 0)
+      buckets.set(bucket.getTime(), { timestamp: bucket, valueUsdMicros: sample.displayedValueUsdMicros })
+    }
+    const points = [...buckets.values()].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()).map((point) => ({ timestamp: point.timestamp, valueUsdMicros: point.valueUsdMicros, createdAt: point.timestamp, displayedValueUsdMicros: point.valueUsdMicros }))
+    return this.serialize({ days: bounded, granularity, points })
+  }
+
+  simulate(dto: GldSimulationDto) {
+    const reserve = BigInt(dto.reserveUsdMicros)
+    const supply = BigInt(dto.circulatingSupply)
+    const config = getGldConfig()
+    const target = supply > 0n ? this.clamp((reserve * 1_000_000n) / supply, config.minPriceUsdMicros, config.maxPriceUsdMicros) : config.maxPriceUsdMicros
+    return this.serialize({ reserveUsdMicros: reserve, circulatingSupply: supply, priceUsdMicros: target, formattedUsd: this.formatUsd(target), minPriceUsdMicros: config.minPriceUsdMicros, maxPriceUsdMicros: config.maxPriceUsdMicros })
   }
 
   async getAdminState() {
@@ -152,7 +176,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
   private smooth(previous: bigint, target: bigint, factorBps: number) { return previous + ((target - previous) * BigInt(factorBps)) / 10_000n }
   private health(ratio: number) { return ratio >= 12_000 ? "VERY_HEALTHY" : ratio >= 10_000 ? "HEALTHY" : ratio >= 8_000 ? "CAUTION" : ratio >= 6_000 ? "RESTRICTED" : "CRITICAL" }
   private changeBps(current: bigint, historical?: bigint) { return !historical || historical === 0n ? 0 : Number(((current - historical) * 10_000n) / historical) }
-  private formatUsd(micros: bigint) { return `$${(micros / 1_000_000n).toString()}.${(micros % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "").padEnd(2, "0")}` }
+  private formatUsd(micros: bigint) { return `$${(micros / 1_000_000n).toString()}.${(micros % 1_000_000n).toString().padStart(6, "0").padEnd(10, "0")}` }
   private serialize(value: unknown): any {
     if (typeof value === "bigint") return value.toString()
     if (value instanceof Date) return value.toISOString()

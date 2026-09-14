@@ -19,6 +19,7 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { api } from "../lib/api";
 
@@ -66,6 +67,13 @@ type GldData = {
   };
 };
 
+type GldSimulation = {
+  formattedUsd: string;
+  priceUsdMicros: string;
+  minPriceUsdMicros: string;
+  maxPriceUsdMicros: string;
+};
+
 const bigintValue = (value: unknown) => {
   try {
     return BigInt(String(value ?? "0"));
@@ -77,10 +85,19 @@ const numberValue = (value: unknown) => bigintValue(value).toLocaleString();
 const usdValue = (value: unknown) => {
   const amount = bigintValue(value);
   const micros = BigInt(1000000);
-  return `$${(amount / micros).toLocaleString()}.${(amount % micros).toString().padStart(6, "0").slice(0, 2)}`;
+  return `$${(amount / micros).toLocaleString()}.${(amount % micros).toString().padStart(6, "0").padEnd(10, "0")}`;
 };
 const controlLabel = (key: string) =>
   key.replace("Paused", "").replace(/([A-Z])/g, " $1");
+
+const usdToMicros = (value: string) => {
+  const match = value.trim().match(/^(\d+)(?:\.(\d{0,6}))?$/);
+  if (!match)
+    throw new Error("Enter a valid USD amount with up to 6 decimal places");
+  const whole = BigInt(match[1]);
+  const fraction = BigInt((match[2] ?? "").padEnd(6, "0") || "0");
+  return (whole * BigInt(1000000) + fraction).toString();
+};
 
 export function GldEconomyView() {
   const [data, setData] = useState<GldData | null>(null);
@@ -88,6 +105,11 @@ export function GldEconomyView() {
   const [working, setWorking] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [simulationReserve, setSimulationReserve] = useState("1");
+  const [simulationSupply, setSimulationSupply] = useState("100000");
+  const [simulation, setSimulation] = useState<GldSimulation | null>(null);
+  const [simulationError, setSimulationError] = useState("");
+  const [simulationLoading, setSimulationLoading] = useState(false);
   const load = async () => {
     setLoading(true);
     try {
@@ -132,6 +154,29 @@ export function GldEconomyView() {
           ? reason.message
           : "Unable to update GLD controls",
       );
+    }
+  };
+  const simulate = async () => {
+    setSimulationLoading(true);
+    setSimulationError("");
+    try {
+      const result = await api<GldSimulation>("/gld/simulate", {
+        method: "POST",
+        body: JSON.stringify({
+          reserveUsdMicros: usdToMicros(simulationReserve),
+          circulatingSupply: simulationSupply.trim(),
+        }),
+      });
+      setSimulation(result);
+    } catch (reason) {
+      setSimulation(null);
+      setSimulationError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to simulate GLD value",
+      );
+    } finally {
+      setSimulationLoading(false);
     }
   };
   const chartRows = useMemo(
@@ -363,6 +408,88 @@ export function GldEconomyView() {
                 </Grid>
               ))}
             </Grid>
+          </Card>
+          <Card sx={{ p: { xs: 2, md: 3 } }}>
+            <Typography variant="h6" fontWeight={800}>
+              GLD price simulation
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Test the reserve-backed target price without changing live GLD
+              state, wallets, or treasury records.
+            </Typography>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12, sm: 5 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Reserve (USD)"
+                  value={simulationReserve}
+                  onChange={(event) => setSimulationReserve(event.target.value)}
+                  helperText="Up to 6 decimal places"
+                  inputProps={{ inputMode: "decimal" }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 5 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Circulating supply (GLD)"
+                  value={simulationSupply}
+                  onChange={(event) => setSimulationSupply(event.target.value)}
+                  inputProps={{ inputMode: "numeric" }}
+                />
+              </Grid>
+              <Grid
+                size={{ xs: 12, sm: 2 }}
+                sx={{ display: "flex", alignItems: "flex-start" }}
+              >
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  onClick={() => void simulate()}
+                  disabled={simulationLoading}
+                >
+                  {simulationLoading ? "Testing…" : "Simulate"}
+                </Button>
+              </Grid>
+            </Grid>
+            {simulationError && (
+              <Typography color="error.main" sx={{ mt: 1.5 }}>
+                {simulationError}
+              </Typography>
+            )}
+            {simulation && (
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={{ xs: 1, sm: 3 }}
+                sx={{ mt: 2 }}
+              >
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Simulated price
+                  </Typography>
+                  <Typography variant="h5" fontWeight={850}>
+                    {simulation.formattedUsd}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Configured floor
+                  </Typography>
+                  <Typography fontWeight={800}>
+                    {usdValue(simulation.minPriceUsdMicros)}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Configured ceiling
+                  </Typography>
+                  <Typography fontWeight={800}>
+                    {usdValue(simulation.maxPriceUsdMicros)}
+                  </Typography>
+                </Box>
+              </Stack>
+            )}
           </Card>
           <Card sx={{ p: { xs: 2, md: 3 } }}>
             <Typography variant="h6" fontWeight={800}>

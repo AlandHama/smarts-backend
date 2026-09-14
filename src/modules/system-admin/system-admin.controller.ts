@@ -26,6 +26,7 @@ import { GldService } from "../gld/gld.service"
 import { GldRevenueService } from "../gld/gld.revenue.service"
 import { GldReconciliationService } from "../gld/gld.reconciliation.service"
 import { UpdateGldControlsDto } from "../gld/dtos/gld-admin.dto"
+import { GldSimulationDto } from "../gld/dtos/gld-simulation.dto"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -184,6 +185,18 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Recalculate the GLD market value and daily emission budget" })
   gldRecalculate() { return this.gldService.recalculate("admin") }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/gld/history")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Get GLD price history at minute, hour, or day granularity" })
+  gldHistory(@Query("days") days?: string, @Query("granularity") granularity?: string) { return this.gldService.getHistory(Number(days) || 30, granularity) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/gld/simulate")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Simulate a GLD price from reserve and circulating supply without changing the economy" })
+  gldSimulate(@Body() dto: GldSimulationDto) { return this.gldService.simulate(dto) }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/gld/revenue/materialize")

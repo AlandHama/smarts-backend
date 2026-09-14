@@ -42,8 +42,10 @@ const fmt = (value: number) => number.format(Math.round(value || 0));
 const fmtCompact = (value: number) => compact.format(Math.round(value || 0));
 const percent = (value: number) =>
   `${Number(value || 0).toFixed(value % 1 ? 1 : 0)}%`;
+const usdMicros = (value: number) => `$${(value / 1_000_000).toFixed(10)}`;
 
 type Series = { key: string; label: string; color: string };
+type ChartPoint = { date: string } & Record<string, unknown>;
 
 const engagementSeries: Series[] = [
   { key: "dau", label: "Daily active users", color: "#8b7dff" },
@@ -256,6 +258,8 @@ export function OverviewView() {
         ))}
       </Grid>
 
+      <GldPriceReport days={days} />
+
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 8 }}>
           <ReportCard
@@ -418,10 +422,11 @@ function TrendChart({
   series,
   valueFormatter = (value) => fmtCompact(value),
 }: {
-  points: SystemAdminAnalytics["trends"];
+  points: ChartPoint[];
   series: Series[];
   valueFormatter?: (value: number) => string;
 }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const height = 250;
   const width = 900;
   const padding = { top: 18, right: 16, bottom: 28, left: 38 };
@@ -440,9 +445,30 @@ function TrendChart({
     (value / max) * (height - padding.top - padding.bottom);
   if (!points.length)
     return <EmptyState text="No events have been recorded for this period." />;
+  const hoveredPoint = hoveredIndex === null ? null : points[hoveredIndex];
+  const hoverX = hoveredIndex === null ? 0 : x(hoveredIndex);
   return (
     <Stack spacing={1.5}>
-      <Box sx={{ width: "100%", overflow: "hidden" }}>
+      <Box
+        sx={{ width: "100%", overflow: "hidden", position: "relative" }}
+        onMouseMove={(event) => {
+          const bounds = event.currentTarget.getBoundingClientRect();
+          const chartRatio = (event.clientX - bounds.left) / bounds.width;
+          const plotStart = padding.left / width;
+          const plotEnd = 1 - padding.right / width;
+          const plotRatio = Math.min(
+            1,
+            Math.max(0, (chartRatio - plotStart) / (plotEnd - plotStart)),
+          );
+          setHoveredIndex(
+            Math.min(
+              points.length - 1,
+              Math.max(0, Math.round(plotRatio * (points.length - 1))),
+            ),
+          );
+        }}
+        onMouseLeave={() => setHoveredIndex(null)}
+      >
         <svg
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
@@ -482,11 +508,34 @@ function TrendChart({
               points={points
                 .map(
                   (point, index) =>
-                    `${x(index)},${y(Number(point[item.key as keyof typeof point]) || 0)}`,
+                    `${x(index)},${y(Number(point[item.key]) || 0)}`,
                 )
                 .join(" ")}
             />
           ))}
+          {hoveredPoint && hoveredIndex !== null && (
+            <>
+              <line
+                x1={hoverX}
+                x2={hoverX}
+                y1={padding.top}
+                y2={height - padding.bottom}
+                stroke="rgba(255,255,255,.55)"
+                strokeDasharray="3 4"
+              />
+              {series.map((item) => (
+                <circle
+                  key={item.key}
+                  cx={hoverX}
+                  cy={y(Number(hoveredPoint[item.key]) || 0)}
+                  r="5"
+                  fill={item.color}
+                  stroke="#121a2c"
+                  strokeWidth="2"
+                />
+              ))}
+            </>
+          )}
           {points.map((point, index) =>
             index === 0 ||
             index === points.length - 1 ||
@@ -510,6 +559,48 @@ function TrendChart({
             ) : null,
           )}
         </svg>
+        {hoveredPoint && hoveredIndex !== null && (
+          <Box
+            sx={{
+              position: "absolute",
+              left: `${(hoverX / width) * 100}%`,
+              top: 8,
+              transform: `translateX(${hoverX > width * 0.72 ? "-100%" : "0"})`,
+              minWidth: 145,
+              px: 1.2,
+              py: 0.9,
+              borderRadius: 1.5,
+              bgcolor: "rgba(7,12,26,.94)",
+              border: "1px solid rgba(148,163,184,.3)",
+              boxShadow: "0 8px 24px rgba(0,0,0,.25)",
+              pointerEvents: "none",
+              zIndex: 1,
+            }}
+          >
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              display="block"
+            >
+              {new Date(hoveredPoint.date).toLocaleString()}
+            </Typography>
+            {series.map((item) => (
+              <Stack
+                key={item.key}
+                direction="row"
+                justifyContent="space-between"
+                spacing={2}
+              >
+                <Typography variant="caption" sx={{ color: item.color }}>
+                  {item.label}
+                </Typography>
+                <Typography variant="caption" fontWeight={800}>
+                  {valueFormatter(Number(hoveredPoint[item.key]) || 0)}
+                </Typography>
+              </Stack>
+            ))}
+          </Box>
+        )}
       </Box>
       <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
         {series.map((item) => (
@@ -534,6 +625,95 @@ function TrendChart({
         ))}
       </Stack>
     </Stack>
+  );
+}
+
+function GldPriceReport({ days }: { days: number }) {
+  const [granularity, setGranularity] = useState<"minute" | "hour" | "day">(
+    "day",
+  );
+  const [points, setPoints] = useState<ChartPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError("");
+    api<{ points: Array<{ timestamp: string; valueUsdMicros: string }> }>(
+      `/gld/history?days=${days}&granularity=${granularity}`,
+    )
+      .then((result) => {
+        if (!alive) return;
+        setPoints(
+          result.points.map((point) => ({
+            date: point.timestamp,
+            price: Number(point.valueUsdMicros),
+          })),
+        );
+      })
+      .catch((reason) => {
+        if (alive) {
+          setPoints([]);
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Unable to load GLD price history",
+          );
+        }
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [days, granularity]);
+
+  return (
+    <ReportCard
+      title="GLD price history"
+      subtitle="Server-calculated GLD value over time. Hover a chart point for the exact value."
+    >
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        justifyContent="space-between"
+        spacing={1.5}
+        sx={{ mb: 1.5 }}
+      >
+        <Typography variant="caption" color="text.secondary">
+          Resolution:{" "}
+          {granularity === "minute"
+            ? "minute by minute"
+            : granularity === "hour"
+              ? "hourly"
+              : "daily"}
+        </Typography>
+        <Select
+          size="small"
+          value={granularity}
+          onChange={(event) =>
+            setGranularity(event.target.value as typeof granularity)
+          }
+          sx={{ minWidth: 130 }}
+        >
+          <MenuItem value="minute">Minute</MenuItem>
+          <MenuItem value="hour">Hourly</MenuItem>
+          <MenuItem value="day">Daily</MenuItem>
+        </Select>
+      </Stack>
+      {error ? (
+        <Typography color="error.main">{error}</Typography>
+      ) : loading ? (
+        <Skeleton variant="rectangular" height={250} />
+      ) : (
+        <TrendChart
+          points={points}
+          series={[{ key: "price", label: "GLD value", color: "#f4c95d" }]}
+          valueFormatter={usdMicros}
+        />
+      )}
+    </ReportCard>
   );
 }
 
