@@ -26,6 +26,8 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
     const senderUserId = input.senderUserId
     const recipientUserId = input.dto.recipientUserId
     if (senderUserId === recipientUserId) throw new BadRequestException("You cannot send a gift to yourself")
+    const controls = await transaction.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} })
+    if (controls.giftsPaused) throw new ConflictException("GLD gifts are temporarily paused")
     const itemKey = input.dto.catalogItemKey.trim().toLowerCase()
     const catalogKey = "main"
     const idempotencyKey = input.dto.idempotencyKey.trim()

@@ -38,6 +38,10 @@ export class CreatePurchaseTransaction extends PrismaTransaction<CreatePurchaseI
     if (!item || !this.isAvailable(item.startsAt, item.endsAt) || !this.isAvailable(item.catalog.startsAt, item.catalog.endsAt)) throw new NotFoundException("Catalog item is not available")
     const price = item.prices.find((entry) => entry.currency.code === currencyCode && entry.currency.active)
     if (!price) throw new BadRequestException("This catalog item is not priced in the requested currency")
+    if (currencyCode === "GLD") {
+      const controls = await transaction.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} })
+      if (controls.catalogSinksPaused) throw new ConflictException("GLD catalog purchases are temporarily paused")
+    }
     const total = price.amount * BigInt(input.quantity)
     const requestHash = createHash("sha256").update(JSON.stringify({ userId: input.userId, catalogKey, itemKey, currencyCode, quantity: input.quantity })).digest("hex")
     const scope = `purchase:${input.userId}`

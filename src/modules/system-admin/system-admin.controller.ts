@@ -25,6 +25,7 @@ import { AdMobReportQueryDto } from "../admob/dtos/admob.dto"
 import { GldService } from "../gld/gld.service"
 import { GldRevenueService } from "../gld/gld.revenue.service"
 import { GldReconciliationService } from "../gld/gld.reconciliation.service"
+import { UpdateGldControlsDto } from "../gld/dtos/gld-admin.dto"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -198,6 +199,12 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Reconcile cached GLD supply against active wallet balances" })
   gldReconcile() { return this.gldReconciliationService.reconcile() }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/gld/controls")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Update persisted GLD emergency controls" })
+  gldControls(@Body() dto: UpdateGldControlsDto, @CurrentUser() admin: UserResponseDto) { return this.gldService.updateControls(dto, admin.id) }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/operations")

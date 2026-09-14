@@ -4,6 +4,8 @@ import { Prisma } from "@prisma/client"
 import { PrismaService } from "../../prisma.service"
 import { getGldConfig } from "./gld.config"
 import { GldRevenueService } from "./gld.revenue.service"
+import { UpdateGldControlsDto } from "./dtos/gld-admin.dto"
+import { writeAdminAudit } from "../../common/helpers/admin-audit"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -62,8 +64,34 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
   async getAdminState() {
     const state = await this.getOrCreateState()
     const config = getGldConfig()
-    const [snapshots, revenueSnapshots] = await Promise.all([this.prisma.gldEconomySnapshot.findMany({ orderBy: { createdAt: "desc" }, take: 30 }), this.revenue.listSnapshots(30)])
-    return this.serialize({ state, config, snapshots, revenueSnapshots })
+    const dateKey = new Date().toISOString().slice(0, 10)
+    const dayStart = new Date(`${dateKey}T00:00:00.000Z`)
+    const [snapshots, revenueSnapshots, controls, emissionDay, burnTotals, revenueTotals] = await Promise.all([
+      this.prisma.gldEconomySnapshot.findMany({ orderBy: { createdAt: "desc" }, take: 30 }),
+      this.revenue.listSnapshots(30),
+      this.prisma.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} }),
+      this.prisma.gldEmissionDay.findUnique({ where: { dateKey } }),
+      this.prisma.gldBurnEvent.aggregate({ _sum: { amount: true }, _count: { id: true } }),
+      this.prisma.gldRevenueSnapshot.aggregate({ where: { recognitionStatus: { in: ["RECOGNIZED", "RESTATED"] } }, _sum: { grossAdRevenueUsdMicros: true, rewardBackingUsdMicros: true, reserveAddedUsdMicros: true }, _count: { id: true } }),
+    ])
+    const todayBurns = await this.prisma.gldBurnEvent.aggregate({ where: { createdAt: { gte: dayStart } }, _sum: { amount: true }, _count: { id: true } })
+    return this.serialize({ state, config, controls, snapshots, revenueSnapshots, metrics: { dateKey, emissionDay, burns: { total: burnTotals._sum.amount ?? 0n, count: burnTotals._count.id, today: todayBurns._sum.amount ?? 0n, todayCount: todayBurns._count.id }, revenue: { grossAdRevenueUsdMicros: revenueTotals._sum.grossAdRevenueUsdMicros ?? 0n, rewardBackingUsdMicros: revenueTotals._sum.rewardBackingUsdMicros ?? 0n, reserveAddedUsdMicros: revenueTotals._sum.reserveAddedUsdMicros ?? 0n, snapshots: revenueTotals._count.id } } })
+  }
+
+  async updateControls(dto: UpdateGldControlsDto, actorId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} })
+      const updated = await tx.gldAdminControl.update({ where: { id: before.id }, data: {
+        ...(dto.emissionsPaused === undefined ? {} : { emissionsPaused: dto.emissionsPaused }),
+        ...(dto.catalogSinksPaused === undefined ? {} : { catalogSinksPaused: dto.catalogSinksPaused }),
+        ...(dto.giftsPaused === undefined ? {} : { giftsPaused: dto.giftsPaused }),
+        ...(dto.paidRewardsPaused === undefined ? {} : { paidRewardsPaused: dto.paidRewardsPaused }),
+        ...(dto.reason === undefined ? {} : { reason: dto.reason.trim() || null }),
+        updatedById: actorId,
+      } })
+      await writeAdminAudit(tx, { actorId, action: "GLD_CONTROLS_UPDATED", entityType: "GldAdminControl", entityId: updated.id, reason: dto.reason, metadata: { before: { emissionsPaused: before.emissionsPaused, catalogSinksPaused: before.catalogSinksPaused, giftsPaused: before.giftsPaused, paidRewardsPaused: before.paidRewardsPaused }, after: { emissionsPaused: updated.emissionsPaused, catalogSinksPaused: updated.catalogSinksPaused, giftsPaused: updated.giftsPaused, paidRewardsPaused: updated.paidRewardsPaused } } })
+      return this.serialize(updated)
+    })
   }
 
   async recalculate(reason = "manual") {

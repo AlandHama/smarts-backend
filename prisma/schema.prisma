@@ -406,6 +406,7 @@ model User {
   playerAuditEvents          PlayerAuditEvent[]
   paidRewardRequests         PaidRewardRequest[]
   paidRewardDecisions        PaidRewardRequest[]     @relation("PaidRewardRequestDecider")
+  gldControlUpdates          GldAdminControl[]       @relation("GldControlUpdater")
   assignedRedeemCodes        AssetRedeemCode[]       @relation("RedeemCodeAssignedUser")
   gldBurnEvents              GldBurnEvent[]
   gldDailyAdStates           GldPlayerDailyAdState[]
@@ -1582,6 +1583,21 @@ model GldEconomyState {
 
   @@index([health])
   @@index([lastRecalculatedAt])
+}
+
+/// Persisted emergency switches for the server-owned GLD economy.
+model GldAdminControl {
+  id                 String   @id @default(uuid()) @db.Uuid
+  singletonKey       String   @unique @default("default") @db.VarChar(32)
+  emissionsPaused    Boolean  @default(false)
+  catalogSinksPaused Boolean  @default(false)
+  giftsPaused        Boolean  @default(false)
+  paidRewardsPaused  Boolean  @default(false)
+  reason             String?  @db.VarChar(500)
+  updatedById        String?  @db.Uuid
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  updatedBy          User?    @relation("GldControlUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 }
 
 /// Immutable revenue input used to fund GLD emission and reserve capacity.

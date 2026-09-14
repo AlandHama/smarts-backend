@@ -12,6 +12,8 @@ export class GldEmissionService {
     const config = getGldConfig()
     const dateKey = new Date().toISOString().slice(0, 10)
     await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`gld-ad:${input.userId}:${dateKey}`}))`
+    const controls = await transaction.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} })
+    if (controls.emissionsPaused) return { amount: 0n, validatedAds: 0, remainingDailyAds: config.adMaxValidatedAds, remainingDailyGldCap: config.adDailyGldCap, reason: "emissions-paused" }
     const state = await transaction.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { health: true, dailyEmissionBudget: true } })
     const healthMultiplier = config.adHealthMultiplierBps[state?.health ?? "CRITICAL"] ?? 2_000
     const playerState = await transaction.gldPlayerDailyAdState.upsert({ where: { userId_dateKey: { userId: input.userId, dateKey } }, create: { userId: input.userId, dateKey }, update: {} })

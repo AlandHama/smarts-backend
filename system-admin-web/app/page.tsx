@@ -35,6 +35,7 @@ import { PlayerAuditsView } from "../components/PlayerAuditsView";
 import { MatchesView } from "../components/MatchesView";
 import { Match360View } from "../components/Match360View";
 import { AdMobView } from "../components/AdMobView";
+import { GldEconomyView } from "../components/GldEconomyView";
 import { api, clearSession, hasSession, login } from "../lib/api";
 import { adminTheme } from "../lib/theme";
 
@@ -51,6 +52,7 @@ const viewPaths: Record<
   matches: "/matches/",
   progressions: "/progressions/",
   economy: "/economy/",
+  gld: "/gld/",
   commerce: "/commerce/",
   "paid-rewards": "/paid-rewards/",
   leaderboards: "/leaderboards/",
@@ -180,6 +182,7 @@ export default function AdminPage() {
               <CurrencyTopPlayersPanel />
             </>
           )}
+          {view === "gld" && <GldEconomyView />}
           {view === "commerce" && <CommerceView />}
           {view === "paid-rewards" && (
             <PaidRewardsView onOpenPlayer360={openPlayer360} />

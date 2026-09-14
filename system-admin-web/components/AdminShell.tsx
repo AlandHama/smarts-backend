@@ -45,6 +45,7 @@ export type AdminView =
   | "match360"
   | "progressions"
   | "economy"
+  | "gld"
   | "commerce"
   | "paid-rewards"
   | "leaderboards"
@@ -90,6 +91,11 @@ const navigation = [
   {
     key: "economy" as const,
     label: "Economy",
+    icon: <MonetizationOnRoundedIcon />,
+  },
+  {
+    key: "gld" as const,
+    label: "GLD economy",
     icon: <MonetizationOnRoundedIcon />,
   },
   {

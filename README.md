@@ -229,6 +229,14 @@ server timestamp, not from player storage or a client-supplied time. The
 default online window is five minutes and can be changed with
 `PRESENCE_ONLINE_WINDOW_SECONDS` (30–3600 seconds).
 
+The GLD operator dashboard is available at `/system-admin/gld/`. It shows the
+current GLD value, reserve and supply health, AdMob revenue backing, emission
+and burn totals, and effective GLD policy settings. Administrators can import
+mature AdMob revenue, reconcile supply, manually recalculate the economy, and
+use audited emergency controls to pause emissions, catalog sinks, gifts, or
+paid rewards. These controls are enforced by the corresponding server
+transactions.
+
 Phase 9B replaces Firebase reward/config authority. The mobile client reads the
 safe projection from `GET /configuration/public`; it must not calculate or
 credit rewards. Before showing a rewarded ad, call authenticated
