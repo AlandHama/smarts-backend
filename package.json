@@ -12,7 +12,8 @@
     "build": "prisma generate && nest build && next build system-admin-web",
     "migrate": "prisma migrate deploy",
     "migrate:dev": "prisma migrate dev",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "start:prod": "npm run migrate && node dist/main.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1123.0",
