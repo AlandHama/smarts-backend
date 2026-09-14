@@ -217,9 +217,11 @@ player wallet, records a `GldBurnEvent`, and grants the configured inventory or
 catalog rewards in the same transaction. For GLD-6 paid rewards, optionally
 set an asset metadata value such as `usdCostMicros` (or `usdCost` in dollars);
 otherwise `GLD_PAID_REWARD_DEFAULT_COST_USD_MICROS` is used. The server rounds
-the price upward using the safety margin, reserves GLD on request, refunds it
-through a `REFUND` wallet ledger entry on refusal, and burns it once when an
-administrator fulfills the request. The quote is available at
+the quote upward using the safety margin but does not debit the wallet when the
+request is submitted. GLD is charged and burned only when an administrator
+fulfills the request; refusal leaves a new request's wallet unchanged. The
+fulfilled reward's USD reserve cost is recorded as a negative treasury cost.
+The quote is available at
 `GET /commerce/paid-reward-quote/:assetKey`.
 
 Phase 7 storage uses organized object keys such as `player-avatar/{userId}/{uuid}.png`,

@@ -813,8 +813,7 @@ model PaidRewardRequest {
   assetDefinitionId String                  @db.Uuid
   assetVariationId  String?                 @db.Uuid
   status            PaidRewardRequestStatus @default(PENDING)
-  /// GLD reserved from the player when this request is created. Null is kept
-  /// for requests created before GLD-priced paid rewards were enabled.
+  /// GLD amount quoted for this request. It is charged only when fulfilled.
   gldPrice          BigInt?
   /// The GLD USD-micros price locked when the request was created.
   gldUnitPriceUsdMicros BigInt?
@@ -823,6 +822,8 @@ model PaidRewardRequest {
   reserveCostUsdMicros BigInt?
   /// The extra GLD charged above the reserve-cost conversion as the platform fee.
   gldFeeAmount      BigInt?
+  /// GLD actually debited at fulfillment. Null means the request was not charged.
+  gldChargedAmount  BigInt?
   gldRefundedAmount BigInt                  @default(0)
   requestKey        String                  @unique @db.VarChar(128)
   message           String?                 @db.VarChar(500)
