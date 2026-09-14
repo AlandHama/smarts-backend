@@ -498,6 +498,7 @@ export interface CommerceAsset {
   imageUrl: string | null;
   imageAlt: string | null;
   imageUrls?: string[] | null;
+  metadata?: Record<string, unknown> | null;
   active: boolean;
   variations?: Array<{ id: string; key: string; name: string | null }>;
 }

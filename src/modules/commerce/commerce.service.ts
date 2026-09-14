@@ -50,7 +50,7 @@ export class CommerceService {
   async createAsset(dto: CreateAssetDto) {
     const key = this.assetKey(dto.key)
     try {
-      const value = await this.prisma.assetDefinition.create({ data: { key, name: dto.name.trim(), description: dto.description, assetType: dto.assetType, ownershipPolicy: dto.ownershipPolicy, imageUrl: dto.imageUrl, imageAlt: dto.imageAlt, imageUrls: dto.imageUrls as Prisma.InputJsonValue | undefined, active: true, metadata: dto.metadata as Prisma.InputJsonValue | undefined } })
+      const value = await this.prisma.assetDefinition.create({ data: { key, name: dto.name.trim(), description: dto.description, assetType: dto.assetType, ownershipPolicy: dto.ownershipPolicy, imageUrl: dto.imageUrl, imageAlt: dto.imageAlt, imageUrls: dto.imageUrls as Prisma.InputJsonValue | undefined, active: true, metadata: this.assetMetadata(dto) } })
       return this.serialize(value)
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -63,7 +63,10 @@ export class CommerceService {
   async updateAsset(id: string, dto: UpdateAssetDto) {
     const key = dto.key === undefined ? undefined : this.assetKey(dto.key)
     try {
-      const value = await this.prisma.assetDefinition.update({ where: { id }, data: { ...(key === undefined ? {} : { key }), ...(dto.name === undefined ? {} : { name: dto.name.trim() }), ...(dto.description === undefined ? {} : { description: dto.description }), ...(dto.assetType === undefined ? {} : { assetType: dto.assetType }), ...(dto.ownershipPolicy === undefined ? {} : { ownershipPolicy: dto.ownershipPolicy }), ...(dto.imageUrl === undefined ? {} : { imageUrl: dto.imageUrl }), ...(dto.imageAlt === undefined ? {} : { imageAlt: dto.imageAlt }), ...(dto.imageUrls === undefined ? {} : { imageUrls: dto.imageUrls as Prisma.InputJsonValue }), ...(dto.active === undefined ? {} : { active: dto.active }), ...(dto.metadata === undefined ? {} : { metadata: dto.metadata as Prisma.InputJsonValue }) } })
+      const existing = await this.prisma.assetDefinition.findUnique({ where: { id }, select: { metadata: true } })
+      if (!existing) throw new NotFoundException("Asset definition not found")
+      const hasPricingUpdate = dto.paidRewardCostUsd !== undefined || dto.paidRewardProfitPercent !== undefined
+      const value = await this.prisma.assetDefinition.update({ where: { id }, data: { ...(key === undefined ? {} : { key }), ...(dto.name === undefined ? {} : { name: dto.name.trim() }), ...(dto.description === undefined ? {} : { description: dto.description }), ...(dto.assetType === undefined ? {} : { assetType: dto.assetType }), ...(dto.ownershipPolicy === undefined ? {} : { ownershipPolicy: dto.ownershipPolicy }), ...(dto.imageUrl === undefined ? {} : { imageUrl: dto.imageUrl }), ...(dto.imageAlt === undefined ? {} : { imageAlt: dto.imageAlt }), ...(dto.imageUrls === undefined ? {} : { imageUrls: dto.imageUrls as Prisma.InputJsonValue }), ...(dto.active === undefined ? {} : { active: dto.active }), ...(!dto.metadata && !hasPricingUpdate ? {} : { metadata: this.assetMetadata(dto, existing.metadata) }) } })
       return this.serialize(value)
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -199,13 +202,13 @@ export class CommerceService {
   }
 
   listPaidRewardRequests(userId: string) {
-    return this.prisma.paidRewardRequest.findMany({ where: { userId }, orderBy: { requestedAt: "desc" }, take: 100, include: { assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true } }, assetVariation: { select: { id: true, key: true, name: true } }, redeemCode: { select: { id: true, code: true, status: true, assignedAt: true } } } }).then(async (rows) => (await this.normalizeLegacyPaidRewardRows(rows)).map((row) => this.playerPaidReward(row)))
+    return this.prisma.paidRewardRequest.findMany({ where: { userId }, orderBy: { requestedAt: "desc" }, take: 100, include: { assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true, metadata: true } }, assetVariation: { select: { id: true, key: true, name: true } }, redeemCode: { select: { id: true, code: true, status: true, assignedAt: true } } } }).then(async (rows) => (await this.normalizeLegacyPaidRewardRows(rows)).map((row) => this.playerPaidReward(row)))
   }
 
   async listAdminPaidRewardRequests(status?: string) {
     const normalized = status?.trim().toUpperCase()
     if (normalized && !["PENDING", "FULFILLED", "REFUSED"].includes(normalized)) throw new BadRequestException("Paid reward request status is invalid")
-    const rows = await this.prisma.paidRewardRequest.findMany({ where: normalized ? { status: normalized as any } : undefined, orderBy: { requestedAt: "desc" }, take: 500, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true } }, assetVariation: { select: { id: true, key: true, name: true } }, redeemCode: { select: { id: true, code: true, status: true, assignedAt: true } }, decidedBy: { select: { id: true, username: true } } } })
+    const rows = await this.prisma.paidRewardRequest.findMany({ where: normalized ? { status: normalized as any } : undefined, orderBy: { requestedAt: "desc" }, take: 500, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true, metadata: true } }, assetVariation: { select: { id: true, key: true, name: true } }, redeemCode: { select: { id: true, code: true, status: true, assignedAt: true } }, decidedBy: { select: { id: true, username: true } } } })
     const normalizedRows = await this.normalizeLegacyPaidRewardRows(rows)
     return normalizedRows.map((row) => this.adminPaidReward(row))
   }
@@ -234,7 +237,7 @@ export class CommerceService {
       // an obviously inflated GLD amount (for example 806452 for a 20 GLD
       // catalog item). Repair only that legacy shape; valid locked requests
       // keep their original price.
-      const hasInflatedLegacyPrice = quote.pricingSource === "CATALOG_GLD_PRICE"
+      const hasInflatedLegacyPrice = quote.pricingSource !== "USD_COST_FALLBACK"
         && (request.gldPrice ?? 0n) > quote.baseGldPrice * 100n
       const effectiveGldPrice = hasInflatedLegacyPrice ? quote.gldPrice : request.gldPrice
       const effectiveFeeGldAmount = hasInflatedLegacyPrice ? quote.feeGldAmount : request.gldFeeAmount
@@ -318,6 +321,13 @@ export class CommerceService {
     if (typeof metadata.redemptionKey === "string" && metadata.redemptionKey) throw new ConflictException("This inventory item already has a redeem code")
     return tx.inventoryItem.update({ where: { id: item.id }, data: { metadata: { ...metadata, requestId, redemptionKey: code, redeemCode: code, actorId, reason: adminNote?.trim() || "Paid reward request approved" } as Prisma.InputJsonValue } })
   }
+  private assetMetadata(input: CreateAssetDto | UpdateAssetDto, existing?: unknown) {
+    const base = existing && typeof existing === "object" && !Array.isArray(existing) ? existing as Record<string, unknown> : {}
+    const metadata = { ...base, ...(input.metadata ?? {}) }
+    if (input.paidRewardCostUsd !== undefined) metadata.paidRewardCostUsd = input.paidRewardCostUsd.trim()
+    if (input.paidRewardProfitPercent !== undefined) metadata.paidRewardProfitPercent = input.paidRewardProfitPercent
+    return Object.keys(metadata).length ? metadata as Prisma.InputJsonValue : undefined
+  }
   private date(value?: string) { return value ? new Date(value) : undefined }
   private assetKey(value: string) { return value.trim().toLowerCase() }
   private isAvailable(startsAt: Date | null, endsAt: Date | null) { const now = Date.now(); return (!startsAt || startsAt.getTime() <= now) && (!endsAt || endsAt.getTime() > now) }
@@ -329,29 +339,30 @@ export class CommerceService {
     const displayedValueUsdMicros = state?.displayedValueUsdMicros ?? config.initialPriceUsdMicros
     const catalogGldPrice = await tx.catalogPrice.findFirst({ where: { active: true, amount: { gt: 0n }, currency: { code: "GLD", active: true }, catalogItem: { assetDefinitionId: asset.id, active: true, purchasable: true, catalog: { active: true } } }, orderBy: { updatedAt: "desc" }, select: { amount: true } })
     const metadata = asset.metadata && typeof asset.metadata === "object" && !Array.isArray(asset.metadata) ? asset.metadata as Record<string, unknown> : {}
-    const rawCost = metadata.usdCostMicros ?? metadata.costUsdMicros ?? metadata.rewardCostUsdMicros ?? metadata.usdValueMicros
-    let usdCostMicros = typeof rawCost === "string" && /^\d+$/.test(rawCost) ? BigInt(rawCost) : typeof rawCost === "number" && Number.isSafeInteger(rawCost) ? BigInt(rawCost) : null
-    if (usdCostMicros === null && typeof metadata.usdCost === "number" && Number.isFinite(metadata.usdCost)) usdCostMicros = BigInt(Math.ceil(metadata.usdCost * 1_000_000))
-    if (usdCostMicros === null && typeof metadata.usdCost === "string" && /^\d+(\.\d{1,6})?$/.test(metadata.usdCost)) usdCostMicros = BigInt(Math.ceil(Number(metadata.usdCost) * 1_000_000))
-    usdCostMicros = usdCostMicros && usdCostMicros > 0n ? usdCostMicros : config.paidRewardDefaultCostUsdMicros
+    const configuredUsdCostMicros = this.paidRewardUsdCostMicros(metadata)
+    const usdCostMicros = configuredUsdCostMicros ?? config.paidRewardDefaultCostUsdMicros
     const safeDisplayedValue = displayedValueUsdMicros > 0n ? displayedValueUsdMicros : config.initialPriceUsdMicros
-    // Both values are USD micros, so their direct ratio is the GLD amount.
-    const baseGldPrice = catalogGldPrice?.amount ?? (usdCostMicros + safeDisplayedValue - 1n) / safeDisplayedValue
-    const marginGldPrice = (baseGldPrice * BigInt(config.paidRewardSafetyMarginBps) + 10_000n - 1n) / 10_000n
-    const directGldPrice = (usdCostMicros * BigInt(config.paidRewardSafetyMarginBps) + safeDisplayedValue - 1n) / safeDisplayedValue
-    const gldPrice = catalogGldPrice ? marginGldPrice : [baseGldPrice, marginGldPrice, directGldPrice].reduce((maximum, value) => value > maximum ? value : maximum, 0n)
-    const reserveCostUsdMicros = this.gldToUsdMicros(baseGldPrice, safeDisplayedValue)
+    // GLD and the configured asset cost are both represented in USD micros.
+    // The asset cost is exact; only the player-facing GLD amount is rounded up.
+    const pricingSource = configuredUsdCostMicros !== null ? "USD_COST" : catalogGldPrice ? "CATALOG_GLD_PRICE" : "USD_COST_FALLBACK"
+    const baseGldPrice = configuredUsdCostMicros !== null ? this.ceilDivide(usdCostMicros, safeDisplayedValue) : catalogGldPrice?.amount ?? this.ceilDivide(usdCostMicros, safeDisplayedValue)
+    const configuredProfitPercent = this.paidRewardProfitPercent(metadata)
+    const profitPercent = configuredProfitPercent ?? Math.max(0, (config.paidRewardSafetyMarginBps - 10_000) / 100)
+    const profitBps = BigInt(Math.round(profitPercent * 100))
+    const gldPrice = this.ceilDivide(baseGldPrice * (10_000n + profitBps), 10_000n)
+    const reserveCostUsdMicros = configuredUsdCostMicros !== null ? configuredUsdCostMicros : catalogGldPrice ? this.gldToUsdMicros(baseGldPrice, safeDisplayedValue) : usdCostMicros
     const feeGldAmount = gldPrice > baseGldPrice ? gldPrice - baseGldPrice : 0n
     const availableCodes = await tx.assetRedeemCode.count({ where: { assetDefinitionId: asset.id, assetVariationId: variationId, status: "AVAILABLE" } })
     const blockedByHealth = config.paidRewardPauseOnCritical && (state?.health ?? "CRITICAL") === "CRITICAL"
     const reason = controls.paidRewardsPaused ? "Paid rewards are temporarily paused by an administrator" : blockedByHealth ? "Paid rewards are temporarily paused while the GLD reserve is critical" : availableCodes < 1 ? "This asset is temporarily out of redeem codes" : "Eligible"
-    return { gldPrice: gldPrice > 0n ? gldPrice : 1n, baseGldPrice, feeGldAmount, reserveCostUsdMicros, pricingSource: catalogGldPrice ? "CATALOG_GLD_PRICE" : "USD_COST_FALLBACK", currencyCode: "GLD", usdCostMicros, displayedValueUsdMicros: safeDisplayedValue, safetyMarginBps: config.paidRewardSafetyMarginBps, economyHealth: state?.health ?? "CRITICAL", availableCodes, eligible: !controls.paidRewardsPaused && !blockedByHealth && availableCodes > 0, reason }
+    return { gldPrice: gldPrice > 0n ? gldPrice : 1n, baseGldPrice, feeGldAmount, reserveCostUsdMicros, pricingSource, currencyCode: "GLD", usdCostMicros, displayedValueUsdMicros: safeDisplayedValue, profitPercent, safetyMarginBps: config.paidRewardSafetyMarginBps, economyHealth: state?.health ?? "CRITICAL", availableCodes, eligible: !controls.paidRewardsPaused && !blockedByHealth && availableCodes > 0, reason }
   }
   private playerPaidReward(row: any) { const gldPrice = row.gldPrice ?? null; const refunded = row.gldRefundedAmount ?? 0n; const fee = row.gldFeeAmount ?? null; const base = gldPrice !== null && fee !== null && gldPrice >= fee ? gldPrice - fee : null; return this.serialize({ id: row.id, status: row.status, requestKey: row.requestKey, inventoryItemId: row.inventoryItemId, message: row.message, adminNote: row.adminNote, gldPrice, gldBasePrice: base, gldUnitPriceUsdMicros: row.gldUnitPriceUsdMicros ?? null, reserveCostUsdMicros: row.reserveCostUsdMicros ?? null, gldFeeAmount: fee, gldChargedAmount: row.gldChargedAmount ?? null, gldRefundedAmount: refunded, gldStatus: row.status === "REFUSED" && refunded > 0n ? "REFUNDED" : row.status === "FULFILLED" ? "SPENT" : gldPrice !== null ? "NOT_CHARGED" : "LEGACY", requestedAt: row.requestedAt, decidedAt: row.decidedAt, asset: row.assetDefinition ? { id: row.assetDefinition.id, key: row.assetDefinition.key, name: row.assetDefinition.name, imageUrl: row.assetDefinition.imageUrl } : undefined, variation: row.assetVariation ? { id: row.assetVariation.id, key: row.assetVariation.key, name: row.assetVariation.name } : null, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
   private adminPaidReward(row: any) { return this.serialize({ ...this.playerPaidReward(row), user: row.user, adminNote: row.adminNote, decidedBy: row.decidedBy, inventoryItemId: row.inventoryItemId, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
-  private async normalizeLegacyPaidRewardRows<T extends { status: string; gldPrice: bigint | null; gldFeeAmount: bigint | null; assetDefinitionId: string }>(rows: T[]) {
+  private async normalizeLegacyPaidRewardRows<T extends { status: string; gldPrice: bigint | null; gldFeeAmount: bigint | null; gldUnitPriceUsdMicros?: bigint | null; reserveCostUsdMicros?: bigint | null; assetDefinitionId: string; assetDefinition?: { metadata?: unknown } | null }>(rows: T[]) {
     const pendingRows = rows.filter((row) => row.status === "PENDING" && row.gldPrice !== null)
     if (!pendingRows.length) return rows
+    const state = await this.prisma.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { displayedValueUsdMicros: true } })
     const prices = await this.prisma.catalogPrice.findMany({ where: { active: true, amount: { gt: 0n }, currency: { code: "GLD", active: true }, catalogItem: { assetDefinitionId: { in: [...new Set(pendingRows.map((row) => row.assetDefinitionId))] }, active: true, purchasable: true, catalog: { active: true } } }, orderBy: { updatedAt: "desc" }, select: { amount: true, catalogItem: { select: { assetDefinitionId: true } } } })
     const baseByAsset = new Map<string, bigint>()
     for (const price of prices) {
@@ -360,11 +371,42 @@ export class CommerceService {
     }
     const config = getGldConfig()
     return rows.map((row) => {
-      const base = baseByAsset.get(row.assetDefinitionId)
+      const configuredUsdCostMicros = this.paidRewardUsdCostMicros(row.assetDefinition?.metadata)
+      const unitPrice = state?.displayedValueUsdMicros ?? row.gldUnitPriceUsdMicros ?? 0n
+      const configuredBase = configuredUsdCostMicros !== null && unitPrice > 0n ? this.ceilDivide(configuredUsdCostMicros, unitPrice) : null
+      const base = configuredBase ?? baseByAsset.get(row.assetDefinitionId)
       if (row.status !== "PENDING" || !base || !row.gldPrice || row.gldPrice <= base * 100n) return row
-      const charged = (base * BigInt(config.paidRewardSafetyMarginBps) + 10_000n - 1n) / 10_000n
-      return { ...row, gldPrice: charged, gldFeeAmount: charged - base }
+      const profitPercent = this.paidRewardProfitPercent(row.assetDefinition?.metadata) ?? Math.max(0, (config.paidRewardSafetyMarginBps - 10_000) / 100)
+      const charged = this.ceilDivide(base * (10_000n + BigInt(Math.round(profitPercent * 100))), 10_000n)
+      const reserveCost = configuredUsdCostMicros ?? (unitPrice > 0n ? this.gldToUsdMicros(base, unitPrice) : row.reserveCostUsdMicros)
+      return { ...row, gldPrice: charged, gldFeeAmount: charged - base, reserveCostUsdMicros: reserveCost }
     })
   }
+  private paidRewardUsdCostMicros(metadataValue: unknown) {
+    const metadata = metadataValue && typeof metadataValue === "object" && !Array.isArray(metadataValue) ? metadataValue as Record<string, unknown> : {}
+    const configured = typeof metadata.paidRewardCostUsd === "string" ? this.usdToMicros(metadata.paidRewardCostUsd) : null
+    if (configured !== null && configured > 0n) return configured
+    const raw = metadata.paidRewardCostUsdMicros ?? metadata.usdCostMicros ?? metadata.costUsdMicros ?? metadata.rewardCostUsdMicros ?? metadata.usdValueMicros
+    if (typeof raw === "string" && /^\d+$/.test(raw) && BigInt(raw) > 0n) return BigInt(raw)
+    if (typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0) return BigInt(raw)
+    if (typeof metadata.usdCost === "string") {
+      const parsed = this.usdToMicros(metadata.usdCost)
+      if (parsed !== null && parsed > 0n) return parsed
+    }
+    if (typeof metadata.usdCost === "number" && Number.isFinite(metadata.usdCost) && metadata.usdCost > 0) return BigInt(Math.ceil(metadata.usdCost * 1_000_000))
+    return null
+  }
+  private paidRewardProfitPercent(metadataValue: unknown) {
+    const metadata = metadataValue && typeof metadataValue === "object" && !Array.isArray(metadataValue) ? metadataValue as Record<string, unknown> : {}
+    const raw = metadata.paidRewardProfitPercent
+    const value = typeof raw === "number" && Number.isInteger(raw) ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : null
+    return value !== null && value >= 0 && value <= 1000 ? value : null
+  }
+  private usdToMicros(value: string) {
+    const match = value.trim().match(/^(\d+)(?:\.(\d{0,6}))?$/)
+    if (!match) return null
+    return BigInt(match[1]) * 1_000_000n + BigInt((match[2] ?? "").padEnd(6, "0") || "0")
+  }
+  private ceilDivide(numerator: bigint, denominator: bigint) { return denominator > 0n ? (numerator + denominator - 1n) / denominator : 0n }
   private gldToUsdMicros(gldAmount: bigint, unitPriceUsdMicros: bigint) { return (gldAmount * unitPriceUsdMicros + 1_000_000n - 1n) / 1_000_000n }
 }

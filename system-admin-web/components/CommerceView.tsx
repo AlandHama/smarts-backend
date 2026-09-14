@@ -85,6 +85,17 @@ function AssetDialog({
   const [error, setError] = useState("");
   const [primaryFile, setPrimaryFile] = useState<File[]>([]);
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const metadata =
+    asset?.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const paidRewardCostUsd =
+    typeof metadata.paidRewardCostUsd === "string"
+      ? metadata.paidRewardCostUsd
+      : "";
+  const paidRewardProfitPercent =
+    typeof metadata.paidRewardProfitPercent === "number" ||
+    typeof metadata.paidRewardProfitPercent === "string"
+      ? String(metadata.paidRewardProfitPercent)
+      : "";
   return (
     <Dialog open fullWidth maxWidth="md" onClose={onClose}>
       <DialogTitle>
@@ -121,6 +132,10 @@ function AssetDialog({
               imageUrl: primaryUpload?.url ?? asset?.imageUrl ?? undefined,
               imageAlt: field(form, "imageAlt") || undefined,
               imageUrls: galleryUploads.length ? [...(asset?.imageUrls ?? []), ...galleryUploads.map((upload) => upload.url)] : (asset?.imageUrls ?? undefined),
+              paidRewardCostUsd: field(form, "paidRewardCostUsd") || undefined,
+              paidRewardProfitPercent: field(form, "paidRewardProfitPercent")
+                ? Number(field(form, "paidRewardProfitPercent"))
+                : undefined,
             };
             await api(
               asset ? `/commerce/assets/${asset.id}` : "/commerce/assets",
@@ -184,6 +199,27 @@ function AssetDialog({
                   <MenuItem value="STACKABLE">Stackable</MenuItem>
                   <MenuItem value="UNIQUE">Unique instances</MenuItem>
                 </Select>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  name="paidRewardCostUsd"
+                  label="Paid reward cost (USD)"
+                  defaultValue={paidRewardCostUsd}
+                  placeholder="0.014"
+                  helperText="Your real code cost. New requests convert it to GLD using the current GLD value."
+                  fullWidth
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  name="paidRewardProfitPercent"
+                  label="Paid reward profit (%)"
+                  type="number"
+                  defaultValue={paidRewardProfitPercent}
+                  inputProps={{ min: 0, max: 1000, step: 1 }}
+                  helperText="Added to the player GLD charge; the reserve cost remains the USD cost above."
+                  fullWidth
+                />
               </Grid>
               <Grid size={12}>
                 <TextField

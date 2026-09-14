@@ -17,6 +17,10 @@ export class CreateAssetDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(160) imageAlt?: string
   @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) imageUrls?: string[]
   @ApiPropertyOptional({ type: Object }) @IsOptional() @IsObject() metadata?: Record<string, unknown>
+  @ApiPropertyOptional({ example: "0.014", description: "Real USD cost of one paid reward. The player GLD price is derived from this value." }) @IsOptional() @IsString() @Matches(/^\d+(\.\d{1,6})?$/)
+  paidRewardCostUsd?: string
+  @ApiPropertyOptional({ example: 20, description: "Profit percentage added to the USD cost when calculating the player GLD charge." }) @IsOptional() @IsInt() @Min(0) @Max(1000)
+  paidRewardProfitPercent?: number
 }
 
 export class UpdateAssetDto extends PartialType(CreateAssetDto) {
