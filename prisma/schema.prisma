@@ -407,6 +407,7 @@ model User {
   paidRewardRequests         PaidRewardRequest[]
   paidRewardDecisions        PaidRewardRequest[]     @relation("PaidRewardRequestDecider")
   gldControlUpdates          GldAdminControl[]       @relation("GldControlUpdater")
+  gldManualBackings          GldManualBacking[]      @relation("GldManualBackingCreator")
   assignedRedeemCodes        AssetRedeemCode[]       @relation("RedeemCodeAssignedUser")
   gldBurnEvents              GldBurnEvent[]
   gldDailyAdStates           GldPlayerDailyAdState[]
@@ -1698,17 +1699,34 @@ model GldPlayerDailyAdState {
 /// negative only for a documented restatement adjustment.
 model GldTreasuryEntry {
   id                String               @id @default(uuid()) @db.Uuid
-  revenueSnapshotId String               @db.Uuid
+  revenueSnapshotId String?              @db.Uuid
+  manualBackingId   String?              @unique @db.Uuid
   entryType         GldTreasuryEntryType
   amountUsdMicros   BigInt
   currencyCode      String               @default("USD") @db.Char(3)
   idempotencyKey    String               @unique @db.VarChar(160)
   metadata          Json?
   createdAt         DateTime             @default(now())
-  revenueSnapshot   GldRevenueSnapshot   @relation(fields: [revenueSnapshotId], references: [id], onDelete: Restrict)
+  revenueSnapshot   GldRevenueSnapshot?  @relation(fields: [revenueSnapshotId], references: [id], onDelete: Restrict)
+  manualBacking     GldManualBacking?    @relation(fields: [manualBackingId], references: [id], onDelete: Restrict)
 
   @@index([revenueSnapshotId, entryType])
   @@index([createdAt])
+}
+
+/// Administrator-supplied reserve backing, kept separate from AdMob revenue.
+model GldManualBacking {
+  id              String            @id @default(uuid()) @db.Uuid
+  amountUsdMicros BigInt
+  reason          String            @db.VarChar(500)
+  idempotencyKey  String            @unique @db.VarChar(160)
+  createdById     String            @db.Uuid
+  createdAt       DateTime          @default(now())
+  createdBy       User              @relation("GldManualBackingCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  treasuryEntry   GldTreasuryEntry?
+
+  @@index([createdAt])
+  @@index([createdById, createdAt])
 }
 
 /// One tenant-wide AdMob OAuth connection. The refresh token is encrypted at

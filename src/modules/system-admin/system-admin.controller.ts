@@ -27,6 +27,7 @@ import { GldRevenueService } from "../gld/gld.revenue.service"
 import { GldReconciliationService } from "../gld/gld.reconciliation.service"
 import { UpdateGldControlsDto } from "../gld/dtos/gld-admin.dto"
 import { GldSimulationDto } from "../gld/dtos/gld-simulation.dto"
+import { GldManualBackingDto } from "../gld/dtos/gld-manual-backing.dto"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -197,6 +198,15 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Simulate a GLD price from reserve and circulating supply without changing the economy" })
   gldSimulate(@Body() dto: GldSimulationDto) { return this.gldService.simulate(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/gld/backing")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Add audited administrator-supplied reserve backing to GLD" })
+  async gldManualBacking(@Body() dto: GldManualBackingDto, @CurrentUser() admin: UserResponseDto) {
+    const backing = await this.gldService.addManualBacking(dto, admin.id)
+    return { backing, economy: await this.gldService.recalculate("manual-backing") }
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/gld/revenue/materialize")

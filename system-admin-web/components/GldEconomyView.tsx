@@ -51,6 +51,13 @@ type GldData = {
     rewardBackingUsdMicros: string;
     recognitionStatus: string;
   }>;
+  manualBackings: Array<{
+    id: string;
+    amountUsdMicros: string;
+    reason: string;
+    createdAt: string;
+    createdBy: { username: string; email: string | null };
+  }>;
   metrics: {
     emissionDay: {
       emittedAmount: string;
@@ -64,6 +71,7 @@ type GldData = {
       reserveAddedUsdMicros: string;
       snapshots: number;
     };
+    manualBacking: { totalUsdMicros: string; count: number };
   };
 };
 
@@ -110,6 +118,10 @@ export function GldEconomyView() {
   const [simulation, setSimulation] = useState<GldSimulation | null>(null);
   const [simulationError, setSimulationError] = useState("");
   const [simulationLoading, setSimulationLoading] = useState(false);
+  const [backingAmount, setBackingAmount] = useState("");
+  const [backingReason, setBackingReason] = useState("");
+  const [backingError, setBackingError] = useState("");
+  const [backingLoading, setBackingLoading] = useState(false);
   const load = async () => {
     setLoading(true);
     try {
@@ -177,6 +189,32 @@ export function GldEconomyView() {
       );
     } finally {
       setSimulationLoading(false);
+    }
+  };
+  const addBacking = async () => {
+    setBackingLoading(true);
+    setBackingError("");
+    try {
+      await api("/gld/backing", {
+        method: "POST",
+        body: JSON.stringify({
+          amountUsd: backingAmount,
+          reason: backingReason,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      });
+      setBackingAmount("");
+      setBackingReason("");
+      setMessage("Manual reserve backing added and GLD recalculated.");
+      await load();
+    } catch (reason) {
+      setBackingError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to add manual backing",
+      );
+    } finally {
+      setBackingLoading(false);
     }
   };
   const chartRows = useMemo(
@@ -265,6 +303,10 @@ export function GldEconomyView() {
             {[
               ["1 GLD value", usdValue(data.state.displayedValueUsdMicros)],
               ["Reserve", usdValue(data.state.treasuryReserveUsdMicros)],
+              [
+                "Manual backing",
+                usdValue(data.metrics.manualBacking.totalUsdMicros),
+              ],
               ["Circulating supply", numberValue(data.state.circulatingSupply)],
               [
                 "Reserve ratio",
@@ -387,6 +429,82 @@ export function GldEconomyView() {
               </Card>
             </Grid>
           </Grid>
+          <Card sx={{ p: { xs: 2, md: 3 } }}>
+            <Typography variant="h6" fontWeight={800}>
+              Additional reserve backing
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Add external reserve backing to the live GLD treasury. Every entry
+              is permanent, attributed to your admin account, and included in
+              the next price calculation.
+            </Typography>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Amount (USD)"
+                  value={backingAmount}
+                  onChange={(event) => setBackingAmount(event.target.value)}
+                  helperText="Up to 6 decimal places"
+                  inputProps={{ inputMode: "decimal" }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 5 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Reason / source"
+                  value={backingReason}
+                  onChange={(event) => setBackingReason(event.target.value)}
+                  inputProps={{ maxLength: 500 }}
+                />
+              </Grid>
+              <Grid
+                size={{ xs: 12, sm: 3 }}
+                sx={{ display: "flex", alignItems: "flex-start" }}
+              >
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={() => void addBacking()}
+                  disabled={
+                    backingLoading || !backingAmount || !backingReason.trim()
+                  }
+                >
+                  {backingLoading ? "Adding…" : "Add backing"}
+                </Button>
+              </Grid>
+            </Grid>
+            {backingError && (
+              <Typography color="error.main" sx={{ mt: 1.5 }}>
+                {backingError}
+              </Typography>
+            )}
+            {data.manualBackings.length > 0 && (
+              <Stack spacing={0.8} sx={{ mt: 2 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Recent manual backing entries
+                </Typography>
+                {data.manualBackings.slice(0, 5).map((entry) => (
+                  <Stack
+                    key={entry.id}
+                    direction={{ xs: "column", sm: "row" }}
+                    justifyContent="space-between"
+                    spacing={0.5}
+                  >
+                    <Typography variant="body2">
+                      {usdValue(entry.amountUsdMicros)} · {entry.reason}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {entry.createdBy.username} ·{" "}
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
+            )}
+          </Card>
           <Card sx={{ p: { xs: 2, md: 3 } }}>
             <Typography variant="h6" fontWeight={800}>
               GLD policy settings

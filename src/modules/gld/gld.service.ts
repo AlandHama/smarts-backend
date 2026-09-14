@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common"
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common"
 import { Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
@@ -6,6 +6,7 @@ import { getGldConfig } from "./gld.config"
 import { GldRevenueService } from "./gld.revenue.service"
 import { UpdateGldControlsDto } from "./dtos/gld-admin.dto"
 import { GldSimulationDto } from "./dtos/gld-simulation.dto"
+import { GldManualBackingDto } from "./dtos/gld-manual-backing.dto"
 import { writeAdminAudit } from "../../common/helpers/admin-audit"
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -90,16 +91,36 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     const config = getGldConfig()
     const dateKey = new Date().toISOString().slice(0, 10)
     const dayStart = new Date(`${dateKey}T00:00:00.000Z`)
-    const [snapshots, revenueSnapshots, controls, emissionDay, burnTotals, revenueTotals] = await Promise.all([
+    const [snapshots, revenueSnapshots, controls, emissionDay, burnTotals, revenueTotals, manualBackings, manualBackingTotals] = await Promise.all([
       this.prisma.gldEconomySnapshot.findMany({ orderBy: { createdAt: "desc" }, take: 30 }),
       this.revenue.listSnapshots(30),
       this.prisma.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} }),
       this.prisma.gldEmissionDay.findUnique({ where: { dateKey } }),
       this.prisma.gldBurnEvent.aggregate({ _sum: { amount: true }, _count: { id: true } }),
       this.prisma.gldRevenueSnapshot.aggregate({ where: { recognitionStatus: { in: ["RECOGNIZED", "RESTATED"] } }, _sum: { grossAdRevenueUsdMicros: true, rewardBackingUsdMicros: true, reserveAddedUsdMicros: true }, _count: { id: true } }),
+      this.prisma.gldManualBacking.findMany({ orderBy: { createdAt: "desc" }, take: 25, include: { createdBy: { select: { id: true, username: true, email: true } } } }),
+      this.prisma.gldManualBacking.aggregate({ _sum: { amountUsdMicros: true }, _count: { id: true } }),
     ])
     const todayBurns = await this.prisma.gldBurnEvent.aggregate({ where: { createdAt: { gte: dayStart } }, _sum: { amount: true }, _count: { id: true } })
-    return this.serialize({ state, config, controls, snapshots, revenueSnapshots, metrics: { dateKey, emissionDay, burns: { total: burnTotals._sum.amount ?? 0n, count: burnTotals._count.id, today: todayBurns._sum.amount ?? 0n, todayCount: todayBurns._count.id }, revenue: { grossAdRevenueUsdMicros: revenueTotals._sum.grossAdRevenueUsdMicros ?? 0n, rewardBackingUsdMicros: revenueTotals._sum.rewardBackingUsdMicros ?? 0n, reserveAddedUsdMicros: revenueTotals._sum.reserveAddedUsdMicros ?? 0n, snapshots: revenueTotals._count.id } } })
+    return this.serialize({ state, config, controls, snapshots, revenueSnapshots, manualBackings, metrics: { dateKey, emissionDay, burns: { total: burnTotals._sum.amount ?? 0n, count: burnTotals._count.id, today: todayBurns._sum.amount ?? 0n, todayCount: todayBurns._count.id }, revenue: { grossAdRevenueUsdMicros: revenueTotals._sum.grossAdRevenueUsdMicros ?? 0n, rewardBackingUsdMicros: revenueTotals._sum.rewardBackingUsdMicros ?? 0n, reserveAddedUsdMicros: revenueTotals._sum.reserveAddedUsdMicros ?? 0n, snapshots: revenueTotals._count.id }, manualBacking: { totalUsdMicros: manualBackingTotals._sum.amountUsdMicros ?? 0n, count: manualBackingTotals._count.id } } })
+  }
+
+  async addManualBacking(dto: GldManualBackingDto, actorId: string) {
+    const amountUsdMicros = this.parseUsd(dto.amountUsd)
+    const reason = dto.reason.trim()
+    const idempotencyKey = dto.idempotencyKey.trim()
+    if (amountUsdMicros <= 0n) throw new BadRequestException("Manual backing must be greater than zero")
+    if (!reason) throw new BadRequestException("A reason is required for manual backing")
+    if (!idempotencyKey) throw new BadRequestException("An idempotency key is required")
+    const backing = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.gldManualBacking.findUnique({ where: { idempotencyKey } })
+      if (existing) return existing
+      const created = await tx.gldManualBacking.create({ data: { amountUsdMicros, reason, idempotencyKey, createdById: actorId } })
+      await tx.gldTreasuryEntry.create({ data: { manualBackingId: created.id, entryType: "RESERVE", amountUsdMicros, idempotencyKey: `manual-backing:${created.id}`, metadata: { source: "ADMIN_MANUAL_BACKING", reason } } })
+      await writeAdminAudit(tx, { actorId, action: "GLD_MANUAL_BACKING_ADDED", entityType: "GldManualBacking", entityId: created.id, reason, metadata: { amountUsdMicros: amountUsdMicros.toString(), source: "ADMIN_MANUAL_BACKING" } })
+      return created
+    })
+    return this.serialize(backing)
   }
 
   async updateControls(dto: UpdateGldControlsDto, actorId: string) {
@@ -176,6 +197,11 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
   private smooth(previous: bigint, target: bigint, factorBps: number) { return previous + ((target - previous) * BigInt(factorBps)) / 10_000n }
   private health(ratio: number) { return ratio >= 12_000 ? "VERY_HEALTHY" : ratio >= 10_000 ? "HEALTHY" : ratio >= 8_000 ? "CAUTION" : ratio >= 6_000 ? "RESTRICTED" : "CRITICAL" }
   private changeBps(current: bigint, historical?: bigint) { return !historical || historical === 0n ? 0 : Number(((current - historical) * 10_000n) / historical) }
+  private parseUsd(value: string) {
+    const match = value.trim().match(/^(\d+)(?:\.(\d{0,6}))?$/)
+    if (!match) throw new BadRequestException("Manual backing must be a valid USD amount with up to 6 decimal places")
+    return BigInt(match[1]) * 1_000_000n + BigInt((match[2] ?? "").padEnd(6, "0") || "0")
+  }
   private formatUsd(micros: bigint) { return `$${(micros / 1_000_000n).toString()}.${(micros % 1_000_000n).toString().padStart(6, "0").padEnd(10, "0")}` }
   private serialize(value: unknown): any {
     if (typeof value === "bigint") return value.toString()
