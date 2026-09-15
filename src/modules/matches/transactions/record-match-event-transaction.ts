@@ -1,20 +1,22 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash } from "node:crypto"
-import { Prisma, MatchEventType } from "@prisma/client"
+import { Prisma, MatchEventType, WalletTransactionSourceType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { MatchEventDto } from "../dtos"
 import { BotGameplayService } from "../bot-gameplay.service"
+import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { hashMatchEventRequest, jsonByteLength } from "../utilities/server-content"
 
 const MAX_EVENT_PAYLOAD_BYTES = 8 * 1024
 const MAX_EVENT_SEQUENCE = 1_000_000
 const ANSWER_KEYS = new Set(["assignmentId", "assignmentToken", "selectedAnswerIndex", "timeTakenMs"])
+const SKIP_KEYS = new Set(["assignmentId", "assignmentToken", "timeTakenMs"])
 
 @Injectable()
 export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: string; userId: string; dto: MatchEventDto }, any> {
-  constructor(prisma: PrismaService, private readonly botGameplay: BotGameplayService) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly botGameplay: BotGameplayService, private readonly debitWallet: DebitWalletTransaction) { super(prisma) }
 
   protected async execute(input: { matchId: string; userId: string; dto: MatchEventDto }, transaction: Prisma.TransactionClient) {
     const clientEventId = input.dto.clientEventId.trim()
@@ -57,6 +59,7 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
 
     if (input.dto.eventType === MatchEventType.SCORE_UPDATE) return this.reject(transaction, base, "Score updates are derived by the server from accepted answers")
     if (input.dto.eventType === MatchEventType.ANSWER) return this.answer(transaction, match, participant, round.id, base, input.dto.payload)
+    if (input.dto.eventType === MatchEventType.SKIP) return this.skip(transaction, match, participant, round.id, base, input.dto.payload)
 
     if ([MatchEventType.READY, MatchEventType.HEARTBEAT, MatchEventType.FINISH, MatchEventType.LEAVE, MatchEventType.FORFEIT].includes(input.dto.eventType)) {
       if (input.dto.payload && Object.keys(input.dto.payload).length) return this.reject(transaction, base, "This event type does not accept a payload")
@@ -111,6 +114,47 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     if (after > 2147483647n) return this.reject(transaction, base, "Score exceeds the game limit")
 
     const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, selectedAnswerIndex, correct, pointsEarned: points.toString(), timeTakenMs } } })
+    await transaction.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: Number(after), answeredCount: { increment: 1 } } })
+    await transaction.matchContentAssignment.update({ where: { id: assignment.id }, data: { answeredAt: now } })
+    return event
+  }
+
+  private async skip(transaction: Prisma.TransactionClient, match: any, participant: any, roundId: string, base: any, payload?: Record<string, unknown>) {
+    if (!payload || Object.keys(payload).some((key) => !SKIP_KEYS.has(key))) return this.reject(transaction, base, "Skip payload is invalid")
+    const assignmentId = typeof payload.assignmentId === "string" ? payload.assignmentId.trim() : ""
+    const token = typeof payload.assignmentToken === "string" ? payload.assignmentToken : ""
+    const timeTakenMs = typeof payload.timeTakenMs === "number" ? payload.timeTakenMs : -1
+    if (!isUuid(assignmentId) || token.length < 16 || token.length > 256 || !Number.isSafeInteger(timeTakenMs)) return this.reject(transaction, base, "Skip payload is invalid")
+
+    const assignment = await transaction.matchContentAssignment.findFirst({ where: { id: assignmentId, matchId: match.id, roundId, participantId: participant.id }, include: { contentItem: true } })
+    if (!assignment || createHash("sha256").update(token).digest("hex") !== assignment.assignmentTokenHash) return this.reject(transaction, base, "Invalid assignment")
+    if (assignment.answeredAt) return this.reject(transaction, base, "Assignment was already answered")
+    const now = new Date()
+    if (assignment.expiresAt && assignment.expiresAt <= now) return this.reject(transaction, base, "Match answer window has expired")
+    if (timeTakenMs < 0 || timeTakenMs > (match.gameConfig?.maxAnswerTimeSeconds ?? 0) * 1000) return this.reject(transaction, base, "Answer time is outside the allowed window")
+
+    const answeredCount = await transaction.matchContentAssignment.count({ where: { matchId: match.id, roundId, participantId: participant.id, answeredAt: { not: null } } })
+    if (assignment.position !== answeredCount) return this.reject(transaction, base, "Assignments must be answered in order")
+    const pointsConfig = (match.gameConfig?.correctAnswerPoints ?? {}) as Record<string, unknown>
+    const correctPoints = Number(pointsConfig[String(assignment.contentItem.difficulty)] ?? pointsConfig["1"] ?? 0)
+    const price = BigInt(match.gameConfig?.instantSkipPriceGld ?? 0)
+    if (!Number.isSafeInteger(correctPoints) || correctPoints <= 0) return this.reject(transaction, base, "Game scoring is not configured")
+    if (price <= 0n) return this.reject(transaction, base, "Instant skip is not enabled for this game")
+    if (!Number.isInteger(match.gameConfig?.wrongAnswerPenaltyPercent) || match.gameConfig.wrongAnswerPenaltyPercent < 0 || match.gameConfig.wrongAnswerPenaltyPercent > 100) return this.reject(transaction, base, "Game scoring is not configured")
+
+    const locked = await transaction.matchParticipant.findUniqueOrThrow({ where: { id: participant.id } })
+    const before = BigInt(locked.finalScore ?? 0)
+    const after = before + BigInt(correctPoints)
+    if (after > 2147483647n) return this.reject(transaction, base, "Score exceeds the game limit")
+    await this.debitWallet.runWithinTransaction({
+      userId: participant.userId,
+      currencyCode: "GLD",
+      amount: price,
+      sourceId: `match-skip:${match.id}:${participant.id}:${assignment.id}`,
+      sourceType: WalletTransactionSourceType.PURCHASE,
+      metadata: { reason: "INSTANT_SKIP", matchId: match.id, assignmentId: assignment.id, priceGld: price.toString() },
+    }, transaction)
+    const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, correct: true, skipped: true, pointsEarned: correctPoints.toString(), timeTakenMs, gldPrice: price.toString() } } })
     await transaction.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: Number(after), answeredCount: { increment: 1 } } })
     await transaction.matchContentAssignment.update({ where: { id: assignment.id }, data: { answeredAt: now } })
     return event

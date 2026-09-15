@@ -122,6 +122,12 @@ export class UpdateGameConfigDto {
   @Max(100)
   maxQuestions?: number
 
+  @ApiPropertyOptional({ example: "10", description: "GLD price for passing the current question" })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/)
+  instantSkipPriceGld?: string
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()

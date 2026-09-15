@@ -42,6 +42,7 @@ export class UpdateGameConfigTransaction extends PrismaTransaction<{ gameKey: st
       maxAnswerTimeSeconds: dto.maxAnswerTimeSeconds ?? current.maxAnswerTimeSeconds,
       maxMatchDurationSeconds: dto.maxMatchDurationSeconds ?? current.maxMatchDurationSeconds,
       maxQuestions: dto.maxQuestions ?? current.maxQuestions,
+      instantSkipPriceGld: dto.instantSkipPriceGld === undefined ? current.instantSkipPriceGld : BigInt(dto.instantSkipPriceGld),
       rankingEnabled: dto.rankingEnabled ?? current.rankingEnabled,
       rankingEloMultiplier: dto.rankingEloMultiplier ?? current.rankingEloMultiplier,
       rankingLevelMultiplier: dto.rankingLevelMultiplier ?? current.rankingLevelMultiplier,

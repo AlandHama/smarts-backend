@@ -251,6 +251,7 @@ enum MatchEventType {
   FINISH
   LEAVE
   FORFEIT
+  SKIP
 }
 
 enum OutboxEventStatus {
@@ -1362,6 +1363,7 @@ model GameConfig {
   maxAnswerTimeSeconds       Int
   maxMatchDurationSeconds    Int
   maxQuestions               Int
+  instantSkipPriceGld        BigInt         @default(10)
   rankingEnabled             Boolean        @default(false)
   rankingEloMultiplier       Decimal        @db.Decimal(20, 8)
   rankingLevelMultiplier     Decimal        @db.Decimal(20, 8)

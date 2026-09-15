@@ -22,7 +22,7 @@ import { GameContentPanel } from './GameContentPanel';
 
 const valueOf = (form: HTMLFormElement, name: string) => String((form.elements.namedItem(name) as HTMLInputElement)?.value ?? '').trim();
 const numberFields = ['maxEloDelta', 'soloEloScoreDivisor', 'soloEloMaxDelta', 'scoreRewardDivisor', 'wrongAnswerPenaltyPercent', 'maxAnswerTimeSeconds', 'maxMatchDurationSeconds', 'maxQuestions'];
-const moneyFields = ['winnerBaseReward', 'loserBaseReward', 'drawReward', 'scoreRewardCap', 'winnerRewardBonusMax', 'loserRewardBonusMax', 'multiplayerRewardReference'];
+const moneyFields = ['winnerBaseReward', 'loserBaseReward', 'drawReward', 'scoreRewardCap', 'winnerRewardBonusMax', 'loserRewardBonusMax', 'multiplayerRewardReference', 'instantSkipPriceGld'];
 
 export function GameConfigView() {
   const [items, setItems] = useState<GameConfigRecord[]>([]);
