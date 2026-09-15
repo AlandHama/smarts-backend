@@ -5,6 +5,7 @@ import { GameMode, MatchmakingTicketMode, Prisma } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { botFallbackSeconds, queueHeartbeatTimeoutSeconds } from "../utilities/matchmaking-policy"
+import { createAssignmentToken, MAX_SERVER_CONTENT_PER_MATCH, selectServerContent } from "../../matches/utilities/server-content"
 
 type TicketRow = {
   id: string
@@ -69,6 +70,19 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
     const game = await transaction.gameDefinition.findUnique({ where: { id: first.gameDefinitionId }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     const config = game?.configs[0]
     if (!game || !config) return null
+    // Provision the human assignments in the same transaction as the match.
+    // Previously a newly-created bot match had zero assignments until a
+    // client won the start race and called /start, which allowed legacy game
+    // screens to open with an empty challenge list.
+    const serverNonce = randomBytes(32).toString("base64url")
+    const contentItems = await transaction.gameContentItem.findMany({
+      where: { gameDefinitionId: game.id, active: true },
+      orderBy: { id: "asc" },
+      take: MAX_SERVER_CONTENT_PER_MATCH,
+      select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true },
+    })
+    const selectedItems = selectServerContent(contentItems, config.maxQuestions, serverNonce)
+    if (!selectedItems.length) return null
 
     const matchMode = second ? (first.mode === MatchmakingTicketMode.RANKED ? GameMode.RANKED : GameMode.CASUAL) : GameMode.BOT
     const match = await transaction.match.create({ data: {
@@ -76,7 +90,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
       gameConfigId: config.id,
       mode: matchMode,
       status: "CREATED",
-      serverNonce: randomBytes(32).toString("base64url"),
+      serverNonce,
       createdByUserId: first.userId,
       metadata: {
         source: second ? "MATCHMAKING_QUEUE" : "BOT_FALLBACK",
@@ -85,10 +99,30 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
         serverSnapshots: [{ userId: first.userId, level: first.levelSnapshot, elo: first.eloSnapshot.toString(), countryCode: first.countryCodeSnapshot }, ...(second ? [{ userId: second.userId, level: second.levelSnapshot, elo: second.eloSnapshot.toString(), countryCode: second.countryCodeSnapshot }] : [])],
       } as Prisma.InputJsonValue,
     } })
-    await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: game.id, status: "CREATED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex") } })
-    await transaction.matchParticipant.create({ data: { matchId: match.id, userId: first.userId, participantType: "PLAYER" } })
-    if (second) await transaction.matchParticipant.create({ data: { matchId: match.id, userId: second.userId, participantType: "PLAYER" } })
+    const round = await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: game.id, status: "CREATED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex") } })
+    const participants = [
+      await transaction.matchParticipant.create({ data: { matchId: match.id, userId: first.userId, participantType: "PLAYER" } }),
+    ]
+    if (second) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: second.userId, participantType: "PLAYER" } }))
     else await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: "BOT", result: "PENDING" } })
+
+    const expiresAt = new Date(now.getTime() + config.maxMatchDurationSeconds * 1000)
+    for (const participant of participants) {
+      for (let position = 0; position < selectedItems.length; position += 1) {
+        const token = createAssignmentToken(serverNonce, participant.id, round.id, position)
+        await transaction.matchContentAssignment.create({
+          data: {
+            matchId: match.id,
+            roundId: round.id,
+            participantId: participant.id,
+            contentItemId: selectedItems[position].id,
+            position,
+            assignmentTokenHash: createHash("sha256").update(token).digest("hex"),
+            expiresAt,
+          },
+        })
+      }
+    }
 
     const ids = second ? [first.id, second.id] : [first.id]
     await transaction.matchmakingTicket.updateMany({ where: { id: { in: ids }, status: "SEARCHING" }, data: { status: "MATCHED", matchedAt: now, matchId: match.id } })

@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { createAssignmentToken, MAX_SERVER_CONTENT_PER_MATCH, selectServerContent } from "../../matches/utilities/server-content"
 
 @Injectable()
 export class AcceptFriendInviteTransaction extends PrismaTransaction<{ inviteId: string; userId: string }, any> {
@@ -24,9 +25,38 @@ export class AcceptFriendInviteTransaction extends PrismaTransaction<{ inviteId:
     if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
     const now = new Date()
     const config = invite.gameDefinition.configs[0]
-    const match = await transaction.match.create({ data: { gameDefinitionId: invite.gameDefinitionId, gameConfigId: config.id, mode: "CASUAL", status: "CREATED", serverNonce: randomBytes(32).toString("base64url"), createdByUserId: invite.inviterId, metadata: { source: "FRIEND_INVITE", inviteId: invite.id } as Prisma.InputJsonValue } })
-    await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: invite.gameDefinitionId, status: "CREATED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex") } })
-    await transaction.matchParticipant.createMany({ data: [{ matchId: match.id, userId: invite.inviterId, participantType: "PLAYER" }, { matchId: match.id, userId: invite.inviteeId, participantType: "PLAYER" }] })
+    const serverNonce = randomBytes(32).toString("base64url")
+    const contentItems = await transaction.gameContentItem.findMany({
+      where: { gameDefinitionId: invite.gameDefinitionId, active: true },
+      orderBy: { id: "asc" },
+      take: MAX_SERVER_CONTENT_PER_MATCH,
+      select: { id: true },
+    })
+    const selectedItems = selectServerContent(contentItems, config.maxQuestions, serverNonce)
+    if (!selectedItems.length) throw new ConflictException("No active server content is configured for this game")
+    const match = await transaction.match.create({ data: { gameDefinitionId: invite.gameDefinitionId, gameConfigId: config.id, mode: "CASUAL", status: "CREATED", serverNonce, createdByUserId: invite.inviterId, metadata: { source: "FRIEND_INVITE", inviteId: invite.id } as Prisma.InputJsonValue } })
+    const round = await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: invite.gameDefinitionId, status: "CREATED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex") } })
+    const participants = await Promise.all([
+      transaction.matchParticipant.create({ data: { matchId: match.id, userId: invite.inviterId, participantType: "PLAYER" } }),
+      transaction.matchParticipant.create({ data: { matchId: match.id, userId: invite.inviteeId, participantType: "PLAYER" } }),
+    ])
+    const expiresAt = new Date(now.getTime() + config.maxMatchDurationSeconds * 1000)
+    for (const participant of participants) {
+      for (let position = 0; position < selectedItems.length; position += 1) {
+        const token = createAssignmentToken(serverNonce, participant.id, round.id, position)
+        await transaction.matchContentAssignment.create({
+          data: {
+            matchId: match.id,
+            roundId: round.id,
+            participantId: participant.id,
+            contentItemId: selectedItems[position].id,
+            position,
+            assignmentTokenHash: createHash("sha256").update(token).digest("hex"),
+            expiresAt,
+          },
+        })
+      }
+    }
     await transaction.matchmakingInvite.update({ where: { id: invite.id }, data: { status: "ACCEPTED", acceptedAt: now, respondedAt: now, matchId: match.id } })
     return { inviteId: invite.id, matchId: match.id, status: "ACCEPTED", matchStatus: match.status, gameKey: invite.gameDefinition.key }
   }
