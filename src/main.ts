@@ -23,6 +23,7 @@ async function bootstrap() {
   SwaggerModule.setup("docs", app, swaggerDocument, {
     jsonDocumentUrl: "docs-json",
   })
+  
 
   // whitelist strips properties the DTO does not declare, so a request cannot
   // smuggle extra fields into a create call.
