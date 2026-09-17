@@ -102,6 +102,124 @@ export class PlayersService {
     }))
   }
 
+  async publicOverview(viewerId: string, playerId: string) {
+    const player = await this.prisma.user.findUnique({
+      where: { id: playerId },
+      select: {
+        id: true,
+        username: true,
+        profile: true,
+        stats: true,
+        gameStats: {
+          orderBy: { gameDefinition: { key: "asc" } },
+          select: {
+            gamesPlayed: true,
+            wins: true,
+            losses: true,
+            draws: true,
+            forfeits: true,
+            totalCorrect: true,
+            totalQuestions: true,
+            totalTimeMs: true,
+            totalScore: true,
+            bestScore: true,
+            lastPlayedAt: true,
+            gameDefinition: { select: { key: true, name: true } },
+          },
+        },
+      },
+    })
+    if (!player || !player.profile?.isPublic || !player.stats) throw new NotFoundException("Player not found")
+
+    if (viewerId !== playerId) {
+      const friendship = await this.prisma.friendship.findUnique({
+        where: { userId_friendId: { userId: viewerId, friendId: playerId } },
+        select: { id: true },
+      })
+      if (!friendship) throw new NotFoundException("Player overview not found")
+    }
+
+    const matches = viewerId === playerId ? [] : await this.prisma.match.findMany({
+      where: {
+        status: "SETTLED",
+        AND: [
+          { participants: { some: { userId: viewerId } } },
+          { participants: { some: { userId: playerId } } },
+        ],
+      },
+      orderBy: { endedAt: "desc" },
+      take: 100,
+      select: {
+        endedAt: true,
+        gameDefinition: { select: { key: true, name: true } },
+        participants: {
+          where: { userId: { in: [viewerId, playerId] } },
+          select: { userId: true, finalScore: true, result: true },
+        },
+      },
+    })
+
+    let wins = 0
+    let losses = 0
+    let draws = 0
+    let yourScore = 0
+    let opponentScore = 0
+    const byGame = new Map<string, { gameKey: string; gameName: string; matches: number; wins: number; losses: number; draws: number; yourScore: number; opponentScore: number }>()
+
+    for (const match of matches) {
+      const you = match.participants.find((participant) => participant.userId === viewerId)
+      const opponent = match.participants.find((participant) => participant.userId === playerId)
+      if (!you || !opponent) continue
+      const youScore = you.finalScore ?? 0
+      const opponentFinalScore = opponent.finalScore ?? 0
+      yourScore += youScore
+      opponentScore += opponentFinalScore
+      const result = you.result === "WIN" ? "WIN" : you.result === "LOSS" ? "LOSS" : "DRAW"
+      if (result === "WIN") wins += 1
+      else if (result === "LOSS") losses += 1
+      else draws += 1
+
+      const key = match.gameDefinition.key
+      const game = byGame.get(key) ?? { gameKey: key, gameName: match.gameDefinition.name, matches: 0, wins: 0, losses: 0, draws: 0, yourScore: 0, opponentScore: 0 }
+      game.matches += 1
+      game.yourScore += youScore
+      game.opponentScore += opponentFinalScore
+      if (result === "WIN") game.wins += 1
+      else if (result === "LOSS") game.losses += 1
+      else game.draws += 1
+      byGame.set(key, game)
+    }
+
+    return {
+      ...this.toPublicResponse(player),
+      gameStats: player.gameStats.map((stat) => ({
+        gameKey: stat.gameDefinition.key,
+        gameName: stat.gameDefinition.name,
+        gamesPlayed: stat.gamesPlayed,
+        wins: stat.wins,
+        losses: stat.losses,
+        draws: stat.draws,
+        forfeits: stat.forfeits,
+        totalCorrect: stat.totalCorrect,
+        totalQuestions: stat.totalQuestions,
+        totalTimeMs: stat.totalTimeMs.toString(),
+        totalScore: stat.totalScore.toString(),
+        bestScore: stat.bestScore.toString(),
+        lastPlayedAt: stat.lastPlayedAt,
+      })),
+      headToHead: {
+        matchesPlayed: matches.length,
+        wins,
+        losses,
+        draws,
+        yourScore: yourScore.toString(),
+        opponentScore: opponentScore.toString(),
+        lastPlayedAt: matches[0]?.endedAt ?? null,
+        games: [...byGame.values()],
+      },
+    }
+  }
+
   addXp(userId: string, xp: number | bigint) {
     return this.addXpTransaction.run({ userId, amount: BigInt(xp) })
   }
@@ -175,6 +293,7 @@ export class PlayersService {
         currentWinStreak: player.stats.currentWinStreak,
         highestWinStreak: player.stats.highestWinStreak,
         highestElo: player.stats.highestElo,
+        totalScore: player.stats.totalScore.toString(),
       },
     }
   }

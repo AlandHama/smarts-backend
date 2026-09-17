@@ -25,6 +25,12 @@ export class PlayersController {
     return this.playersService.gameStats(user.id)
   }
 
+  @Get(":userId/overview")
+  @ApiOperation({ summary: "Get a public player's profile, game statistics, and head-to-head summary" })
+  overview(@CurrentUser() viewer: UserResponseDto, @Param("userId", new ParseUUIDPipe()) playerId: string) {
+    return this.playersService.publicOverview(viewer.id, playerId)
+  }
+
   @Get("me/progressions")
   @ApiOperation({ summary: "Get all current progressions for the authenticated player" })
   progressions(@CurrentUser() user: UserResponseDto) { return this.progressionService.getForPlayer(user.id) }

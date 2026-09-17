@@ -86,6 +86,9 @@ export class PublicPlayerStatsResponseDto {
 
   @ApiProperty()
   highestElo!: number
+
+  @ApiProperty({ description: "Total score represented as a decimal string" })
+  totalScore!: string
 }
 
 export class PlayerResponseDto {
