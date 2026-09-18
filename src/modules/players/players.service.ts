@@ -30,6 +30,7 @@ export class PlayersService {
         status: true,
         profile: true,
         stats: true,
+        cognitiveStats: true,
         wallet: {
           select: {
             status: true,
@@ -54,6 +55,7 @@ export class PlayersService {
         username: true,
         profile: true,
         stats: true,
+        cognitiveStats: true,
       },
     })
     if (!player) throw new NotFoundException("Player not found")
@@ -102,6 +104,11 @@ export class PlayersService {
     }))
   }
 
+  async cognitiveStats(userId: string) {
+    const stats = await this.prisma.playerCognitiveStats.findUnique({ where: { userId } })
+    return this.serializeCognitiveStats(stats)
+  }
+
   async publicOverview(viewerId: string, playerId: string) {
     const player = await this.prisma.user.findUnique({
       where: { id: playerId },
@@ -110,6 +117,7 @@ export class PlayersService {
         username: true,
         profile: true,
         stats: true,
+        cognitiveStats: true,
         gameStats: {
           orderBy: { gameDefinition: { key: "asc" } },
           select: {
@@ -251,6 +259,7 @@ export class PlayersService {
     status: string
     profile: Prisma.UserGetPayload<{ select: { profile: true } }>["profile"]
     stats: Prisma.UserGetPayload<{ select: { stats: true } }>["stats"]
+    cognitiveStats: Prisma.UserGetPayload<{ select: { cognitiveStats: true } }>["cognitiveStats"]
     wallet: {
       status: string
       balances: Array<{ amount: bigint; currency: { code: string } }>
@@ -264,6 +273,7 @@ export class PlayersService {
       status: player.status,
       profile: this.toProfileResponse(player.profile),
       stats: this.toStatsResponse(player.stats),
+      cognitiveStats: this.serializeCognitiveStats(player.cognitiveStats),
       wallet: {
         status: player.wallet.status,
         balances: player.wallet.balances.map((balance) => ({
@@ -279,6 +289,7 @@ export class PlayersService {
     username: string
     profile: Prisma.UserGetPayload<{ select: { profile: true } }>["profile"]
     stats: Prisma.UserGetPayload<{ select: { stats: true } }>["stats"]
+    cognitiveStats: Prisma.UserGetPayload<{ select: { cognitiveStats: true } }>["cognitiveStats"]
   }): PublicPlayerResponseDto {
     if (!player.profile || !player.stats) throw new NotFoundException("Player profile is not initialized")
     return {
@@ -295,6 +306,27 @@ export class PlayersService {
         highestElo: player.stats.highestElo,
         totalScore: player.stats.totalScore.toString(),
       },
+      cognitiveStats: this.serializeCognitiveStats(player.cognitiveStats),
+    }
+  }
+
+  private serializeCognitiveStats(stats: {
+    calculation: number
+    speed: number
+    accuracy: number
+    judgement: number
+    observation: number
+    memory: number
+    matchesEvaluated: number
+  } | null) {
+    return {
+      calculation: stats?.calculation ?? 50,
+      speed: stats?.speed ?? 50,
+      accuracy: stats?.accuracy ?? 50,
+      judgement: stats?.judgement ?? 50,
+      observation: stats?.observation ?? 50,
+      memory: stats?.memory ?? 50,
+      matchesEvaluated: stats?.matchesEvaluated ?? 0,
     }
   }
 

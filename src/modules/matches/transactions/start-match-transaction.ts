@@ -12,7 +12,7 @@ export class StartMatchTransaction extends PrismaTransaction<{ matchId: string; 
 
   protected async execute(input: { matchId: string; userId: string }, transaction: Prisma.TransactionClient) {
     await transaction.$executeRaw`SELECT "id" FROM "Match" WHERE "id" = ${input.matchId} FOR UPDATE`
-    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { gameConfig: true, participants: true, rounds: { where: { status: { in: ["CREATED", "STARTED"] } }, orderBy: { roundIndex: "desc" }, take: 1 } } })
+    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { gameDefinition: { select: { key: true } }, gameConfig: true, participants: true, rounds: { where: { status: { in: ["CREATED", "STARTED"] } }, orderBy: { roundIndex: "desc" }, take: 1 } } })
     if (!match) throw new NotFoundException("Match not found")
     const currentParticipant = match.participants.find((participant) => participant.userId === input.userId)
     if (!currentParticipant) throw new NotFoundException("Player is not a participant in this match")
@@ -25,7 +25,7 @@ export class StartMatchTransaction extends PrismaTransaction<{ matchId: string; 
     if (existingAssignments.length) for (const assignment of existingAssignments) assignments.push({ id: assignment.id, participantId: currentParticipant.id, position: assignment.position, token: createAssignmentToken(match.serverNonce, currentParticipant.id, round.id, assignment.position), contentItem: assignment.contentItem, expiresAt: assignment.expiresAt })
     if (!existingAssignments.length) {
       const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: match.gameDefinitionId, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } })
-      const selectedItems = selectServerContent(items, match.gameConfig.maxQuestions, match.serverNonce)
+      const selectedItems = selectServerContent(items, match.gameConfig.maxQuestions, match.serverNonce, match.gameDefinition.key)
       if (!selectedItems.length) throw new ConflictException("No active server content is configured for this game")
       if (currentParticipant.participantType !== "BOT") for (let position = 0; position < selectedItems.length; position += 1) {
         const token = createAssignmentToken(match.serverNonce, currentParticipant.id, round.id, position)

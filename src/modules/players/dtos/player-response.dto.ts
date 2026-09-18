@@ -49,6 +49,29 @@ export class PlayerStatsResponseDto {
   totalScore!: string
 }
 
+export class PlayerCognitiveStatsResponseDto {
+  @ApiProperty({ minimum: 0, maximum: 100 })
+  calculation!: number
+
+  @ApiProperty({ minimum: 0, maximum: 100 })
+  speed!: number
+
+  @ApiProperty({ minimum: 0, maximum: 100 })
+  accuracy!: number
+
+  @ApiProperty({ minimum: 0, maximum: 100 })
+  judgement!: number
+
+  @ApiProperty({ minimum: 0, maximum: 100 })
+  observation!: number
+
+  @ApiProperty({ minimum: 0, maximum: 100 })
+  memory!: number
+
+  @ApiProperty()
+  matchesEvaluated!: number
+}
+
 export class PlayerWalletBalanceResponseDto {
   @ApiProperty({ example: "MCN" })
   code!: string
@@ -110,6 +133,9 @@ export class PlayerResponseDto {
   @ApiProperty({ type: () => PlayerStatsResponseDto })
   stats!: PlayerStatsResponseDto
 
+  @ApiProperty({ type: () => PlayerCognitiveStatsResponseDto })
+  cognitiveStats!: PlayerCognitiveStatsResponseDto
+
   @ApiProperty({ type: () => PlayerWalletResponseDto })
   wallet!: PlayerWalletResponseDto
 }
@@ -126,4 +152,7 @@ export class PublicPlayerResponseDto {
 
   @ApiProperty({ type: () => PublicPlayerStatsResponseDto })
   stats!: PublicPlayerStatsResponseDto
+
+  @ApiProperty({ type: () => PlayerCognitiveStatsResponseDto })
+  cognitiveStats!: PlayerCognitiveStatsResponseDto
 }

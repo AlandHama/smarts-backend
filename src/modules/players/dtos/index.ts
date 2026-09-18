@@ -1,2 +1,2 @@
-export { PlayerResponseDto, PlayerWalletResponseDto, PlayerWalletBalanceResponseDto, PublicPlayerResponseDto } from "./player-response.dto"
+export { PlayerCognitiveStatsResponseDto, PlayerResponseDto, PlayerWalletResponseDto, PlayerWalletBalanceResponseDto, PublicPlayerResponseDto } from "./player-response.dto"
 export { UpdateProfileDto } from "./update-profile.dto"

@@ -15,7 +15,7 @@ import { DeletePlayerStorageTransaction } from "./transactions/delete-player-sto
 import { writePlayerAudit } from "../../common/helpers/player-audit"
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "image/avif"])
 const ALLOWED_STORAGE_KEYS = new Set(["player_country", "profile_url", "profile_file_id", "last_seen"])
 const ALLOWED_STAT_SUFFIXES = new Set(["games_played", "accuracy", "wins", "losses", "answering_speed", "total_correct", "total_questions", "total_time_ms"])
 
@@ -28,7 +28,7 @@ export class StorageService {
   async upload(file: UploadedImage | undefined, dto: UploadFileDto, userId?: string, actorId?: string) {
     if (!file?.buffer) throw new BadRequestException("A file is required")
     if (file.size > MAX_FILE_BYTES) throw new BadRequestException("File must be 10 MB or smaller")
-    if (!ALLOWED_IMAGE_TYPES.has(file.mimetype)) throw new BadRequestException("Only JPEG, PNG, WEBP, and GIF images are supported")
+    if (!ALLOWED_IMAGE_TYPES.has(file.mimetype)) throw new BadRequestException("Only JPEG, PNG, WEBP, GIF, HEIC, HEIF, and AVIF images are supported")
 
     const bucket = this.required("S3_BUCKET")
     const key = this.buildKey(dto.purpose, userId, file.originalname, file.mimetype)
@@ -175,7 +175,7 @@ export class StorageService {
 
   private order(value: string | undefined, fallback: number) { const parsed = value ? Number(value) : fallback + 1; return Number.isInteger(parsed) && parsed > 0 && parsed <= 10000 ? parsed : fallback + 1 }
   private valueType(key: string) { return key === "profile_url" ? PlayerStorageValueType.URL : key === "last_seen" ? PlayerStorageValueType.DATE : PlayerStorageValueType.STRING }
-  private buildKey(purpose: string, userId: string | undefined, originalName: string, contentType: string) { const extension = extname(originalName).toLowerCase().replace(/[^a-z0-9.]/g, "") || ({ "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif" } as Record<string, string>)[contentType] || ".bin"; return `${purpose}/${userId ?? "admin"}/${randomUUID()}${extension}` }
+  private buildKey(purpose: string, userId: string | undefined, originalName: string, contentType: string) { const extension = extname(originalName).toLowerCase().replace(/[^a-z0-9.]/g, "") || ({ "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", "image/heic": ".heic", "image/heif": ".heif", "image/avif": ".avif" } as Record<string, string>)[contentType] || ".bin"; return `${purpose}/${userId ?? "admin"}/${randomUUID()}${extension}` }
   private publicUrl(key: string) { const base = (process.env.S3_PUBLIC_BASE_URL ?? `${this.required("S3_ENDPOINT")}/${this.required("S3_BUCKET")}`).replace(/\/$/, ""); return `${base}/${key.split("/").map(encodeURIComponent).join("/")}` }
   private required(name: string) { const value = process.env[name]?.trim(); if (!value) throw new ServiceUnavailableException(`${name} is not configured`); return value }
   private clientForStorage() { this.client ??= new S3Client({ endpoint: this.required("S3_ENDPOINT"), region: process.env.S3_REGION?.trim() || "auto", forcePathStyle: true, credentials: { accessKeyId: this.required("S3_ACCESS_KEY_ID"), secretAccessKey: this.required("S3_SECRET_ACCESS_KEY") } }); return this.client }

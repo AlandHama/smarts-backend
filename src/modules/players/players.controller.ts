@@ -25,6 +25,12 @@ export class PlayersController {
     return this.playersService.gameStats(user.id)
   }
 
+  @Get("me/cognitive-stats")
+  @ApiOperation({ summary: "Get server-derived cognitive skill stats for the authenticated player" })
+  cognitiveStats(@CurrentUser() user: UserResponseDto) {
+    return this.playersService.cognitiveStats(user.id)
+  }
+
   @Get(":userId/overview")
   @ApiOperation({ summary: "Get a public player's profile, game statistics, and head-to-head summary" })
   overview(@CurrentUser() viewer: UserResponseDto, @Param("userId", new ParseUUIDPipe()) playerId: string) {

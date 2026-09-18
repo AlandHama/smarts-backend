@@ -30,9 +30,9 @@ export class AcceptFriendInviteTransaction extends PrismaTransaction<{ inviteId:
       where: { gameDefinitionId: invite.gameDefinitionId, active: true },
       orderBy: { id: "asc" },
       take: MAX_SERVER_CONTENT_PER_MATCH,
-      select: { id: true },
+      select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true },
     })
-    const selectedItems = selectServerContent(contentItems, config.maxQuestions, serverNonce)
+    const selectedItems = selectServerContent(contentItems, config.maxQuestions, serverNonce, invite.gameDefinition.key)
     if (!selectedItems.length) throw new ConflictException("No active server content is configured for this game")
     const match = await transaction.match.create({ data: { gameDefinitionId: invite.gameDefinitionId, gameConfigId: config.id, mode: "CASUAL", status: "CREATED", serverNonce, createdByUserId: invite.inviterId, metadata: { source: "FRIEND_INVITE", inviteId: invite.id } as Prisma.InputJsonValue } })
     const round = await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: invite.gameDefinitionId, status: "CREATED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex") } })

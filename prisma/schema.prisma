@@ -398,6 +398,7 @@ model User {
   createdMatches             Match[]                 @relation("MatchCreatedBy")
   matchParticipants          MatchParticipant[]
   gameStats                  PlayerGameStats[]
+  cognitiveStats             PlayerCognitiveStats?
   inventoryItems             InventoryItem[]
   purchases                  Purchase[]
   entitlements               Entitlement[]
@@ -1605,6 +1606,23 @@ model PlayerGameStats {
 
   @@unique([userId, gameDefinitionId])
   @@index([gameDefinitionId, totalScore])
+}
+
+model PlayerCognitiveStats {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @unique @db.Uuid
+  calculation       Int      @default(50)
+  speed             Int      @default(50)
+  accuracy          Int      @default(50)
+  judgement         Int      @default(50)
+  observation       Int      @default(50)
+  memory            Int      @default(50)
+  matchesEvaluated  Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([accuracy])
 }
 
 model OutboxEvent {

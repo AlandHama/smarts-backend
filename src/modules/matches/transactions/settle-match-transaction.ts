@@ -100,6 +100,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         return { totalQuestions: summary.totalQuestions + 1, totalCorrect: summary.totalCorrect + (payload.correct === true ? 1 : 0), totalTimeMs: summary.totalTimeMs + BigInt(timeTakenMs) }
       }, { totalQuestions: 0, totalCorrect: 0, totalTimeMs: 0n })
       await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
+      await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
       if (eloDelta > 0n && winner?.participant.id === item.participant.id) {
         const leaderboardKeys = this.getLeaderboardKeys(config)
         for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
@@ -129,6 +130,72 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     }
     const gameStats = await transaction.playerGameStats.upsert({ where: { userId_gameDefinitionId: { userId: participant.userId, gameDefinitionId: match.gameDefinitionId } }, create: { userId: participant.userId, gameDefinitionId: match.gameDefinitionId, gamesPlayed: 1, wins: result === "WIN" ? 1 : 0, losses: result === "LOSS" ? 1 : 0, draws: result === "DRAW" ? 1 : 0, forfeits: result === "FORFEIT" ? 1 : 0, totalCorrect: answers.totalCorrect, totalQuestions: answers.totalQuestions, totalTimeMs: answers.totalTimeMs, totalScore: score, bestScore: score, lastPlayedAt: new Date() }, update: { gamesPlayed: { increment: 1 }, wins: result === "WIN" ? { increment: 1 } : undefined, losses: result === "LOSS" ? { increment: 1 } : undefined, draws: result === "DRAW" ? { increment: 1 } : undefined, forfeits: result === "FORFEIT" ? { increment: 1 } : undefined, totalCorrect: { increment: answers.totalCorrect }, totalQuestions: { increment: answers.totalQuestions }, totalTimeMs: { increment: answers.totalTimeMs }, totalScore: { increment: score }, lastPlayedAt: new Date() } })
     if (gameStats.bestScore < score) await transaction.playerGameStats.update({ where: { id: gameStats.id }, data: { bestScore: score } })
+  }
+
+  /** Update server-owned cognitive skills from accepted answer evidence. */
+  private async updateCognitiveStats(
+    transaction: Prisma.TransactionClient,
+    match: any,
+    participant: any,
+    result: string,
+    score: bigint,
+    answers: { totalCorrect: number; totalQuestions: number; totalTimeMs: bigint },
+  ) {
+    if (!participant.userId) return
+
+    const profile = await transaction.playerCognitiveStats.upsert({
+      where: { userId: participant.userId },
+      create: { userId: participant.userId },
+      update: {},
+    })
+    await transaction.$queryRaw`SELECT "id"::text FROM "PlayerCognitiveStats" WHERE "id" = ${profile.id} FOR UPDATE`
+
+    const questionCount = answers.totalQuestions
+    const accuracy = questionCount > 0 ? (answers.totalCorrect / questionCount) * 100 : 50
+    const averageTimeMs = questionCount > 0 ? Number(answers.totalTimeMs) / questionCount : 0
+    const maxTimeMs = Math.max(1000, Number(match.gameConfig?.maxAnswerTimeSeconds ?? 30) * 1000)
+    const speed = questionCount > 0 ? this.clampNumber(100 - (averageTimeMs / maxTimeMs) * 100, 0, 100) : 50
+    const resultSignal = result === "WIN" ? 100 : result === "DRAW" ? 60 : result === "FORFEIT" ? 20 : 35
+    const configuredPoints = Object.values((match.gameConfig?.correctAnswerPoints ?? {}) as Record<string, unknown>)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0)
+    const maxPoints = Math.max(1, ...(configuredPoints.length ? configuredPoints : [100]))
+    const scoreSignal = questionCount > 0
+      ? this.clampNumber((Number(score) / (questionCount * maxPoints)) * 100, 0, 100)
+      : resultSignal
+    const performance = this.clampNumber(accuracy * 0.45 + speed * 0.25 + resultSignal * 0.15 + scoreSignal * 0.15, 0, 100)
+    const key = String(match.gameDefinition?.key ?? "").toLowerCase()
+    const targets = { calculation: performance, speed, accuracy, judgement: performance, observation: performance, memory: performance }
+
+    if (key === "math") {
+      targets.calculation = performance * 0.65 + accuracy * 0.35
+      targets.speed = speed * 0.7 + performance * 0.3
+    } else if (["high_low", "trivia", "follow_the_lead", "flick_master"].includes(key)) {
+      targets.judgement = performance * 0.65 + accuracy * 0.35
+    } else if (["bird_watching", "similarities"].includes(key)) {
+      targets.observation = performance * 0.7 + accuracy * 0.3
+    } else if (key === "memorize_cards") {
+      targets.memory = performance * 0.7 + accuracy * 0.3
+    }
+
+    const learningRate = profile.matchesEvaluated === 0 ? 1 : 0.2
+    const blend = (previous: number, target: number) => Math.round(this.clampNumber(previous + (target - previous) * learningRate, 0, 100))
+    await transaction.playerCognitiveStats.update({
+      where: { id: profile.id },
+      data: {
+        calculation: blend(profile.calculation, targets.calculation),
+        speed: blend(profile.speed, targets.speed),
+        accuracy: blend(profile.accuracy, targets.accuracy),
+        judgement: blend(profile.judgement, targets.judgement),
+        observation: blend(profile.observation, targets.observation),
+        memory: blend(profile.memory, targets.memory),
+        matchesEvaluated: { increment: 1 },
+      },
+    })
+  }
+
+  private clampNumber(value: number, minimum: number, maximum: number) {
+    return Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : minimum
   }
 
   private abs(value: bigint) { return value < 0n ? -value : value }

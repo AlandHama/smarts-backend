@@ -81,7 +81,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
       take: MAX_SERVER_CONTENT_PER_MATCH,
       select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true },
     })
-    const selectedItems = selectServerContent(contentItems, config.maxQuestions, serverNonce)
+    const selectedItems = selectServerContent(contentItems, config.maxQuestions, serverNonce, game.key)
     if (!selectedItems.length) return null
 
     const matchMode = second ? (first.mode === MatchmakingTicketMode.RANKED ? GameMode.RANKED : GameMode.CASUAL) : GameMode.BOT

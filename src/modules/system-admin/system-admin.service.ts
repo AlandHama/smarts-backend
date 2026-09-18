@@ -679,6 +679,7 @@ export class SystemAdminService implements OnModuleInit {
         lastOnline: true,
         profile: { select: { displayName: true, avatarUrl: true, countryCode: true, bio: true, isPublic: true, metadata: true, level: true, xp: true, elo: true } },
         stats: { select: { gamesPlayed: true, wins: true, losses: true, draws: true, currentWinStreak: true, highestWinStreak: true, highestElo: true, totalScore: true } },
+        cognitiveStats: { select: { calculation: true, speed: true, accuracy: true, judgement: true, observation: true, memory: true, matchesEvaluated: true, createdAt: true, updatedAt: true } },
         _count: { select: { sessions: true } },
         ...(detailed ? {
           wallet: {

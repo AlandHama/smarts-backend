@@ -36,8 +36,8 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
     if (input.dto.mode === GameMode.BOT) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: MatchParticipantType.BOT, result: "PENDING" } }))
     else if (input.dto.opponentUserId) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.dto.opponentUserId, participantType: MatchParticipantType.PLAYER } }))
 
-    const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true } })
-    const selectedItems = selectServerContent(items, config.maxQuestions, match.serverNonce)
+    const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } })
+    const selectedItems = selectServerContent(items, config.maxQuestions, match.serverNonce, input.dto.gameKey.trim().toLowerCase())
     if (!selectedItems.length) throw new ConflictException("No active server content is configured for this game")
     const assignments: Array<Record<string, unknown>> = []
     for (const participant of participants) {
