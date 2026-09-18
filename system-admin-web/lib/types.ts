@@ -32,6 +32,17 @@ export interface AdminUser {
     highestElo: number;
     totalScore: string;
   } | null;
+  cognitiveStats?: {
+    calculation: number;
+    speed: number;
+    accuracy: number;
+    judgement: number;
+    observation: number;
+    memory: number;
+    matchesEvaluated: number;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
   wallet?: WalletSummary;
   progressions?: PlayerProgression[];
   sessions?: SessionSummary[];

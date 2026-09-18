@@ -103,6 +103,20 @@ export function Player360View({ userId, onBack, onOpenMatch360 }: { userId: stri
       setActionLoading(false);
     }
   };
+  const resetCognitiveStats = async () => {
+    if (!data) return;
+    if (!window.confirm(`Reset cognitive skills for ${displayName} to the 50/100 baseline?`)) return;
+    try {
+      setActionLoading(true);
+      setError('');
+      await api(`/users/${data.user.id}/cognitive-stats/reset`, { method: 'POST' });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to reset cognitive skills');
+    } finally {
+      setActionLoading(false);
+    }
+  };
   const openEditor = (tab = 0) => { setEditingTab(tab); setEditing(true); };
   const deleteStorageEntry = async (key: string) => {
     if (!window.confirm(`Delete storage entry ${key}?`)) return;
@@ -133,6 +147,7 @@ export function Player360View({ userId, onBack, onOpenMatch360 }: { userId: stri
         <Button variant="outlined" startIcon={<AccountBalanceWalletRoundedIcon />} onClick={() => openEditor(2)}>Adjust wallet</Button>
         <Button variant="outlined" startIcon={<TrendingUpRoundedIcon />} onClick={() => openEditor(1)}>Adjust progression</Button>
         <Button variant="outlined" startIcon={<GroupRoundedIcon />} onClick={() => setFriendsDialogOpen(true)}>Manage friends</Button>
+        <Button variant="outlined" color="warning" startIcon={<TrendingUpRoundedIcon />} disabled={actionLoading} onClick={resetCognitiveStats}>Reset skills</Button>
         <Button variant="outlined" color={user.status === 'ACTIVE' ? 'error' : 'success'} startIcon={user.status === 'ACTIVE' ? <LockRoundedIcon /> : <LockOpenRoundedIcon />} disabled={actionLoading} onClick={toggleStatus}>{user.status === 'ACTIVE' ? 'Ban account' : 'Activate account'}</Button>
       </Stack>
     </Stack>
@@ -155,6 +170,21 @@ export function Player360View({ userId, onBack, onOpenMatch360 }: { userId: stri
       <Grid size={{ xs: 12, sm: 6, lg: 3 }}><Metric label="Games played" value={user.stats?.gamesPlayed ?? 0} detail={`${user.stats?.wins ?? 0} wins · ${user.stats?.losses ?? 0} losses`} color="#72e0af" /></Grid>
       <Grid size={{ xs: 12, sm: 6, lg: 3 }}><Metric label="Live sessions" value={activeSessions} detail={`${user._count?.sessions ?? 0} total sessions`} color="#f5c76d" /></Grid>
     </Grid>
+
+    <Section icon={<TrendingUpRoundedIcon />} title="Cognitive skill profile" description="Evidence-based skills updated from the dimensions each game actually measures." action={<Button size="small" variant="outlined" color="warning" disabled={actionLoading} onClick={resetCognitiveStats}>Reset to 50/100</Button>}>
+      {(() => {
+        const cognitive = user.cognitiveStats;
+        const skills = [
+          ['Calculation', cognitive?.calculation ?? 50],
+          ['Speed', cognitive?.speed ?? 50],
+          ['Accuracy', cognitive?.accuracy ?? 50],
+          ['Judgement', cognitive?.judgement ?? 50],
+          ['Observation', cognitive?.observation ?? 50],
+          ['Memory', cognitive?.memory ?? 50],
+        ] as const;
+        return <Box sx={{ p: { xs: 2, md: 3 } }}><Grid container spacing={1.5}>{skills.map(([label, value]) => <Grid key={label} size={{ xs: 6, sm: 4, md: 2 }}><Card variant="outlined" sx={{ p: 1.7, bgcolor: 'rgba(139,125,255,.06)', textAlign: 'center' }}><Typography variant="caption" color="text.secondary">{label}</Typography><Typography variant="h5" fontWeight={850} color="secondary.light" sx={{ mt: .4 }}>{Math.round(value)}</Typography><Box sx={{ mt: 1, height: 5, borderRadius: 99, bgcolor: 'rgba(148,163,184,.16)', overflow: 'hidden' }}><Box sx={{ width: `${Math.max(0, Math.min(100, value))}%`, height: '100%', bgcolor: 'secondary.light', borderRadius: 99 }} /></Box></Card></Grid>)}</Grid><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} sx={{ mt: 2 }}><Typography variant="caption" color="text.secondary">{cognitive?.matchesEvaluated ?? 0} settled matches evaluated · Updated {date(cognitive?.updatedAt)}</Typography><Typography variant="caption" color="text.secondary">A reset restores every skill to the neutral 50 baseline.</Typography></Stack></Box>;
+      })()}
+    </Section>
 
     <Section icon={<GroupRoundedIcon />} title="Friends and presence" description="Accepted relationships, pending requests, and server-derived online state."><Box sx={{ p: { xs: 2, md: 3 } }}><Stack direction={{ xs: 'column', md: 'row' }} spacing={3}><Box sx={{ flex: 1 }}><Stack direction="row" spacing={1} alignItems="center"><Chip size="small" color={data.presence.online ? 'success' : 'default'} label={data.presence.online ? 'ONLINE' : 'OFFLINE'} /><Typography variant="body2" color="text.secondary">Last seen {date(data.presence.lastSeenAt)}</Typography></Stack><Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Friends · {data.friends.length}</Typography><Stack spacing={.8}>{data.friends.slice(0, 8).map((friend) => <Stack key={friend.id} direction="row" justifyContent="space-between"><Typography variant="body2">{friend.name} <Typography component="span" variant="caption" color="text.secondary">@{friend.username}</Typography></Typography><Chip size="small" label={friend.online ? 'Online' : 'Offline'} color={friend.online ? 'success' : 'default'} /></Stack>)}{!data.friends.length && <Typography color="text.secondary">No friends yet.</Typography>}</Stack></Box><Box sx={{ flex: 1 }}><Typography variant="subtitle2" sx={{ mb: 1 }}>Requests</Typography><Typography variant="body2" color="text.secondary">Incoming: {data.incomingRequests.length} · Outgoing: {data.outgoingRequests.length}</Typography><Stack spacing={.7} sx={{ mt: 1 }}>{data.incomingRequests.slice(0, 4).map((request) => <Typography key={request.id} variant="body2">Incoming from {request.name}</Typography>)}{data.outgoingRequests.slice(0, 4).map((request) => <Typography key={request.id} variant="body2">Pending to {request.name}</Typography>)}{!data.incomingRequests.length && !data.outgoingRequests.length && <Typography color="text.secondary">No pending requests.</Typography>}</Stack></Box></Stack></Box></Section>
 

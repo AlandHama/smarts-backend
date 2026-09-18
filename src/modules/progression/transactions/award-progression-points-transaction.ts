@@ -223,6 +223,6 @@ export class AwardProgressionPointsTransaction extends PrismaTransaction<AwardPr
 
   private async syncLegacyProfile(transaction: Prisma.TransactionClient, userId: string, key: string, kind: string, step: number, points: bigint) {
     if (key === "main" && kind === "LEVEL") await transaction.playerProfile.update({ where: { userId }, data: { level: step, xp: points } })
-    if (key === "elo" && kind === "RATING" && points <= 2147483647n && points >= -2147483648n) await transaction.playerProfile.update({ where: { userId }, data: { elo: Number(points) } })
+    if (key === "elo" && kind === "RATING" && points <= 2147483647n && points >= -2147483648n) await transaction.playerProfile.update({ where: { userId }, data: { elo: Math.max(0, Number(points)) } })
   }
 }

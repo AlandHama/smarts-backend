@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit, UnauthorizedException } from "@nestjs/common"
-import { Prisma, UserStatus } from "@prisma/client"
+import { PlayerAuditActorType, Prisma, UserStatus } from "@prisma/client"
 
 import { HashHelper } from "../../common/helpers/hash.helper"
 import { PrismaService } from "../../prisma.service"
@@ -37,6 +37,7 @@ import { ConfigService } from "../config/config.service"
 import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto"
 import { SystemAdminAnalyticsService } from "./system-admin-analytics.service"
 import { ReferralsService } from "../referrals/referrals.service"
+import { writePlayerAudit } from "../../common/helpers/player-audit"
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -625,6 +626,15 @@ export class SystemAdminService implements OnModuleInit {
   listPaidRewardRequests(status?: string) { return this.commerceService.listAdminPaidRewardRequests(status) }
   decidePaidRewardRequest(id: string, dto: PaidRewardDecisionDto, actorId: string) { return this.commerceService.decidePaidRewardRequest(id, dto, actorId) }
   rebuildPlayerGameStats(userId: string, gameKey: string) { return this.rebuildPlayerGameStatsTransaction.run({ userId, gameKey }) }
+  async resetPlayerCognitiveStats(userId: string, actorId: string) {
+    const stats = await this.prisma.playerCognitiveStats.upsert({
+      where: { userId },
+      create: { userId },
+      update: { calculation: 50, speed: 50, accuracy: 50, judgement: 50, observation: 50, memory: 50, matchesEvaluated: 0 },
+    })
+    await writePlayerAudit(this.prisma, { userId, actorType: PlayerAuditActorType.ADMIN, action: "COGNITIVE_STATS_RESET", entityType: "PlayerCognitiveStats", entityId: stats.id, summary: "Reset cognitive skill profile to the neutral baseline", changes: { skills: { old: "previous profile", new: "50/100 baseline" }, matchesEvaluated: { old: "previous evidence", new: 0 } }, metadata: { source: "system-admin", actorId } })
+    return this.getPlayer360(userId)
+  }
   listCommerceCatalogs() { return this.commerceService.listCatalogs(true) }
   createCommerceCatalog(dto: CreateCatalogDto) { return this.commerceService.createCatalog(dto) }
   updateCommerceCatalog(id: string, dto: UpdateCatalogDto) { return this.commerceService.updateCatalog(id, dto) }

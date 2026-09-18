@@ -337,6 +337,14 @@ export class SystemAdminController {
   }
 
   @UseGuards(SystemAdminGuard)
+  @Post("api/users/:userId/cognitive-stats/reset")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Reset one player's server-owned cognitive skill profile" })
+  resetPlayerCognitiveStats(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto) {
+    return this.systemAdminService.resetPlayerCognitiveStats(userId, admin.id)
+  }
+
+  @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "View a complete player account, wallet, and session summary" })

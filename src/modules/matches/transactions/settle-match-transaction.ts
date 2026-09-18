@@ -100,7 +100,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         return { totalQuestions: summary.totalQuestions + 1, totalCorrect: summary.totalCorrect + (payload.correct === true ? 1 : 0), totalTimeMs: summary.totalTimeMs + BigInt(timeTakenMs) }
       }, { totalQuestions: 0, totalCorrect: 0, totalTimeMs: 0n })
       await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
-      await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
+      const cognitiveStats = await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
       if (eloDelta > 0n && winner?.participant.id === item.participant.id) {
         const leaderboardKeys = this.getLeaderboardKeys(config)
         for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
@@ -109,7 +109,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         if (country && country !== opponent) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       }
       await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, changes: { result: { old: "PENDING", new: result }, scoreEarned: { old: 0n, new: item.score }, eloDelta: { old: 0n, new: eloDelta }, xpAwarded: { old: 0n, new: xp }, currencyReward: { old: 0n, new: coinReward } }, metadata: { gameKey: lockedMatch.gameDefinition.key, policyVersion } })
-      results.push({ playerId: player.id, username: player.username, result, score: item.score.toString(), eloDelta: eloDelta.toString(), progression, eloProgression, wallet })
+      results.push({ playerId: player.id, username: player.username, result, score: item.score.toString(), eloDelta: eloDelta.toString(), progression, eloProgression, wallet, cognitiveStats })
     }
 
     const settlementJson = { status: "SETTLED", matchId: lockedMatch.id, policyVersion, winnerPlayerId: winner?.participant.userId ?? null, draw, results }
@@ -141,7 +141,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     score: bigint,
     answers: { totalCorrect: number; totalQuestions: number; totalTimeMs: bigint },
   ) {
-    if (!participant.userId) return
+    if (!participant.userId) return null
 
     const profile = await transaction.playerCognitiveStats.upsert({
       where: { userId: participant.userId },
@@ -163,35 +163,64 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     const scoreSignal = questionCount > 0
       ? this.clampNumber((Number(score) / (questionCount * maxPoints)) * 100, 0, 100)
       : resultSignal
-    const performance = this.clampNumber(accuracy * 0.45 + speed * 0.25 + resultSignal * 0.15 + scoreSignal * 0.15, 0, 100)
+    const performance = this.clampNumber(accuracy * 0.5 + speed * 0.25 + resultSignal * 0.1 + scoreSignal * 0.15, 0, 100)
     const key = String(match.gameDefinition?.key ?? "").toLowerCase()
-    const targets = { calculation: performance, speed, accuracy, judgement: performance, observation: performance, memory: performance }
-
+    // A match is evidence, not a complete skill assessment. Only the skills
+    // exercised by this game receive a meaningful update. The bounded rate
+    // prevents a single lucky result from moving a player from the 50 baseline
+    // to the 90s, while repeated fast, accurate matches can still reach 90+.
+    const targets: Record<string, number> = {}
+    const addSkill = (name: string, value: number) => { targets[name] = this.clampNumber(value, 0, 100) }
+    addSkill("accuracy", accuracy)
     if (key === "math") {
-      targets.calculation = performance * 0.65 + accuracy * 0.35
-      targets.speed = speed * 0.7 + performance * 0.3
-    } else if (["high_low", "trivia", "follow_the_lead", "flick_master"].includes(key)) {
-      targets.judgement = performance * 0.65 + accuracy * 0.35
+      addSkill("calculation", accuracy * 0.7 + speed * 0.3)
+      addSkill("speed", speed)
+    } else if (["flick_master", "stacking"].includes(key)) {
+      addSkill("speed", speed)
+      addSkill("judgement", performance * 0.65 + accuracy * 0.35)
+    } else if (["high_low", "trivia", "follow_the_lead"].includes(key)) {
+      addSkill("judgement", performance * 0.65 + accuracy * 0.35)
     } else if (["bird_watching", "similarities"].includes(key)) {
-      targets.observation = performance * 0.7 + accuracy * 0.3
+      addSkill("observation", performance * 0.7 + accuracy * 0.3)
     } else if (key === "memorize_cards") {
-      targets.memory = performance * 0.7 + accuracy * 0.3
+      addSkill("memory", performance * 0.75 + accuracy * 0.25)
+    } else {
+      addSkill("judgement", performance)
     }
 
-    const learningRate = profile.matchesEvaluated === 0 ? 1 : 0.2
-    const blend = (previous: number, target: number) => Math.round(this.clampNumber(previous + (target - previous) * learningRate, 0, 100))
+    const evidence = this.clampNumber(questionCount / 15, 0, 1)
+    const confidence = this.clampNumber(0.35 + evidence * 0.65, 0.35, 1)
+    const learningRate = (profile.matchesEvaluated === 0 ? 0.08 : 0.06) * confidence
+    const before = {
+      calculation: profile.calculation,
+      speed: profile.speed,
+      accuracy: profile.accuracy,
+      judgement: profile.judgement,
+      observation: profile.observation,
+      memory: profile.memory,
+    }
+    const next = { ...before }
+    for (const [skill, target] of Object.entries(targets)) {
+      next[skill as keyof typeof next] = Math.round(this.clampNumber(before[skill as keyof typeof before] + (target - before[skill as keyof typeof before]) * learningRate, 0, 100))
+    }
     await transaction.playerCognitiveStats.update({
       where: { id: profile.id },
       data: {
-        calculation: blend(profile.calculation, targets.calculation),
-        speed: blend(profile.speed, targets.speed),
-        accuracy: blend(profile.accuracy, targets.accuracy),
-        judgement: blend(profile.judgement, targets.judgement),
-        observation: blend(profile.observation, targets.observation),
-        memory: blend(profile.memory, targets.memory),
+        calculation: next.calculation,
+        speed: next.speed,
+        accuracy: next.accuracy,
+        judgement: next.judgement,
+        observation: next.observation,
+        memory: next.memory,
         matchesEvaluated: { increment: 1 },
       },
     })
+    return {
+      before,
+      after: next,
+      delta: Object.fromEntries(Object.keys(next).map((skill) => [skill, next[skill as keyof typeof next] - before[skill as keyof typeof before]])),
+      matchesEvaluated: profile.matchesEvaluated + 1,
+    }
   }
 
   private clampNumber(value: number, minimum: number, maximum: number) {
