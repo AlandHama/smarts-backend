@@ -109,6 +109,68 @@ export class PlayersService {
     return this.serializeCognitiveStats(stats)
   }
 
+  async matchHistory(userId: string) {
+    const matches = await this.prisma.match.findMany({
+      where: {
+        status: { in: ["SETTLED", "REVIEW", "FINISHED", "CANCELLED"] },
+        participants: { some: { userId } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        mode: true,
+        status: true,
+        createdAt: true,
+        startedAt: true,
+        endedAt: true,
+        settledAt: true,
+        gameDefinition: { select: { key: true, name: true } },
+        participants: {
+          select: {
+            id: true,
+            userId: true,
+            participantType: true,
+            finalScore: true,
+            answeredCount: true,
+            result: true,
+            submittedAt: true,
+            user: {
+              select: {
+                username: true,
+                profile: { select: { displayName: true } },
+              },
+            },
+          },
+        },
+      },
+    })
+
+    return matches.map((match) => ({
+      id: match.id,
+      mode: match.mode,
+      status: match.status,
+      game: match.gameDefinition,
+      createdAt: match.createdAt,
+      startedAt: match.startedAt,
+      endedAt: match.endedAt,
+      settledAt: match.settledAt,
+      participants: match.participants.map((participant) => ({
+        id: participant.id,
+        userId: participant.userId,
+        participantType: participant.participantType,
+        score: participant.finalScore ?? 0,
+        answeredCount: participant.answeredCount,
+        result: participant.result,
+        submittedAt: participant.submittedAt,
+        displayName:
+          participant.user?.profile?.displayName ??
+          participant.user?.username ??
+          (participant.participantType === "BOT" ? "Bot" : "Player"),
+      })),
+    }))
+  }
+
   async publicOverview(viewerId: string, playerId: string) {
     const player = await this.prisma.user.findUnique({
       where: { id: playerId },

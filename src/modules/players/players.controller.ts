@@ -31,6 +31,12 @@ export class PlayersController {
     return this.playersService.cognitiveStats(user.id)
   }
 
+  @Get("me/matches")
+  @ApiOperation({ summary: "Get the authenticated player's completed match history" })
+  matchHistory(@CurrentUser() user: UserResponseDto) {
+    return this.playersService.matchHistory(user.id)
+  }
+
   @Get(":userId/overview")
   @ApiOperation({ summary: "Get a public player's profile, game statistics, and head-to-head summary" })
   overview(@CurrentUser() viewer: UserResponseDto, @Param("userId", new ParseUUIDPipe()) playerId: string) {
