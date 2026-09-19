@@ -18,6 +18,10 @@ import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import Grid from "@mui/material/Grid2";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
@@ -28,6 +32,7 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { api } from "../lib/api";
@@ -43,12 +48,59 @@ const money = (value: number, currency: string) =>
 const count = (value: number) => integer.format(Math.round(value || 0));
 const percent = (value: number) => `${Number(value || 0).toFixed(2)}%`;
 
+type AdUnitSet = {
+  interstitial: string;
+  nativeAdvanced: string;
+  rewarded: string;
+  rewardedInterstitial: string;
+  banner: string;
+};
+
+type AdUnitConfig = {
+  production: AdUnitSet;
+  development: AdUnitSet;
+};
+
+type RewardPolicy = {
+  key: string;
+  publicConfig: Record<string, unknown>;
+};
+
+const defaultAdUnitConfig: AdUnitConfig = {
+  production: {
+    interstitial: "ca-app-pub-3854108193312211/1673351615",
+    nativeAdvanced: "ca-app-pub-3854108193312211/4475250130",
+    rewarded: "ca-app-pub-3854108193312211/807s1239008",
+    rewardedInterstitial: "ca-app-pub-3854108193312211/2096498807",
+    banner: "ca-app-pub-3854108193312211/3126034083",
+  },
+  development: {
+    interstitial: "ca-app-pub-3940256099942544/1033173712",
+    nativeAdvanced: "ca-app-pub-3940256099942544/2247696110",
+    rewarded: "ca-app-pub-3940256099942544/5224354917",
+    rewardedInterstitial: "ca-app-pub-3940256099942544/5354046379",
+    banner: "ca-app-pub-3940256099942544/6300978111",
+  },
+};
+
+const adUnitFields: Array<[keyof AdUnitSet, string]> = [
+  ["interstitial", "Interstitial"],
+  ["nativeAdvanced", "Native advanced"],
+  ["rewarded", "Rewarded"],
+  ["rewardedInterstitial", "Rewarded interstitial"],
+  ["banner", "Banner"],
+];
+
 export function AdMobView() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<AdMobAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
+  const [adUnitConfig, setAdUnitConfig] =
+    useState<AdUnitConfig>(defaultAdUnitConfig);
+  const [adUnitSaving, setAdUnitSaving] = useState(false);
+  const [adUnitMessage, setAdUnitMessage] = useState("");
   const currency = data?.connection?.currencyCode || "USD";
 
   const load = (preservedError = "") => {
@@ -69,6 +121,32 @@ export function AdMobView() {
       });
   };
 
+  const loadAdUnitConfig = () => {
+    void api<RewardPolicy[]>("/reward-policies")
+      .then((policies) => {
+        const policy = policies.find((item) => item.key === "admob-units");
+        if (!policy) return;
+        const publicConfig = policy.publicConfig || {};
+        const readSet = (value: unknown, fallback: AdUnitSet): AdUnitSet => {
+          if (!value || typeof value !== "object") return fallback;
+          const source = value as Record<string, unknown>;
+          return Object.fromEntries(
+            adUnitFields.map(([key]) => [
+              key,
+              typeof source[key] === "string" && source[key]
+                ? source[key]
+                : fallback[key],
+            ]),
+          ) as AdUnitSet;
+        };
+        setAdUnitConfig((current) => ({
+          production: readSet(publicConfig.production, current.production),
+          development: readSet(publicConfig.development, current.development),
+        }));
+      })
+      .catch(() => undefined);
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const callbackStatus = params.get("admob");
@@ -80,6 +158,7 @@ export function AdMobView() {
     if (callbackStatus)
       window.history.replaceState({}, "", "/system-admin/admob/");
     load(callbackError);
+    loadAdUnitConfig();
     // The backend refreshes AdMob hourly. Refreshing this view every minute
     // keeps the admin console current after a manual or scheduled sync.
     const timer = window.setInterval(load, 60_000);
@@ -96,6 +175,32 @@ export function AdMobView() {
           ? reason.message
           : "Unable to start AdMob authorization",
       );
+    }
+  };
+
+  const saveAdUnitConfig = async () => {
+    setAdUnitSaving(true);
+    setAdUnitMessage("");
+    try {
+      await api("/reward-policies", {
+        method: "POST",
+        body: JSON.stringify({
+          key: "admob-units",
+          publicConfig: adUnitConfig,
+          privateConfig: {},
+          active: true,
+        }),
+      });
+      setAdUnitMessage(
+        "Ad unit IDs saved. New app launches will use this configuration.",
+      );
+      loadAdUnitConfig();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to save ad units",
+      );
+    } finally {
+      setAdUnitSaving(false);
     }
   };
 
@@ -152,9 +257,7 @@ export function AdMobView() {
               <Chip
                 size="small"
                 color={data.syncHealthy ? "success" : "warning"}
-                icon={
-                  data.syncHealthy ? <CheckCircleRoundedIcon /> : undefined
-                }
+                icon={data.syncHealthy ? <CheckCircleRoundedIcon /> : undefined}
                 label={data.syncHealthy ? "Connected" : "Sync needs attention"}
               />
             )}
@@ -203,6 +306,13 @@ export function AdMobView() {
           {error}
         </Alert>
       )}
+      <AdUnitConfigurationCard
+        config={adUnitConfig}
+        saving={adUnitSaving}
+        message={adUnitMessage}
+        onChange={setAdUnitConfig}
+        onSave={() => void saveAdUnitConfig()}
+      />
       {loading && !data ? (
         <Card sx={{ minHeight: 260, display: "grid", placeItems: "center" }}>
           <CircularProgress />
@@ -350,6 +460,115 @@ export function AdMobView() {
         </>
       )}
     </Stack>
+  );
+}
+
+function AdUnitConfigurationCard({
+  config,
+  saving,
+  message,
+  onChange,
+  onSave,
+}: {
+  config: AdUnitConfig;
+  saving: boolean;
+  message: string;
+  onChange: React.Dispatch<React.SetStateAction<AdUnitConfig>>;
+  onSave: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const update = (
+    environment: keyof AdUnitConfig,
+    key: keyof AdUnitSet,
+    value: string,
+  ) =>
+    onChange((current) => ({
+      ...current,
+      [environment]: { ...current[environment], [key]: value },
+    }));
+
+  return (
+    <>
+      <Card>
+        <CardContent>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            justifyContent="space-between"
+            spacing={2}
+            sx={{ mb: 2 }}
+          >
+            <Box>
+              <Typography variant="h6" fontWeight={850}>
+                Mobile ad unit IDs
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mt: 0.5 }}
+              >
+                Configure the AdMob placements used by development and
+                production app builds. Values are served through the public
+                configuration endpoint; never put secrets here.
+              </Typography>
+            </Box>
+            <Button variant="contained" onClick={() => setOpen(true)}>
+              Configure ad units
+            </Button>
+          </Stack>
+          {message && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              {message}
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>Configure mobile AdMob unit IDs</DialogTitle>
+        <DialogContent dividers>
+          <Grid container spacing={2} sx={{ pt: 1 }}>
+            {(["production", "development"] as const).map((environment) => (
+              <Grid key={environment} size={{ xs: 12, md: 6 }}>
+                <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 1 }}>
+                  {environment === "production" ? "Production" : "Development"}
+                </Typography>
+                <Stack spacing={1.5}>
+                  {adUnitFields.map(([key, label]) => (
+                    <TextField
+                      key={key}
+                      size="small"
+                      fullWidth
+                      label={label}
+                      value={config[environment][key]}
+                      onChange={(event) =>
+                        update(environment, key, event.target.value)
+                      }
+                    />
+                  ))}
+                </Stack>
+              </Grid>
+            ))}
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={saving}
+            onClick={() => {
+              onSave();
+              setOpen(false);
+            }}
+          >
+            {saving ? "Saving…" : "Save ad units"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 
