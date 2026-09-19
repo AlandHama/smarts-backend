@@ -56,6 +56,15 @@ export class StorageService {
           visibility,
           metadata: actorId ? { actorId } : undefined,
         } })
+        // Profile pictures are stored as public files, but the player-facing
+        // profile endpoints read PlayerProfile.avatarUrl. Keep both records in
+        // sync so other players can render the same image immediately.
+        if (userId && (dto.purpose === "profile-picture" || dto.purpose === "player-avatar") && visibility === StoredFileVisibility.PUBLIC) {
+          await transaction.playerProfile.updateMany({
+            where: { userId, isPublic: true },
+            data: { avatarUrl: this.stablePublicFileUrl(row.id) },
+          })
+        }
         if (userId) await writePlayerAudit(transaction, { userId, actorType: actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.PLAYER, action: "FILE_UPLOADED", entityType: "StoredFile", entityId: row.id, summary: `Uploaded ${row.originalName}`, changes: { file: { old: null, new: { originalName: row.originalName, purpose: row.purpose, contentType: row.contentType, byteSize: row.byteSize.toString(), visibility: row.visibility } } }, metadata: { ...(actorId ? { actorId } : {}) } })
         return row
       })
@@ -107,7 +116,16 @@ export class StorageService {
   }
 
   async updateStorage(userId: string, payload: PlayerStorageItemDto[]) {
-    return this.updatePlayerStorageTransaction.run({ userId, payload }).then((items) => ({ payload: items }))
+    const result = await this.updatePlayerStorageTransaction.run({ userId, payload })
+    const profileUrl = payload.find((item) => item.key === "profile_url")
+    if (profileUrl) {
+      const isPublic = profileUrl.isPublic ?? profileUrl.is_public ?? false
+      await this.prisma.playerProfile.updateMany({
+        where: { userId },
+        data: { avatarUrl: isPublic ? profileUrl.value : null },
+      })
+    }
+    return { payload: result }
   }
 
   deleteStorage(userId: string, key: string) {
