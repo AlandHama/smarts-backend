@@ -1,19 +1,31 @@
-import { Module } from "@nestjs/common"
+import { Module } from "@nestjs/common";
 
-import { DatabaseModule } from "../../database/database.module"
-import { ConfigModule } from "../config/config.module"
-import { EconomyModule } from "../economy/economy.module"
-import { AdRewardsController } from "./ad-rewards.controller"
-import { AdRewardsService } from "./ad-rewards.service"
-import { ClaimAdRewardTransaction } from "./transactions/claim-ad-reward-transaction"
-import { VerifyAdImpressionTransaction } from "./transactions/verify-ad-impression-transaction"
-import { GldModule } from "../gld/gld.module"
-import { ReferralsModule } from "../referrals/referrals.module"
+import { DatabaseModule } from "../../database/database.module";
+import { ConfigModule } from "../config/config.module";
+import { EconomyModule } from "../economy/economy.module";
+import { AdRewardsController } from "./ad-rewards.controller";
+import { AdRewardsService } from "./ad-rewards.service";
+import { ClaimAdRewardTransaction } from "./transactions/claim-ad-reward-transaction";
+import { VerifyAdImpressionTransaction } from "./transactions/verify-ad-impression-transaction";
+import { GldModule } from "../gld/gld.module";
+import { ReferralsModule } from "../referrals/referrals.module";
+import { AdMobSsvService } from "./admob-ssv.service";
 
 @Module({
-  imports: [DatabaseModule, ConfigModule, EconomyModule, GldModule, ReferralsModule],
+  imports: [
+    DatabaseModule,
+    ConfigModule,
+    EconomyModule,
+    GldModule,
+    ReferralsModule,
+  ],
   controllers: [AdRewardsController],
-  providers: [AdRewardsService, VerifyAdImpressionTransaction, ClaimAdRewardTransaction],
+  providers: [
+    AdRewardsService,
+    VerifyAdImpressionTransaction,
+    ClaimAdRewardTransaction,
+    AdMobSsvService,
+  ],
   exports: [AdRewardsService],
 })
 export class AdRewardsModule {}
