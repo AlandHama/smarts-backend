@@ -50,13 +50,14 @@ function localizedPrompt(value: unknown): string {
 export function selectServerContent<T extends ContentIdentity>(items: T[], count: number, serverNonce: string, gameKey?: string): T[] {
   const boundedCount = Math.min(Math.max(Math.trunc(count), 1), MAX_SERVER_CONTENT_PER_MATCH)
   const playableItems = gameKey === "math" ? items.filter(isMathServerContent) : items
-  return [...playableItems]
+  const ordered = [...playableItems]
     .sort((left, right) => {
       const leftRank = createHash("sha256").update(`${serverNonce}:content:${left.id}`).digest("hex")
       const rightRank = createHash("sha256").update(`${serverNonce}:content:${right.id}`).digest("hex")
       return leftRank.localeCompare(rightRank)
     })
-    .slice(0, boundedCount)
+  if (!ordered.length) return []
+  return Array.from({ length: boundedCount }, (_, index) => ordered[index % ordered.length])
 }
 
 export function createAssignmentToken(serverNonce: string, participantId: string, roundId: string, position: number): string {

@@ -12,7 +12,7 @@ export class CreateFriendInviteTransaction extends PrismaTransaction<{ userId: s
 
   protected async execute(input: { userId: string; dto: CreateFriendInviteDto }, transaction: Prisma.TransactionClient) {
     if (input.userId === input.dto.friendId) throw new ConflictException("A player cannot invite themselves")
-    const users = await transaction.user.findMany({ where: { id: { in: [input.userId, input.dto.friendId] } }, select: { id: true, status: true } })
+    const users = await transaction.user.findMany({ where: { id: { in: [input.userId, input.dto.friendId] } }, select: { id: true, status: true, username: true, profile: { select: { displayName: true } } } })
     if (users.length !== 2 || users.some((user) => user.status !== "ACTIVE")) throw new NotFoundException("Both players must be active")
     const friendship = await transaction.friendship.findFirst({ where: { OR: [{ userId: input.userId, friendId: input.dto.friendId }, { userId: input.dto.friendId, friendId: input.userId }] }, select: { id: true } })
     if (!friendship) throw new ConflictException("Players must be friends before sending a match invite")
@@ -24,6 +24,9 @@ export class CreateFriendInviteTransaction extends PrismaTransaction<{ userId: s
     if (pending) throw new ConflictException("A friend match invite is already pending")
     const now = new Date()
     const invite = await transaction.matchmakingInvite.create({ data: { inviterId: input.userId, inviteeId: input.dto.friendId, gameDefinitionId: game.id, expiresAt: new Date(now.getTime() + friendInviteTtlSeconds() * 1000) } })
+    const inviter = users.find((user) => user.id === input.userId)
+    const inviterName = inviter?.profile?.displayName || inviter?.username || "A friend"
+    await transaction.outboxEvent.create({ data: { eventType: "matchmaking.friend-invite.created", aggregateType: "MatchmakingInvite", aggregateId: invite.id, payload: { userId: input.dto.friendId, inviteId: invite.id, inviterId: input.userId, inviterName, gameKey: game.key, gameName: game.name, expiresAt: invite.expiresAt } as Prisma.InputJsonValue } })
     return { invite: { id: invite.id, status: invite.status, gameKey: game.key, expiresAt: invite.expiresAt, inviterId: invite.inviterId, inviteeId: invite.inviteeId } }
   }
 }
