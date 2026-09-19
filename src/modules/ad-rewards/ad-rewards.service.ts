@@ -7,10 +7,12 @@ import {
 import { ClaimAdRewardTransaction } from "./transactions/claim-ad-reward-transaction";
 import { VerifyAdImpressionTransaction } from "./transactions/verify-ad-impression-transaction";
 import { ClaimAdRewardDto, CreateAdImpressionDto } from "./dtos/ad-reward.dto";
+import { CompleteClientAdEventDto } from "./dtos/ad-event.dto";
 import { PrismaService } from "../../prisma.service";
 import { ConfigService } from "../config/config.service";
 import { GldEmissionService } from "../gld/gld.emission.service";
 import { AdMobSsvService } from "./admob-ssv.service";
+import { GldService } from "../gld/gld.service";
 
 @Injectable()
 export class AdRewardsService {
@@ -21,6 +23,7 @@ export class AdRewardsService {
     private readonly configService: ConfigService,
     private readonly gldEmission: GldEmissionService,
     private readonly admobSsv: AdMobSsvService,
+    private readonly gldService: GldService,
   ) {}
 
   createImpression(userId: string, dto: CreateAdImpressionDto) {
@@ -33,8 +36,66 @@ export class AdRewardsService {
     return this.admobSsv.handleCallback(originalUrl);
   }
 
+  async completeClientEvent(userId: string, dto: CompleteClientAdEventDto) {
+    const adFormat = dto.adFormat.trim().toLowerCase();
+    const eventType = dto.eventType.trim().toLowerCase();
+    const policy = await this.gldService.resolveAdRewardPolicy(
+      userId,
+      adFormat,
+      eventType,
+    );
+    return this.claimTransaction.run({
+      dto: {
+        claimId: dto.claimId,
+        providerEventId: dto.providerEventId.trim(),
+        adFormat,
+        claimToken: dto.claimToken,
+      },
+      trustedVerification: {
+        source: "CLIENT_EVENT",
+        payload: {
+          eventType,
+          regionCode: policy.regionCode,
+          countryCode: policy.countryCode,
+        },
+      },
+      serverRewardAmount: policy.rewardAmount,
+    });
+  }
+
   async estimate(userId: string, adFormat: string) {
     const normalizedFormat = adFormat.trim().toLowerCase();
+    const defaultEvent =
+      normalizedFormat === "rewarded" ||
+      normalizedFormat === "rewarded_interstitial"
+        ? "rewarded"
+        : "impression";
+    try {
+      const configured = await this.gldService.resolveAdRewardPolicy(
+        userId,
+        normalizedFormat,
+        defaultEvent,
+      );
+      const estimate = await this.prisma.$transaction((tx) =>
+        this.gldEmission.estimateAdReward(tx, {
+          userId,
+          baseAmount: configured.rewardAmount,
+          exactAmount: true,
+        }),
+      );
+      return {
+        adFormat: normalizedFormat,
+        currencyCode: "GLD",
+        amount: estimate.amount.toString(),
+        regionCode: configured.regionCode,
+        remainingDailyAds: estimate.remainingDailyAds,
+        remainingDailyGldCap: estimate.remainingDailyGldCap.toString(),
+        eligible: estimate.amount > 0n,
+        reason: estimate.reason,
+      };
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error;
+    }
     const policy = await this.configService.getActivePrivate<any>("ad-reward");
     const allowedFormats = policy.privateConfig.allowedAdFormats ?? [
       "rewarded",

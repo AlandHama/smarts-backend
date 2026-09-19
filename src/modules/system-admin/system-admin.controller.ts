@@ -1,34 +1,108 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common"
-import { FileInterceptor } from "@nestjs/platform-express"
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger"
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 
-import { CurrentUser } from "../../common/decorators/current-user.decorator"
-import { SkipAuth } from "../../common/decorators/skip-auth.decorator"
-import { UserResponseDto } from "../auth/dtos/user-response.dto"
-import { SystemAdminGuard } from "./system-admin.guard"
-import { SystemAdminService } from "./system-admin.service"
-import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminAnalyticsQueryDto, SystemAdminLoginDto, SystemAdminMatchesQueryDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
-import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
-import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
-import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
-import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
-import { BulkRedeemCodeDto, CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, PaidRewardDecisionDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
-import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UpdatePlayerStorageDto, UploadFileDto } from "../storage/dtos"
-import type { UploadedImage } from "../storage/types"
-import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
-import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto"
-import { RefreshTokenRequestDto } from "../auth/dtos/refresh-token-request.dto"
-import { TokenService } from "../auth/services/token.service"
-import { AdMobService } from "../admob/admob.service"
-import { AdMobReportQueryDto } from "../admob/dtos/admob.dto"
-import { GldService } from "../gld/gld.service"
-import { GldRevenueService } from "../gld/gld.revenue.service"
-import { GldReconciliationService } from "../gld/gld.reconciliation.service"
-import { UpdateGldControlsDto } from "../gld/dtos/gld-admin.dto"
-import { GldSimulationDto } from "../gld/dtos/gld-simulation.dto"
-import { GldManualBackingDto } from "../gld/dtos/gld-manual-backing.dto"
-import { UpdateReferralConfigDto, UpdateReferralPlayerOverrideDto } from "../referrals/dtos"
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { SkipAuth } from "../../common/decorators/skip-auth.decorator";
+import { UserResponseDto } from "../auth/dtos/user-response.dto";
+import { SystemAdminGuard } from "./system-admin.guard";
+import { SystemAdminService } from "./system-admin.service";
+import { RegisterRequestDto } from "../auth/dtos/register-request.dto";
+import {
+  PlayerAuditsQueryDto,
+  RegisterAdminDto,
+  ResetUserPasswordDto,
+  SystemAdminAnalyticsQueryDto,
+  SystemAdminLoginDto,
+  SystemAdminMatchesQueryDto,
+  SystemAdminSessionsQueryDto,
+  SystemAdminUsersQueryDto,
+  UpdateUserProfileDto,
+  UpdateUserStatusDto,
+} from "./dtos";
+import {
+  AwardProgressionPointsDto,
+  CreateProgressionDto,
+  CreateProgressionRewardDto,
+  CreateProgressionTierDto,
+  ResetProgressionDto,
+  UpdateProgressionDto,
+  UpdateProgressionRewardDto,
+  UpdateProgressionTierDto,
+} from "../progression/dtos";
+import {
+  CreateCurrencyDto,
+  ReverseWalletDto,
+  UpdateCurrencyDto,
+  WalletMutationDto,
+} from "../economy/dtos";
+import {
+  ApplyLeaderboardScoreDto,
+  CreateLeaderboardDto,
+  CreateLeaderboardSeasonDto,
+  UpdateLeaderboardDto,
+} from "../leaderboard/dtos";
+import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos";
+import {
+  BulkRedeemCodeDto,
+  CreateAssetDto,
+  CreateCatalogDto,
+  CreateCatalogItemDto,
+  InventoryMutationDto,
+  InventoryQueryDto,
+  PaidRewardDecisionDto,
+  UpdateAssetDto,
+  UpdateCatalogDto,
+  UpdateCatalogItemDto,
+} from "../commerce/dtos";
+import {
+  FeedbackQueryDto,
+  SystemAdminStorageQueryDto,
+  UpdateFeedbackDto,
+  UpdatePlayerStorageDto,
+  UploadFileDto,
+} from "../storage/dtos";
+import type { UploadedImage } from "../storage/types";
+import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto";
+import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto";
+import { RefreshTokenRequestDto } from "../auth/dtos/refresh-token-request.dto";
+import { TokenService } from "../auth/services/token.service";
+import { AdMobService } from "../admob/admob.service";
+import { AdMobReportQueryDto } from "../admob/dtos/admob.dto";
+import { GldService } from "../gld/gld.service";
+import { GldRevenueService } from "../gld/gld.revenue.service";
+import { GldReconciliationService } from "../gld/gld.reconciliation.service";
+import { UpdateGldControlsDto } from "../gld/dtos/gld-admin.dto";
+import { GldSimulationDto } from "../gld/dtos/gld-simulation.dto";
+import { GldManualBackingDto } from "../gld/dtos/gld-manual-backing.dto";
+import { UpsertGldAdRewardPolicyDto } from "../gld/dtos/gld-ad-reward-policy.dto";
+import {
+  UpdateReferralConfigDto,
+  UpdateReferralPlayerOverrideDto,
+} from "../referrals/dtos";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -45,84 +119,160 @@ export class SystemAdminController {
   @UseGuards(SystemAdminGuard)
   @Post("api/uploads")
   @ApiBearerAuth("access-token")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
   @ApiConsumes("multipart/form-data")
-  @ApiBody({ schema: { type: "object", properties: { file: { type: "string", format: "binary" }, purpose: { type: "string" }, visibility: { type: "string", enum: ["PUBLIC", "PRIVATE"] } }, required: ["file", "purpose"] } })
-  uploadFile(@UploadedFile() file: UploadedImage, @Body() dto: UploadFileDto, @CurrentUser() admin: UserResponseDto) {
-    return this.systemAdminService.uploadFile(file, dto, admin.id)
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: { type: "string", format: "binary" },
+        purpose: { type: "string" },
+        visibility: { type: "string", enum: ["PUBLIC", "PRIVATE"] },
+      },
+      required: ["file", "purpose"],
+    },
+  })
+  uploadFile(
+    @UploadedFile() file: UploadedImage,
+    @Body() dto: UploadFileDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.uploadFile(file, dto, admin.id);
   }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/files/:fileId/url")
   @ApiBearerAuth("access-token")
-  getFileUrl(@Param("fileId", ParseUUIDPipe) fileId: string) { return this.systemAdminService.fileUrl(fileId).then((url) => ({ url })) }
+  getFileUrl(@Param("fileId", ParseUUIDPipe) fileId: string) {
+    return this.systemAdminService.fileUrl(fileId).then((url) => ({ url }));
+  }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/files/:fileId")
   @ApiBearerAuth("access-token")
-  deleteFile(@Param("fileId", ParseUUIDPipe) fileId: string, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.deleteFile(fileId, admin.id) }
+  deleteFile(
+    @Param("fileId", ParseUUIDPipe) fileId: string,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.deleteFile(fileId, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/storage")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List player storage entries and uploaded files" })
-  listStorage(@Query() query: SystemAdminStorageQueryDto) { return this.systemAdminService.listStorage(query) }
+  listStorage(@Query() query: SystemAdminStorageQueryDto) {
+    return this.systemAdminService.listStorage(query);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/friends")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List friendships, requests, and online presence" })
-  listFriends(@Query() query: AdminFriendsQueryDto) { return this.systemAdminService.listFriends(query) }
+  listFriends(@Query() query: AdminFriendsQueryDto) {
+    return this.systemAdminService.listFriends(query);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/referrals")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Inspect referral configuration, attribution, and rewards" })
-  listReferrals(@Query("search") search?: string) { return this.systemAdminService.listReferrals(search) }
+  @ApiOperation({
+    summary: "Inspect referral configuration, attribution, and rewards",
+  })
+  listReferrals(@Query("search") search?: string) {
+    return this.systemAdminService.listReferrals(search);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/referrals/config")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Update the server-owned referral policy" })
-  updateReferralConfig(@Body() dto: UpdateReferralConfigDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.updateReferralConfig(dto, admin.id) }
+  updateReferralConfig(
+    @Body() dto: UpdateReferralConfigDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.updateReferralConfig(dto, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/referrals/players/:userId")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Update or clear a player's referral policy override" })
-  updateReferralPlayerOverride(@Param("userId", ParseUUIDPipe) userId: string, @Body() dto: UpdateReferralPlayerOverrideDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.updateReferralPlayerOverride(userId, dto, admin.id) }
+  @ApiOperation({
+    summary: "Update or clear a player's referral policy override",
+  })
+  updateReferralPlayerOverride(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Body() dto: UpdateReferralPlayerOverrideDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.updateReferralPlayerOverride(
+      userId,
+      dto,
+      admin.id,
+    );
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/friends/:userId/:friendId")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Create an accepted friendship between two players" })
-  makeFriends(@Param("userId", ParseUUIDPipe) userId: string, @Param("friendId", ParseUUIDPipe) friendId: string) { return this.systemAdminService.makeFriends(userId, friendId) }
+  @ApiOperation({
+    summary: "Create an accepted friendship between two players",
+  })
+  makeFriends(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Param("friendId", ParseUUIDPipe) friendId: string,
+  ) {
+    return this.systemAdminService.makeFriends(userId, friendId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/friends/:userId/:friendId")
   @ApiBearerAuth("access-token")
-  removeFriend(@Param("userId", ParseUUIDPipe) userId: string, @Param("friendId", ParseUUIDPipe) friendId: string) { return this.systemAdminService.removeFriend(userId, friendId) }
+  removeFriend(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Param("friendId", ParseUUIDPipe) friendId: string,
+  ) {
+    return this.systemAdminService.removeFriend(userId, friendId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/friends/:userId/:friendId/block")
   @ApiBearerAuth("access-token")
-  blockFriend(@Param("userId", ParseUUIDPipe) userId: string, @Param("friendId", ParseUUIDPipe) friendId: string) { return this.systemAdminService.blockFriend(userId, friendId) }
+  blockFriend(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Param("friendId", ParseUUIDPipe) friendId: string,
+  ) {
+    return this.systemAdminService.blockFriend(userId, friendId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/friends/:userId/:friendId/block")
   @ApiBearerAuth("access-token")
-  unblockFriend(@Param("userId", ParseUUIDPipe) userId: string, @Param("friendId", ParseUUIDPipe) friendId: string) { return this.systemAdminService.unblockFriend(userId, friendId) }
+  unblockFriend(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Param("friendId", ParseUUIDPipe) friendId: string,
+  ) {
+    return this.systemAdminService.unblockFriend(userId, friendId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/feedback")
   @ApiBearerAuth("access-token")
-  listFeedback(@Query() query: FeedbackQueryDto) { return this.systemAdminService.listFeedback(query) }
+  listFeedback(@Query() query: FeedbackQueryDto) {
+    return this.systemAdminService.listFeedback(query);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/feedback/:feedbackId")
   @ApiBearerAuth("access-token")
-  updateFeedback(@Param("feedbackId", ParseUUIDPipe) feedbackId: string, @Body() dto: UpdateFeedbackDto, @CurrentUser() admin: UserResponseDto) {
-    return this.systemAdminService.updateFeedback(feedbackId, dto, admin.id)
+  updateFeedback(
+    @Param("feedbackId", ParseUUIDPipe) feedbackId: string,
+    @Body() dto: UpdateFeedbackDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.updateFeedback(feedbackId, dto, admin.id);
   }
 
   @SkipAuth()
@@ -130,15 +280,21 @@ export class SystemAdminController {
   @HttpCode(200)
   @ApiOperation({ summary: "Sign in to the system administrator console" })
   login(@Body() dto: SystemAdminLoginDto, @Req() request: any) {
-    return this.systemAdminService.login(dto, request)
+    return this.systemAdminService.login(dto, request);
   }
 
   @SkipAuth()
   @Post("api/auth/refresh")
   @HttpCode(200)
-  @ApiOperation({ summary: "Rotate a system administrator console refresh token" })
+  @ApiOperation({
+    summary: "Rotate a system administrator console refresh token",
+  })
   refresh(@Body() dto: RefreshTokenRequestDto, @Req() request: any) {
-    return this.tokenService.generateRefreshToken(dto.refreshToken, request, false)
+    return this.tokenService.generateRefreshToken(
+      dto.refreshToken,
+      request,
+      false,
+    );
   }
 
   @UseGuards(SystemAdminGuard)
@@ -146,148 +302,269 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Get system administrator dashboard counts" })
   overview() {
-    return this.systemAdminService.overview()
+    return this.systemAdminService.overview();
   }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/analytics")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Get server-owned SMARTS engagement, retention, gameplay, progression, economy, and reliability analytics" })
+  @ApiOperation({
+    summary:
+      "Get server-owned SMARTS engagement, retention, gameplay, progression, economy, and reliability analytics",
+  })
   analytics(@Query() query: SystemAdminAnalyticsQueryDto) {
-    return this.systemAdminService.analytics(query.days)
+    return this.systemAdminService.analytics(query.days);
   }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/admob/connect")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Create the Google OAuth URL for the AdMob reporting account" })
-  admobConnect(@CurrentUser() admin: UserResponseDto) { return this.adMobService.getAuthorizationUrl(admin.id) }
+  @ApiOperation({
+    summary: "Create the Google OAuth URL for the AdMob reporting account",
+  })
+  admobConnect(@CurrentUser() admin: UserResponseDto) {
+    return this.adMobService.getAuthorizationUrl(admin.id);
+  }
 
   @SkipAuth()
   @Get("api/admob/oauth/callback")
-  @ApiOperation({ summary: "Complete the Google OAuth callback for AdMob reporting" })
-  async admobOAuthCallback(@Query("code") code: string, @Query("state") state: string, @Query("error") error: string | undefined, @Res() response: any) {
+  @ApiOperation({
+    summary: "Complete the Google OAuth callback for AdMob reporting",
+  })
+  async admobOAuthCallback(
+    @Query("code") code: string,
+    @Query("state") state: string,
+    @Query("error") error: string | undefined,
+    @Res() response: any,
+  ) {
     try {
-      await this.adMobService.handleCallback(code, state, error)
-      return response.redirect("/system-admin/admob/?admob=connected")
+      await this.adMobService.handleCallback(code, state, error);
+      return response.redirect("/system-admin/admob/?admob=connected");
     } catch (reason) {
-      const message = reason instanceof Error ? reason.message : "AdMob authorization failed"
-      return response.redirect(`/system-admin/admob/?admob=error&message=${encodeURIComponent(message)}`)
+      const message =
+        reason instanceof Error ? reason.message : "AdMob authorization failed";
+      return response.redirect(
+        `/system-admin/admob/?admob=error&message=${encodeURIComponent(message)}`,
+      );
     }
   }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/admob")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Get synchronized AdMob connection, performance, and earnings analytics" })
-  admob(@Query() query: AdMobReportQueryDto) { return this.adMobService.analytics(query.days) }
+  @ApiOperation({
+    summary:
+      "Get synchronized AdMob connection, performance, and earnings analytics",
+  })
+  admob(@Query() query: AdMobReportQueryDto) {
+    return this.adMobService.analytics(query.days);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/admob/sync")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Synchronize recent AdMob network report rows" })
-  admobSync(@Query() query: AdMobReportQueryDto) { return this.adMobService.sync(query.days) }
+  admobSync(@Query() query: AdMobReportQueryDto) {
+    return this.adMobService.sync(query.days);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/admob")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Disconnect the AdMob reporting account" })
-  admobDisconnect() { return this.adMobService.disconnect() }
+  admobDisconnect() {
+    return this.adMobService.disconnect();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/gld")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Inspect the GLD economy state, reserve, supply, emissions, and revenue snapshots" })
-  gld() { return this.gldService.getAdminState() }
+  @ApiOperation({
+    summary:
+      "Inspect the GLD economy state, reserve, supply, emissions, and revenue snapshots",
+  })
+  gld() {
+    return this.gldService.getAdminState();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/gld/recalculate")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Recalculate the GLD market value and daily emission budget" })
-  gldRecalculate() { return this.gldService.recalculate("admin") }
+  @ApiOperation({
+    summary: "Recalculate the GLD market value and daily emission budget",
+  })
+  gldRecalculate() {
+    return this.gldService.recalculate("admin");
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/gld/history")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Get GLD price history at minute, hour, or day granularity" })
-  gldHistory(@Query("days") days?: string, @Query("granularity") granularity?: string) { return this.gldService.getHistory(Number(days) || 30, granularity) }
+  @ApiOperation({
+    summary: "Get GLD price history at minute, hour, or day granularity",
+  })
+  gldHistory(
+    @Query("days") days?: string,
+    @Query("granularity") granularity?: string,
+  ) {
+    return this.gldService.getHistory(Number(days) || 30, granularity);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/gld/simulate")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Simulate a GLD price from reserve and circulating supply without changing the economy" })
-  gldSimulate(@Body() dto: GldSimulationDto) { return this.gldService.simulate(dto) }
+  @ApiOperation({
+    summary:
+      "Simulate a GLD price from reserve and circulating supply without changing the economy",
+  })
+  gldSimulate(@Body() dto: GldSimulationDto) {
+    return this.gldService.simulate(dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/gld/backing")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Add audited administrator-supplied reserve backing to GLD" })
-  async gldManualBacking(@Body() dto: GldManualBackingDto, @CurrentUser() admin: UserResponseDto) {
-    const backing = await this.gldService.addManualBacking(dto, admin.id)
-    return { backing, economy: await this.gldService.recalculate("manual-backing") }
+  @ApiOperation({
+    summary: "Add audited administrator-supplied reserve backing to GLD",
+  })
+  async gldManualBacking(
+    @Body() dto: GldManualBackingDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    const backing = await this.gldService.addManualBacking(dto, admin.id);
+    return {
+      backing,
+      economy: await this.gldService.recalculate("manual-backing"),
+    };
   }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/gld/revenue/materialize")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Materialize mature AdMob earnings into the GLD treasury" })
+  @ApiOperation({
+    summary: "Materialize mature AdMob earnings into the GLD treasury",
+  })
   async gldMaterializeRevenue() {
-    const materialized = await this.gldRevenueService.materializeMaturedAdMobRevenue()
-    return { materialized, economy: await this.gldService.recalculate("admin-revenue-materialization") }
+    const materialized =
+      await this.gldRevenueService.materializeMaturedAdMobRevenue();
+    return {
+      materialized,
+      economy: await this.gldService.recalculate(
+        "admin-revenue-materialization",
+      ),
+    };
   }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/gld/reconcile")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Reconcile cached GLD supply against active wallet balances" })
-  gldReconcile() { return this.gldReconciliationService.reconcile() }
+  @ApiOperation({
+    summary: "Reconcile cached GLD supply against active wallet balances",
+  })
+  gldReconcile() {
+    return this.gldReconciliationService.reconcile();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/gld/controls")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Update persisted GLD emergency controls" })
-  gldControls(@Body() dto: UpdateGldControlsDto, @CurrentUser() admin: UserResponseDto) { return this.gldService.updateControls(dto, admin.id) }
+  gldControls(
+    @Body() dto: UpdateGldControlsDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.gldService.updateControls(dto, admin.id);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/gld/ad-reward-policies")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "List GLD ad rewards by ad format, event, and country/region",
+  })
+  gldAdRewardPolicies() {
+    return this.gldService.listAdRewardPolicies();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Put("api/gld/ad-reward-policies")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Create or update a GLD ad reward policy" })
+  gldAdRewardPolicy(
+    @Body() dto: UpsertGldAdRewardPolicyDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.gldService.upsertAdRewardPolicy(dto, admin.id);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/gld/ad-reward-policies/:id")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Delete a GLD ad reward policy" })
+  gldAdRewardPolicyDelete(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.gldService.deleteAdRewardPolicy(id, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/operations")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Inspect operational health, queues, failures, ledgers, and recent audit events" })
-  operations() { return this.systemAdminService.operations() }
+  @ApiOperation({
+    summary:
+      "Inspect operational health, queues, failures, ledgers, and recent audit events",
+  })
+  operations() {
+    return this.systemAdminService.operations();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/audit")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List immutable system administrator audit events" })
-  audit(@Query("limit") limit?: string) { return this.systemAdminService.listAudit(limit ? Number(limit) : 100) }
+  audit(@Query("limit") limit?: string) {
+    return this.systemAdminService.listAudit(limit ? Number(limit) : 100);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/player-audits")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "List server-owned player activity history with filters" })
-  playerAudits(@Query() query: PlayerAuditsQueryDto) { return this.systemAdminService.listPlayerAudits(query) }
+  @ApiOperation({
+    summary: "List server-owned player activity history with filters",
+  })
+  playerAudits(@Query() query: PlayerAuditsQueryDto) {
+    return this.systemAdminService.listPlayerAudits(query);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/users")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List and search user accounts" })
   users(@Query() query: SystemAdminUsersQueryDto) {
-    return this.systemAdminService.listUsers(query)
+    return this.systemAdminService.listUsers(query);
   }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Create a player account from the admin console" })
-  createUser(@Body() dto: RegisterRequestDto, @CurrentUser() admin: UserResponseDto) {
-    return this.systemAdminService.createUser(dto, admin.id)
+  createUser(
+    @Body() dto: RegisterRequestDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.createUser(dto, admin.id);
   }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/admins")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Create an active system administrator account" })
-  createAdmin(@Body() dto: RegisterAdminDto, @CurrentUser() admin: UserResponseDto) {
-    return this.systemAdminService.createAdmin(dto, admin.id)
+  createAdmin(
+    @Body() dto: RegisterAdminDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.createAdmin(dto, admin.id);
   }
 
   @UseGuards(SystemAdminGuard)
@@ -295,67 +572,97 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List player and administrator session history" })
   sessions(@Query() query: SystemAdminSessionsQueryDto) {
-    return this.systemAdminService.listSessions(query)
+    return this.systemAdminService.listSessions(query);
   }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/sessions/:sessionId")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Terminate an active player or administrator session" })
-  terminateSession(@Param("sessionId", ParseUUIDPipe) sessionId: string, @CurrentUser() admin: UserResponseDto) {
-    return this.systemAdminService.terminateSession(sessionId, admin.id)
+  @ApiOperation({
+    summary: "Terminate an active player or administrator session",
+  })
+  terminateSession(
+    @Param("sessionId", ParseUUIDPipe) sessionId: string,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.terminateSession(sessionId, admin.id);
   }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/matches")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "List match history for the system administrator console" })
-  matches(@Query() query: SystemAdminMatchesQueryDto) { return this.systemAdminService.listMatches(query) }
+  @ApiOperation({
+    summary: "List match history for the system administrator console",
+  })
+  matches(@Query() query: SystemAdminMatchesQueryDto) {
+    return this.systemAdminService.listMatches(query);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/matches/:matchId/360")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Inspect a complete server-owned match timeline" })
-  match360(@Param("matchId", ParseUUIDPipe) matchId: string) { return this.systemAdminService.getMatch360(matchId) }
+  match360(@Param("matchId", ParseUUIDPipe) matchId: string) {
+    return this.systemAdminService.getMatch360(matchId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId/360")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "View the complete Player 360 account workspace" })
   getPlayer360(@Param("userId", ParseUUIDPipe) userId: string) {
-    return this.systemAdminService.getPlayer360(userId)
+    return this.systemAdminService.getPlayer360(userId);
   }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId/audits")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List one player's complete activity history" })
-  playerAuditsForUser(@Param("userId", ParseUUIDPipe) userId: string, @Query() query: PlayerAuditsQueryDto) {
-    return this.systemAdminService.listPlayerAudits({ ...query, playerId: userId })
+  playerAuditsForUser(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Query() query: PlayerAuditsQueryDto,
+  ) {
+    return this.systemAdminService.listPlayerAudits({
+      ...query,
+      playerId: userId,
+    });
   }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/game-stats/rebuild")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Rebuild one player's game statistics from settled matches and accepted answer events" })
-  rebuildPlayerGameStats(@Param("userId", ParseUUIDPipe) userId: string, @Query("gameKey") gameKey: string) {
-    return this.systemAdminService.rebuildPlayerGameStats(userId, gameKey)
+  @ApiOperation({
+    summary:
+      "Rebuild one player's game statistics from settled matches and accepted answer events",
+  })
+  rebuildPlayerGameStats(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Query("gameKey") gameKey: string,
+  ) {
+    return this.systemAdminService.rebuildPlayerGameStats(userId, gameKey);
   }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/cognitive-stats/reset")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Reset one player's server-owned cognitive skill profile" })
-  resetPlayerCognitiveStats(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto) {
-    return this.systemAdminService.resetPlayerCognitiveStats(userId, admin.id)
+  @ApiOperation({
+    summary: "Reset one player's server-owned cognitive skill profile",
+  })
+  resetPlayerCognitiveStats(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.resetPlayerCognitiveStats(userId, admin.id);
   }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "View a complete player account, wallet, and session summary" })
+  @ApiOperation({
+    summary: "View a complete player account, wallet, and session summary",
+  })
   getUser(@Param("userId", ParseUUIDPipe) userId: string) {
-    return this.systemAdminService.getUserDetails(userId)
+    return this.systemAdminService.getUserDetails(userId);
   }
 
   @UseGuards(SystemAdminGuard)
@@ -367,47 +674,96 @@ export class SystemAdminController {
     @CurrentUser() admin: UserResponseDto,
     @Body() dto: UpdateUserProfileDto,
   ) {
-    return this.systemAdminService.updateUserProfile(userId, admin.id, dto)
+    return this.systemAdminService.updateUserProfile(userId, admin.id, dto);
   }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/storage")
   @ApiBearerAuth("access-token")
-  updatePlayerStorage(@Param("userId", ParseUUIDPipe) userId: string, @Body() dto: UpdatePlayerStorageDto) { return this.systemAdminService.updatePlayerStorage(userId, dto) }
+  updatePlayerStorage(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Body() dto: UpdatePlayerStorageDto,
+  ) {
+    return this.systemAdminService.updatePlayerStorage(userId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/users/:userId/storage/:key")
   @ApiBearerAuth("access-token")
-  deletePlayerStorage(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string) { return this.systemAdminService.deletePlayerStorage(userId, key) }
+  deletePlayerStorage(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Param("key") key: string,
+  ) {
+    return this.systemAdminService.deletePlayerStorage(userId, key);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/files")
   @ApiBearerAuth("access-token")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
   @ApiConsumes("multipart/form-data")
-  @ApiBody({ schema: { type: "object", properties: { file: { type: "string", format: "binary" }, purpose: { type: "string" }, visibility: { type: "string", enum: ["PUBLIC", "PRIVATE"] } }, required: ["file", "purpose"] } })
-  uploadPlayerFile(@Param("userId", ParseUUIDPipe) userId: string, @UploadedFile() file: UploadedImage, @Body() dto: UploadFileDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.uploadPlayerFile(file, userId, dto, admin.id) }
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: { type: "string", format: "binary" },
+        purpose: { type: "string" },
+        visibility: { type: "string", enum: ["PUBLIC", "PRIVATE"] },
+      },
+      required: ["file", "purpose"],
+    },
+  })
+  uploadPlayerFile(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @UploadedFile() file: UploadedImage,
+    @Body() dto: UploadFileDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.uploadPlayerFile(
+      file,
+      userId,
+      dto,
+      admin.id,
+    );
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId/files/:fileId/url")
   @ApiBearerAuth("access-token")
-  playerFileUrl(@Param("userId", ParseUUIDPipe) userId: string, @Param("fileId", ParseUUIDPipe) fileId: string) { return this.systemAdminService.playerFileUrl(fileId, userId).then((url) => ({ url })) }
+  playerFileUrl(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Param("fileId", ParseUUIDPipe) fileId: string,
+  ) {
+    return this.systemAdminService
+      .playerFileUrl(fileId, userId)
+      .then((url) => ({ url }));
+  }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/users/:userId/files/:fileId")
   @ApiBearerAuth("access-token")
-  deletePlayerFile(@Param("userId", ParseUUIDPipe) userId: string, @Param("fileId", ParseUUIDPipe) fileId: string, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.deletePlayerFile(fileId, userId, admin.id) }
+  deletePlayerFile(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Param("fileId", ParseUUIDPipe) fileId: string,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.deletePlayerFile(fileId, userId, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/reset-password")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Reset a player's password and terminate active sessions" })
+  @ApiOperation({
+    summary: "Reset a player's password and terminate active sessions",
+  })
   resetPassword(
     @Param("userId", ParseUUIDPipe) userId: string,
     @CurrentUser() admin: UserResponseDto,
     @Body() dto: ResetUserPasswordDto,
   ) {
-    return this.systemAdminService.resetUserPassword(userId, admin.id, dto)
+    return this.systemAdminService.resetUserPassword(userId, admin.id, dto);
   }
 
   @UseGuards(SystemAdminGuard)
@@ -419,302 +775,544 @@ export class SystemAdminController {
     @CurrentUser() admin: UserResponseDto,
     @Body() dto: UpdateUserStatusDto,
   ) {
-    return this.systemAdminService.updateStatus(userId, admin.id, dto)
+    return this.systemAdminService.updateStatus(userId, admin.id, dto);
   }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/users/:userId")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Permanently delete a user account" })
-  deleteUser(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto) {
-    return this.systemAdminService.deleteUser(userId, admin.id)
+  deleteUser(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.deleteUser(userId, admin.id);
   }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/progressions")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "List progression definitions, tiers, and configured rewards" })
+  @ApiOperation({
+    summary: "List progression definitions, tiers, and configured rewards",
+  })
   progressions(@Query("includeInactive") includeInactive?: string) {
-    return this.systemAdminService.listProgressions(includeInactive === "true")
+    return this.systemAdminService.listProgressions(includeInactive === "true");
   }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/progressions")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Create a progression definition" })
-  createProgression(@Body() dto: CreateProgressionDto) { return this.systemAdminService.createProgression(dto) }
+  createProgression(@Body() dto: CreateProgressionDto) {
+    return this.systemAdminService.createProgression(dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/progressions/:progressionId")
   @ApiBearerAuth("access-token")
-  getProgression(@Param("progressionId", ParseUUIDPipe) progressionId: string) { return this.systemAdminService.getProgression(progressionId) }
+  getProgression(@Param("progressionId", ParseUUIDPipe) progressionId: string) {
+    return this.systemAdminService.getProgression(progressionId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/progressions/:progressionId")
   @ApiBearerAuth("access-token")
-  updateProgression(@Param("progressionId", ParseUUIDPipe) progressionId: string, @Body() dto: UpdateProgressionDto) { return this.systemAdminService.updateProgression(progressionId, dto) }
+  updateProgression(
+    @Param("progressionId", ParseUUIDPipe) progressionId: string,
+    @Body() dto: UpdateProgressionDto,
+  ) {
+    return this.systemAdminService.updateProgression(progressionId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/progressions/:progressionId/tiers")
   @ApiBearerAuth("access-token")
-  createProgressionTier(@Param("progressionId", ParseUUIDPipe) progressionId: string, @Body() dto: CreateProgressionTierDto) { return this.systemAdminService.createProgressionTier(progressionId, dto) }
+  createProgressionTier(
+    @Param("progressionId", ParseUUIDPipe) progressionId: string,
+    @Body() dto: CreateProgressionTierDto,
+  ) {
+    return this.systemAdminService.createProgressionTier(progressionId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/progression-tiers/:tierId")
   @ApiBearerAuth("access-token")
-  updateProgressionTier(@Param("tierId", ParseUUIDPipe) tierId: string, @Body() dto: UpdateProgressionTierDto) { return this.systemAdminService.updateProgressionTier(tierId, dto) }
+  updateProgressionTier(
+    @Param("tierId", ParseUUIDPipe) tierId: string,
+    @Body() dto: UpdateProgressionTierDto,
+  ) {
+    return this.systemAdminService.updateProgressionTier(tierId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/progression-tiers/:tierId")
   @ApiBearerAuth("access-token")
-  deleteProgressionTier(@Param("tierId", ParseUUIDPipe) tierId: string) { return this.systemAdminService.deleteProgressionTier(tierId) }
+  deleteProgressionTier(@Param("tierId", ParseUUIDPipe) tierId: string) {
+    return this.systemAdminService.deleteProgressionTier(tierId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/progression-tiers/:tierId/rewards")
   @ApiBearerAuth("access-token")
-  createProgressionReward(@Param("tierId", ParseUUIDPipe) tierId: string, @Body() dto: CreateProgressionRewardDto) { return this.systemAdminService.createProgressionReward(tierId, dto) }
+  createProgressionReward(
+    @Param("tierId", ParseUUIDPipe) tierId: string,
+    @Body() dto: CreateProgressionRewardDto,
+  ) {
+    return this.systemAdminService.createProgressionReward(tierId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/progression-rewards/:rewardId")
   @ApiBearerAuth("access-token")
-  updateProgressionReward(@Param("rewardId", ParseUUIDPipe) rewardId: string, @Body() dto: UpdateProgressionRewardDto) { return this.systemAdminService.updateProgressionReward(rewardId, dto) }
+  updateProgressionReward(
+    @Param("rewardId", ParseUUIDPipe) rewardId: string,
+    @Body() dto: UpdateProgressionRewardDto,
+  ) {
+    return this.systemAdminService.updateProgressionReward(rewardId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/progression-rewards/:rewardId")
   @ApiBearerAuth("access-token")
-  deleteProgressionReward(@Param("rewardId", ParseUUIDPipe) rewardId: string) { return this.systemAdminService.deleteProgressionReward(rewardId) }
+  deleteProgressionReward(@Param("rewardId", ParseUUIDPipe) rewardId: string) {
+    return this.systemAdminService.deleteProgressionReward(rewardId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/progressions/:key/award")
   @ApiBearerAuth("access-token")
-  awardProgression(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string, @Body() dto: AwardProgressionPointsDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.awardProgression(userId, key, dto, admin.id) }
+  awardProgression(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Param("key") key: string,
+    @Body() dto: AwardProgressionPointsDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.awardProgression(userId, key, dto, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/progressions/:key/reset")
   @ApiBearerAuth("access-token")
-  resetProgression(@Param("userId", ParseUUIDPipe) userId: string, @Param("key") key: string, @Body() dto: ResetProgressionDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.resetProgression(userId, key, dto, admin.id) }
+  resetProgression(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Param("key") key: string,
+    @Body() dto: ResetProgressionDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.resetProgression(userId, key, dto, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/economy/currencies")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List all currency definitions and wallet usage" })
-  currencies() { return this.systemAdminService.listCurrencies() }
+  currencies() {
+    return this.systemAdminService.listCurrencies();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/economy/currencies")
   @ApiBearerAuth("access-token")
-  createCurrency(@Body() dto: CreateCurrencyDto) { return this.systemAdminService.createCurrency(dto) }
+  createCurrency(@Body() dto: CreateCurrencyDto) {
+    return this.systemAdminService.createCurrency(dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/economy/currencies/:currencyId")
   @ApiBearerAuth("access-token")
-  updateCurrency(@Param("currencyId", ParseUUIDPipe) currencyId: string, @Body() dto: UpdateCurrencyDto) { return this.systemAdminService.updateCurrency(currencyId, dto) }
+  updateCurrency(
+    @Param("currencyId", ParseUUIDPipe) currencyId: string,
+    @Body() dto: UpdateCurrencyDto,
+  ) {
+    return this.systemAdminService.updateCurrency(currencyId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId/wallet")
   @ApiBearerAuth("access-token")
-  getWallet(@Param("userId", ParseUUIDPipe) userId: string) { return this.systemAdminService.getAdminWallet(userId) }
+  getWallet(@Param("userId", ParseUUIDPipe) userId: string) {
+    return this.systemAdminService.getAdminWallet(userId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/wallet/credit")
   @ApiBearerAuth("access-token")
-  creditWallet(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto, @Body() dto: WalletMutationDto) { return this.systemAdminService.creditWallet(userId, dto, admin.id) }
+  creditWallet(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentUser() admin: UserResponseDto,
+    @Body() dto: WalletMutationDto,
+  ) {
+    return this.systemAdminService.creditWallet(userId, dto, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/wallet/debit")
   @ApiBearerAuth("access-token")
-  debitWallet(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto, @Body() dto: WalletMutationDto) { return this.systemAdminService.debitWallet(userId, dto, admin.id) }
+  debitWallet(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentUser() admin: UserResponseDto,
+    @Body() dto: WalletMutationDto,
+  ) {
+    return this.systemAdminService.debitWallet(userId, dto, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/wallet/reverse")
   @ApiBearerAuth("access-token")
-  reverseWallet(@Param("userId", ParseUUIDPipe) userId: string, @Body() dto: ReverseWalletDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.reverseWallet(userId, dto, admin.id) }
+  reverseWallet(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Body() dto: ReverseWalletDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.reverseWallet(userId, dto, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/leaderboards")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List leaderboard definitions and active seasons" })
-  leaderboards(@Query("includeInactive") includeInactive?: string) { return this.systemAdminService.listLeaderboards(includeInactive === "true") }
+  leaderboards(@Query("includeInactive") includeInactive?: string) {
+    return this.systemAdminService.listLeaderboards(includeInactive === "true");
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/leaderboards")
   @ApiBearerAuth("access-token")
-  createLeaderboard(@Body() dto: CreateLeaderboardDto) { return this.systemAdminService.createLeaderboard(dto) }
+  createLeaderboard(@Body() dto: CreateLeaderboardDto) {
+    return this.systemAdminService.createLeaderboard(dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/leaderboards/:leaderboardId")
   @ApiBearerAuth("access-token")
-  updateLeaderboard(@Param("leaderboardId", ParseUUIDPipe) leaderboardId: string, @Body() dto: UpdateLeaderboardDto) { return this.systemAdminService.updateLeaderboard(leaderboardId, dto) }
+  updateLeaderboard(
+    @Param("leaderboardId", ParseUUIDPipe) leaderboardId: string,
+    @Body() dto: UpdateLeaderboardDto,
+  ) {
+    return this.systemAdminService.updateLeaderboard(leaderboardId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/leaderboards/:leaderboardId/seasons")
   @ApiBearerAuth("access-token")
-  createLeaderboardSeason(@Param("leaderboardId", ParseUUIDPipe) leaderboardId: string, @Body() dto: CreateLeaderboardSeasonDto) { return this.systemAdminService.createLeaderboardSeason(leaderboardId, dto) }
+  createLeaderboardSeason(
+    @Param("leaderboardId", ParseUUIDPipe) leaderboardId: string,
+    @Body() dto: CreateLeaderboardSeasonDto,
+  ) {
+    return this.systemAdminService.createLeaderboardSeason(leaderboardId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/leaderboard-seasons/:seasonId/close")
   @ApiBearerAuth("access-token")
-  closeLeaderboardSeason(@Param("seasonId", ParseUUIDPipe) seasonId: string) { return this.systemAdminService.closeLeaderboardSeason(seasonId) }
+  closeLeaderboardSeason(@Param("seasonId", ParseUUIDPipe) seasonId: string) {
+    return this.systemAdminService.closeLeaderboardSeason(seasonId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/leaderboards/:key/score")
   @ApiBearerAuth("access-token")
-  applyLeaderboardScore(@Param("key") key: string, @Body() dto: ApplyLeaderboardScoreDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.applyLeaderboardScore(key, dto, admin.id) }
+  applyLeaderboardScore(
+    @Param("key") key: string,
+    @Body() dto: ApplyLeaderboardScoreDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.applyLeaderboardScore(key, dto, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/leaderboards/:key/top-players")
   @ApiBearerAuth("access-token")
-  leaderboardTopPlayers(@Param("key") key: string, @Query("limit") limit?: string) { return this.systemAdminService.topLeaderboardPlayers(key, limit ? Number(limit) : 10) }
+  leaderboardTopPlayers(
+    @Param("key") key: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.systemAdminService.topLeaderboardPlayers(
+      key,
+      limit ? Number(limit) : 10,
+    );
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/leaderboards/:key/rebuild")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Rebuild leaderboard projections from immutable score events" })
-  rebuildLeaderboard(@Param("key") key: string) { return this.systemAdminService.rebuildLeaderboard(key) }
+  @ApiOperation({
+    summary: "Rebuild leaderboard projections from immutable score events",
+  })
+  rebuildLeaderboard(@Param("key") key: string) {
+    return this.systemAdminService.rebuildLeaderboard(key);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/progressions/:progressionKey/top-players")
   @ApiBearerAuth("access-token")
-  progressionTopPlayers(@Param("progressionKey") key: string, @Query("limit") limit?: string) { return this.systemAdminService.topProgressionPlayers(key, limit ? Number(limit) : 10) }
+  progressionTopPlayers(
+    @Param("progressionKey") key: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.systemAdminService.topProgressionPlayers(
+      key,
+      limit ? Number(limit) : 10,
+    );
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/economy/currencies/:currencyCode/top-players")
   @ApiBearerAuth("access-token")
-  currencyTopPlayers(@Param("currencyCode") code: string, @Query("limit") limit?: string) { return this.systemAdminService.topCurrencyPlayers(code, limit ? Number(limit) : 10) }
+  currencyTopPlayers(
+    @Param("currencyCode") code: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.systemAdminService.topCurrencyPlayers(
+      code,
+      limit ? Number(limit) : 10,
+    );
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/game-config")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "List versioned game definitions and reward configuration" })
-  gameConfigs() { return this.systemAdminService.listGameConfigs() }
+  @ApiOperation({
+    summary: "List versioned game definitions and reward configuration",
+  })
+  gameConfigs() {
+    return this.systemAdminService.listGameConfigs();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/game-config/:gameKey")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Update a game reward/match policy and increment its version" })
-  updateGameConfig(@Param("gameKey") gameKey: string, @Body() dto: UpdateGameConfigDto) { return this.systemAdminService.updateGameConfig(gameKey, dto) }
+  @ApiOperation({
+    summary: "Update a game reward/match policy and increment its version",
+  })
+  updateGameConfig(
+    @Param("gameKey") gameKey: string,
+    @Body() dto: UpdateGameConfigDto,
+  ) {
+    return this.systemAdminService.updateGameConfig(gameKey, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/game-content")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Add server-owned game content with a hidden answer key" })
-  createGameContent(@Body() dto: CreateGameContentDto) { return this.systemAdminService.createGameContent(dto) }
+  @ApiOperation({
+    summary: "Add server-owned game content with a hidden answer key",
+  })
+  createGameContent(@Body() dto: CreateGameContentDto) {
+    return this.systemAdminService.createGameContent(dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/game-config/:gameKey/content")
   @ApiBearerAuth("access-token")
-  listGameContent(@Param("gameKey") gameKey: string) { return this.systemAdminService.listGameContent(gameKey) }
+  listGameContent(@Param("gameKey") gameKey: string) {
+    return this.systemAdminService.listGameContent(gameKey);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/reward-policies")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "List versioned reward policies and their server-side settings for administrators" })
-  rewardPolicies() { return this.systemAdminService.listRewardPolicies() }
+  @ApiOperation({
+    summary:
+      "List versioned reward policies and their server-side settings for administrators",
+  })
+  rewardPolicies() {
+    return this.systemAdminService.listRewardPolicies();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/reward-policies")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Publish a new version of a server-owned reward policy" })
-  publishRewardPolicy(@Body() dto: PublishRewardPolicyDto) { return this.systemAdminService.publishRewardPolicy(dto) }
+  @ApiOperation({
+    summary: "Publish a new version of a server-owned reward policy",
+  })
+  publishRewardPolicy(@Body() dto: PublishRewardPolicyDto) {
+    return this.systemAdminService.publishRewardPolicy(dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Delete("api/reward-policies/:key")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Deactivate a reward policy while retaining its immutable version history" })
-  deactivateRewardPolicy(@Param("key") key: string) { return this.systemAdminService.deactivateRewardPolicy(key) }
+  @ApiOperation({
+    summary:
+      "Deactivate a reward policy while retaining its immutable version history",
+  })
+  deactivateRewardPolicy(@Param("key") key: string) {
+    return this.systemAdminService.deactivateRewardPolicy(key);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/ad-rewards/claims")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Inspect verified, rejected, and granted ad reward claims" })
-  adRewardClaims() { return this.systemAdminService.listAdRewardClaims() }
+  @ApiOperation({
+    summary: "Inspect verified, rejected, and granted ad reward claims",
+  })
+  adRewardClaims() {
+    return this.systemAdminService.listAdRewardClaims();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/paid-rewards/requests")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "List player paid reward requests for review" })
-  paidRewardRequests(@Query("status") status?: string) { return this.systemAdminService.listPaidRewardRequests(status) }
+  paidRewardRequests(@Query("status") status?: string) {
+    return this.systemAdminService.listPaidRewardRequests(status);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/paid-rewards/requests/:requestId")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Fulfil or refuse a player paid reward request" })
-  decidePaidRewardRequest(@Param("requestId", ParseUUIDPipe) requestId: string, @Body() dto: PaidRewardDecisionDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.decidePaidRewardRequest(requestId, dto, admin.id) }
+  decidePaidRewardRequest(
+    @Param("requestId", ParseUUIDPipe) requestId: string,
+    @Body() dto: PaidRewardDecisionDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.decidePaidRewardRequest(
+      requestId,
+      dto,
+      admin.id,
+    );
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/commerce/catalogs")
   @ApiBearerAuth("access-token")
-  commerceCatalogs() { return this.systemAdminService.listCommerceCatalogs() }
+  commerceCatalogs() {
+    return this.systemAdminService.listCommerceCatalogs();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/commerce/catalogs")
   @ApiBearerAuth("access-token")
-  createCommerceCatalog(@Body() dto: CreateCatalogDto) { return this.systemAdminService.createCommerceCatalog(dto) }
+  createCommerceCatalog(@Body() dto: CreateCatalogDto) {
+    return this.systemAdminService.createCommerceCatalog(dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/commerce/catalogs/:catalogId")
   @ApiBearerAuth("access-token")
-  updateCommerceCatalog(@Param("catalogId", ParseUUIDPipe) catalogId: string, @Body() dto: UpdateCatalogDto) { return this.systemAdminService.updateCommerceCatalog(catalogId, dto) }
+  updateCommerceCatalog(
+    @Param("catalogId", ParseUUIDPipe) catalogId: string,
+    @Body() dto: UpdateCatalogDto,
+  ) {
+    return this.systemAdminService.updateCommerceCatalog(catalogId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/commerce/assets")
   @ApiBearerAuth("access-token")
-  commerceAssets() { return this.systemAdminService.listCommerceAssets() }
+  commerceAssets() {
+    return this.systemAdminService.listCommerceAssets();
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/commerce/assets")
   @ApiBearerAuth("access-token")
-  createCommerceAsset(@Body() dto: CreateAssetDto) { return this.systemAdminService.createCommerceAsset(dto) }
+  createCommerceAsset(@Body() dto: CreateAssetDto) {
+    return this.systemAdminService.createCommerceAsset(dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/commerce/assets/:assetId")
   @ApiBearerAuth("access-token")
-  updateCommerceAsset(@Param("assetId", ParseUUIDPipe) assetId: string, @Body() dto: UpdateAssetDto) { return this.systemAdminService.updateCommerceAsset(assetId, dto) }
+  updateCommerceAsset(
+    @Param("assetId", ParseUUIDPipe) assetId: string,
+    @Body() dto: UpdateAssetDto,
+  ) {
+    return this.systemAdminService.updateCommerceAsset(assetId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/commerce/assets/redeem-codes")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Bulk insert single-use asset redeem codes" })
-  bulkInsertRedeemCodes(@Body() dto: BulkRedeemCodeDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.bulkInsertRedeemCodes(dto, admin.id) }
+  bulkInsertRedeemCodes(
+    @Body() dto: BulkRedeemCodeDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.bulkInsertRedeemCodes(dto, admin.id);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/commerce/assets/redeem-codes")
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "List full asset redeem codes and assignments for authorized administrators" })
-  redeemCodes(@Query("assetKey") assetKey?: string, @Query("status") status?: string) { return this.systemAdminService.listRedeemCodes(assetKey, status) }
+  @ApiOperation({
+    summary:
+      "List full asset redeem codes and assignments for authorized administrators",
+  })
+  redeemCodes(
+    @Query("assetKey") assetKey?: string,
+    @Query("status") status?: string,
+  ) {
+    return this.systemAdminService.listRedeemCodes(assetKey, status);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/commerce/items")
   @ApiBearerAuth("access-token")
-  createCommerceItem(@Body() dto: CreateCatalogItemDto) { return this.systemAdminService.createCommerceItem(dto) }
+  createCommerceItem(@Body() dto: CreateCatalogItemDto) {
+    return this.systemAdminService.createCommerceItem(dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/commerce/items/:itemId")
   @ApiBearerAuth("access-token")
-  updateCommerceItem(@Param("itemId", ParseUUIDPipe) itemId: string, @Body() dto: UpdateCatalogItemDto) { return this.systemAdminService.updateCommerceItem(itemId, dto) }
+  updateCommerceItem(
+    @Param("itemId", ParseUUIDPipe) itemId: string,
+    @Body() dto: UpdateCatalogItemDto,
+  ) {
+    return this.systemAdminService.updateCommerceItem(itemId, dto);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/commerce/inventory")
   @ApiBearerAuth("access-token")
-  commerceInventory(@Query() query: InventoryQueryDto) { return this.systemAdminService.listCommerceInventory(query) }
+  commerceInventory(@Query() query: InventoryQueryDto) {
+    return this.systemAdminService.listCommerceInventory(query);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/commerce/purchases")
   @ApiBearerAuth("access-token")
-  commercePurchases(@Query("userId") userId?: string) { return this.systemAdminService.listCommercePurchases(userId) }
+  commercePurchases(@Query("userId") userId?: string) {
+    return this.systemAdminService.listCommercePurchases(userId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/users/:userId/commerce/entitlements")
   @ApiBearerAuth("access-token")
-  commerceEntitlements(@Param("userId", ParseUUIDPipe) userId: string) { return this.systemAdminService.playerEntitlements(userId) }
+  commerceEntitlements(@Param("userId", ParseUUIDPipe) userId: string) {
+    return this.systemAdminService.playerEntitlements(userId);
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/commerce/inventory/grant")
   @ApiBearerAuth("access-token")
-  grantCommerceInventory(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto, @Body() dto: InventoryMutationDto) { return this.systemAdminService.grantCommerceInventory(userId, dto, admin.id) }
+  grantCommerceInventory(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentUser() admin: UserResponseDto,
+    @Body() dto: InventoryMutationDto,
+  ) {
+    return this.systemAdminService.grantCommerceInventory(
+      userId,
+      dto,
+      admin.id,
+    );
+  }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/users/:userId/commerce/inventory/revoke")
   @ApiBearerAuth("access-token")
-  revokeCommerceInventory(@Param("userId", ParseUUIDPipe) userId: string, @CurrentUser() admin: UserResponseDto, @Body() dto: InventoryMutationDto) { return this.systemAdminService.revokeCommerceInventory(userId, dto, admin.id) }
+  revokeCommerceInventory(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentUser() admin: UserResponseDto,
+    @Body() dto: InventoryMutationDto,
+  ) {
+    return this.systemAdminService.revokeCommerceInventory(
+      userId,
+      dto,
+      admin.id,
+    );
+  }
 }

@@ -12,6 +12,7 @@ import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Grid from "@mui/material/Grid2";
+import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Table from "@mui/material/Table";
@@ -90,6 +91,15 @@ type GldSimulation = {
   maxPriceUsdMicros: string;
 };
 
+type GldAdRewardPolicy = {
+  id: string;
+  adFormat: string;
+  eventType: string;
+  regionCode: string;
+  rewardAmount: string;
+  enabled: boolean;
+};
+
 const bigintValue = (value: unknown) => {
   try {
     return BigInt(String(value ?? "0"));
@@ -141,12 +151,27 @@ export function GldEconomyView() {
     paidRewardDailyRequestLimit: "3",
   });
   const [policySaving, setPolicySaving] = useState(false);
+  const [adRewardPolicies, setAdRewardPolicies] = useState<GldAdRewardPolicy[]>(
+    [],
+  );
+  const [adRewardForm, setAdRewardForm] = useState({
+    adFormat: "banner",
+    eventType: "impression",
+    regionCode: "DEFAULT",
+    rewardAmount: "1",
+    enabled: true,
+  });
+  const [adRewardSaving, setAdRewardSaving] = useState(false);
   const load = async () => {
     setLoading(true);
     try {
       setError("");
       const next = await api<GldData>("/gld");
       setData(next);
+      const adPolicies = await api<GldAdRewardPolicy[]>(
+        "/gld/ad-reward-policies",
+      );
+      setAdRewardPolicies(adPolicies);
       setTransferFeePercent(
         ((next.controls.gldTransferFeeBps ?? 0) / 100).toString(),
       );
@@ -186,6 +211,79 @@ export function GldEconomyView() {
       setLoading(false);
     }
   };
+  const saveAdRewardPolicy = async () => {
+    if (!/^\d+$/.test(adRewardForm.rewardAmount.trim())) {
+      setError("Ad reward amount must be a non-negative whole GLD amount.");
+      return;
+    }
+    setAdRewardSaving(true);
+    try {
+      const saved = await api<GldAdRewardPolicy>("/gld/ad-reward-policies", {
+        method: "PUT",
+        body: JSON.stringify({
+          ...adRewardForm,
+          rewardAmount: adRewardForm.rewardAmount.trim(),
+          regionCode: adRewardForm.regionCode.trim().toUpperCase(),
+        }),
+      });
+      setAdRewardPolicies((current) =>
+        [
+          ...current.filter(
+            (item) =>
+              item.id !== saved.id &&
+              !(
+                item.adFormat === saved.adFormat &&
+                item.eventType === saved.eventType &&
+                item.regionCode === saved.regionCode
+              ),
+          ),
+          saved,
+        ].sort((a, b) =>
+          `${a.adFormat}${a.eventType}${a.regionCode}`.localeCompare(
+            `${b.adFormat}${b.eventType}${b.regionCode}`,
+          ),
+        ),
+      );
+      setMessage("Ad reward amount saved.");
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to save ad reward amount",
+      );
+    } finally {
+      setAdRewardSaving(false);
+    }
+  };
+  const deleteAdRewardPolicy = async (policy: GldAdRewardPolicy) => {
+    if (
+      !window.confirm(
+        `Delete ${policy.adFormat} ${policy.eventType} for ${policy.regionCode}?`,
+      )
+    )
+      return;
+    try {
+      await api(`/gld/ad-reward-policies/${policy.id}`, { method: "DELETE" });
+      setAdRewardPolicies((current) =>
+        current.filter((item) => item.id !== policy.id),
+      );
+      setMessage("Ad reward policy deleted.");
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to delete ad reward policy",
+      );
+    }
+  };
+  const editAdRewardPolicy = (policy: GldAdRewardPolicy) =>
+    setAdRewardForm({
+      adFormat: policy.adFormat,
+      eventType: policy.eventType,
+      regionCode: policy.regionCode,
+      rewardAmount: policy.rewardAmount,
+      enabled: policy.enabled,
+    });
   const savePolicy = async () => {
     const whole = (value: string) => /^\d+$/.test(value.trim());
     if (
@@ -791,6 +889,166 @@ export function GldEconomyView() {
                 </Box>
               </Stack>
             )}
+          </Card>
+          <Card sx={{ p: { xs: 2, md: 3 } }}>
+            <Typography variant="h6" fontWeight={800}>
+              Ad reward amounts by placement and region
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              These are automatic client-event rewards. The player’s profile
+              country is matched first, then DEFAULT. A claim can only be
+              granted once, even if an ad callback is repeated.
+            </Typography>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="Ad placement"
+                  value={adRewardForm.adFormat}
+                  onChange={(event) =>
+                    setAdRewardForm((current) => ({
+                      ...current,
+                      adFormat: event.target.value,
+                    }))
+                  }
+                >
+                  {[
+                    "banner",
+                    "native",
+                    "interstitial",
+                    "rewarded",
+                    "rewarded_interstitial",
+                  ].map((value) => (
+                    <MenuItem key={value} value={value}>
+                      {value}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="SDK event"
+                  value={adRewardForm.eventType}
+                  onChange={(event) =>
+                    setAdRewardForm((current) => ({
+                      ...current,
+                      eventType: event.target.value,
+                    }))
+                  }
+                >
+                  {["impression", "click", "rewarded"].map((value) => (
+                    <MenuItem key={value} value={value}>
+                      {value}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Country / continent"
+                  value={adRewardForm.regionCode}
+                  onChange={(event) =>
+                    setAdRewardForm((current) => ({
+                      ...current,
+                      regionCode: event.target.value,
+                    }))
+                  }
+                  helperText="Use US, USA, IQ, EU, ASIA, or DEFAULT"
+                  inputProps={{ maxLength: 16 }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Reward (GLD)"
+                  type="number"
+                  value={adRewardForm.rewardAmount}
+                  onChange={(event) =>
+                    setAdRewardForm((current) => ({
+                      ...current,
+                      rewardAmount: event.target.value,
+                    }))
+                  }
+                  inputProps={{ min: 0, step: 1 }}
+                />
+              </Grid>
+            </Grid>
+            <Button
+              sx={{ mt: 2 }}
+              variant="contained"
+              onClick={() => void saveAdRewardPolicy()}
+              disabled={adRewardSaving}
+            >
+              {adRewardSaving ? "Saving…" : "Save ad reward"}
+            </Button>
+            <FormControlLabel
+              sx={{ ml: 2 }}
+              control={
+                <Switch
+                  checked={adRewardForm.enabled}
+                  onChange={(event) =>
+                    setAdRewardForm((current) => ({
+                      ...current,
+                      enabled: event.target.checked,
+                    }))
+                  }
+                />
+              }
+              label="Enabled"
+            />
+            <Divider sx={{ my: 2 }} />
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Placement</TableCell>
+                  <TableCell>Event</TableCell>
+                  <TableCell>Country / continent</TableCell>
+                  <TableCell align="right">GLD</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell align="right">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {adRewardPolicies.map((row) => (
+                  <TableRow key={row.id} hover>
+                    <TableCell>{row.adFormat}</TableCell>
+                    <TableCell>{row.eventType}</TableCell>
+                    <TableCell>{row.regionCode}</TableCell>
+                    <TableCell align="right">{row.rewardAmount}</TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={row.enabled ? "ACTIVE" : "OFF"}
+                        color={row.enabled ? "success" : "default"}
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Button
+                        size="small"
+                        onClick={() => editAdRewardPolicy(row)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={() => void deleteAdRewardPolicy(row)}
+                      >
+                        Delete
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </Card>
           <Card sx={{ p: { xs: 2, md: 3 } }}>
             <Typography variant="h6" fontWeight={800}>

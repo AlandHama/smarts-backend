@@ -1752,6 +1752,23 @@ model GldAdminControl {
   updatedBy                   User?    @relation("GldControlUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 }
 
+/// Server-owned GLD reward for a client-reported ad event. Region codes are
+/// ISO country codes when available, with DEFAULT as the fallback.
+model GldAdRewardPolicy {
+  id           String   @id @default(uuid()) @db.Uuid
+  adFormat     String   @db.VarChar(40)
+  eventType    String   @db.VarChar(20)
+  regionCode   String   @default("DEFAULT") @db.VarChar(16)
+  rewardAmount BigInt
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([adFormat, eventType, regionCode])
+  @@index([adFormat, eventType, enabled])
+  @@index([regionCode, enabled])
+}
+
 /// Immutable revenue input used to fund GLD emission and reserve capacity.
 model GldRevenueSnapshot {
   id                        String                      @id @default(uuid()) @db.Uuid

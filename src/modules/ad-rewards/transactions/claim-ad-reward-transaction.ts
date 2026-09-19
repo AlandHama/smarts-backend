@@ -33,7 +33,7 @@ type AdPolicy = {
 };
 
 export type TrustedAdProviderVerification = {
-  source: "ADMOB_SSV";
+  source: "ADMOB_SSV" | "CLIENT_EVENT";
   payload: Record<string, string | null>;
 };
 
@@ -41,6 +41,7 @@ type ClaimAdRewardInput = {
   dto: ClaimAdRewardDto;
   signature?: string;
   trustedVerification?: TrustedAdProviderVerification;
+  serverRewardAmount?: bigint;
 };
 
 @Injectable()
@@ -78,7 +79,9 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
       throw new NotFoundException("Ad reward claim not found");
     if (input.trustedVerification) {
       if (
-        input.trustedVerification.source !== "ADMOB_SSV" ||
+        !["ADMOB_SSV", "CLIENT_EVENT"].includes(
+          input.trustedVerification.source,
+        ) ||
         claim.provider !== "admob"
       )
         throw new UnauthorizedException("Invalid ad provider");
@@ -123,29 +126,42 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
     if (claim.expiresAt <= new Date())
       return this.reject(transaction, claim.id, "Ad reward claim expired");
 
-    const policy =
-      await this.configService.getActivePrivate<AdPolicy>("ad-reward");
+    let policy: { version: string | number; privateConfig: AdPolicy };
+    try {
+      policy = await this.configService.getActivePrivate<AdPolicy>("ad-reward");
+    } catch (error) {
+      if (input.trustedVerification?.source !== "CLIENT_EVENT") throw error;
+      policy = {
+        version: "gld-ad-reward-matrix",
+        privateConfig: { currencyCode: "GLD", cooldownSeconds: 0 },
+      };
+    }
     const reward = policy.privateConfig.rewards?.[claim.adFormat];
-    const baseAmount = reward?.amount;
-    const currencyCode = policy.privateConfig.currencyCode
-      ?.trim()
-      .toUpperCase();
+    const baseAmount = input.serverRewardAmount?.toString() ?? reward?.amount;
+    const currencyCode =
+      input.trustedVerification?.source === "CLIENT_EVENT"
+        ? "GLD"
+        : policy.privateConfig.currencyCode?.trim().toUpperCase();
     if (
       !currencyCode ||
-      !baseAmount ||
-      !/^\d+$/.test(baseAmount) ||
-      BigInt(baseAmount) <= 0n
+      (!baseAmount && input.serverRewardAmount === undefined) ||
+      (baseAmount !== undefined && !/^\d+$/.test(baseAmount)) ||
+      (baseAmount !== undefined && BigInt(baseAmount) <= 0n)
     )
       return this.reject(
         transaction,
         claim.id,
         "Ad reward policy is not configured",
       );
-    let amount = BigInt(baseAmount);
+    const amountSource = input.serverRewardAmount?.toString() ?? baseAmount!;
+    let amount = BigInt(amountSource);
     const country = claim.user.profile?.countryCode?.trim().toUpperCase();
-    const multiplier = country
-      ? reward?.multiplierByCountry?.[country]
-      : undefined;
+    const multiplier =
+      input.serverRewardAmount !== undefined
+        ? undefined
+        : country
+          ? reward?.multiplierByCountry?.[country]
+          : undefined;
     if (multiplier) amount = this.applyMultiplier(amount, multiplier);
     if (amount <= 0n && currencyCode !== "GLD")
       return this.reject(transaction, claim.id, "Ad reward amount is invalid");
@@ -205,7 +221,10 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
       orderBy: { grantedAt: "desc" },
       select: { grantedAt: true },
     });
-    const cooldown = Math.max(0, policy.privateConfig.cooldownSeconds ?? 0);
+    const cooldown =
+      input.trustedVerification?.source === "CLIENT_EVENT"
+        ? 0
+        : Math.max(0, policy.privateConfig.cooldownSeconds ?? 0);
     if (
       latest?.grantedAt &&
       latest.grantedAt.getTime() + cooldown * 1000 > now.getTime()
@@ -219,6 +238,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
         userId: claim.userId,
         baseAmount: amount,
         sourceId: claim.id,
+        exactAmount: input.serverRewardAmount !== undefined,
         metadata: {
           provider: claim.provider,
           providerEventId,
@@ -277,7 +297,9 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
         rewardAmount: amount,
         status: "GRANTED",
         verificationPayload: {
-          providerVerified: true,
+          providerVerified: input.trustedVerification?.source === "ADMOB_SSV",
+          clientEventAccepted:
+            input.trustedVerification?.source === "CLIENT_EVENT",
           verificationSource: input.trustedVerification?.source ?? "HMAC",
           ...(input.trustedVerification
             ? { providerPayload: input.trustedVerification.payload }
@@ -342,6 +364,8 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
         provider: claim.provider,
         adFormat: claim.adFormat,
         providerEventId,
+        eventType: input.trustedVerification?.payload.eventType ?? null,
+        regionCode: input.trustedVerification?.payload.regionCode ?? null,
         currencyCode,
         policyVersion: policy.version,
       },

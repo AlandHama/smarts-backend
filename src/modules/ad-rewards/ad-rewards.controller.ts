@@ -17,6 +17,7 @@ import { SkipAuth } from "../../common/decorators/skip-auth.decorator";
 import { UserResponseDto } from "../auth/dtos/user-response.dto";
 import { AdRewardsService } from "./ad-rewards.service";
 import { ClaimAdRewardDto, CreateAdImpressionDto } from "./dtos/ad-reward.dto";
+import { CompleteClientAdEventDto } from "./dtos/ad-event.dto";
 
 @ApiTags("Ad rewards")
 @Controller("ad-rewards")
@@ -33,6 +34,18 @@ export class AdRewardsController {
     @Body() dto: CreateAdImpressionDto,
   ) {
     return this.adRewardsService.createImpression(user.id, dto);
+  }
+
+  @Post("events")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Complete a challenged ad event reported by the mobile client",
+  })
+  clientEvent(
+    @CurrentUser() user: UserResponseDto,
+    @Body() dto: CompleteClientAdEventDto,
+  ) {
+    return this.adRewardsService.completeClientEvent(user.id, dto);
   }
 
   @Get("estimate")
