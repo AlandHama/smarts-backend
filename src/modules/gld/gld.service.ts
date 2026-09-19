@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDes
 import { Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
-import { getGldConfig } from "./gld.config"
+import { applyGldPolicyOverrides, getGldConfig } from "./gld.config"
 import { GldRevenueService } from "./gld.revenue.service"
 import { UpdateGldControlsDto } from "./dtos/gld-admin.dto"
 import { GldSimulationDto } from "./dtos/gld-simulation.dto"
@@ -92,7 +92,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
 
   async getAdminState() {
     const state = await this.getOrCreateState()
-    const config = getGldConfig()
+    const baseConfig = getGldConfig()
     const dateKey = new Date().toISOString().slice(0, 10)
     const dayStart = new Date(`${dateKey}T00:00:00.000Z`)
     const [snapshots, revenueSnapshots, controls, emissionDay, burnTotals, revenueTotals, manualBackings, manualBackingTotals, paidRewardCosts] = await Promise.all([
@@ -107,6 +107,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
       this.prisma.gldTreasuryEntry.aggregate({ where: { entryType: "COST" }, _sum: { amountUsdMicros: true }, _count: { id: true } }),
     ])
     const todayBurns = await this.prisma.gldBurnEvent.aggregate({ where: { createdAt: { gte: dayStart } }, _sum: { amount: true }, _count: { id: true } })
+    const config = applyGldPolicyOverrides(baseConfig, controls)
     return this.serialize({ state, config, controls, snapshots, revenueSnapshots, manualBackings, metrics: { dateKey, emissionDay, burns: { total: burnTotals._sum.amount ?? 0n, count: burnTotals._count.id, today: todayBurns._sum.amount ?? 0n, todayCount: todayBurns._count.id }, revenue: { grossAdRevenueUsdMicros: revenueTotals._sum.grossAdRevenueUsdMicros ?? 0n, rewardBackingUsdMicros: revenueTotals._sum.rewardBackingUsdMicros ?? 0n, reserveAddedUsdMicros: revenueTotals._sum.reserveAddedUsdMicros ?? 0n, snapshots: revenueTotals._count.id }, manualBacking: { totalUsdMicros: manualBackingTotals._sum.amountUsdMicros ?? 0n, count: manualBackingTotals._count.id }, paidRewardCosts: { totalUsdMicros: (paidRewardCosts._sum.amountUsdMicros ?? 0n) < 0n ? -(paidRewardCosts._sum.amountUsdMicros ?? 0n) : paidRewardCosts._sum.amountUsdMicros ?? 0n, count: paidRewardCosts._count.id } } })
   }
 
@@ -137,6 +138,12 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
         ...(dto.giftsPaused === undefined ? {} : { giftsPaused: dto.giftsPaused }),
         ...(dto.paidRewardsPaused === undefined ? {} : { paidRewardsPaused: dto.paidRewardsPaused }),
         ...(dto.gldTransferFeeBps === undefined ? {} : { gldTransferFeeBps: dto.gldTransferFeeBps }),
+        ...(dto.adDailyGldCap === undefined ? {} : { adDailyGldCap: BigInt(dto.adDailyGldCap) }),
+        ...(dto.adMaxValidatedAds === undefined ? {} : { adMaxValidatedAds: dto.adMaxValidatedAds }),
+        ...(dto.adMaxRewardPerClaim === undefined ? {} : { adMaxRewardPerClaim: BigInt(dto.adMaxRewardPerClaim) }),
+        ...(dto.giftBurnBps === undefined ? {} : { giftBurnBps: dto.giftBurnBps }),
+        ...(dto.paidRewardSafetyMarginBps === undefined ? {} : { paidRewardSafetyMarginBps: dto.paidRewardSafetyMarginBps }),
+        ...(dto.paidRewardDailyRequestLimit === undefined ? {} : { paidRewardDailyRequestLimit: dto.paidRewardDailyRequestLimit }),
         ...(dto.reason === undefined ? {} : { reason: dto.reason.trim() || null }),
         updatedById: actorId,
       } })

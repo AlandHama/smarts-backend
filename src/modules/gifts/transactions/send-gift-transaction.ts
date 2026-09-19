@@ -86,7 +86,8 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
     if (existingGift) return this.serialize(existingGift)
 
     const config = getGldConfig()
-    const burnedAmount = price.amount * BigInt(config.giftBurnBps) / 10_000n + giftFeeAmount
+    const giftControls = await transaction.gldAdminControl.findUnique({ where: { singletonKey: "default" }, select: { giftBurnBps: true } })
+    const burnedAmount = price.amount * BigInt(giftControls?.giftBurnBps ?? config.giftBurnBps) / 10_000n + giftFeeAmount
     const retainedAmount = chargedAmount - burnedAmount
     const giftId = randomUUID()
     const wallet = await this.debitWallet.runWithinTransaction({ userId: senderUserId, currencyCode: "GLD", amount: chargedAmount, sourceId: giftId, sourceType: WalletTransactionSourceType.PURCHASE, metadata: { reason: "GLD_GIFT_PURCHASE", recipientUserId, catalogItemKey: item.key, giftFeeAmount: giftFeeAmount.toString(), giftFeeBps, chargedAmount: chargedAmount.toString(), burnedAmount: burnedAmount.toString(), retainedAmount: retainedAmount.toString() } }, transaction)

@@ -28,7 +28,7 @@ import { GldReconciliationService } from "../gld/gld.reconciliation.service"
 import { UpdateGldControlsDto } from "../gld/dtos/gld-admin.dto"
 import { GldSimulationDto } from "../gld/dtos/gld-simulation.dto"
 import { GldManualBackingDto } from "../gld/dtos/gld-manual-backing.dto"
-import { UpdateReferralConfigDto } from "../referrals/dtos"
+import { UpdateReferralConfigDto, UpdateReferralPlayerOverrideDto } from "../referrals/dtos"
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -78,13 +78,19 @@ export class SystemAdminController {
   @Get("api/referrals")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Inspect referral configuration, attribution, and rewards" })
-  listReferrals() { return this.systemAdminService.listReferrals() }
+  listReferrals(@Query("search") search?: string) { return this.systemAdminService.listReferrals(search) }
 
   @UseGuards(SystemAdminGuard)
   @Patch("api/referrals/config")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Update the server-owned referral policy" })
   updateReferralConfig(@Body() dto: UpdateReferralConfigDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.updateReferralConfig(dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/referrals/players/:userId")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Update or clear a player's referral policy override" })
+  updateReferralPlayerOverride(@Param("userId", ParseUUIDPipe) userId: string, @Body() dto: UpdateReferralPlayerOverrideDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.updateReferralPlayerOverride(userId, dto, admin.id) }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/friends/:userId/:friendId")

@@ -110,3 +110,26 @@ export function getGldConfig() {
     recalculationIntervalMinutes: intervalMinutesEnv("GLD_RECALCULATION_INTERVAL_MINUTES", DEFAULTS.recalculationIntervalMinutes),
   }
 }
+
+export function applyGldPolicyOverrides<T extends ReturnType<typeof getGldConfig>>(
+  config: T,
+  overrides: {
+    adDailyGldCap?: bigint | null
+    adMaxValidatedAds?: number | null
+    adMaxRewardPerClaim?: bigint | null
+    giftBurnBps?: number | null
+    paidRewardSafetyMarginBps?: number | null
+    paidRewardDailyRequestLimit?: number | null
+  } | null | undefined,
+): T {
+  if (!overrides) return config
+  return {
+    ...config,
+    adDailyGldCap: overrides.adDailyGldCap ?? config.adDailyGldCap,
+    adMaxValidatedAds: overrides.adMaxValidatedAds ?? config.adMaxValidatedAds,
+    adMaxRewardPerClaim: overrides.adMaxRewardPerClaim ?? config.adMaxRewardPerClaim,
+    giftBurnBps: overrides.giftBurnBps ?? config.giftBurnBps,
+    paidRewardSafetyMarginBps: overrides.paidRewardSafetyMarginBps ?? config.paidRewardSafetyMarginBps,
+    paidRewardDailyRequestLimit: overrides.paidRewardDailyRequestLimit ?? config.paidRewardDailyRequestLimit,
+  }
+}

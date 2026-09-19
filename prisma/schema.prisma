@@ -434,6 +434,7 @@ model User {
   referralRewardsAsReferrer  ReferralReward[]        @relation("ReferralRewardReferrer")
   referralRewardsAsReferred  ReferralReward[]        @relation("ReferralRewardReferred")
   referralConfigUpdates      ReferralConfig[]        @relation("ReferralConfigUpdater")
+  referralPolicyOverride     ReferralPlayerOverride?
 }
 
 model Session {
@@ -543,25 +544,42 @@ model ReferralConfig {
   updatedBy            User?    @relation("ReferralConfigUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 }
 
+/// Optional per-referrer referral policy. Null fields inherit the global policy.
+model ReferralPlayerOverride {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @unique @db.Uuid
+  enabled              Boolean?
+  maxInvitesPerUser    Int?
+  rewardBps            Int?
+  maxRewardPerReferral BigInt?
+  minQualifyingAds     Int?
+  updatedById          String?  @db.Uuid
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([updatedAt])
+}
+
 /// A player can be attributed to at most one referrer for the lifetime of the
 /// account. Attribution is intentionally independent from Friendship.
 model Referral {
-  id               String        @id @default(uuid()) @db.Uuid
-  referralCodeId   String        @db.Uuid
-  referrerId       String        @db.Uuid
-  referredId       String        @unique @db.Uuid
-  status           ReferralStatus @default(ACTIVE)
-  referredAdCount  Int           @default(0)
-  totalRewardedGld BigInt        @default(0)
-  rewardCount      Int           @default(0)
-  invitedAt        DateTime      @default(now())
+  id               String           @id @default(uuid()) @db.Uuid
+  referralCodeId   String           @db.Uuid
+  referrerId       String           @db.Uuid
+  referredId       String           @unique @db.Uuid
+  status           ReferralStatus   @default(ACTIVE)
+  referredAdCount  Int              @default(0)
+  totalRewardedGld BigInt           @default(0)
+  rewardCount      Int              @default(0)
+  invitedAt        DateTime         @default(now())
   qualifiedAt      DateTime?
   cappedAt         DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  referralCode     ReferralCode  @relation(fields: [referralCodeId], references: [id], onDelete: Restrict)
-  referrer         User          @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
-  referred         User          @relation("ReferralReferred", fields: [referredId], references: [id], onDelete: Cascade)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  referralCode     ReferralCode     @relation(fields: [referralCodeId], references: [id], onDelete: Restrict)
+  referrer         User             @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred         User             @relation("ReferralReferred", fields: [referredId], references: [id], onDelete: Cascade)
   rewards          ReferralReward[]
 
   @@unique([referrerId, referredId])
@@ -572,19 +590,19 @@ model Referral {
 /// Each referral reward is linked to exactly one verified ad claim for
 /// idempotency and reconciliation.
 model ReferralReward {
-  id              String              @id @default(uuid()) @db.Uuid
-  referralId      String              @db.Uuid
-  adRewardClaimId String              @unique @db.Uuid
-  referrerId      String              @db.Uuid
-  referredId      String              @db.Uuid
+  id              String               @id @default(uuid()) @db.Uuid
+  referralId      String               @db.Uuid
+  adRewardClaimId String               @unique @db.Uuid
+  referrerId      String               @db.Uuid
+  referredId      String               @db.Uuid
   grossAdReward   BigInt
   rewardAmount    BigInt
   status          ReferralRewardStatus @default(GRANTED)
-  createdAt       DateTime            @default(now())
-  referral        Referral            @relation(fields: [referralId], references: [id], onDelete: Cascade)
-  adRewardClaim   AdRewardClaim       @relation(fields: [adRewardClaimId], references: [id], onDelete: Restrict)
-  referrer        User                @relation("ReferralRewardReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
-  referred        User                @relation("ReferralRewardReferred", fields: [referredId], references: [id], onDelete: Cascade)
+  createdAt       DateTime             @default(now())
+  referral        Referral             @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  adRewardClaim   AdRewardClaim        @relation(fields: [adRewardClaimId], references: [id], onDelete: Restrict)
+  referrer        User                 @relation("ReferralRewardReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred        User                 @relation("ReferralRewardReferred", fields: [referredId], references: [id], onDelete: Cascade)
 
   @@index([referrerId, createdAt])
   @@index([referredId, createdAt])
@@ -905,39 +923,39 @@ model AssetRedeemCode {
 }
 
 model PaidRewardRequest {
-  id                String                  @id @default(uuid()) @db.Uuid
-  userId            String                  @db.Uuid
-  assetDefinitionId String                  @db.Uuid
-  assetVariationId  String?                 @db.Uuid
-  status            PaidRewardRequestStatus @default(PENDING)
+  id                    String                  @id @default(uuid()) @db.Uuid
+  userId                String                  @db.Uuid
+  assetDefinitionId     String                  @db.Uuid
+  assetVariationId      String?                 @db.Uuid
+  status                PaidRewardRequestStatus @default(PENDING)
   /// GLD amount quoted for this request. It is charged only when fulfilled.
-  gldPrice          BigInt?
+  gldPrice              BigInt?
   /// The GLD USD-micros price locked when the request was created.
   gldUnitPriceUsdMicros BigInt?
   /// USD-micros reserve cost consumed when this request is fulfilled. This is
   /// based on the pre-fee GLD amount, so the charged GLD includes a margin.
-  reserveCostUsdMicros BigInt?
+  reserveCostUsdMicros  BigInt?
   /// The extra GLD charged above the reserve-cost conversion as the platform fee.
-  gldFeeAmount      BigInt?
+  gldFeeAmount          BigInt?
   /// GLD actually debited at fulfillment. Null means the request was not charged.
-  gldChargedAmount  BigInt?
-  gldRefundedAmount BigInt                  @default(0)
-  requestKey        String                  @unique @db.VarChar(128)
-  message           String?                 @db.VarChar(500)
-  adminNote         String?                 @db.VarChar(500)
-  inventoryItemId   String?                 @db.Uuid
-  idempotencyKeyId  String                  @unique @db.Uuid
-  decidedById       String?                 @db.Uuid
-  requestedAt       DateTime                @default(now())
-  decidedAt         DateTime?
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assetDefinition   AssetDefinition         @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
-  assetVariation    AssetVariation?         @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
-  redeemCode        AssetRedeemCode?        @relation
-  idempotencyKey    IdempotencyKey          @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
-  decidedBy         User?                   @relation("PaidRewardRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  gldChargedAmount      BigInt?
+  gldRefundedAmount     BigInt                  @default(0)
+  requestKey            String                  @unique @db.VarChar(128)
+  message               String?                 @db.VarChar(500)
+  adminNote             String?                 @db.VarChar(500)
+  inventoryItemId       String?                 @db.Uuid
+  idempotencyKeyId      String                  @unique @db.Uuid
+  decidedById           String?                 @db.Uuid
+  requestedAt           DateTime                @default(now())
+  decidedAt             DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetDefinition       AssetDefinition         @relation(fields: [assetDefinitionId], references: [id], onDelete: Restrict)
+  assetVariation        AssetVariation?         @relation(fields: [assetVariationId], references: [id], onDelete: Restrict)
+  redeemCode            AssetRedeemCode?        @relation
+  idempotencyKey        IdempotencyKey          @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
+  decidedBy             User?                   @relation("PaidRewardRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
 
   @@index([status, requestedAt])
   @@index([userId, status, requestedAt])
@@ -1609,18 +1627,18 @@ model PlayerGameStats {
 }
 
 model PlayerCognitiveStats {
-  id                String   @id @default(uuid()) @db.Uuid
-  userId            String   @unique @db.Uuid
-  calculation       Int      @default(50)
-  speed             Int      @default(50)
-  accuracy          Int      @default(50)
-  judgement         Int      @default(50)
-  observation       Int      @default(50)
-  memory            Int      @default(50)
-  matchesEvaluated  Int      @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @db.Uuid
+  calculation      Int      @default(50)
+  speed            Int      @default(50)
+  accuracy         Int      @default(50)
+  judgement        Int      @default(50)
+  observation      Int      @default(50)
+  memory           Int      @default(50)
+  matchesEvaluated Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([accuracy])
 }
@@ -1714,18 +1732,24 @@ model GldEconomyState {
 
 /// Persisted emergency switches for the server-owned GLD economy.
 model GldAdminControl {
-  id                 String   @id @default(uuid()) @db.Uuid
-  singletonKey       String   @unique @default("default") @db.VarChar(32)
-  emissionsPaused    Boolean  @default(false)
-  catalogSinksPaused Boolean  @default(false)
-  giftsPaused        Boolean  @default(false)
-  paidRewardsPaused  Boolean  @default(false)
-  gldTransferFeeBps  Int      @default(0)
-  reason             String?  @db.VarChar(500)
-  updatedById        String?  @db.Uuid
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  updatedBy          User?    @relation("GldControlUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  id                          String   @id @default(uuid()) @db.Uuid
+  singletonKey                String   @unique @default("default") @db.VarChar(32)
+  emissionsPaused             Boolean  @default(false)
+  catalogSinksPaused          Boolean  @default(false)
+  giftsPaused                 Boolean  @default(false)
+  paidRewardsPaused           Boolean  @default(false)
+  gldTransferFeeBps           Int      @default(0)
+  adDailyGldCap               BigInt?
+  adMaxValidatedAds           Int?
+  adMaxRewardPerClaim         BigInt?
+  giftBurnBps                 Int?
+  paidRewardSafetyMarginBps   Int?
+  paidRewardDailyRequestLimit Int?
+  reason                      String?  @db.VarChar(500)
+  updatedById                 String?  @db.Uuid
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  updatedBy                   User?    @relation("GldControlUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 }
 
 /// Immutable revenue input used to fund GLD emission and reserve capacity.

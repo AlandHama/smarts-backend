@@ -13,7 +13,7 @@ import { writePlayerAudit } from "../../common/helpers/player-audit"
 import { createHash, randomUUID } from "node:crypto"
 import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-transaction"
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
-import { getGldConfig } from "../gld/gld.config"
+import { applyGldPolicyOverrides, getGldConfig } from "../gld/gld.config"
 import { catalogGldPrice } from "./catalog-gld-pricing"
 
 @Injectable()
@@ -207,7 +207,9 @@ export class CommerceService {
       dayStart.setUTCHours(0, 0, 0, 0)
       const dailyRequests = await tx.paidRewardRequest.count({ where: { userId, requestedAt: { gte: dayStart } } })
       const config = getGldConfig()
-      if (dailyRequests >= config.paidRewardDailyRequestLimit) throw new ConflictException("The daily paid reward request limit has been reached")
+      const controls = await tx.gldAdminControl.findUnique({ where: { singletonKey: "default" }, select: { paidRewardDailyRequestLimit: true } })
+      const effectiveConfig = applyGldPolicyOverrides(config, controls)
+      if (dailyRequests >= effectiveConfig.paidRewardDailyRequestLimit) throw new ConflictException("The daily paid reward request limit has been reached")
       const requestId = randomUUID()
       const request = await tx.paidRewardRequest.create({ data: { id: requestId, userId, assetDefinitionId: asset.id, assetVariationId: variation?.id, inventoryItemId: inventoryItem?.id, gldPrice: quote.gldPrice, gldUnitPriceUsdMicros: quote.displayedValueUsdMicros, reserveCostUsdMicros: quote.reserveCostUsdMicros, gldFeeAmount: quote.feeGldAmount, requestKey: createHash("sha256").update(`${userId}:${idempotencyKey}`).digest("hex"), message: dto.message?.trim() || undefined, idempotencyKeyId: idem.id }, include: { assetDefinition: true, assetVariation: true, redeemCode: true } })
       const result = this.playerPaidReward(request)
@@ -371,26 +373,27 @@ export class CommerceService {
     const config = getGldConfig()
     const state = await tx.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { displayedValueUsdMicros: true, health: true } })
     const controls = await tx.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} })
+    const effectiveConfig = applyGldPolicyOverrides(config, controls)
     const displayedValueUsdMicros = state?.displayedValueUsdMicros ?? config.initialPriceUsdMicros
     const catalogGldPrice = await tx.catalogPrice.findFirst({ where: { active: true, amount: { gt: 0n }, currency: { code: "GLD", active: true }, catalogItem: { assetDefinitionId: asset.id, active: true, purchasable: true, catalog: { active: true } } }, orderBy: { updatedAt: "desc" }, select: { amount: true } })
     const metadata = asset.metadata && typeof asset.metadata === "object" && !Array.isArray(asset.metadata) ? asset.metadata as Record<string, unknown> : {}
     const configuredUsdCostMicros = this.paidRewardUsdCostMicros(metadata)
-    const usdCostMicros = configuredUsdCostMicros ?? config.paidRewardDefaultCostUsdMicros
+    const usdCostMicros = configuredUsdCostMicros ?? effectiveConfig.paidRewardDefaultCostUsdMicros
     const safeDisplayedValue = displayedValueUsdMicros > 0n ? displayedValueUsdMicros : config.initialPriceUsdMicros
     // GLD and the configured asset cost are both represented in USD micros.
     // The asset cost is exact; only the player-facing GLD amount is rounded up.
     const pricingSource = configuredUsdCostMicros !== null ? "USD_COST" : catalogGldPrice ? "CATALOG_GLD_PRICE" : "USD_COST_FALLBACK"
     const baseGldPrice = configuredUsdCostMicros !== null ? this.ceilDivide(usdCostMicros, safeDisplayedValue) : catalogGldPrice?.amount ?? this.ceilDivide(usdCostMicros, safeDisplayedValue)
     const configuredProfitPercent = this.paidRewardProfitPercent(metadata)
-    const profitPercent = configuredProfitPercent ?? Math.max(0, (config.paidRewardSafetyMarginBps - 10_000) / 100)
+    const profitPercent = configuredProfitPercent ?? Math.max(0, (effectiveConfig.paidRewardSafetyMarginBps - 10_000) / 100)
     const profitBps = BigInt(Math.round(profitPercent * 100))
     const gldPrice = this.ceilDivide(baseGldPrice * (10_000n + profitBps), 10_000n)
     const reserveCostUsdMicros = configuredUsdCostMicros !== null ? configuredUsdCostMicros : catalogGldPrice ? this.gldToUsdMicros(baseGldPrice, safeDisplayedValue) : usdCostMicros
     const feeGldAmount = gldPrice > baseGldPrice ? gldPrice - baseGldPrice : 0n
     const availableCodes = await tx.assetRedeemCode.count({ where: { assetDefinitionId: asset.id, assetVariationId: variationId, status: "AVAILABLE" } })
-    const blockedByHealth = config.paidRewardPauseOnCritical && (state?.health ?? "CRITICAL") === "CRITICAL"
+    const blockedByHealth = effectiveConfig.paidRewardPauseOnCritical && (state?.health ?? "CRITICAL") === "CRITICAL"
     const reason = controls.paidRewardsPaused ? "Paid rewards are temporarily paused by an administrator" : blockedByHealth ? "Paid rewards are temporarily paused while the GLD reserve is critical" : availableCodes < 1 ? "This asset is temporarily out of redeem codes" : "Eligible"
-    return { gldPrice: gldPrice > 0n ? gldPrice : 1n, baseGldPrice, feeGldAmount, reserveCostUsdMicros, pricingSource, currencyCode: "GLD", usdCostMicros, displayedValueUsdMicros: safeDisplayedValue, profitPercent, safetyMarginBps: config.paidRewardSafetyMarginBps, economyHealth: state?.health ?? "CRITICAL", availableCodes, eligible: !controls.paidRewardsPaused && !blockedByHealth && availableCodes > 0, reason }
+    return { gldPrice: gldPrice > 0n ? gldPrice : 1n, baseGldPrice, feeGldAmount, reserveCostUsdMicros, pricingSource, currencyCode: "GLD", usdCostMicros, displayedValueUsdMicros: safeDisplayedValue, profitPercent, safetyMarginBps: effectiveConfig.paidRewardSafetyMarginBps, economyHealth: state?.health ?? "CRITICAL", availableCodes, eligible: !controls.paidRewardsPaused && !blockedByHealth && availableCodes > 0, reason }
   }
   private playerPaidReward(row: any) { const gldPrice = row.gldPrice ?? null; const refunded = row.gldRefundedAmount ?? 0n; const fee = row.gldFeeAmount ?? null; const base = gldPrice !== null && fee !== null && gldPrice >= fee ? gldPrice - fee : null; return this.serialize({ id: row.id, status: row.status, requestKey: row.requestKey, inventoryItemId: row.inventoryItemId, message: row.message, adminNote: row.adminNote, gldPrice, gldBasePrice: base, gldUnitPriceUsdMicros: row.gldUnitPriceUsdMicros ?? null, reserveCostUsdMicros: row.reserveCostUsdMicros ?? null, gldFeeAmount: fee, gldChargedAmount: row.gldChargedAmount ?? null, gldRefundedAmount: refunded, gldStatus: row.status === "REFUSED" && refunded > 0n ? "REFUNDED" : row.status === "FULFILLED" ? "SPENT" : gldPrice !== null ? "NOT_CHARGED" : "LEGACY", requestedAt: row.requestedAt, decidedAt: row.decidedAt, asset: row.assetDefinition ? { id: row.assetDefinition.id, key: row.assetDefinition.key, name: row.assetDefinition.name, imageUrl: row.assetDefinition.imageUrl } : undefined, variation: row.assetVariation ? { id: row.assetVariation.id, key: row.assetVariation.key, name: row.assetVariation.name } : null, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }
   private adminPaidReward(row: any) { return this.serialize({ ...this.playerPaidReward(row), user: row.user, adminNote: row.adminNote, decidedBy: row.decidedBy, inventoryItemId: row.inventoryItemId, redeemCode: row.redeemCode ? { id: row.redeemCode.id, code: row.redeemCode.code, status: row.redeemCode.status, assignedAt: row.redeemCode.assignedAt } : null }) }

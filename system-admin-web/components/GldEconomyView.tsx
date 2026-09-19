@@ -42,6 +42,12 @@ type GldData = {
     paidRewardsPaused: boolean;
     gldTransferFeeBps: number;
     reason: string | null;
+    adDailyGldCap: string | null;
+    adMaxValidatedAds: number | null;
+    adMaxRewardPerClaim: string | null;
+    giftBurnBps: number | null;
+    paidRewardSafetyMarginBps: number | null;
+    paidRewardDailyRequestLimit: number | null;
   };
   revenueSnapshots: Array<{
     id: string;
@@ -126,19 +132,117 @@ export function GldEconomyView() {
   const [backingLoading, setBackingLoading] = useState(false);
   const [transferFeePercent, setTransferFeePercent] = useState("0");
   const [transferFeeLoading, setTransferFeeLoading] = useState(false);
+  const [policy, setPolicy] = useState({
+    adDailyGldCap: "25",
+    adMaxValidatedAds: "20",
+    adMaxRewardPerClaim: "10",
+    giftBurnBps: "10000",
+    paidRewardSafetyMarginBps: "12000",
+    paidRewardDailyRequestLimit: "3",
+  });
+  const [policySaving, setPolicySaving] = useState(false);
   const load = async () => {
     setLoading(true);
     try {
       setError("");
       const next = await api<GldData>("/gld");
       setData(next);
-      setTransferFeePercent(((next.controls.gldTransferFeeBps ?? 0) / 100).toString());
+      setTransferFeePercent(
+        ((next.controls.gldTransferFeeBps ?? 0) / 100).toString(),
+      );
+      setPolicy({
+        adDailyGldCap: String(
+          next.controls.adDailyGldCap ?? next.config.adDailyGldCap ?? "25",
+        ),
+        adMaxValidatedAds: String(
+          next.controls.adMaxValidatedAds ??
+            next.config.adMaxValidatedAds ??
+            "20",
+        ),
+        adMaxRewardPerClaim: String(
+          next.controls.adMaxRewardPerClaim ??
+            next.config.adMaxRewardPerClaim ??
+            "10",
+        ),
+        giftBurnBps: String(
+          next.controls.giftBurnBps ?? next.config.giftBurnBps ?? "10000",
+        ),
+        paidRewardSafetyMarginBps: String(
+          next.controls.paidRewardSafetyMarginBps ??
+            next.config.paidRewardSafetyMarginBps ??
+            "12000",
+        ),
+        paidRewardDailyRequestLimit: String(
+          next.controls.paidRewardDailyRequestLimit ??
+            next.config.paidRewardDailyRequestLimit ??
+            "3",
+        ),
+      });
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Unable to load GLD economy",
       );
     } finally {
       setLoading(false);
+    }
+  };
+  const savePolicy = async () => {
+    const whole = (value: string) => /^\d+$/.test(value.trim());
+    if (
+      !whole(policy.adDailyGldCap) ||
+      !whole(policy.adMaxRewardPerClaim) ||
+      !whole(policy.adMaxValidatedAds) ||
+      !whole(policy.giftBurnBps) ||
+      !whole(policy.paidRewardSafetyMarginBps) ||
+      !whole(policy.paidRewardDailyRequestLimit)
+    ) {
+      setError("GLD policy values must be non-negative whole numbers.");
+      return;
+    }
+    const numbers = [
+      policy.adMaxValidatedAds,
+      policy.giftBurnBps,
+      policy.paidRewardSafetyMarginBps,
+      policy.paidRewardDailyRequestLimit,
+    ].map(Number);
+    if (
+      numbers[0] < 1 ||
+      numbers[0] > 1000 ||
+      numbers[1] > 10000 ||
+      numbers[2] < 10001 ||
+      numbers[2] > 100000 ||
+      numbers[3] < 1 ||
+      numbers[3] > 1000
+    ) {
+      setError(
+        "Check the GLD policy limits: ads, burn BPS, margin BPS, and daily requests.",
+      );
+      return;
+    }
+    setPolicySaving(true);
+    try {
+      const controls = await api<GldData["controls"]>("/gld/controls", {
+        method: "PATCH",
+        body: JSON.stringify({
+          adDailyGldCap: policy.adDailyGldCap.trim(),
+          adMaxValidatedAds: numbers[0],
+          adMaxRewardPerClaim: policy.adMaxRewardPerClaim.trim(),
+          giftBurnBps: numbers[1],
+          paidRewardSafetyMarginBps: numbers[2],
+          paidRewardDailyRequestLimit: numbers[3],
+        }),
+      });
+      setData((current) => (current ? { ...current, controls } : current));
+      setMessage("GLD policy settings updated.");
+      await load();
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to update GLD policy settings",
+      );
+    } finally {
+      setPolicySaving(false);
     }
   };
   const saveTransferFee = async () => {
@@ -153,10 +257,14 @@ export function GldEconomyView() {
         method: "PATCH",
         body: JSON.stringify({ gldTransferFeeBps: Math.round(percent * 100) }),
       });
-      setData((current) => current ? { ...current, controls } : current);
+      setData((current) => (current ? { ...current, controls } : current));
       setMessage("GLD transfer fee updated.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to update GLD transfer fee");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to update GLD transfer fee",
+      );
     } finally {
       setTransferFeeLoading(false);
     }
@@ -251,16 +359,6 @@ export function GldEconomyView() {
     ...chartRows.map((row) => Number(bigintValue(row.grossAdRevenueUsdMicros))),
     1,
   );
-  const policyRows: Array<[string, unknown]> = data
-    ? [
-        ["Ad daily cap", data.config.adDailyGldCap],
-        ["Max validated ads", data.config.adMaxValidatedAds],
-        ["Max reward / claim", data.config.adMaxRewardPerClaim],
-        ["Gift burn", data.config.giftBurnBps],
-        ["Paid reward margin", data.config.paidRewardSafetyMarginBps],
-        ["Paid reward daily limit", data.config.paidRewardDailyRequestLimit],
-      ]
-    : [];
   if (loading && !data)
     return (
       <Stack alignItems="center" sx={{ py: 10 }}>
@@ -470,15 +568,22 @@ export function GldEconomyView() {
                     label="Fee (%)"
                     type="number"
                     value={transferFeePercent}
-                    onChange={(event) => setTransferFeePercent(event.target.value)}
+                    onChange={(event) =>
+                      setTransferFeePercent(event.target.value)
+                    }
                     inputProps={{ min: 0, max: 100, step: 0.01 }}
                   />
-                  <Button variant="outlined" onClick={() => void saveTransferFee()} disabled={transferFeeLoading}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => void saveTransferFee()}
+                    disabled={transferFeeLoading}
+                  >
                     {transferFeeLoading ? "Saving…" : "Save"}
                   </Button>
                 </Stack>
                 <Typography variant="caption" color="text.secondary">
-                  The fee is added to the sender’s debit; the recipient receives exactly the entered amount.
+                  The fee is added to the sender’s debit; the recipient receives
+                  exactly the entered amount.
                 </Typography>
               </Card>
             </Grid>
@@ -564,22 +669,46 @@ export function GldEconomyView() {
               GLD policy settings
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Effective server policy values. Change deployment variables for
-              pricing and allocation policy; emergency switches above are
-              persisted immediately.
+              These values are persisted on Railway and enforced by the server.
+              BPS values use 100 basis points per 1%.
             </Typography>
             <Grid container spacing={2} sx={{ mt: 1 }}>
-              {policyRows.map(([label, value]) => (
-                <Grid key={label} size={{ xs: 6, sm: 4 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    {label}
-                  </Typography>
-                  <Typography fontWeight={800}>
-                    {String(value ?? "—")}
-                  </Typography>
+              {(
+                [
+                  ["Ad daily cap (GLD)", "adDailyGldCap"],
+                  ["Max validated ads", "adMaxValidatedAds"],
+                  ["Max reward / claim (GLD)", "adMaxRewardPerClaim"],
+                  ["Gift burn (BPS)", "giftBurnBps"],
+                  ["Paid reward margin (BPS)", "paidRewardSafetyMarginBps"],
+                  ["Paid reward daily limit", "paidRewardDailyRequestLimit"],
+                ] as const
+              ).map(([label, key]) => (
+                <Grid key={key} size={{ xs: 12, sm: 6, lg: 4 }}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label={label}
+                    type="number"
+                    value={policy[key]}
+                    onChange={(event) =>
+                      setPolicy((current) => ({
+                        ...current,
+                        [key]: event.target.value,
+                      }))
+                    }
+                    inputProps={{ min: 0, step: 1 }}
+                  />
                 </Grid>
               ))}
             </Grid>
+            <Button
+              sx={{ mt: 2 }}
+              variant="contained"
+              onClick={() => void savePolicy()}
+              disabled={policySaving}
+            >
+              {policySaving ? "Saving…" : "Save GLD policy"}
+            </Button>
           </Card>
           <Card sx={{ p: { xs: 2, md: 3 } }}>
             <Typography variant="h6" fontWeight={800}>

@@ -28,3 +28,12 @@ export class UpdateReferralConfigDto {
   reason?: string
 }
 
+export class UpdateReferralPlayerOverrideDto {
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() enabled?: boolean | null
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(10000) maxInvitesPerUser?: number | null
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(5000) rewardBps?: number | null
+  @ApiPropertyOptional() @IsOptional() @IsString() @Matches(/^\d+$/) @MaxLength(32) maxRewardPerReferral?: string | null
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) minQualifyingAds?: number | null
+  @ApiPropertyOptional({ description: "Delete the override and return the player to the global policy" }) @IsOptional() @IsBoolean() clear?: boolean
+  @ApiPropertyOptional({ maxLength: 500 }) @IsOptional() @IsString() @MaxLength(500) reason?: string
+}
