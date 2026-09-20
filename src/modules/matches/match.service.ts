@@ -49,11 +49,22 @@ export class MatchService {
   }
 
   async get(matchId: string, userId: string) {
-    // Older mobile releases only poll GET /matches after matchmaking and do
-    // not retry POST /start after receiving the CREATED/readiness response.
-    // Treat that authenticated poll as a readiness acknowledgement so both
-    // current and older clients can enter the same shared match lifecycle.
-    await this.acknowledgeReadinessFromPoll(matchId, userId);
+    // GET is also the recovery path for mobile clients. A client can discover
+    // a match after the other participant has started it, or can be an older
+    // release that never retries POST /start after the CREATED response.
+    // StartMatchTransaction is idempotent for CREATED/STARTED matches: it
+    // records this participant's readiness, starts only after all humans are
+    // ready, and provisions this participant's assignments when missing.
+    const lifecycle = await this.prisma.match.findFirst({
+      where: { id: matchId, participants: { some: { userId } } },
+      select: { status: true },
+    });
+    if (
+      lifecycle &&
+      (lifecycle.status === "CREATED" || lifecycle.status === "STARTED")
+    ) {
+      await this.startMatch.run({ matchId, userId });
+    }
     const match = await this.prisma.match.findFirst({
       where: { id: matchId, participants: { some: { userId } } },
       include: {
@@ -140,59 +151,6 @@ export class MatchService {
             ),
           }
         : null,
-    });
-  }
-
-  private async acknowledgeReadinessFromPoll(matchId: string, userId: string) {
-    await this.prisma.$transaction(async (transaction) => {
-      const [lockedMatch] = await transaction.$queryRaw<
-        Array<{ id: string; status: string }>
-      >`
-        SELECT "id", "status"::text AS "status"
-        FROM "Match"
-        WHERE "id" = ${matchId}
-        FOR UPDATE
-      `;
-      if (!lockedMatch || lockedMatch.status !== "CREATED") return;
-
-      const currentParticipant = await transaction.matchParticipant.findFirst({
-        where: { matchId, userId, participantType: "PLAYER" },
-        select: { id: true, readyAt: true },
-      });
-      if (!currentParticipant) return;
-
-      const now = new Date();
-      if (!currentParticipant.readyAt) {
-        await transaction.matchParticipant.update({
-          where: { id: currentParticipant.id },
-          data: { readyAt: now },
-        });
-      }
-
-      const participants = await transaction.matchParticipant.findMany({
-        where: { matchId },
-        select: { participantType: true, readyAt: true },
-      });
-      const humans = participants.filter(
-        (participant) => participant.participantType === "PLAYER",
-      );
-      const humansReady =
-        humans.length > 0 &&
-        humans.every((participant) => participant.readyAt !== null);
-      const hasAssignments =
-        (await transaction.matchContentAssignment.count({
-          where: { matchId },
-        })) > 0;
-      if (participants.length > 0 && humansReady && hasAssignments) {
-        await transaction.match.update({
-          where: { id: matchId },
-          data: { status: "STARTED", startedAt: now },
-        });
-        await transaction.matchRound.updateMany({
-          where: { matchId, status: "CREATED" },
-          data: { status: "STARTED", startedAt: now },
-        });
-      }
     });
   }
 

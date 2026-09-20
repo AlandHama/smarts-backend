@@ -50,11 +50,36 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
 
     const [first] = await transaction.$queryRaw<TicketRow[]>`
       SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "createdAt"
-      FROM "MatchmakingTicket"
-      WHERE "status" = 'SEARCHING'
-        AND "expiresAt" > NOW()
-        AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
-      ORDER BY "createdAt" ASC
+      FROM "MatchmakingTicket" AS ticket
+      WHERE ticket."status" = 'SEARCHING'
+        AND ticket."expiresAt" > NOW()
+        AND ticket."lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
+        AND (
+          (
+            ticket."allowBotFallback" = true
+            AND ticket."createdAt" <= NOW() - make_interval(secs => ${botFallbackSeconds()})
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM "MatchmakingTicket" AS candidate
+            WHERE candidate."status" = 'SEARCHING'
+              AND candidate."expiresAt" > NOW()
+              AND candidate."lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
+              AND candidate."id" <> ticket."id"
+              AND candidate."userId" <> ticket."userId"
+              AND candidate."mode" = ticket."mode"
+              AND candidate."isRankingMatch" = ticket."isRankingMatch"
+              AND (
+                ticket."isRankingMatch" = true
+                OR candidate."gameDefinitionId" = ticket."gameDefinitionId"
+              )
+              AND (
+                ticket."isRankingMatch" = false
+                OR candidate."rankingConfigId" = ticket."rankingConfigId"
+              )
+          )
+        )
+      ORDER BY ticket."createdAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     `;
