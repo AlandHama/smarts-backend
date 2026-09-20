@@ -55,6 +55,13 @@ export function RankingView() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [draft, setDraft] = useState({
+    name: "",
+    stakeAmountGld: "5",
+    entryFeeGld: "1",
+    sortOrder: "0",
+  });
 
   const load = async () => {
     try {
@@ -106,6 +113,37 @@ export function RankingView() {
       setSaving(null);
     }
   };
+  const create = async () => {
+    setSaving("new");
+    try {
+      const next = await api<Tier>("/ranking/configs", {
+        method: "POST",
+        body: JSON.stringify({
+          name: draft.name,
+          stakeAmountGld: Number(draft.stakeAmountGld),
+          entryFeeGld: Number(draft.entryFeeGld),
+          sortOrder: Number(draft.sortOrder) || 0,
+          enabled: true,
+        }),
+      });
+      setTiers((items) => [...items, next]);
+      setDraft({
+        name: "",
+        stakeAmountGld: "5",
+        entryFeeGld: "1",
+        sortOrder: "0",
+      });
+      setShowCreate(false);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to create ranking arena",
+      );
+    } finally {
+      setSaving(null);
+    }
+  };
   const label = (player?: HistoryRow["winner"]) =>
     player?.profile?.displayName || player?.username || "—";
   return (
@@ -128,11 +166,90 @@ export function RankingView() {
             Configure GLD entry tiers and review every paid competitive match.
           </Typography>
         </Box>
-        <Button variant="outlined" onClick={() => void load()}>
-          Refresh
-        </Button>
+        <Stack direction="row" gap={1}>
+          <Button variant="outlined" onClick={() => void load()}>
+            Refresh
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => setShowCreate((value) => !value)}
+          >
+            {showCreate ? "Close" : "Add arena"}
+          </Button>
+        </Stack>
       </Stack>
       {error && <Chip color="error" label={error} sx={{ mb: 3 }} />}
+      {showCreate && (
+        <Card sx={{ mb: 4 }}>
+          <CardContent>
+            <Stack gap={2}>
+              <Typography variant="h6" fontWeight={800}>
+                Create ranking arena
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Add as many entry tiers as the economy needs. Disable an arena
+                without deleting its history.
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Arena name"
+                    value={draft.name}
+                    onChange={(event) =>
+                      setDraft({ ...draft, name: event.target.value })
+                    }
+                  />
+                </Grid>
+                <Grid item xs={12} md={2}>
+                  <TextField
+                    fullWidth
+                    label="Stake (GLD)"
+                    type="number"
+                    value={draft.stakeAmountGld}
+                    onChange={(event) =>
+                      setDraft({ ...draft, stakeAmountGld: event.target.value })
+                    }
+                  />
+                </Grid>
+                <Grid item xs={12} md={2}>
+                  <TextField
+                    fullWidth
+                    label="Fee (GLD)"
+                    type="number"
+                    value={draft.entryFeeGld}
+                    onChange={(event) =>
+                      setDraft({ ...draft, entryFeeGld: event.target.value })
+                    }
+                  />
+                </Grid>
+                <Grid item xs={12} md={2}>
+                  <TextField
+                    fullWidth
+                    label="Sort order"
+                    type="number"
+                    value={draft.sortOrder}
+                    onChange={(event) =>
+                      setDraft({ ...draft, sortOrder: event.target.value })
+                    }
+                  />
+                </Grid>
+                <Grid item xs={12} md={2}>
+                  <Button
+                    fullWidth
+                    sx={{ height: "100%" }}
+                    variant="contained"
+                    disabled={!draft.name.trim() || saving === "new"}
+                    onClick={() => void create()}
+                  >
+                    Create
+                  </Button>
+                </Grid>
+              </Grid>
+            </Stack>
+          </CardContent>
+        </Card>
+      )}
       <Typography variant="h5" fontWeight={800} sx={{ mb: 2 }}>
         Entry tiers
       </Typography>

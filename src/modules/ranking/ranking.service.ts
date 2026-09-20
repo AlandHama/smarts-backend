@@ -1,8 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common"
+import { BadRequestException, ConflictException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common"
 import { Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
-import { UpdateRankingConfigDto } from "./dtos"
+import { CreateRankingConfigDto, UpdateRankingConfigDto } from "./dtos"
 
 @Injectable()
 export class RankingService implements OnModuleInit {
@@ -24,6 +24,32 @@ export class RankingService implements OnModuleInit {
     return this.serialize(await this.prisma.rankingMatchConfig.findMany({ where: includeDisabled ? undefined : { enabled: true }, orderBy: [{ sortOrder: "asc" }, { stakeAmountGld: "asc" }] }))
   }
 
+  async createConfig(dto: CreateRankingConfigDto) {
+    const name = dto.name.trim()
+    const stake = BigInt(dto.stakeAmountGld)
+    const fee = BigInt(dto.entryFeeGld)
+    if (!name) throw new BadRequestException("Arena name is required")
+    if (fee >= stake) throw new BadRequestException("Entry fee must be lower than the stake")
+
+    const baseKey = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "arena"
+    let key = baseKey
+    let suffix = 2
+    while (await this.prisma.rankingMatchConfig.findUnique({ where: { key } })) {
+      key = `${baseKey.slice(0, 64 - String(suffix).length - 1)}-${suffix}`
+      suffix += 1
+    }
+
+    const created = await this.prisma.rankingMatchConfig.create({ data: {
+      key,
+      name,
+      stakeAmountGld: stake,
+      entryFeeGld: fee,
+      enabled: dto.enabled ?? true,
+      sortOrder: dto.sortOrder ?? 0,
+    } })
+    return this.serialize(created)
+  }
+
   async updateConfig(id: string, dto: UpdateRankingConfigDto) {
     const current = await this.prisma.rankingMatchConfig.findUnique({ where: { id } })
     if (!current) throw new NotFoundException("Ranking entry tier not found")
@@ -31,6 +57,17 @@ export class RankingService implements OnModuleInit {
     const fee = dto.entryFeeGld === undefined ? current.entryFeeGld : BigInt(dto.entryFeeGld)
     if (stake <= 0n || fee < 0n || fee >= stake) throw new BadRequestException("Entry fee must be lower than the stake")
     return this.serialize(await this.prisma.rankingMatchConfig.update({ where: { id }, data: { name: dto.name?.trim() || undefined, stakeAmountGld: stake, entryFeeGld: fee, enabled: dto.enabled, sortOrder: dto.sortOrder } }))
+  }
+
+  async deleteConfig(id: string) {
+    const current = await this.prisma.rankingMatchConfig.findUnique({ where: { id } })
+    if (!current) throw new NotFoundException("Ranking entry tier not found")
+    const [ticketCount, matchCount] = await Promise.all([
+      this.prisma.matchmakingTicket.count({ where: { rankingConfigId: id } }),
+      this.prisma.rankingMatch.count({ where: { configId: id } }),
+    ])
+    if (ticketCount || matchCount) throw new ConflictException("Arena has match history or active tickets; disable it instead")
+    return this.serialize(await this.prisma.rankingMatchConfig.delete({ where: { id } }))
   }
 
   async history(limit = 100) {
