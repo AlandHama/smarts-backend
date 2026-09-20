@@ -23,9 +23,10 @@ import { AdMobModule } from "./modules/admob/admob.module"
 import { GldModule } from "./modules/gld/gld.module"
 import { GiftsModule } from "./modules/gifts/gifts.module"
 import { ReferralsModule } from "./modules/referrals/referrals.module"
+import { RankingModule } from "./modules/ranking/ranking.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

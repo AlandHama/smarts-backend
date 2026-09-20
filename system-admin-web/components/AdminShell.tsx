@@ -21,6 +21,7 @@ import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
+import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -55,7 +56,8 @@ export type AdminView =
   | "admob"
   | "storage"
   | "feedback"
-  | "referrals";
+  | "referrals"
+  | "ranking";
 
 const navigation = [
   {
@@ -137,6 +139,11 @@ const navigation = [
   },
   { key: "feedback" as const, label: "Feedback", icon: <ForumRoundedIcon /> },
   { key: "referrals" as const, label: "Referrals", icon: <ShareRoundedIcon /> },
+  {
+    key: "ranking" as const,
+    label: "Ranking matches",
+    icon: <EmojiEventsRoundedIcon />,
+  },
 ];
 
 export function AdminShell({

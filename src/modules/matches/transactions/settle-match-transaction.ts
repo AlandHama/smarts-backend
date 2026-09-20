@@ -22,11 +22,11 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
   ) { super(prisma) }
 
   protected async execute(input: SettleInput, transaction: Prisma.TransactionClient) {
-    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { gameDefinition: true, gameConfig: true, participants: { include: { user: { include: { profile: true } } } } } })
+    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { gameDefinition: true, gameConfig: true, rankingMatch: true, participants: { include: { user: { include: { profile: true } } } } } })
     if (!match) throw new NotFoundException("Match not found")
     if (!match.participants.some((item) => item.userId === input.userId)) throw new NotFoundException("Player is not a participant in this match")
     await transaction.$queryRaw`SELECT "id" FROM "Match" WHERE "id" = ${match.id} FOR UPDATE`
-    const lockedMatch = await transaction.match.findUniqueOrThrow({ where: { id: match.id }, include: { gameDefinition: true, gameConfig: true, participants: { include: { user: { include: { profile: true } } } }, settlement: true } })
+    const lockedMatch = await transaction.match.findUniqueOrThrow({ where: { id: match.id }, include: { gameDefinition: true, gameConfig: true, rankingMatch: true, participants: { include: { user: { include: { profile: true } } } }, settlement: true } })
     if (lockedMatch.settlement) return lockedMatch.settlement.settlementJson
     if (lockedMatch.status === "CANCELLED" || lockedMatch.status === "SETTLED") throw new ConflictException("The match cannot be settled")
 
@@ -88,7 +88,11 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       const rewardBonus = lockedMatch.mode === "SINGLE_PLAYER" || lockedMatch.mode === "BOT"
         ? this.min(config.scoreRewardCap, item.score / BigInt(config.scoreRewardDivisor))
         : isDraw ? 0n : this.min(isWinner ? config.winnerRewardBonusMax : config.loserRewardBonusMax, this.ratio(this.abs(scoreDiff), config.multiplayerRewardReference, isWinner ? config.winnerRewardBonusMax : config.loserRewardBonusMax))
-      const coinReward = this.multiply(rewardBase + rewardBonus, config.rankingEnabled ? config.rankingCoinMultiplier.toString() : "1")
+      // Ranked entry matches distribute their explicitly configured pot. They
+      // do not also mint the normal casual match reward.
+      const coinReward = lockedMatch.rankingMatch
+        ? 0n
+        : this.multiply(rewardBase + rewardBonus, config.rankingEnabled ? config.rankingCoinMultiplier.toString() : "1")
 
       const progression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.mainProgressionKey, amount: xp, sourceId: `${lockedMatch.id}:xp:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       const eloProgression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.eloProgressionKey, amount: eloDelta, sourceId: `${lockedMatch.id}:elo:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
@@ -110,6 +114,25 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       }
       await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, changes: { result: { old: "PENDING", new: result }, scoreEarned: { old: 0n, new: item.score }, eloDelta: { old: 0n, new: eloDelta }, xpAwarded: { old: 0n, new: xp }, currencyReward: { old: 0n, new: coinReward } }, metadata: { gameKey: lockedMatch.gameDefinition.key, policyVersion } })
       results.push({ playerId: player.id, username: player.username, result, score: item.score.toString(), eloDelta: eloDelta.toString(), progression, eloProgression, wallet, cognitiveStats })
+    }
+
+    if (lockedMatch.rankingMatch) {
+      if (winner?.participant.userId) {
+        await this.creditWallet.runWithinTransaction({
+          userId: winner.participant.userId,
+          currencyCode: "GLD",
+          amount: lockedMatch.rankingMatch.payoutAmountGld,
+          sourceId: `${lockedMatch.id}:ranking-payout`,
+          sourceType: WalletTransactionSourceType.RANKING_MATCH_PAYOUT,
+          metadata: { matchId: lockedMatch.id, stakeAmountGld: lockedMatch.rankingMatch.stakeAmountGld.toString(), entryFeeGld: lockedMatch.rankingMatch.entryFeeGld.toString(), payoutAmountGld: lockedMatch.rankingMatch.payoutAmountGld.toString() },
+        }, transaction)
+        await transaction.rankingMatch.update({ where: { id: lockedMatch.rankingMatch.id }, data: { status: "SETTLED", winnerUserId: winner.participant.userId, settledAt: new Date() } })
+      } else {
+        // A draw returns each stake after retaining the configured entry fee.
+        const refund = lockedMatch.rankingMatch.stakeAmountGld - lockedMatch.rankingMatch.entryFeeGld
+        for (const item of humanParticipants) if (item.userId && refund > 0n) await this.creditWallet.runWithinTransaction({ userId: item.userId, currencyCode: "GLD", amount: refund, sourceId: `${lockedMatch.id}:ranking-draw-refund:${item.userId}`, sourceType: WalletTransactionSourceType.RANKING_MATCH_REFUND, metadata: { matchId: lockedMatch.id, reason: "ranking_draw" } }, transaction)
+        await transaction.rankingMatch.update({ where: { id: lockedMatch.rankingMatch.id }, data: { status: "REFUNDED", settledAt: new Date() } })
+      }
     }
 
     const settlementJson = { status: "SETTLED", matchId: lockedMatch.id, policyVersion, winnerPlayerId: winner?.participant.userId ?? null, draw, results }

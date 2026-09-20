@@ -13,6 +13,9 @@ type TicketRow = {
   gameDefinitionId: string
   mode: MatchmakingTicketMode
   isRankingMatch: boolean
+  rankingConfigId: string | null
+  rankingStakeAmount: bigint | null
+  rankingEntryFee: bigint | null
   levelSnapshot: number
   eloSnapshot: bigint
   countryCodeSnapshot: string | null
@@ -31,7 +34,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
     if (!locked) return null
 
     const [first] = await transaction.$queryRaw<TicketRow[]>`
-      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "createdAt"
+      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "createdAt"
       FROM "MatchmakingTicket"
       WHERE "status" = 'SEARCHING'
         AND "expiresAt" > NOW()
@@ -45,16 +48,20 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - first.createdAt.getTime()) / 1000))
     const eloTolerance = Math.min(2000, 100 + Math.floor(elapsedSeconds / 30) * 100)
     const [second] = await transaction.$queryRaw<TicketRow[]>`
-      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "createdAt"
+      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "createdAt"
       FROM "MatchmakingTicket"
       WHERE "status" = 'SEARCHING'
         AND "expiresAt" > NOW()
         AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
         AND "id" <> ${first.id}
         AND "userId" <> ${first.userId}
-        AND "gameDefinitionId" = ${first.gameDefinitionId}
+        -- Ranked matches deliberately use a random active game. The server
+        -- uses the first ticket's game for the authoritative match, so two
+        -- players who chose different random games can still be paired.
+        AND (${first.isRankingMatch} = true OR "gameDefinitionId" = ${first.gameDefinitionId})
         AND "mode"::text = ${first.mode}
         AND "isRankingMatch" = ${first.isRankingMatch}
+        AND (${first.isRankingMatch} = false OR "rankingConfigId" = ${first.rankingConfigId})
         -- Casual players should be paired whenever they selected the same
         -- game. ELO is a ranked matchmaking constraint only; applying it to
         -- casual queue tickets can leave two real players waiting until both
@@ -99,6 +106,18 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<void, any
         serverSnapshots: [{ userId: first.userId, level: first.levelSnapshot, elo: first.eloSnapshot.toString(), countryCode: first.countryCodeSnapshot }, ...(second ? [{ userId: second.userId, level: second.levelSnapshot, elo: second.eloSnapshot.toString(), countryCode: second.countryCodeSnapshot }] : [])],
       } as Prisma.InputJsonValue,
     } })
+    if (first.isRankingMatch && second && first.rankingConfigId && first.rankingStakeAmount && first.rankingEntryFee) {
+      const expectedPayout = first.rankingStakeAmount * 2n - first.rankingEntryFee * 2n
+      await transaction.rankingMatch.create({ data: {
+        matchId: match.id,
+        configId: first.rankingConfigId,
+        stakeAmountGld: first.rankingStakeAmount,
+        entryFeeGld: first.rankingEntryFee,
+        payoutAmountGld: expectedPayout,
+        status: "ACTIVE",
+      } })
+      await transaction.match.update({ where: { id: match.id }, data: { metadata: { source: "MATCHMAKING_QUEUE", isRankingMatch: true, rankingConfigId: first.rankingConfigId, rankingStakeAmount: first.rankingStakeAmount.toString(), rankingEntryFee: first.rankingEntryFee.toString(), rankingPayoutAmount: expectedPayout.toString(), queueTicketIds: [first.id, second.id], serverSnapshots: [{ userId: first.userId, level: first.levelSnapshot, elo: first.eloSnapshot.toString(), countryCode: first.countryCodeSnapshot }, { userId: second.userId, level: second.levelSnapshot, elo: second.eloSnapshot.toString(), countryCode: second.countryCodeSnapshot }] } as Prisma.InputJsonValue } })
+    }
     const round = await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: game.id, status: "CREATED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex") } })
     const participants = [
       await transaction.matchParticipant.create({ data: { matchId: match.id, userId: first.userId, participantType: "PLAYER" } }),

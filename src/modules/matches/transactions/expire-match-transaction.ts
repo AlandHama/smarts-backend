@@ -3,14 +3,15 @@ import { Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
+import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 
 @Injectable()
 export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: number }> {
-  constructor(prisma: PrismaService) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly creditWallet: CreditWalletTransaction) { super(prisma) }
 
   protected async execute(_: void, transaction: Prisma.TransactionClient) {
     const now = new Date()
-    const matches = await transaction.match.findMany({ where: { status: { in: ["CREATED", "STARTED"] }, OR: [{ createdAt: { lte: now } }] }, include: { gameConfig: { select: { maxMatchDurationSeconds: true } } }, take: 100 })
+    const matches = await transaction.match.findMany({ where: { status: { in: ["CREATED", "STARTED"] }, OR: [{ createdAt: { lte: now } }] }, include: { gameConfig: { select: { maxMatchDurationSeconds: true } }, rankingMatch: true, participants: { select: { userId: true, participantType: true } } }, take: 100 })
     let expired = 0
     for (const match of matches) {
       // Flutter submits FINISH when its synchronized match clock reaches the
@@ -26,6 +27,20 @@ export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: n
       await transaction.matchParticipant.updateMany({ where: { matchId: match.id, result: "PENDING" }, data: { result: "FORFEIT", submittedAt: now } })
       await transaction.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "CANCELLED", endedAt: now } })
       await transaction.match.update({ where: { id: match.id }, data: { status: "CANCELLED", endedAt: now } })
+      if (match.rankingMatch?.status === "ACTIVE") {
+        for (const participant of match.participants) {
+          if (participant.participantType !== "PLAYER" || !participant.userId) continue
+          await this.creditWallet.runWithinTransaction({
+            userId: participant.userId,
+            currencyCode: "GLD",
+            amount: match.rankingMatch.stakeAmountGld,
+            sourceId: `${match.id}:ranking-cancel-refund:${participant.userId}`,
+            sourceType: "RANKING_MATCH_REFUND",
+            metadata: { matchId: match.id, reason: "ranking_match_cancelled" },
+          }, transaction)
+        }
+        await transaction.rankingMatch.update({ where: { id: match.rankingMatch.id }, data: { status: "REFUNDED", settledAt: now } })
+      }
       expired += 1
     }
     return { expired }

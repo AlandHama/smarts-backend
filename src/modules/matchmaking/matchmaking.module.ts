@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common"
 
 import { DatabaseModule } from "../../database/database.module"
+import { EconomyModule } from "../economy/economy.module"
 import { MatchesModule } from "../matches/matches.module"
 import { AcceptFriendInviteTransaction } from "./transactions/accept-friend-invite-transaction"
 import { CancelTicketTransaction } from "./transactions/cancel-ticket-transaction"
@@ -15,7 +16,7 @@ import { MatchmakingService } from "./matchmaking.service"
 import { MatchmakingWorkerService } from "./matchmaking-worker.service"
 
 @Module({
-  imports: [DatabaseModule, MatchesModule],
+  imports: [DatabaseModule, MatchesModule, EconomyModule],
   controllers: [MatchmakingController],
   providers: [MatchmakingService, MatchmakingWorkerService, EnqueuePlayerTransaction, HeartbeatTicketTransaction, CancelTicketTransaction, ExpireMatchmakingTicketsTransaction, ClaimMatchmakingPairTransaction, CreateFriendInviteTransaction, AcceptFriendInviteTransaction, RespondFriendInviteTransaction],
   exports: [MatchmakingService],

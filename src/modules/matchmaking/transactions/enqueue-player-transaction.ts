@@ -5,11 +5,13 @@ import { Prisma, MatchmakingTicketMode } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { EnqueuePlayerDto } from "../dtos"
+import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
+import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 import { queueHeartbeatTimeoutSeconds, queueTtlSeconds } from "../utilities/matchmaking-policy"
 
 @Injectable()
 export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string; dto: EnqueuePlayerDto }, any> {
-  constructor(prisma: PrismaService) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly debitWallet: DebitWalletTransaction, private readonly creditWallet: CreditWalletTransaction) { super(prisma) }
 
   protected async execute(input: { userId: string; dto: EnqueuePlayerDto }, transaction: Prisma.TransactionClient) {
     const dto = input.dto
@@ -17,7 +19,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     if (mode !== MatchmakingTicketMode.CASUAL && mode !== MatchmakingTicketMode.RANKED) throw new BadRequestException("Only casual and ranked queue modes are supported")
     const key = dto.idempotencyKey?.trim()
     const scope = `matchmaking:enqueue:${input.userId}`
-    const requestHash = createHash("sha256").update(JSON.stringify({ gameKey: dto.gameKey.trim().toLowerCase(), mode, allowBotFallback: Boolean(dto.allowBotFallback), clientVersion: dto.clientVersion?.trim() || null, constraints: dto.constraints ?? null })).digest("hex")
+    const requestHash = createHash("sha256").update(JSON.stringify({ gameKey: dto.gameKey.trim().toLowerCase(), mode, allowBotFallback: Boolean(dto.allowBotFallback), rankingConfigId: dto.rankingConfigId ?? null, clientVersion: dto.clientVersion?.trim() || null, constraints: dto.constraints ?? null })).digest("hex")
     if (key) {
       const existing = await transaction.idempotencyKey.findUnique({ where: { scope_key: { scope, key } } })
       if (existing) {
@@ -36,6 +38,16 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
     if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
+    let rankingConfig: { id: string; name: string; stakeAmountGld: bigint; entryFeeGld: bigint } | null = null
+    if (mode === MatchmakingTicketMode.RANKED) {
+      rankingConfig = await transaction.rankingMatchConfig.findFirst({
+        where: { ...(dto.rankingConfigId ? { id: dto.rankingConfigId } : {}), enabled: true },
+        select: { id: true, name: true, stakeAmountGld: true, entryFeeGld: true },
+        orderBy: { sortOrder: "asc" },
+      })
+      if (!rankingConfig) throw new BadRequestException("Ranking entry tier is unavailable")
+      if (rankingConfig.stakeAmountGld <= 0n || rankingConfig.entryFeeGld < 0n || rankingConfig.entryFeeGld >= rankingConfig.stakeAmountGld) throw new BadRequestException("Ranking entry tier is invalid")
+    }
     if (dto.constraints && (Object.keys(dto.constraints).length > 12 || JSON.stringify(dto.constraints).length > 2000)) throw new BadRequestException("Matchmaking constraints are too large")
 
     // Serialize queue creation per player. Without this lock two quick taps
@@ -57,6 +69,17 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     for (const current of currentTickets) {
       if (current.status === "SEARCHING" && (current.expiresAt <= now || current.lastHeartbeatAt.getTime() <= heartbeatCutoff)) {
         await transaction.matchmakingTicket.update({ where: { id: current.id }, data: { status: "EXPIRED" } })
+        if (current.rankingStakeAmount && !current.rankingRefundedAt) {
+          await this.creditWallet.runWithinTransaction({
+            userId: input.userId,
+            currencyCode: "GLD",
+            amount: current.rankingStakeAmount,
+            sourceId: `${current.id}:expire-refund`,
+            sourceType: "RANKING_MATCH_REFUND",
+            metadata: { ticketId: current.id, reason: "ranking_queue_expired_before_retry" },
+          }, transaction)
+          await transaction.matchmakingTicket.update({ where: { id: current.id }, data: { rankingRefundedAt: now } })
+        }
         continue
       }
       activeTickets.push(current)
@@ -81,11 +104,24 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
       constraints: dto.constraints as Prisma.InputJsonValue | undefined,
       clientVersion: dto.clientVersion?.trim() || null,
       allowBotFallback: mode === MatchmakingTicketMode.CASUAL && Boolean(dto.allowBotFallback),
+      rankingConfigId: rankingConfig?.id,
+      rankingStakeAmount: rankingConfig?.stakeAmountGld,
+      rankingEntryFee: rankingConfig?.entryFeeGld,
       expiresAt,
       lastHeartbeatAt: now,
       idempotencyKeyId: idempotency?.id,
     } })
-    const response = { ticket: { id: ticket.id, status: ticket.status, mode: ticket.mode, gameKey: game.key, isRankingMatch: ticket.isRankingMatch, levelSnapshot: ticket.levelSnapshot, eloSnapshot: ticket.eloSnapshot.toString(), countryCodeSnapshot: ticket.countryCodeSnapshot, createdAt: ticket.createdAt, expiresAt: ticket.expiresAt, lastHeartbeatAt: ticket.lastHeartbeatAt, matchId: null } }
+    if (rankingConfig) {
+      await this.debitWallet.runWithinTransaction({
+        userId: input.userId,
+        currencyCode: "GLD",
+        amount: rankingConfig.stakeAmountGld,
+        sourceId: ticket.id,
+        sourceType: "RANKING_MATCH_ENTRY",
+        metadata: { rankingConfigId: rankingConfig.id, stakeAmountGld: rankingConfig.stakeAmountGld.toString(), entryFeeGld: rankingConfig.entryFeeGld.toString() },
+      }, transaction)
+    }
+    const response = { ticket: { id: ticket.id, status: ticket.status, mode: ticket.mode, gameKey: game.key, isRankingMatch: ticket.isRankingMatch, rankingConfigId: ticket.rankingConfigId, rankingStakeAmount: ticket.rankingStakeAmount?.toString() ?? null, rankingEntryFee: ticket.rankingEntryFee?.toString() ?? null, levelSnapshot: ticket.levelSnapshot, eloSnapshot: ticket.eloSnapshot.toString(), countryCodeSnapshot: ticket.countryCodeSnapshot, createdAt: ticket.createdAt, expiresAt: ticket.expiresAt, lastHeartbeatAt: ticket.lastHeartbeatAt, matchId: null } }
     if (idempotency) await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: response as Prisma.InputJsonValue, completedAt: new Date() } })
     return response
   }

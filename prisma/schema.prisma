@@ -138,9 +138,20 @@ enum WalletTransactionSourceType {
   AD
   REFERRAL
   PURCHASE
+  RANKING_MATCH_ENTRY
+  RANKING_MATCH_PAYOUT
+  RANKING_MATCH_REFUND
   REFUND
   ADMIN
   SYSTEM
+}
+
+enum RankingMatchStatus {
+  QUEUED
+  ACTIVE
+  SETTLED
+  REFUNDED
+  CANCELLED
 }
 
 enum IdempotencyStatus {
@@ -435,6 +446,7 @@ model User {
   referralRewardsAsReferred  ReferralReward[]        @relation("ReferralRewardReferred")
   referralConfigUpdates      ReferralConfig[]        @relation("ReferralConfigUpdater")
   referralPolicyOverride     ReferralPlayerOverride?
+  rankingWins                RankingMatch[]          @relation("RankingMatchWinner")
 }
 
 model Session {
@@ -1421,6 +1433,7 @@ model Match {
   matchmakingTickets MatchmakingTicket[]
   matchmakingInvite  MatchmakingInvite?
   rounds             MatchRound[]
+  rankingMatch       RankingMatch?
 
   @@index([status, createdAt])
   @@index([createdByUserId, status])
@@ -1454,6 +1467,10 @@ model MatchmakingTicket {
   status              MatchmakingTicketStatus @default(SEARCHING)
   isRankingMatch      Boolean                 @default(false)
   rankingSeriesId     String?                 @db.Uuid
+  rankingConfigId     String?                 @db.Uuid
+  rankingStakeAmount  BigInt?
+  rankingEntryFee     BigInt?
+  rankingRefundedAt   DateTime?
   levelSnapshot       Int
   eloSnapshot         BigInt
   countryCodeSnapshot String?                 @db.Char(2)
@@ -1471,11 +1488,48 @@ model MatchmakingTicket {
   gameDefinition      GameDefinition          @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
   match               Match?                  @relation(fields: [matchId], references: [id], onDelete: SetNull)
   idempotencyKey      IdempotencyKey?         @relation(fields: [idempotencyKeyId], references: [id], onDelete: SetNull)
+  rankingConfig       RankingMatchConfig?     @relation(fields: [rankingConfigId], references: [id], onDelete: SetNull)
 
   @@index([status, gameDefinitionId, mode, createdAt])
   @@index([userId, status])
   @@index([expiresAt, lastHeartbeatAt])
   @@index([matchId])
+}
+
+model RankingMatchConfig {
+  id             String              @id @default(uuid()) @db.Uuid
+  key            String              @unique @db.VarChar(64)
+  name           String              @db.VarChar(120)
+  stakeAmountGld BigInt
+  entryFeeGld    BigInt
+  enabled        Boolean             @default(true)
+  sortOrder      Int                 @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  tickets        MatchmakingTicket[]
+  matches        RankingMatch[]
+
+  @@index([enabled, sortOrder])
+}
+
+model RankingMatch {
+  id              String             @id @default(uuid()) @db.Uuid
+  matchId         String             @unique @db.Uuid
+  configId        String             @db.Uuid
+  stakeAmountGld  BigInt
+  entryFeeGld     BigInt
+  payoutAmountGld BigInt
+  status          RankingMatchStatus @default(ACTIVE)
+  winnerUserId    String?            @db.Uuid
+  createdAt       DateTime           @default(now())
+  settledAt       DateTime?
+  match           Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  config          RankingMatchConfig @relation(fields: [configId], references: [id], onDelete: Restrict)
+  winner          User?              @relation("RankingMatchWinner", fields: [winnerUserId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([configId, createdAt])
+  @@index([winnerUserId, settledAt])
 }
 
 model MatchmakingInvite {

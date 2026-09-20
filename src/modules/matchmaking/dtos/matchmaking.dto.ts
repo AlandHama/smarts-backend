@@ -29,6 +29,11 @@ export class EnqueuePlayerDto {
   @MaxLength(128)
   idempotencyKey?: string
 
+  @ApiPropertyOptional({ format: "uuid", description: "Server-issued ranking entry tier." })
+  @IsOptional()
+  @IsUUID()
+  rankingConfigId?: string
+
   @ApiPropertyOptional({ type: Object, description: "Bounded preferences; never treated as a player snapshot." })
   @IsOptional()
   @IsObject()
