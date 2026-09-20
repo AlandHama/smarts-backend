@@ -114,6 +114,7 @@ export class MatchmakingService {
                 result: true,
               },
             },
+            gameDefinition: { select: { key: true, name: true } },
           },
         },
       },

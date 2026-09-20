@@ -97,9 +97,10 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
         AND "id" <> ${first.id}
         AND "userId" <> ${first.userId}
-        -- Ranked matches deliberately use a random active game. The server
-        -- uses the first ticket's game for the authoritative match, so two
-        -- players who chose different random games can still be paired.
+        -- Ranked matches can be entered from different client-selected game
+        -- cards. The first ticket's game is authoritative for the pair; the
+        -- matched ticket is normalized to it below before either client polls
+        -- the result.
         AND (${first.isRankingMatch} = true OR "gameDefinitionId" = ${first.gameDefinitionId})
         AND "mode"::text = ${first.mode}
         AND "isRankingMatch" = ${first.isRankingMatch}
@@ -316,7 +317,16 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     const ids = second ? [first.id, second.id] : [first.id];
     await transaction.matchmakingTicket.updateMany({
       where: { id: { in: ids }, status: "SEARCHING" },
-      data: { status: "MATCHED", matchedAt: now, matchId: match.id },
+      // Do not leave the second ticket pointing at the game its device chose
+      // locally. Older mobile builds read the matched ticket before fetching
+      // the full match, which previously produced different games/questions
+      // on the two devices.
+      data: {
+        status: "MATCHED",
+        matchedAt: now,
+        matchId: match.id,
+        gameDefinitionId: game.id,
+      },
     });
     return {
       ticketIds: ids,
