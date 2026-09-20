@@ -1742,6 +1742,7 @@ model GldAdminControl {
   adDailyGldCap               BigInt?
   adMaxValidatedAds           Int?
   adMaxRewardPerClaim         BigInt?
+  admobReserveAllocationBps   Int?
   giftBurnBps                 Int?
   paidRewardSafetyMarginBps   Int?
   paidRewardDailyRequestLimit Int?

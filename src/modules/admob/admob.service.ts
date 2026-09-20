@@ -4,12 +4,15 @@ import { Prisma } from "@prisma/client"
 
 import { getAuthConfig } from "../auth/auth.config"
 import { PrismaService } from "../../prisma.service"
+import { GldService } from "../gld/gld.service"
 
 const ADMOB_SCOPE = "https://www.googleapis.com/auth/admob.report https://www.googleapis.com/auth/admob.readonly"
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const ADMOB_API_URL = "https://admob.googleapis.com/v1"
-const SYNC_INTERVAL_MS = 60 * 60 * 1000
+// Keep report refresh aligned with the GLD treasury cycle. AdMob can publish
+// late adjustments, so recent report days are re-read on every sync.
+const SYNC_INTERVAL_MS = 30 * 60 * 1000
 const DEFAULT_SYNC_DAYS = 3
 
 type GoogleAccount = { publisherId?: string; name?: string; reportingTimeZone?: string; currencyCode?: string }
@@ -21,7 +24,7 @@ export class AdMobService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>
   private syncing = false
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly gldService: GldService) {}
 
   onModuleInit() {
     this.timer = setInterval(() => void this.sync(DEFAULT_SYNC_DAYS), SYNC_INTERVAL_MS)
@@ -131,6 +134,9 @@ export class AdMobService implements OnModuleInit, OnModuleDestroy {
         await transaction.adMobConnection.update({ where: { id: connection.id }, data: { status: "CONNECTED", lastSyncAt: new Date(), lastSyncError: null } })
       })
       this.logger.log(`AdMob report synchronized (${rows.length} rows, ${boundedDays} days)`)
+      // Materialize and recalculate immediately after the latest report is
+      // stored; the scheduled GLD cycle remains as a retry/backstop.
+      await this.gldService.runScheduledCycle()
       return { synchronized: true, rows: rows.length, days: boundedDays }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

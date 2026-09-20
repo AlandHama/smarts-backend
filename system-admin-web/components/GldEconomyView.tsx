@@ -46,6 +46,7 @@ type GldData = {
     adDailyGldCap: string | null;
     adMaxValidatedAds: number | null;
     adMaxRewardPerClaim: string | null;
+    admobReserveAllocationBps: number | null;
     giftBurnBps: number | null;
     paidRewardSafetyMarginBps: number | null;
     paidRewardDailyRequestLimit: number | null;
@@ -149,6 +150,7 @@ export function GldEconomyView() {
     giftBurnBps: "10000",
     paidRewardSafetyMarginBps: "12000",
     paidRewardDailyRequestLimit: "3",
+    admobReserveAllocationPercent: "20",
   });
   const [policySaving, setPolicySaving] = useState(false);
   const [adRewardPolicies, setAdRewardPolicies] = useState<GldAdRewardPolicy[]>(
@@ -202,6 +204,12 @@ export function GldEconomyView() {
             next.config.paidRewardDailyRequestLimit ??
             "3",
         ),
+        admobReserveAllocationPercent: (
+          Number(
+            next.controls.admobReserveAllocationBps ??
+              Number(next.config.reserveAllocationBps ?? 2000),
+          ) / 100
+        ).toString(),
       });
     } catch (reason) {
       setError(
@@ -292,9 +300,10 @@ export function GldEconomyView() {
       !whole(policy.adMaxValidatedAds) ||
       !whole(policy.giftBurnBps) ||
       !whole(policy.paidRewardSafetyMarginBps) ||
-      !whole(policy.paidRewardDailyRequestLimit)
+      !whole(policy.paidRewardDailyRequestLimit) ||
+      !/^\d+(?:\.\d{1,2})?$/.test(policy.admobReserveAllocationPercent.trim())
     ) {
-      setError("GLD policy values must be non-negative whole numbers.");
+      setError("GLD policy values must be non-negative numbers.");
       return;
     }
     const numbers = [
@@ -303,6 +312,9 @@ export function GldEconomyView() {
       policy.paidRewardSafetyMarginBps,
       policy.paidRewardDailyRequestLimit,
     ].map(Number);
+    const reserveAllocationPercent = Number(
+      policy.admobReserveAllocationPercent,
+    );
     if (
       numbers[0] < 1 ||
       numbers[0] > 1000 ||
@@ -310,7 +322,9 @@ export function GldEconomyView() {
       numbers[2] < 10001 ||
       numbers[2] > 100000 ||
       numbers[3] < 1 ||
-      numbers[3] > 1000
+      numbers[3] > 1000 ||
+      reserveAllocationPercent < 0 ||
+      reserveAllocationPercent > 100
     ) {
       setError(
         "Check the GLD policy limits: ads, burn BPS, margin BPS, and daily requests.",
@@ -328,6 +342,7 @@ export function GldEconomyView() {
           giftBurnBps: numbers[1],
           paidRewardSafetyMarginBps: numbers[2],
           paidRewardDailyRequestLimit: numbers[3],
+          admobReserveAllocationBps: Math.round(reserveAllocationPercent * 100),
         }),
       });
       setData((current) => (current ? { ...current, controls } : current));
@@ -768,7 +783,9 @@ export function GldEconomyView() {
             </Typography>
             <Typography variant="body2" color="text.secondary">
               These values are persisted on Railway and enforced by the server.
-              BPS values use 100 basis points per 1%.
+              BPS values use 100 basis points per 1%. AdMob reserve allocation
+              is the share of recognized, eligible AdMob profit added to the
+              USD reserve.
             </Typography>
             <Grid container spacing={2} sx={{ mt: 1 }}>
               {(
@@ -779,6 +796,10 @@ export function GldEconomyView() {
                   ["Gift burn (BPS)", "giftBurnBps"],
                   ["Paid reward margin (BPS)", "paidRewardSafetyMarginBps"],
                   ["Paid reward daily limit", "paidRewardDailyRequestLimit"],
+                  [
+                    "AdMob reserve allocation (%)",
+                    "admobReserveAllocationPercent",
+                  ],
                 ] as const
               ).map(([label, key]) => (
                 <Grid key={key} size={{ xs: 12, sm: 6, lg: 4 }}>
@@ -794,7 +815,10 @@ export function GldEconomyView() {
                         [key]: event.target.value,
                       }))
                     }
-                    inputProps={{ min: 0, step: 1 }}
+                    inputProps={{
+                      min: 0,
+                      step: key === "admobReserveAllocationPercent" ? 0.01 : 1,
+                    }}
                   />
                 </Grid>
               ))}

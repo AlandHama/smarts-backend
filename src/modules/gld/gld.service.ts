@@ -485,6 +485,9 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
           ...(dto.adMaxRewardPerClaim === undefined
             ? {}
             : { adMaxRewardPerClaim: BigInt(dto.adMaxRewardPerClaim) }),
+          ...(dto.admobReserveAllocationBps === undefined
+            ? {}
+            : { admobReserveAllocationBps: dto.admobReserveAllocationBps }),
           ...(dto.giftBurnBps === undefined
             ? {}
             : { giftBurnBps: dto.giftBurnBps }),
@@ -513,6 +516,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
             giftsPaused: before.giftsPaused,
             paidRewardsPaused: before.paidRewardsPaused,
             gldTransferFeeBps: before.gldTransferFeeBps,
+            admobReserveAllocationBps: before.admobReserveAllocationBps,
           },
           after: {
             emissionsPaused: updated.emissionsPaused,
@@ -520,6 +524,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
             giftsPaused: updated.giftsPaused,
             paidRewardsPaused: updated.paidRewardsPaused,
             gldTransferFeeBps: updated.gldTransferFeeBps,
+            admobReserveAllocationBps: updated.admobReserveAllocationBps,
           },
         },
       });

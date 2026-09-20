@@ -108,6 +108,8 @@ export function getGldConfig() {
     paidRewardPauseOnCritical: process.env.GLD_PAID_REWARD_PAUSE_ON_CRITICAL !== "false",
     paidRewardDefaultCostUsdMicros: bigintEnv("GLD_PAID_REWARD_DEFAULT_COST_USD_MICROS", DEFAULTS.paidRewardDefaultCostUsdMicros),
     recalculationIntervalMinutes: intervalMinutesEnv("GLD_RECALCULATION_INTERVAL_MINUTES", DEFAULTS.recalculationIntervalMinutes),
+    fxRateUrl: process.env.GLD_FX_RATE_URL?.trim() || "https://api.frankfurter.dev/v2/rate",
+    fxRateCacheMinutes: Math.max(5, Number(process.env.GLD_FX_RATE_CACHE_MINUTES) || 30),
   }
 }
 
@@ -117,6 +119,7 @@ export function applyGldPolicyOverrides<T extends ReturnType<typeof getGldConfig
     adDailyGldCap?: bigint | null
     adMaxValidatedAds?: number | null
     adMaxRewardPerClaim?: bigint | null
+    admobReserveAllocationBps?: number | null
     giftBurnBps?: number | null
     paidRewardSafetyMarginBps?: number | null
     paidRewardDailyRequestLimit?: number | null
@@ -128,6 +131,7 @@ export function applyGldPolicyOverrides<T extends ReturnType<typeof getGldConfig
     adDailyGldCap: overrides.adDailyGldCap ?? config.adDailyGldCap,
     adMaxValidatedAds: overrides.adMaxValidatedAds ?? config.adMaxValidatedAds,
     adMaxRewardPerClaim: overrides.adMaxRewardPerClaim ?? config.adMaxRewardPerClaim,
+    reserveAllocationBps: overrides.admobReserveAllocationBps ?? config.reserveAllocationBps,
     giftBurnBps: overrides.giftBurnBps ?? config.giftBurnBps,
     paidRewardSafetyMarginBps: overrides.paidRewardSafetyMarginBps ?? config.paidRewardSafetyMarginBps,
     paidRewardDailyRequestLimit: overrides.paidRewardDailyRequestLimit ?? config.paidRewardDailyRequestLimit,

@@ -10,6 +10,7 @@ export class UpdateGldControlsDto {
   @ApiPropertyOptional({ description: "Maximum GLD emitted to one player by ads per UTC day" }) @IsOptional() @IsString() @Matches(/^\d+$/) @MaxLength(32) adDailyGldCap?: string
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(1000) adMaxValidatedAds?: number
   @ApiPropertyOptional() @IsOptional() @IsString() @Matches(/^\d+$/) @MaxLength(32) adMaxRewardPerClaim?: string
+  @ApiPropertyOptional({ description: "AdMob revenue allocation added to the USD reserve in basis points (100 = 1%)" }) @IsOptional() @IsInt() @Min(0) @Max(10000) admobReserveAllocationBps?: number
   @ApiPropertyOptional({ description: "Gift burn basis points" }) @IsOptional() @IsInt() @Min(0) @Max(10000) giftBurnBps?: number
   @ApiPropertyOptional({ description: "Paid reward safety margin basis points" }) @IsOptional() @IsInt() @Min(10001) @Max(100000) paidRewardSafetyMarginBps?: number
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(1000) paidRewardDailyRequestLimit?: number
