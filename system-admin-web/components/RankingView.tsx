@@ -19,6 +19,7 @@ type Tier = {
   name: string;
   stakeAmountGld: string;
   entryFeeGld: string;
+  payoutAmountGld?: string;
   enabled: boolean;
   sortOrder: number;
 };
@@ -95,9 +96,7 @@ export function RankingView() {
               ? undefined
               : Number(patch.stakeAmountGld),
           entryFeeGld:
-            patch.entryFeeGld === undefined
-              ? undefined
-              : Number(patch.entryFeeGld),
+            patch.entryFeeGld === undefined ? undefined : patch.entryFeeGld,
         }),
       });
       setTiers((items) =>
@@ -121,7 +120,7 @@ export function RankingView() {
         body: JSON.stringify({
           name: draft.name,
           stakeAmountGld: Number(draft.stakeAmountGld),
-          entryFeeGld: Number(draft.entryFeeGld),
+          entryFeeGld: draft.entryFeeGld,
           sortOrder: Number(draft.sortOrder) || 0,
           enabled: true,
         }),
@@ -217,6 +216,7 @@ export function RankingView() {
                     fullWidth
                     label="Fee (GLD)"
                     type="number"
+                    inputProps={{ min: 0, step: "0.000001" }}
                     value={draft.entryFeeGld}
                     onChange={(event) =>
                       setDraft({ ...draft, entryFeeGld: event.target.value })
@@ -295,6 +295,7 @@ export function RankingView() {
                   <TextField
                     label="Entry fee per player (GLD)"
                     type="number"
+                    inputProps={{ min: 0, step: "0.000001" }}
                     value={tier.entryFeeGld}
                     onChange={(event) =>
                       setTiers((items) =>
@@ -311,11 +312,13 @@ export function RankingView() {
                   />
                   <Typography variant="body2" color="text.secondary">
                     Winner payout:{" "}
-                    {Math.max(
-                      0,
-                      Number(tier.stakeAmountGld) * 2 -
-                        Number(tier.entryFeeGld) * 2,
-                    )}{" "}
+                    {tier.payoutAmountGld ??
+                      (
+                        Number(tier.stakeAmountGld) * 2 -
+                        Number(tier.entryFeeGld) * 2
+                      )
+                        .toFixed(6)
+                        .replace(/\.?(0+)$/, "")}{" "}
                     GLD
                   </Typography>
                 </Stack>

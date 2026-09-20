@@ -54,6 +54,15 @@ export class MatchService {
       include: {
         gameDefinition: { select: { key: true, name: true } },
         gameConfig: { select: { instantSkipPriceGld: true } },
+        rankingMatch: {
+          select: {
+            stakeAmountGld: true,
+            entryFeeGld: true,
+            entryFeeGldMicros: true,
+            payoutAmountGld: true,
+            status: true,
+          },
+        },
         participants: {
           include: {
             user: {
@@ -100,7 +109,7 @@ export class MatchService {
       },
     });
     if (!match) throw new NotFoundException("Match not found");
-    const { rounds, gameConfig, ...matchWithoutRounds } = match;
+    const { rounds, gameConfig, rankingMatch, ...matchWithoutRounds } = match;
     return this.serializeMatch({
       ...matchWithoutRounds,
       // Seed-based legacy game screens still need a deterministic seed. The
@@ -117,7 +126,25 @@ export class MatchService {
         this.publicAssignment(assignment, match.serverNonce),
       ),
       gameConfig: { instantSkipPriceGld: gameConfig.instantSkipPriceGld },
+      rankingMatch: rankingMatch
+        ? {
+            ...rankingMatch,
+            entryFeeGld: this.formatGldMicros(
+              rankingMatch.entryFeeGldMicros ||
+                rankingMatch.entryFeeGld * 1_000_000n,
+            ),
+          }
+        : null,
     });
+  }
+
+  private formatGldMicros(value: bigint) {
+    const whole = value / 1_000_000n;
+    const fraction = (value % 1_000_000n)
+      .toString()
+      .padStart(6, "0")
+      .replace(/0+$/, "");
+    return fraction ? `${whole}.${fraction}` : whole.toString();
   }
 
   private challengeSeedFromHash(hash?: string) {
@@ -221,6 +248,7 @@ export class MatchService {
       participantType: participant.participantType,
       displayName,
       result: participant.result,
+      readyAt: participant.readyAt,
       // These are scoreboard projections, not private answer data. Every
       // participant needs them so clients can render live and final scores.
       finalScore: participant.finalScore ?? 0,

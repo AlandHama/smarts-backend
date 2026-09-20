@@ -38,15 +38,16 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
     if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
-    let rankingConfig: { id: string; name: string; stakeAmountGld: bigint; entryFeeGld: bigint } | null = null
+    let rankingConfig: { id: string; name: string; stakeAmountGld: bigint; entryFeeGld: bigint; entryFeeGldMicros: bigint } | null = null
     if (mode === MatchmakingTicketMode.RANKED) {
       rankingConfig = await transaction.rankingMatchConfig.findFirst({
         where: { ...(dto.rankingConfigId ? { id: dto.rankingConfigId } : {}), enabled: true },
-        select: { id: true, name: true, stakeAmountGld: true, entryFeeGld: true },
+        select: { id: true, name: true, stakeAmountGld: true, entryFeeGld: true, entryFeeGldMicros: true },
         orderBy: { sortOrder: "asc" },
       })
       if (!rankingConfig) throw new BadRequestException("Ranking entry tier is unavailable")
-      if (rankingConfig.stakeAmountGld <= 0n || rankingConfig.entryFeeGld < 0n || rankingConfig.entryFeeGld >= rankingConfig.stakeAmountGld) throw new BadRequestException("Ranking entry tier is invalid")
+      const feeMicros = rankingConfig.entryFeeGldMicros || rankingConfig.entryFeeGld * 1_000_000n
+      if (rankingConfig.stakeAmountGld <= 0n || feeMicros < 0n || feeMicros >= rankingConfig.stakeAmountGld * 1_000_000n) throw new BadRequestException("Ranking entry tier is invalid")
     }
     if (dto.constraints && (Object.keys(dto.constraints).length > 12 || JSON.stringify(dto.constraints).length > 2000)) throw new BadRequestException("Matchmaking constraints are too large")
 
@@ -107,6 +108,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
       rankingConfigId: rankingConfig?.id,
       rankingStakeAmount: rankingConfig?.stakeAmountGld,
       rankingEntryFee: rankingConfig?.entryFeeGld,
+      rankingEntryFeeMicros: rankingConfig ? (rankingConfig.entryFeeGldMicros || rankingConfig.entryFeeGld * 1_000_000n) : undefined,
       expiresAt,
       lastHeartbeatAt: now,
       idempotencyKeyId: idempotency?.id,
@@ -118,10 +120,10 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
         amount: rankingConfig.stakeAmountGld,
         sourceId: ticket.id,
         sourceType: "RANKING_MATCH_ENTRY",
-        metadata: { rankingConfigId: rankingConfig.id, stakeAmountGld: rankingConfig.stakeAmountGld.toString(), entryFeeGld: rankingConfig.entryFeeGld.toString() },
+        metadata: { rankingConfigId: rankingConfig.id, stakeAmountGld: rankingConfig.stakeAmountGld.toString(), entryFeeGld: rankingConfig.entryFeeGld.toString(), entryFeeGldMicros: (rankingConfig.entryFeeGldMicros || rankingConfig.entryFeeGld * 1_000_000n).toString() },
       }, transaction)
     }
-    const response = { ticket: { id: ticket.id, status: ticket.status, mode: ticket.mode, gameKey: game.key, isRankingMatch: ticket.isRankingMatch, rankingConfigId: ticket.rankingConfigId, rankingStakeAmount: ticket.rankingStakeAmount?.toString() ?? null, rankingEntryFee: ticket.rankingEntryFee?.toString() ?? null, levelSnapshot: ticket.levelSnapshot, eloSnapshot: ticket.eloSnapshot.toString(), countryCodeSnapshot: ticket.countryCodeSnapshot, createdAt: ticket.createdAt, expiresAt: ticket.expiresAt, lastHeartbeatAt: ticket.lastHeartbeatAt, matchId: null } }
+    const response = { ticket: { id: ticket.id, status: ticket.status, mode: ticket.mode, gameKey: game.key, isRankingMatch: ticket.isRankingMatch, rankingConfigId: ticket.rankingConfigId, rankingStakeAmount: ticket.rankingStakeAmount?.toString() ?? null, rankingEntryFee: ticket.rankingEntryFee?.toString() ?? null, rankingEntryFeeMicros: ticket.rankingEntryFeeMicros?.toString() ?? null, levelSnapshot: ticket.levelSnapshot, eloSnapshot: ticket.eloSnapshot.toString(), countryCodeSnapshot: ticket.countryCodeSnapshot, createdAt: ticket.createdAt, expiresAt: ticket.expiresAt, lastHeartbeatAt: ticket.lastHeartbeatAt, matchId: null } }
     if (idempotency) await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: response as Prisma.InputJsonValue, completedAt: new Date() } })
     return response
   }

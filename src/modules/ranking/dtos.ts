@@ -1,54 +1,62 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from "class-validator"
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+} from "class-validator";
+
+const GLD_AMOUNT = /^\d+(\.\d{1,6})?$/;
 
 export class CreateRankingConfigDto {
   @IsString()
-  name!: string
+  name!: string;
 
   @IsInt()
   @Min(1)
   @Max(1000000000)
-  stakeAmountGld!: number
+  stakeAmountGld!: number;
 
-  @IsInt()
-  @Min(0)
-  @Max(1000000000)
-  entryFeeGld!: number
+  @IsString()
+  @Matches(GLD_AMOUNT)
+  entryFeeGld!: string;
 
   @IsOptional()
   @IsBoolean()
-  enabled?: boolean
+  enabled?: boolean;
 
   @IsOptional()
   @IsInt()
   @Min(0)
   @Max(10000)
-  sortOrder?: number
+  sortOrder?: number;
 }
 
 export class UpdateRankingConfigDto {
   @IsOptional()
   @IsString()
-  name?: string
+  name?: string;
 
   @IsOptional()
   @IsInt()
   @Min(1)
   @Max(1000000000)
-  stakeAmountGld?: number
+  stakeAmountGld?: number;
 
   @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(1000000000)
-  entryFeeGld?: number
+  @IsString()
+  @Matches(GLD_AMOUNT)
+  entryFeeGld?: string;
 
   @IsOptional()
   @IsBoolean()
-  enabled?: boolean
+  enabled?: boolean;
 
   @IsOptional()
   @IsInt()
   @Min(0)
   @Max(10000)
-  sortOrder?: number
+  sortOrder?: number;
 }

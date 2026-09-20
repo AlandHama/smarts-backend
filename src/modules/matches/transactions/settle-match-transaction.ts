@@ -124,12 +124,14 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
           amount: lockedMatch.rankingMatch.payoutAmountGld,
           sourceId: `${lockedMatch.id}:ranking-payout`,
           sourceType: WalletTransactionSourceType.RANKING_MATCH_PAYOUT,
-          metadata: { matchId: lockedMatch.id, stakeAmountGld: lockedMatch.rankingMatch.stakeAmountGld.toString(), entryFeeGld: lockedMatch.rankingMatch.entryFeeGld.toString(), payoutAmountGld: lockedMatch.rankingMatch.payoutAmountGld.toString() },
+          metadata: { matchId: lockedMatch.id, stakeAmountGld: lockedMatch.rankingMatch.stakeAmountGld.toString(), entryFeeGld: lockedMatch.rankingMatch.entryFeeGld.toString(), entryFeeGldMicros: lockedMatch.rankingMatch.entryFeeGldMicros.toString(), payoutAmountGld: lockedMatch.rankingMatch.payoutAmountGld.toString() },
         }, transaction)
         await transaction.rankingMatch.update({ where: { id: lockedMatch.rankingMatch.id }, data: { status: "SETTLED", winnerUserId: winner.participant.userId, settledAt: new Date() } })
       } else {
         // A draw returns each stake after retaining the configured entry fee.
-        const refund = lockedMatch.rankingMatch.stakeAmountGld - lockedMatch.rankingMatch.entryFeeGld
+        const feeMicros = lockedMatch.rankingMatch.entryFeeGldMicros || lockedMatch.rankingMatch.entryFeeGld * 1_000_000n
+        const refundFeeWhole = (feeMicros + 1_000_000n - 1n) / 1_000_000n
+        const refund = lockedMatch.rankingMatch.stakeAmountGld - refundFeeWhole
         for (const item of humanParticipants) if (item.userId && refund > 0n) await this.creditWallet.runWithinTransaction({ userId: item.userId, currencyCode: "GLD", amount: refund, sourceId: `${lockedMatch.id}:ranking-draw-refund:${item.userId}`, sourceType: WalletTransactionSourceType.RANKING_MATCH_REFUND, metadata: { matchId: lockedMatch.id, reason: "ranking_draw" } }, transaction)
         await transaction.rankingMatch.update({ where: { id: lockedMatch.rankingMatch.id }, data: { status: "REFUNDED", settledAt: new Date() } })
       }
