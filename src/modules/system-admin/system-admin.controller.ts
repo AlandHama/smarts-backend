@@ -911,6 +911,30 @@ export class SystemAdminController {
   }
 
   @UseGuards(SystemAdminGuard)
+  @Get("api/transactions")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Search the complete wallet transaction ledger" })
+  transactions(
+    @Query("q") q?: string,
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ) {
+    return this.systemAdminService.searchTransactions({
+      q,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/transactions/:transactionId")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "View one wallet transaction in Transaction 360" })
+  transaction(@Param("transactionId", ParseUUIDPipe) transactionId: string) {
+    return this.systemAdminService.getAdminTransaction(transactionId);
+  }
+
+  @UseGuards(SystemAdminGuard)
   @Post("api/economy/currencies")
   @ApiBearerAuth("access-token")
   createCurrency(@Body() dto: CreateCurrencyDto) {

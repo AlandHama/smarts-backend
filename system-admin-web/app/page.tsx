@@ -38,6 +38,7 @@ import { AdMobView } from "../components/AdMobView";
 import { GldEconomyView } from "../components/GldEconomyView";
 import { ReferralsView } from "../components/ReferralsView";
 import { RankingView } from "../components/RankingView";
+import { TransactionsView } from "../components/TransactionsView";
 import { api, clearSession, hasSession, login } from "../lib/api";
 import { adminTheme } from "../lib/theme";
 
@@ -65,6 +66,7 @@ const viewPaths: Record<
   feedback: "/feedback/",
   referrals: "/referrals/",
   ranking: "/ranking/",
+  transactions: "/transactions/",
 };
 
 function routeState() {
@@ -206,6 +208,7 @@ export default function AdminPage() {
           {view === "feedback" && <FeedbackView />}
           {view === "referrals" && <ReferralsView />}
           {view === "ranking" && <RankingView />}
+          {view === "transactions" && <TransactionsView />}
         </AdminShell>
       )}
     </ThemeProvider>

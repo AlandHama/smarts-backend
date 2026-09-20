@@ -1,15 +1,16 @@
-import { Injectable } from "@nestjs/common"
-import { Prisma } from "@prisma/client"
+import { Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 
-import { PrismaService } from "../../prisma.service"
-import { AcceptFriendInviteTransaction } from "./transactions/accept-friend-invite-transaction"
-import { CancelTicketTransaction } from "./transactions/cancel-ticket-transaction"
-import { CreateFriendInviteTransaction } from "./transactions/create-friend-invite-transaction"
-import { EnqueuePlayerTransaction } from "./transactions/enqueue-player-transaction"
-import { ClaimMatchmakingPairTransaction } from "./transactions/claim-matchmaking-pair-transaction"
-import { HeartbeatTicketTransaction } from "./transactions/heartbeat-ticket-transaction"
-import { RespondFriendInviteTransaction } from "./transactions/respond-friend-invite-transaction"
-import { EnqueuePlayerDto, CreateFriendInviteDto } from "./dtos"
+import { PrismaService } from "../../prisma.service";
+import { AcceptFriendInviteTransaction } from "./transactions/accept-friend-invite-transaction";
+import { CancelTicketTransaction } from "./transactions/cancel-ticket-transaction";
+import { CreateFriendInviteTransaction } from "./transactions/create-friend-invite-transaction";
+import { EnqueuePlayerTransaction } from "./transactions/enqueue-player-transaction";
+import { ClaimMatchmakingPairTransaction } from "./transactions/claim-matchmaking-pair-transaction";
+import { HeartbeatTicketTransaction } from "./transactions/heartbeat-ticket-transaction";
+import { RespondFriendInviteTransaction } from "./transactions/respond-friend-invite-transaction";
+import { EnqueuePlayerDto, CreateFriendInviteDto } from "./dtos";
+import { queueTtlSeconds } from "./utilities/matchmaking-policy";
 
 @Injectable()
 export class MatchmakingService {
@@ -25,63 +26,187 @@ export class MatchmakingService {
   ) {}
 
   async enqueue(userId: string, dto: EnqueuePlayerDto) {
-    const value = await this.enqueueTransaction.run({ userId, dto })
+    const value = await this.enqueueTransaction.run({ userId, dto });
     // The worker normally performs this on its one-second tick. Claiming once
     // after enqueue removes that timing dependency, especially when both
     // friends enter the queue at nearly the same time or a worker tick is
     // briefly delayed by database maintenance.
-    await this.claimPairTransaction.run()
-    return this.serialize(value)
+    await this.claimPairTransaction.run();
+    return this.serialize(value);
   }
-  heartbeat(userId: string, ticketId: string) { return this.heartbeatTransaction.run({ userId, ticketId }).then((value) => this.serialize(value)) }
-  cancel(userId: string, ticketId: string) { return this.cancelTransaction.run({ userId, ticketId }).then((value) => this.serialize(value)) }
-  createInvite(userId: string, dto: CreateFriendInviteDto) { return this.createInviteTransaction.run({ userId, dto }).then((value) => this.serialize(value)) }
-  acceptInvite(userId: string, inviteId: string) { return this.acceptInviteTransaction.run({ userId, inviteId }).then((value) => this.serialize(value)) }
-  declineInvite(userId: string, inviteId: string) { return this.respondInviteTransaction.run({ userId, inviteId, response: "DECLINED" }).then((value) => this.serialize(value)) }
-  cancelInvite(userId: string, inviteId: string) { return this.respondInviteTransaction.run({ userId, inviteId, response: "CANCELED" }).then((value) => this.serialize(value)) }
+  heartbeat(userId: string, ticketId: string) {
+    return this.heartbeatTransaction
+      .run({ userId, ticketId })
+      .then((value) => this.serialize(value));
+  }
+  cancel(userId: string, ticketId: string) {
+    return this.cancelTransaction
+      .run({ userId, ticketId })
+      .then((value) => this.serialize(value));
+  }
+  createInvite(userId: string, dto: CreateFriendInviteDto) {
+    return this.createInviteTransaction
+      .run({ userId, dto })
+      .then((value) => this.serialize(value));
+  }
+  acceptInvite(userId: string, inviteId: string) {
+    return this.acceptInviteTransaction
+      .run({ userId, inviteId })
+      .then((value) => this.serialize(value));
+  }
+  declineInvite(userId: string, inviteId: string) {
+    return this.respondInviteTransaction
+      .run({ userId, inviteId, response: "DECLINED" })
+      .then((value) => this.serialize(value));
+  }
+  cancelInvite(userId: string, inviteId: string) {
+    return this.respondInviteTransaction
+      .run({ userId, inviteId, response: "CANCELED" })
+      .then((value) => this.serialize(value));
+  }
 
   async status(userId: string) {
+    // Keep a polling client alive even when it is running an older release
+    // that does not send the dedicated heartbeat request. This is bounded to
+    // active SEARCHING tickets, so opening the app cannot revive a matched or
+    // expired ticket.
+    const now = new Date();
+    await this.prisma.matchmakingTicket.updateMany({
+      where: { userId, status: "SEARCHING" },
+      data: {
+        lastHeartbeatAt: now,
+        expiresAt: new Date(now.getTime() + queueTtlSeconds() * 1000),
+      },
+    });
     // Status is polled by mobile clients while waiting. Let a status request
     // opportunistically pair compatible tickets so a delayed worker cannot
     // leave both players waiting until bot fallback.
-    await this.claimPairTransaction.run()
+    await this.claimPairTransaction.run();
     // A MATCHED ticket belongs to the active match only while that match is
     // still starting or playing. Excluding settled/cancelled matches prevents
     // a previous game from being resurrected after the player queues again.
-    const ticket = await this.prisma.matchmakingTicket.findFirst({ where: { userId, OR: [{ status: "SEARCHING" }, { status: "MATCHED", match: { is: { status: { in: ["CREATED", "STARTED"] } } } }] }, orderBy: { createdAt: "desc" }, include: { gameDefinition: { select: { key: true, name: true } }, match: { select: { id: true, status: true, mode: true, startedAt: true, createdAt: true, participants: { select: { id: true, userId: true, participantType: true, result: true } } } } } })
+    const ticket = await this.prisma.matchmakingTicket.findFirst({
+      where: {
+        userId,
+        OR: [
+          { status: "SEARCHING" },
+          {
+            status: "MATCHED",
+            match: { is: { status: { in: ["CREATED", "STARTED"] } } },
+          },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        gameDefinition: { select: { key: true, name: true } },
+        match: {
+          select: {
+            id: true,
+            status: true,
+            mode: true,
+            startedAt: true,
+            createdAt: true,
+            participants: {
+              select: {
+                id: true,
+                userId: true,
+                participantType: true,
+                result: true,
+              },
+            },
+          },
+        },
+      },
+    });
     // A friend match has no queue ticket. Always prefer the newest active
     // match for this player, even when an old queue ticket is still present;
     // otherwise the invitee can be directed back to an unrelated match and
     // wait forever for the inviter's match to start.
-    const activeMatch = await this.prisma.match.findFirst({
-      where: {
-        participants: { some: { userId } },
-        status: { in: ["CREATED", "STARTED"] },
-      },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        status: true,
-        mode: true,
-        startedAt: true,
-        createdAt: true,
-        participants: {
-          select: { id: true, userId: true, participantType: true, result: true },
-        },
-        gameDefinition: { select: { key: true, name: true } },
-      },
-    })
+    const activeMatch = ticket
+      ? null
+      : await this.prisma.match.findFirst({
+          where: {
+            participants: { some: { userId } },
+            status: { in: ["CREATED", "STARTED"] },
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            status: true,
+            mode: true,
+            startedAt: true,
+            createdAt: true,
+            participants: {
+              select: {
+                id: true,
+                userId: true,
+                participantType: true,
+                result: true,
+              },
+            },
+            gameDefinition: { select: { key: true, name: true } },
+          },
+        });
 
-    return this.serialize({ ticket, match: activeMatch ?? ticket?.match ?? null })
+    return this.serialize({
+      ticket,
+      match: ticket?.match ?? activeMatch ?? null,
+    });
   }
 
   async invites(userId: string) {
     const [incoming, outgoing] = await this.prisma.$transaction([
-      this.prisma.matchmakingInvite.findMany({ where: { inviteeId: userId, status: "PENDING", expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" }, take: 50, include: { inviter: { select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true } } } }, gameDefinition: { select: { key: true, name: true } } } }),
-      this.prisma.matchmakingInvite.findMany({ where: { inviterId: userId, status: "PENDING", expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" }, take: 50, include: { invitee: { select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true } } } }, gameDefinition: { select: { key: true, name: true } } } }),
-    ])
-    return this.serialize({ incoming, outgoing })
+      this.prisma.matchmakingInvite.findMany({
+        where: {
+          inviteeId: userId,
+          status: "PENDING",
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: {
+          inviter: {
+            select: {
+              id: true,
+              username: true,
+              profile: { select: { displayName: true, avatarUrl: true } },
+            },
+          },
+          gameDefinition: { select: { key: true, name: true } },
+        },
+      }),
+      this.prisma.matchmakingInvite.findMany({
+        where: {
+          inviterId: userId,
+          status: "PENDING",
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: {
+          invitee: {
+            select: {
+              id: true,
+              username: true,
+              profile: { select: { displayName: true, avatarUrl: true } },
+            },
+          },
+          gameDefinition: { select: { key: true, name: true } },
+        },
+      }),
+    ]);
+    return this.serialize({ incoming, outgoing });
   }
 
-  private serialize<T>(value: T): T { return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item instanceof Prisma.Decimal ? item.toString() : item)) as T }
+  private serialize<T>(value: T): T {
+    return JSON.parse(
+      JSON.stringify(value, (_, item) =>
+        typeof item === "bigint"
+          ? item.toString()
+          : item instanceof Prisma.Decimal
+            ? item.toString()
+            : item,
+      ),
+    ) as T;
+  }
 }

@@ -1,48 +1,104 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit, UnauthorizedException } from "@nestjs/common"
-import { PlayerAuditActorType, Prisma, UserStatus } from "@prisma/client"
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { PlayerAuditActorType, Prisma, UserStatus } from "@prisma/client";
 
-import { HashHelper } from "../../common/helpers/hash.helper"
-import { PrismaService } from "../../prisma.service"
-import { botDisplayName } from "../matches/utilities/bot-display-name"
-import { AuthService } from "../auth/services/auth.service"
-import { UsersService } from "../admin/access/users/users.service"
-import { RegisterRequestDto } from "../auth/dtos/register-request.dto"
-import { AdminSessionStatusFilter, PlayerAuditsQueryDto, RegisterAdminDto, ResetUserPasswordDto, SystemAdminLoginDto, SystemAdminMatchesQueryDto, SystemAdminSessionsQueryDto, SystemAdminUsersQueryDto, UpdateUserProfileDto, UpdateUserStatusDto } from "./dtos"
-import { DeleteUserTransaction } from "./transactions/delete-user-transaction"
-import { EnsureSystemAdminInput, EnsureSystemAdminTransaction } from "./transactions/ensure-system-admin-transaction"
-import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction"
-import { UpdateUserProfileTransaction } from "./transactions/update-user-profile-transaction"
-import { UpdateUserStatusTransaction } from "./transactions/update-user-status-transaction"
-import { ProgressionService } from "../progression/progression.service"
-import { AwardProgressionPointsDto, CreateProgressionDto, CreateProgressionRewardDto, CreateProgressionTierDto, ResetProgressionDto, UpdateProgressionDto, UpdateProgressionRewardDto, UpdateProgressionTierDto } from "../progression/dtos"
-import { CreateCurrencyDto, ReverseWalletDto, UpdateCurrencyDto, WalletMutationDto } from "../economy/dtos"
-import { WalletService } from "../economy/wallet.service"
-import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-transaction"
-import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
-import { ReverseWalletTransaction } from "../economy/transactions/reverse-wallet-transaction"
-import { ApplyLeaderboardScoreDto, CreateLeaderboardDto, CreateLeaderboardSeasonDto, UpdateLeaderboardDto } from "../leaderboard/dtos"
-import { LeaderboardService } from "../leaderboard/leaderboard.service"
-import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos"
-import { GameService } from "../game/game.service"
-import { RebuildPlayerGameStatsTransaction } from "../game/transactions/rebuild-player-game-stats-transaction"
-import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction"
-import { CommerceService } from "../commerce/commerce.service"
-import { BulkRedeemCodeDto, CreateAssetDto, CreateCatalogDto, CreateCatalogItemDto, InventoryMutationDto, InventoryQueryDto, PaidRewardDecisionDto, UpdateAssetDto, UpdateCatalogDto, UpdateCatalogItemDto } from "../commerce/dtos"
-import { FeedbackQueryDto, SystemAdminStorageQueryDto, UpdateFeedbackDto, UpdatePlayerStorageDto, UploadFileDto } from "../storage/dtos"
-import { StorageService } from "../storage/storage.service"
-import type { UploadedImage } from "../storage/types"
-import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto"
-import { FriendsService } from "../friends/friends.service"
-import { ConfigService } from "../config/config.service"
-import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto"
-import { SystemAdminAnalyticsService } from "./system-admin-analytics.service"
-import { ReferralsService } from "../referrals/referrals.service"
-import { writePlayerAudit } from "../../common/helpers/player-audit"
+import { HashHelper } from "../../common/helpers/hash.helper";
+import { PrismaService } from "../../prisma.service";
+import { botDisplayName } from "../matches/utilities/bot-display-name";
+import { AuthService } from "../auth/services/auth.service";
+import { UsersService } from "../admin/access/users/users.service";
+import { RegisterRequestDto } from "../auth/dtos/register-request.dto";
+import {
+  AdminSessionStatusFilter,
+  PlayerAuditsQueryDto,
+  RegisterAdminDto,
+  ResetUserPasswordDto,
+  SystemAdminLoginDto,
+  SystemAdminMatchesQueryDto,
+  SystemAdminSessionsQueryDto,
+  SystemAdminUsersQueryDto,
+  UpdateUserProfileDto,
+  UpdateUserStatusDto,
+} from "./dtos";
+import { DeleteUserTransaction } from "./transactions/delete-user-transaction";
+import {
+  EnsureSystemAdminInput,
+  EnsureSystemAdminTransaction,
+} from "./transactions/ensure-system-admin-transaction";
+import { ResetUserPasswordTransaction } from "./transactions/reset-user-password-transaction";
+import { UpdateUserProfileTransaction } from "./transactions/update-user-profile-transaction";
+import { UpdateUserStatusTransaction } from "./transactions/update-user-status-transaction";
+import { ProgressionService } from "../progression/progression.service";
+import {
+  AwardProgressionPointsDto,
+  CreateProgressionDto,
+  CreateProgressionRewardDto,
+  CreateProgressionTierDto,
+  ResetProgressionDto,
+  UpdateProgressionDto,
+  UpdateProgressionRewardDto,
+  UpdateProgressionTierDto,
+} from "../progression/dtos";
+import {
+  CreateCurrencyDto,
+  ReverseWalletDto,
+  UpdateCurrencyDto,
+  WalletMutationDto,
+} from "../economy/dtos";
+import { WalletService } from "../economy/wallet.service";
+import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-transaction";
+import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction";
+import { ReverseWalletTransaction } from "../economy/transactions/reverse-wallet-transaction";
+import {
+  ApplyLeaderboardScoreDto,
+  CreateLeaderboardDto,
+  CreateLeaderboardSeasonDto,
+  UpdateLeaderboardDto,
+} from "../leaderboard/dtos";
+import { LeaderboardService } from "../leaderboard/leaderboard.service";
+import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos";
+import { GameService } from "../game/game.service";
+import { RebuildPlayerGameStatsTransaction } from "../game/transactions/rebuild-player-game-stats-transaction";
+import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction";
+import { CommerceService } from "../commerce/commerce.service";
+import {
+  BulkRedeemCodeDto,
+  CreateAssetDto,
+  CreateCatalogDto,
+  CreateCatalogItemDto,
+  InventoryMutationDto,
+  InventoryQueryDto,
+  PaidRewardDecisionDto,
+  UpdateAssetDto,
+  UpdateCatalogDto,
+  UpdateCatalogItemDto,
+} from "../commerce/dtos";
+import {
+  FeedbackQueryDto,
+  SystemAdminStorageQueryDto,
+  UpdateFeedbackDto,
+  UpdatePlayerStorageDto,
+  UploadFileDto,
+} from "../storage/dtos";
+import { StorageService } from "../storage/storage.service";
+import type { UploadedImage } from "../storage/types";
+import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto";
+import { FriendsService } from "../friends/friends.service";
+import { ConfigService } from "../config/config.service";
+import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto";
+import { SystemAdminAnalyticsService } from "./system-admin-analytics.service";
+import { ReferralsService } from "../referrals/referrals.service";
+import { writePlayerAudit } from "../../common/helpers/player-audit";
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
-  private readonly logger = new Logger(SystemAdminService.name)
-  private dummyPasswordHash?: string
+  private readonly logger = new Logger(SystemAdminService.name);
+  private dummyPasswordHash?: string;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -71,63 +127,106 @@ export class SystemAdminService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const username = process.env.SYSTEM_ADMIN_USERNAME?.trim()
-    const password = process.env.SYSTEM_ADMIN_PASSWORD
+    const username = process.env.SYSTEM_ADMIN_USERNAME?.trim();
+    const password = process.env.SYSTEM_ADMIN_PASSWORD;
     if (!username && !password) {
-      this.logger.warn("System admin bootstrap skipped: SYSTEM_ADMIN_USERNAME and SYSTEM_ADMIN_PASSWORD are not configured")
-      return
+      this.logger.warn(
+        "System admin bootstrap skipped: SYSTEM_ADMIN_USERNAME and SYSTEM_ADMIN_PASSWORD are not configured",
+      );
+      return;
     }
-    if (!username || !password) throw new Error("SYSTEM_ADMIN_USERNAME and SYSTEM_ADMIN_PASSWORD must be configured together")
+    if (!username || !password)
+      throw new Error(
+        "SYSTEM_ADMIN_USERNAME and SYSTEM_ADMIN_PASSWORD must be configured together",
+      );
 
-    const email = this.configuredAdminEmail(username)
-    const displayName = process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || "System Administrator"
+    const email = this.configuredAdminEmail(username);
+    const displayName =
+      process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || "System Administrator";
     const result = await this.ensureSystemAdminTransaction.run({
       username,
       password,
       email,
       displayName,
       countryCode: process.env.SYSTEM_ADMIN_COUNTRY_CODE?.trim(),
-      resetPassword: process.env.SYSTEM_ADMIN_RESET_PASSWORD?.trim().toLowerCase() === "true",
-    })
-    this.logger.log(`System admin bootstrap completed (${result.created ? "created" : "verified"})`)
+      resetPassword:
+        process.env.SYSTEM_ADMIN_RESET_PASSWORD?.trim().toLowerCase() ===
+        "true",
+    });
+    this.logger.log(
+      `System admin bootstrap completed (${result.created ? "created" : "verified"})`,
+    );
   }
 
   async login(dto: SystemAdminLoginDto, request: any) {
-    let user = await this.usersService.findByIdentifier(dto.identifier)
+    let user = await this.usersService.findByIdentifier(dto.identifier);
     if (!user && this.matchesConfiguredBootstrapCredentials(dto)) {
-      await this.ensureSystemAdminTransaction.run(this.getConfiguredBootstrapInput(dto.password))
-      user = await this.usersService.findByIdentifier(dto.identifier)
+      await this.ensureSystemAdminTransaction.run(
+        this.getConfiguredBootstrapInput(dto.password),
+      );
+      user = await this.usersService.findByIdentifier(dto.identifier);
     }
-    const passwordHash = user?.passwordHash ?? await this.getDummyPasswordHash()
-    const passwordMatches = await HashHelper.compare(dto.password, passwordHash)
+    const passwordHash =
+      user?.passwordHash ?? (await this.getDummyPasswordHash());
+    const passwordMatches = await HashHelper.compare(
+      dto.password,
+      passwordHash,
+    );
     if (!user || !passwordMatches) {
-      this.logger.warn(`System admin login rejected (userFound=${Boolean(user)}, passwordMatch=${passwordMatches}, admin=${user?.isSystemAdmin ?? false}, configuredIdentity=${this.matchesConfiguredBootstrapIdentity(dto.identifier)}, configuredPassword=${this.matchesConfiguredBootstrapPassword(dto.password)})`)
-      throw new UnauthorizedException("Invalid administrator credentials")
+      this.logger.warn(
+        `System admin login rejected (userFound=${Boolean(user)}, passwordMatch=${passwordMatches}, admin=${user?.isSystemAdmin ?? false}, configuredIdentity=${this.matchesConfiguredBootstrapIdentity(dto.identifier)}, configuredPassword=${this.matchesConfiguredBootstrapPassword(dto.password)})`,
+      );
+      throw new UnauthorizedException("Invalid administrator credentials");
     }
     if (!user.isSystemAdmin) {
-      if (!this.matchesConfiguredBootstrapAccount(user.username, user.email, dto.identifier)) {
-        throw new UnauthorizedException("Invalid administrator credentials")
+      if (
+        !this.matchesConfiguredBootstrapAccount(
+          user.username,
+          user.email,
+          dto.identifier,
+        )
+      ) {
+        throw new UnauthorizedException("Invalid administrator credentials");
       }
-      await this.ensureSystemAdminTransaction.run(this.getPromotionInput(user, dto.password))
+      await this.ensureSystemAdminTransaction.run(
+        this.getPromotionInput(user, dto.password),
+      );
     }
-    if (user.status !== UserStatus.ACTIVE) throw new UnauthorizedException("Administrator account is not active")
-    return this.authService.login({ username: user.username, password: dto.password }, request)
+    if (user.status !== UserStatus.ACTIVE)
+      throw new UnauthorizedException("Administrator account is not active");
+    return this.authService.login(
+      { username: user.username, password: dto.password },
+      request,
+    );
   }
 
   async listUsers(query: SystemAdminUsersQueryDto) {
-    const page = query.page || 1
-    const limit = query.limit || 25
-    const search = query.search?.trim()
+    const page = query.page || 1;
+    const limit = query.limit || 25;
+    const search = query.search?.trim();
     const where: Prisma.UserWhereInput = {
       ...(query.status ? { status: query.status as UserStatus } : {}),
-      ...(search ? {
-        OR: [
-          { username: { contains: search.toLowerCase(), mode: "insensitive" } },
-          { email: { contains: search.toLowerCase(), mode: "insensitive" } },
-          { profile: { displayName: { contains: search, mode: "insensitive" } } },
-        ],
-      } : {}),
-    }
+      ...(search
+        ? {
+            OR: [
+              {
+                username: {
+                  contains: search.toLowerCase(),
+                  mode: "insensitive",
+                },
+              },
+              {
+                email: { contains: search.toLowerCase(), mode: "insensitive" },
+              },
+              {
+                profile: {
+                  displayName: { contains: search, mode: "insensitive" },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
     const [total, users] = await this.prisma.$transaction([
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({
@@ -145,48 +244,136 @@ export class SystemAdminService implements OnModuleInit {
           isSystemAdmin: true,
           createdAt: true,
           lastOnline: true,
-          profile: { select: { displayName: true, avatarUrl: true, countryCode: true, bio: true, isPublic: true, level: true, xp: true, elo: true } },
-          stats: { select: { gamesPlayed: true, wins: true, losses: true, draws: true, currentWinStreak: true, highestWinStreak: true, highestElo: true, totalScore: true } },
+          profile: {
+            select: {
+              displayName: true,
+              avatarUrl: true,
+              countryCode: true,
+              bio: true,
+              isPublic: true,
+              level: true,
+              xp: true,
+              elo: true,
+            },
+          },
+          stats: {
+            select: {
+              gamesPlayed: true,
+              wins: true,
+              losses: true,
+              draws: true,
+              currentWinStreak: true,
+              highestWinStreak: true,
+              highestElo: true,
+              totalScore: true,
+            },
+          },
           _count: { select: { sessions: true } },
         },
       }),
-    ])
+    ]);
 
     return {
       items: users.map((user) => this.serializeUser(user)),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-    }
+    };
   }
 
   async overview() {
-    const now = new Date()
-    const onlineSince = new Date(now.getTime() - this.presenceWindowMs())
-    const [total, active, banned, admins, sessions, onlinePlayers] = await this.prisma.$transaction([
-      this.prisma.user.count(),
-      this.prisma.user.count({ where: { status: UserStatus.ACTIVE } }),
-      this.prisma.user.count({ where: { status: UserStatus.BANNED } }),
-      this.prisma.user.count({ where: { isSystemAdmin: true, status: UserStatus.ACTIVE } }),
-      this.prisma.session.count({ where: { sessionStatus: "ACTIVE", expiresAt: { gt: now } } }),
-      this.prisma.presence.count({ where: { lastHeartbeatAt: { gt: onlineSince }, user: { status: UserStatus.ACTIVE } } }),
-    ])
-    const [queue, matches, failedOutbox, pendingOutbox, failedPurchases, openFeedback] = await this.prisma.$transaction([
-      this.prisma.matchmakingTicket.count({ where: { status: "SEARCHING", expiresAt: { gt: now } } }),
-      this.prisma.match.count({ where: { status: { in: ["STARTED", "REVIEW"] } } }),
+    const now = new Date();
+    const onlineSince = new Date(now.getTime() - this.presenceWindowMs());
+    const [total, active, banned, admins, sessions, onlinePlayers] =
+      await this.prisma.$transaction([
+        this.prisma.user.count(),
+        this.prisma.user.count({ where: { status: UserStatus.ACTIVE } }),
+        this.prisma.user.count({ where: { status: UserStatus.BANNED } }),
+        this.prisma.user.count({
+          where: { isSystemAdmin: true, status: UserStatus.ACTIVE },
+        }),
+        this.prisma.session.count({
+          where: { sessionStatus: "ACTIVE", expiresAt: { gt: now } },
+        }),
+        this.prisma.presence.count({
+          where: {
+            lastHeartbeatAt: { gt: onlineSince },
+            user: { status: UserStatus.ACTIVE },
+          },
+        }),
+      ]);
+    const [
+      queue,
+      matches,
+      failedOutbox,
+      pendingOutbox,
+      failedPurchases,
+      openFeedback,
+    ] = await this.prisma.$transaction([
+      this.prisma.matchmakingTicket.count({
+        where: { status: "SEARCHING", expiresAt: { gt: now } },
+      }),
+      this.prisma.match.count({
+        where: { status: { in: ["STARTED", "REVIEW"] } },
+      }),
       this.prisma.outboxEvent.count({ where: { status: "FAILED" } }),
-      this.prisma.outboxEvent.count({ where: { status: { in: ["PENDING", "PROCESSING"] }, availableAt: { lte: now } } }),
+      this.prisma.outboxEvent.count({
+        where: {
+          status: { in: ["PENDING", "PROCESSING"] },
+          availableAt: { lte: now },
+        },
+      }),
       this.prisma.purchase.count({ where: { status: "FAILED" } }),
-      this.prisma.playerFeedback.count({ where: { status: { in: ["OPEN", "IN_REVIEW"] } } }),
-    ])
-    return { totalUsers: total, activeUsers: active, bannedUsers: banned, activeAdmins: admins, activeSessions: sessions, onlinePlayers, queueTickets: queue, activeMatches: matches, failedOutbox, pendingOutbox, failedPurchases, openFeedback }
+      this.prisma.playerFeedback.count({
+        where: { status: { in: ["OPEN", "IN_REVIEW"] } },
+      }),
+    ]);
+    return {
+      totalUsers: total,
+      activeUsers: active,
+      bannedUsers: banned,
+      activeAdmins: admins,
+      activeSessions: sessions,
+      onlinePlayers,
+      queueTickets: queue,
+      activeMatches: matches,
+      failedOutbox,
+      pendingOutbox,
+      failedPurchases,
+      openFeedback,
+    };
   }
 
-  analytics(days = 30) { return this.analyticsService.overview(days) }
+  analytics(days = 30) {
+    return this.analyticsService.overview(days);
+  }
 
   /** Operational counters intentionally come from server-owned records, not mobile telemetry. */
   async operations() {
-    const now = new Date()
-    const [searchingTickets, activeMatches, reviewMatches, settledMatches, pendingOutbox, processingOutbox, failedOutbox, pendingNotifications, failedNotifications, failedPurchases, completedPurchases, rejectedClaims, grantedClaims, activePolicies, openFeedback, inventoryRows, scoreEvents, walletTransactions, recentOutbox, recentAudit] = await this.prisma.$transaction([
-      this.prisma.matchmakingTicket.count({ where: { status: "SEARCHING", expiresAt: { gt: now } } }),
+    const now = new Date();
+    const [
+      searchingTickets,
+      activeMatches,
+      reviewMatches,
+      settledMatches,
+      pendingOutbox,
+      processingOutbox,
+      failedOutbox,
+      pendingNotifications,
+      failedNotifications,
+      failedPurchases,
+      completedPurchases,
+      rejectedClaims,
+      grantedClaims,
+      activePolicies,
+      openFeedback,
+      inventoryRows,
+      scoreEvents,
+      walletTransactions,
+      recentOutbox,
+      recentAudit,
+    ] = await this.prisma.$transaction([
+      this.prisma.matchmakingTicket.count({
+        where: { status: "SEARCHING", expiresAt: { gt: now } },
+      }),
       this.prisma.match.count({ where: { status: "STARTED" } }),
       this.prisma.match.count({ where: { status: "REVIEW" } }),
       this.prisma.match.count({ where: { status: "SETTLED" } }),
@@ -200,55 +387,151 @@ export class SystemAdminService implements OnModuleInit {
       this.prisma.adRewardClaim.count({ where: { status: "REJECTED" } }),
       this.prisma.adRewardClaim.count({ where: { status: "GRANTED" } }),
       this.prisma.rewardPolicyVersion.count({ where: { active: true } }),
-      this.prisma.playerFeedback.count({ where: { status: { in: ["OPEN", "IN_REVIEW"] } } }),
+      this.prisma.playerFeedback.count({
+        where: { status: { in: ["OPEN", "IN_REVIEW"] } },
+      }),
       this.prisma.inventoryItem.count(),
       this.prisma.leaderboardScoreEvent.count(),
       this.prisma.walletTransaction.count(),
-      this.prisma.outboxEvent.findMany({ orderBy: { createdAt: "desc" }, take: 12, select: { id: true, eventType: true, aggregateType: true, aggregateId: true, status: true, attempts: true, lastError: true, createdAt: true, processedAt: true } }),
-      this.prisma.adminAuditEvent.findMany({ orderBy: { createdAt: "desc" }, take: 25, select: { id: true, action: true, entityType: true, entityId: true, reason: true, metadata: true, createdAt: true, actor: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } }),
-    ])
+      this.prisma.outboxEvent.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 12,
+        select: {
+          id: true,
+          eventType: true,
+          aggregateType: true,
+          aggregateId: true,
+          status: true,
+          attempts: true,
+          lastError: true,
+          createdAt: true,
+          processedAt: true,
+        },
+      }),
+      this.prisma.adminAuditEvent.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 25,
+        select: {
+          id: true,
+          action: true,
+          entityType: true,
+          entityId: true,
+          reason: true,
+          metadata: true,
+          createdAt: true,
+          actor: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              profile: { select: { displayName: true } },
+            },
+          },
+        },
+      }),
+    ]);
     return this.serialize({
       checkedAt: now,
-      health: { api: "ok", database: "ok", migrations: "managed", presenceWindowSeconds: this.presenceWindowMs() / 1000 },
+      health: {
+        api: "ok",
+        database: "ok",
+        migrations: "managed",
+        presenceWindowSeconds: this.presenceWindowMs() / 1000,
+      },
       queue: { searchingTickets },
-      matches: { active: activeMatches, review: reviewMatches, settled: settledMatches },
-      outbox: { pending: pendingOutbox, processing: processingOutbox, failed: failedOutbox },
-      notifications: { pending: pendingNotifications, failed: failedNotifications },
+      matches: {
+        active: activeMatches,
+        review: reviewMatches,
+        settled: settledMatches,
+      },
+      outbox: {
+        pending: pendingOutbox,
+        processing: processingOutbox,
+        failed: failedOutbox,
+      },
+      notifications: {
+        pending: pendingNotifications,
+        failed: failedNotifications,
+      },
       commerce: { failedPurchases, completedPurchases, inventoryRows },
       rewards: { rejectedClaims, grantedClaims, activePolicies },
       feedback: { open: openFeedback },
       ledger: { leaderboardScoreEvents: scoreEvents, walletTransactions },
       recentOutbox,
       recentAudit,
-    })
+    });
   }
 
   async listAudit(limit = 100) {
-    const rows = await this.prisma.adminAuditEvent.findMany({ orderBy: { createdAt: "desc" }, take: Math.min(Math.max(limit, 1), 200), select: { id: true, action: true, entityType: true, entityId: true, reason: true, metadata: true, createdAt: true, actor: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } })
-    return this.serialize(rows)
+    const rows = await this.prisma.adminAuditEvent.findMany({
+      orderBy: { createdAt: "desc" },
+      take: Math.min(Math.max(limit, 1), 200),
+      select: {
+        id: true,
+        action: true,
+        entityType: true,
+        entityId: true,
+        reason: true,
+        metadata: true,
+        createdAt: true,
+        actor: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            profile: { select: { displayName: true } },
+          },
+        },
+      },
+    });
+    return this.serialize(rows);
   }
 
   async listPlayerAudits(query: PlayerAuditsQueryDto) {
-    const page = query.page || 1
-    const limit = query.limit || 50
-    const search = query.search?.trim()
+    const page = query.page || 1;
+    const limit = query.limit || 50;
+    const search = query.search?.trim();
     const where: Prisma.PlayerAuditEventWhereInput = {
       ...(query.playerId ? { userId: query.playerId } : {}),
-      ...(query.action?.trim() ? { action: { equals: query.action.trim(), mode: "insensitive" } } : {}),
-      ...(query.entityType?.trim() ? { entityType: { equals: query.entityType.trim(), mode: "insensitive" } } : {}),
-      ...(query.from || query.to ? { createdAt: { ...(query.from ? { gte: new Date(query.from) } : {}), ...(query.to ? { lte: new Date(query.to) } : {}) } } : {}),
-      ...(search ? {
-        OR: [
-          { action: { contains: search, mode: "insensitive" } },
-          { entityType: { contains: search, mode: "insensitive" } },
-          { entityId: { contains: search, mode: "insensitive" } },
-          { summary: { contains: search, mode: "insensitive" } },
-          { user: { username: { contains: search, mode: "insensitive" } } },
-          { user: { email: { contains: search, mode: "insensitive" } } },
-          { user: { profile: { displayName: { contains: search, mode: "insensitive" } } } },
-        ],
-      } : {}),
-    }
+      ...(query.action?.trim()
+        ? { action: { equals: query.action.trim(), mode: "insensitive" } }
+        : {}),
+      ...(query.entityType?.trim()
+        ? {
+            entityType: {
+              equals: query.entityType.trim(),
+              mode: "insensitive",
+            },
+          }
+        : {}),
+      ...(query.from || query.to
+        ? {
+            createdAt: {
+              ...(query.from ? { gte: new Date(query.from) } : {}),
+              ...(query.to ? { lte: new Date(query.to) } : {}),
+            },
+          }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              { action: { contains: search, mode: "insensitive" } },
+              { entityType: { contains: search, mode: "insensitive" } },
+              { entityId: { contains: search, mode: "insensitive" } },
+              { summary: { contains: search, mode: "insensitive" } },
+              { user: { username: { contains: search, mode: "insensitive" } } },
+              { user: { email: { contains: search, mode: "insensitive" } } },
+              {
+                user: {
+                  profile: {
+                    displayName: { contains: search, mode: "insensitive" },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
     const select = {
       id: true,
       userId: true,
@@ -260,50 +543,96 @@ export class SystemAdminService implements OnModuleInit {
       changes: true,
       metadata: true,
       createdAt: true,
-      user: { select: { id: true, username: true, email: true, firstName: true, lastName: true, isSystemAdmin: true, profile: { select: { displayName: true, avatarUrl: true } } } },
-    } as const
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          isSystemAdmin: true,
+          profile: { select: { displayName: true, avatarUrl: true } },
+        },
+      },
+    } as const;
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.playerAuditEvent.count({ where }),
-      this.prisma.playerAuditEvent.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit, select }),
-    ])
-    return { items: this.serialize(rows), pagination: { page, limit, total, pages: Math.ceil(total / limit) } }
+      this.prisma.playerAuditEvent.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        select,
+      }),
+    ]);
+    return {
+      items: this.serialize(rows),
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    };
   }
 
   async createUser(dto: RegisterRequestDto, actorId?: string) {
-    const user = await this.usersService.create({ ...dto, actorId, reason: "Player account created from the system administrator console" })
-    return this.getUser(user.id)
+    const user = await this.usersService.create({
+      ...dto,
+      actorId,
+      reason: "Player account created from the system administrator console",
+    });
+    return this.getUser(user.id);
   }
 
   async createAdmin(dto: RegisterAdminDto, actorId?: string) {
-    const user = await this.usersService.create({ ...dto, isSystemAdmin: true, actorId, reason: "Administrator account created from the system administrator console" })
-    return this.getUser(user.id)
+    const user = await this.usersService.create({
+      ...dto,
+      isSystemAdmin: true,
+      actorId,
+      reason:
+        "Administrator account created from the system administrator console",
+    });
+    return this.getUser(user.id);
   }
 
   async listSessions(query: SystemAdminSessionsQueryDto) {
-    const page = query.page || 1
-    const limit = query.limit || 50
-    const search = query.search?.trim()
-    const now = new Date()
-    const statusWhere: Prisma.SessionWhereInput = query.status === AdminSessionStatusFilter.Active
-      ? { sessionStatus: "ACTIVE", expiresAt: { gt: now } }
-      : query.status === AdminSessionStatusFilter.Expired
-        ? { sessionStatus: "ACTIVE", expiresAt: { lte: now } }
-        : query.status === AdminSessionStatusFilter.Terminated
-          ? { sessionStatus: "TERMINATED" }
-          : {}
+    const page = query.page || 1;
+    const limit = query.limit || 50;
+    const search = query.search?.trim();
+    const now = new Date();
+    const statusWhere: Prisma.SessionWhereInput =
+      query.status === AdminSessionStatusFilter.Active
+        ? { sessionStatus: "ACTIVE", expiresAt: { gt: now } }
+        : query.status === AdminSessionStatusFilter.Expired
+          ? { sessionStatus: "ACTIVE", expiresAt: { lte: now } }
+          : query.status === AdminSessionStatusFilter.Terminated
+            ? { sessionStatus: "TERMINATED" }
+            : {};
     const where: Prisma.SessionWhereInput = {
       ...statusWhere,
-      ...(search ? {
-        OR: [
-          { user: { username: { contains: search.toLowerCase(), mode: "insensitive" } } },
-          { user: { email: { contains: search.toLowerCase(), mode: "insensitive" } } },
-          { deviceName: { contains: search, mode: "insensitive" } },
-          { deviceInfo: { contains: search, mode: "insensitive" } },
-          { ipAddress: { contains: search, mode: "insensitive" } },
-          { location: { contains: search, mode: "insensitive" } },
-        ],
-      } : {}),
-    }
+      ...(search
+        ? {
+            OR: [
+              {
+                user: {
+                  username: {
+                    contains: search.toLowerCase(),
+                    mode: "insensitive",
+                  },
+                },
+              },
+              {
+                user: {
+                  email: {
+                    contains: search.toLowerCase(),
+                    mode: "insensitive",
+                  },
+                },
+              },
+              { deviceName: { contains: search, mode: "insensitive" } },
+              { deviceInfo: { contains: search, mode: "insensitive" } },
+              { ipAddress: { contains: search, mode: "insensitive" } },
+              { location: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
     const [total, sessions] = await this.prisma.$transaction([
       this.prisma.session.count({ where }),
       this.prisma.session.findMany({
@@ -323,42 +652,98 @@ export class SystemAdminService implements OnModuleInit {
           loginTimestamp: true,
           lastActiveTimestamp: true,
           expiresAt: true,
-          user: { select: { id: true, username: true, email: true, isSystemAdmin: true, profile: { select: { displayName: true } } } },
+          user: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              isSystemAdmin: true,
+              profile: { select: { displayName: true } },
+            },
+          },
         },
       }),
-    ])
+    ]);
     return {
       items: sessions.map((session) => ({
         ...session,
-        effectiveStatus: session.sessionStatus === "ACTIVE" && session.expiresAt <= now ? "EXPIRED" : session.sessionStatus,
+        effectiveStatus:
+          session.sessionStatus === "ACTIVE" && session.expiresAt <= now
+            ? "EXPIRED"
+            : session.sessionStatus,
       })),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-    }
+    };
   }
 
   terminateSession(sessionId: string, actorId: string) {
-    return this.terminateAdminSessionTransaction.run({ sessionId, actorId, reason: "Session terminated from the system administrator console" })
+    return this.terminateAdminSessionTransaction.run({
+      sessionId,
+      actorId,
+      reason: "Session terminated from the system administrator console",
+    });
   }
 
   async listMatches(query: SystemAdminMatchesQueryDto) {
-    const page = query.page || 1
-    const limit = query.limit || 50
-    const search = query.search?.trim()
-    const isUuidSearch = Boolean(search && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(search))
+    const page = query.page || 1;
+    const limit = query.limit || 50;
+    const search = query.search?.trim();
+    const isUuidSearch = Boolean(
+      search &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        search,
+      ),
+    );
     const where: Prisma.MatchWhereInput = {
       ...(query.status ? { status: query.status } : {}),
-      ...(query.playerId ? { participants: { some: { userId: query.playerId } } } : {}),
-      ...(search ? {
-        OR: [
-          ...(isUuidSearch ? [{ id: search }] : []),
-          { gameDefinition: { key: { contains: search.toLowerCase(), mode: "insensitive" } } },
-          { gameDefinition: { name: { contains: search, mode: "insensitive" } } },
-          { participants: { some: { user: { username: { contains: search, mode: "insensitive" } } } } },
-          { participants: { some: { user: { email: { contains: search, mode: "insensitive" } } } } },
-          { participants: { some: { user: { profile: { displayName: { contains: search, mode: "insensitive" } } } } } },
-        ],
-      } : {}),
-    }
+      ...(query.playerId
+        ? { participants: { some: { userId: query.playerId } } }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              ...(isUuidSearch ? [{ id: search }] : []),
+              {
+                gameDefinition: {
+                  key: { contains: search.toLowerCase(), mode: "insensitive" },
+                },
+              },
+              {
+                gameDefinition: {
+                  name: { contains: search, mode: "insensitive" },
+                },
+              },
+              {
+                participants: {
+                  some: {
+                    user: {
+                      username: { contains: search, mode: "insensitive" },
+                    },
+                  },
+                },
+              },
+              {
+                participants: {
+                  some: {
+                    user: { email: { contains: search, mode: "insensitive" } },
+                  },
+                },
+              },
+              {
+                participants: {
+                  some: {
+                    user: {
+                      profile: {
+                        displayName: { contains: search, mode: "insensitive" },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
     const [total, items] = await this.prisma.$transaction([
       this.prisma.match.count({ where }),
       this.prisma.match.findMany({
@@ -376,7 +761,14 @@ export class SystemAdminService implements OnModuleInit {
           createdAt: true,
           metadata: true,
           gameDefinition: { select: { key: true, name: true } },
-          createdBy: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } },
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              profile: { select: { displayName: true, avatarUrl: true } },
+            },
+          },
           participants: {
             orderBy: { createdAt: "asc" },
             take: 10,
@@ -388,21 +780,42 @@ export class SystemAdminService implements OnModuleInit {
               answeredCount: true,
               result: true,
               submittedAt: true,
-              user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true } } } },
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  email: true,
+                  profile: {
+                    select: {
+                      displayName: true,
+                      avatarUrl: true,
+                      countryCode: true,
+                    },
+                  },
+                },
+              },
             },
           },
           _count: { select: { events: true, assignments: true, rounds: true } },
         },
       }),
-    ])
+    ]);
     const normalizedItems = items.map((match) => ({
       ...match,
       participants: match.participants.map((participant) => ({
         ...participant,
-        displayName: participant.user?.profile?.displayName || participant.user?.username || (participant.participantType === "BOT" ? botDisplayName(match.id, participant.id) : null),
+        displayName:
+          participant.user?.profile?.displayName ||
+          participant.user?.username ||
+          (participant.participantType === "BOT"
+            ? botDisplayName(match.id, participant.id)
+            : null),
       })),
-    }))
-    return this.serialize({ items: normalizedItems, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    }));
+    return this.serialize({
+      items: normalizedItems,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
   }
 
   async getMatch360(matchId: string) {
@@ -418,9 +831,31 @@ export class SystemAdminService implements OnModuleInit {
         createdAt: true,
         updatedAt: true,
         metadata: true,
-        gameDefinition: { select: { id: true, key: true, name: true, active: true } },
-        gameConfig: { select: { id: true, version: true, active: true, rankingEnabled: true, maxQuestions: true, maxMatchDurationSeconds: true, rewardCurrencyCode: true } },
-        createdBy: { select: { id: true, username: true, email: true, status: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true } } } },
+        gameDefinition: {
+          select: { id: true, key: true, name: true, active: true },
+        },
+        gameConfig: {
+          select: {
+            id: true,
+            version: true,
+            active: true,
+            rankingEnabled: true,
+            maxQuestions: true,
+            maxMatchDurationSeconds: true,
+            rewardCurrencyCode: true,
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            status: true,
+            profile: {
+              select: { displayName: true, avatarUrl: true, countryCode: true },
+            },
+          },
+        },
         participants: {
           orderBy: { createdAt: "asc" },
           select: {
@@ -433,13 +868,41 @@ export class SystemAdminService implements OnModuleInit {
             submittedAt: true,
             createdAt: true,
             updatedAt: true,
-            user: { select: { id: true, username: true, email: true, status: true, isSystemAdmin: true, firstName: true, lastName: true, profile: { select: { displayName: true, avatarUrl: true, countryCode: true, level: true, xp: true, elo: true } } } },
+            user: {
+              select: {
+                id: true,
+                username: true,
+                email: true,
+                status: true,
+                isSystemAdmin: true,
+                firstName: true,
+                lastName: true,
+                profile: {
+                  select: {
+                    displayName: true,
+                    avatarUrl: true,
+                    countryCode: true,
+                    level: true,
+                    xp: true,
+                    elo: true,
+                  },
+                },
+              },
+            },
             _count: { select: { events: true, assignments: true } },
           },
         },
         rounds: {
           orderBy: { roundIndex: "asc" },
-          select: { id: true, roundIndex: true, status: true, startedAt: true, endedAt: true, createdAt: true, gameDefinition: { select: { key: true, name: true } } },
+          select: {
+            id: true,
+            roundIndex: true,
+            status: true,
+            startedAt: true,
+            endedAt: true,
+            createdAt: true,
+            gameDefinition: { select: { key: true, name: true } },
+          },
         },
         events: {
           orderBy: [{ serverReceivedAt: "asc" }, { sequence: "asc" }],
@@ -456,7 +919,18 @@ export class SystemAdminService implements OnModuleInit {
             serverReceivedAt: true,
             accepted: true,
             rejectionReason: true,
-            participant: { select: { userId: true, participantType: true, user: { select: { username: true, profile: { select: { displayName: true } } } } } },
+            participant: {
+              select: {
+                userId: true,
+                participantType: true,
+                user: {
+                  select: {
+                    username: true,
+                    profile: { select: { displayName: true } },
+                  },
+                },
+              },
+            },
           },
         },
         assignments: {
@@ -470,209 +944,802 @@ export class SystemAdminService implements OnModuleInit {
             servedAt: true,
             expiresAt: true,
             answeredAt: true,
-            participant: { select: { userId: true, user: { select: { username: true, profile: { select: { displayName: true } } } } } },
-            contentItem: { select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } },
+            participant: {
+              select: {
+                userId: true,
+                user: {
+                  select: {
+                    username: true,
+                    profile: { select: { displayName: true } },
+                  },
+                },
+              },
+            },
+            contentItem: {
+              select: {
+                id: true,
+                contentType: true,
+                prompt: true,
+                options: true,
+                difficulty: true,
+                category: true,
+              },
+            },
           },
         },
-        settlement: { select: { id: true, policyVersion: true, settlementJson: true, createdAt: true, winnerParticipantId: true } },
-        matchmakingTickets: { orderBy: { createdAt: "asc" }, take: 20, select: { id: true, userId: true, mode: true, status: true, isRankingMatch: true, levelSnapshot: true, eloSnapshot: true, countryCodeSnapshot: true, constraints: true, createdAt: true, matchedAt: true, cancelledAt: true, user: { select: { username: true, profile: { select: { displayName: true } } } } } },
-        matchmakingInvite: { select: { id: true, status: true, createdAt: true, acceptedAt: true, respondedAt: true, expiresAt: true, inviter: { select: { id: true, username: true, profile: { select: { displayName: true } } } }, invitee: { select: { id: true, username: true, profile: { select: { displayName: true } } } } } },
+        settlement: {
+          select: {
+            id: true,
+            policyVersion: true,
+            settlementJson: true,
+            createdAt: true,
+            winnerParticipantId: true,
+          },
+        },
+        matchmakingTickets: {
+          orderBy: { createdAt: "asc" },
+          take: 20,
+          select: {
+            id: true,
+            userId: true,
+            mode: true,
+            status: true,
+            isRankingMatch: true,
+            levelSnapshot: true,
+            eloSnapshot: true,
+            countryCodeSnapshot: true,
+            constraints: true,
+            createdAt: true,
+            matchedAt: true,
+            cancelledAt: true,
+            user: {
+              select: {
+                username: true,
+                profile: { select: { displayName: true } },
+              },
+            },
+          },
+        },
+        matchmakingInvite: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            acceptedAt: true,
+            respondedAt: true,
+            expiresAt: true,
+            inviter: {
+              select: {
+                id: true,
+                username: true,
+                profile: { select: { displayName: true } },
+              },
+            },
+            invitee: {
+              select: {
+                id: true,
+                username: true,
+                profile: { select: { displayName: true } },
+              },
+            },
+          },
+        },
       },
-    })
-    if (!match) throw new NotFoundException("Match not found")
-    const assignmentsById = new Map(match.assignments.map((assignment) => [assignment.id, assignment]))
-    const answerEvents = match.events.filter((event) => event.eventType === "ANSWER" && event.accepted)
+    });
+    if (!match) throw new NotFoundException("Match not found");
+    const assignmentsById = new Map(
+      match.assignments.map((assignment) => [assignment.id, assignment]),
+    );
+    const answerEvents = match.events.filter(
+      (event) => event.eventType === "ANSWER" && event.accepted,
+    );
     const detailsForEvent = (event: (typeof match.events)[number]) => {
-      const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
-        ? event.payload as Record<string, unknown>
-        : {}
-      const assignmentId = typeof payload.assignmentId === "string" ? payload.assignmentId : undefined
-      const assignment = assignmentId ? assignmentsById.get(assignmentId) : undefined
-      const timeTakenMs = typeof payload.timeTakenMs === "number" ? payload.timeTakenMs : undefined
-      const pointsEarned = typeof payload.pointsEarned === "string" || typeof payload.pointsEarned === "number"
-        ? Number(payload.pointsEarned)
-        : undefined
+      const payload =
+        event.payload &&
+        typeof event.payload === "object" &&
+        !Array.isArray(event.payload)
+          ? (event.payload as Record<string, unknown>)
+          : {};
+      const assignmentId =
+        typeof payload.assignmentId === "string"
+          ? payload.assignmentId
+          : undefined;
+      const assignment = assignmentId
+        ? assignmentsById.get(assignmentId)
+        : undefined;
+      const timeTakenMs =
+        typeof payload.timeTakenMs === "number"
+          ? payload.timeTakenMs
+          : undefined;
+      const pointsEarned =
+        typeof payload.pointsEarned === "string" ||
+        typeof payload.pointsEarned === "number"
+          ? Number(payload.pointsEarned)
+          : undefined;
       return {
         assignmentId,
         questionNumber: assignment ? assignment.position + 1 : undefined,
         prompt: assignment?.contentItem.prompt,
         category: assignment?.contentItem.category,
         difficulty: assignment?.contentItem.difficulty,
-        correct: typeof payload.correct === "boolean" ? payload.correct : undefined,
+        correct:
+          typeof payload.correct === "boolean" ? payload.correct : undefined,
         pointsEarned: Number.isFinite(pointsEarned) ? pointsEarned : undefined,
         timeTakenMs,
         source: typeof payload.source === "string" ? payload.source : undefined,
-      }
-    }
-    const enrichedEvents = match.events.map((event) => ({ ...event, answerDetails: event.eventType === "ANSWER" ? detailsForEvent(event) : null }))
+      };
+    };
+    const enrichedEvents = match.events.map((event) => ({
+      ...event,
+      answerDetails:
+        event.eventType === "ANSWER" ? detailsForEvent(event) : null,
+    }));
     const enrichedAssignments = match.assignments.map((assignment) => {
       const answer = answerEvents.find((event) => {
-        const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {}
-        return payload.assignmentId === assignment.id
-      })
-      return { ...assignment, answerDetails: answer ? detailsForEvent(answer) : null }
-    })
-    const statsByParticipant = new Map<string, { correct: number; wrong: number; totalTimeMs: number }>()
+        const payload =
+          event.payload &&
+          typeof event.payload === "object" &&
+          !Array.isArray(event.payload)
+            ? (event.payload as Record<string, unknown>)
+            : {};
+        return payload.assignmentId === assignment.id;
+      });
+      return {
+        ...assignment,
+        answerDetails: answer ? detailsForEvent(answer) : null,
+      };
+    });
+    const statsByParticipant = new Map<
+      string,
+      { correct: number; wrong: number; totalTimeMs: number }
+    >();
     for (const event of answerEvents) {
-      const details = detailsForEvent(event)
-      const stats = statsByParticipant.get(event.participantId) ?? { correct: 0, wrong: 0, totalTimeMs: 0 }
-      if (details.correct === true) stats.correct += 1
-      if (details.correct === false) stats.wrong += 1
-      if (typeof details.timeTakenMs === "number") stats.totalTimeMs += details.timeTakenMs
-      statsByParticipant.set(event.participantId, stats)
+      const details = detailsForEvent(event);
+      const stats = statsByParticipant.get(event.participantId) ?? {
+        correct: 0,
+        wrong: 0,
+        totalTimeMs: 0,
+      };
+      if (details.correct === true) stats.correct += 1;
+      if (details.correct === false) stats.wrong += 1;
+      if (typeof details.timeTakenMs === "number")
+        stats.totalTimeMs += details.timeTakenMs;
+      statsByParticipant.set(event.participantId, stats);
     }
     return this.serialize({
       ...match,
       participants: match.participants.map((participant) => ({
         ...participant,
-        displayName: participant.user?.profile?.displayName || participant.user?.username || (participant.participantType === "BOT" ? botDisplayName(match.id, participant.id) : null),
-        answerStats: statsByParticipant.get(participant.id) ?? { correct: 0, wrong: 0, totalTimeMs: 0 },
+        displayName:
+          participant.user?.profile?.displayName ||
+          participant.user?.username ||
+          (participant.participantType === "BOT"
+            ? botDisplayName(match.id, participant.id)
+            : null),
+        answerStats: statsByParticipant.get(participant.id) ?? {
+          correct: 0,
+          wrong: 0,
+          totalTimeMs: 0,
+        },
       })),
       events: enrichedEvents,
       assignments: enrichedAssignments,
-    })
+    });
   }
 
   getUserDetails(userId: string) {
-    return this.getUser(userId, true)
+    return this.getUser(userId, true);
   }
 
   async getPlayer360(userId: string) {
-    const user = await this.getUser(userId, true)
-    const [inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback, playerAuditEvents] = await this.prisma.$transaction([
-      this.prisma.inventoryItem.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: { select: { id: true, key: true, name: true, assetType: true, ownershipPolicy: true, imageUrl: true } }, assetVariation: { select: { id: true, key: true, name: true, imageUrl: true } } } }),
-      this.prisma.entitlement.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: { select: { key: true, name: true, imageUrl: true } } } }),
-      this.prisma.purchase.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { currency: { select: { code: true, name: true } }, lines: { orderBy: { createdAt: "asc" }, include: { catalogItem: { select: { key: true, name: true, imageUrl: true } } } } } }),
-      this.prisma.leaderboardEntry.findMany({ where: { playerId: userId }, orderBy: { updatedAt: "desc" }, take: 200, include: { leaderboard: { select: { key: true, name: true, period: true, direction: true } }, season: { select: { id: true, status: true, startsAt: true, endsAt: true } } } }),
-      this.prisma.leaderboardScoreEvent.findMany({ where: { playerId: userId }, orderBy: { createdAt: "desc" }, take: 200, include: { leaderboard: { select: { key: true, name: true } }, season: { select: { id: true, status: true } } } }),
-      this.prisma.progressionEvent.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { progression: { select: { key: true, name: true, kind: true } } } }),
-      this.prisma.rewardGrant.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { currency: { select: { code: true, name: true } }, progressionDefinition: { select: { key: true, name: true } } } }),
-      this.prisma.playerGameStats.findMany({ where: { userId }, orderBy: { lastPlayedAt: "desc" }, take: 100, include: { gameDefinition: { select: { key: true, name: true } } } }),
-      this.prisma.matchParticipant.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { match: { select: { id: true, mode: true, status: true, startedAt: true, endedAt: true, settledAt: true, createdAt: true, gameDefinition: { select: { key: true, name: true } } } } } }),
-      this.prisma.playerStorageItem.findMany({ where: { userId }, orderBy: [{ displayOrder: "asc" }, { key: "asc" }], take: 200 }),
-      this.prisma.storedFile.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200 }),
-      this.prisma.playerFeedback.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200, include: { category: { select: { key: true, name: true } } } }),
-      this.prisma.playerAuditEvent.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, select: { id: true, userId: true, actorType: true, action: true, entityType: true, entityId: true, summary: true, changes: true, metadata: true, createdAt: true } }),
-    ])
+    const user = await this.getUser(userId, true);
+    const [
+      inventory,
+      entitlements,
+      purchases,
+      leaderboardEntries,
+      leaderboardScoreEvents,
+      progressionEvents,
+      rewardGrants,
+      gameStats,
+      matches,
+      storageItems,
+      files,
+      feedback,
+      playerAuditEvents,
+    ] = await this.prisma.$transaction([
+      this.prisma.inventoryItem.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        include: {
+          assetDefinition: {
+            select: {
+              id: true,
+              key: true,
+              name: true,
+              assetType: true,
+              ownershipPolicy: true,
+              imageUrl: true,
+            },
+          },
+          assetVariation: {
+            select: { id: true, key: true, name: true, imageUrl: true },
+          },
+        },
+      }),
+      this.prisma.entitlement.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        include: {
+          assetDefinition: {
+            select: { key: true, name: true, imageUrl: true },
+          },
+        },
+      }),
+      this.prisma.purchase.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: {
+          currency: { select: { code: true, name: true } },
+          lines: {
+            orderBy: { createdAt: "asc" },
+            include: {
+              catalogItem: {
+                select: { key: true, name: true, imageUrl: true },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.leaderboardEntry.findMany({
+        where: { playerId: userId },
+        orderBy: { updatedAt: "desc" },
+        take: 200,
+        include: {
+          leaderboard: {
+            select: { key: true, name: true, period: true, direction: true },
+          },
+          season: {
+            select: { id: true, status: true, startsAt: true, endsAt: true },
+          },
+        },
+      }),
+      this.prisma.leaderboardScoreEvent.findMany({
+        where: { playerId: userId },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: {
+          leaderboard: { select: { key: true, name: true } },
+          season: { select: { id: true, status: true } },
+        },
+      }),
+      this.prisma.progressionEvent.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: {
+          progression: { select: { key: true, name: true, kind: true } },
+        },
+      }),
+      this.prisma.rewardGrant.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: {
+          currency: { select: { code: true, name: true } },
+          progressionDefinition: { select: { key: true, name: true } },
+        },
+      }),
+      this.prisma.playerGameStats.findMany({
+        where: { userId },
+        orderBy: { lastPlayedAt: "desc" },
+        take: 100,
+        include: { gameDefinition: { select: { key: true, name: true } } },
+      }),
+      this.prisma.matchParticipant.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: {
+          match: {
+            select: {
+              id: true,
+              mode: true,
+              status: true,
+              startedAt: true,
+              endedAt: true,
+              settledAt: true,
+              createdAt: true,
+              gameDefinition: { select: { key: true, name: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.playerStorageItem.findMany({
+        where: { userId },
+        orderBy: [{ displayOrder: "asc" }, { key: "asc" }],
+        take: 200,
+      }),
+      this.prisma.storedFile.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      }),
+      this.prisma.playerFeedback.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: { category: { select: { key: true, name: true } } },
+      }),
+      this.prisma.playerAuditEvent.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        select: {
+          id: true,
+          userId: true,
+          actorType: true,
+          action: true,
+          entityType: true,
+          entityId: true,
+          summary: true,
+          changes: true,
+          metadata: true,
+          createdAt: true,
+        },
+      }),
+    ]);
     const walletTransactions = user.wallet
-      ? await this.prisma.walletTransaction.findMany({ where: { walletId: user.wallet.id }, orderBy: { createdAt: "desc" }, take: 500, include: { currency: { select: { code: true, name: true, kind: true } } } })
-      : []
-    const social = await this.friendsService.player360Social(userId)
-    return this.serialize({ user: { ...user, wallet: user.wallet ? { ...user.wallet, transactions: walletTransactions } : null }, inventory, entitlements, purchases, leaderboardEntries, leaderboardScoreEvents, progressionEvents, rewardGrants, gameStats, matches, storageItems, files, feedback, playerAuditEvents, ...social })
+      ? await this.prisma.walletTransaction.findMany({
+          where: { walletId: user.wallet.id },
+          orderBy: { createdAt: "desc" },
+          take: 500,
+          include: {
+            currency: { select: { code: true, name: true, kind: true } },
+          },
+        })
+      : [];
+    const social = await this.friendsService.player360Social(userId);
+    return this.serialize({
+      user: {
+        ...user,
+        wallet: user.wallet
+          ? { ...user.wallet, transactions: walletTransactions }
+          : null,
+      },
+      inventory,
+      entitlements,
+      purchases,
+      leaderboardEntries,
+      leaderboardScoreEvents,
+      progressionEvents,
+      rewardGrants,
+      gameStats,
+      matches,
+      storageItems,
+      files,
+      feedback,
+      playerAuditEvents,
+      ...social,
+    });
   }
 
-  async updateUserProfile(userId: string, actorId: string, dto: UpdateUserProfileDto) {
-    await this.updateUserProfileTransaction.run({ userId, actorId, dto })
-    return this.getUser(userId, true)
+  async updateUserProfile(
+    userId: string,
+    actorId: string,
+    dto: UpdateUserProfileDto,
+  ) {
+    await this.updateUserProfileTransaction.run({ userId, actorId, dto });
+    return this.getUser(userId, true);
   }
 
-  async resetUserPassword(userId: string, actorId: string, dto: ResetUserPasswordDto) {
-    await this.resetUserPasswordTransaction.run({ userId, actorId, password: dto.password, reason: dto.reason })
-    return { message: "Password reset and all active sessions terminated" }
+  async resetUserPassword(
+    userId: string,
+    actorId: string,
+    dto: ResetUserPasswordDto,
+  ) {
+    await this.resetUserPasswordTransaction.run({
+      userId,
+      actorId,
+      password: dto.password,
+      reason: dto.reason,
+    });
+    return { message: "Password reset and all active sessions terminated" };
   }
 
   updateStatus(userId: string, actorId: string, dto: UpdateUserStatusDto) {
-    return this.updateUserStatusTransaction.run({ userId, actorId, status: dto.status, reason: dto.reason })
+    return this.updateUserStatusTransaction.run({
+      userId,
+      actorId,
+      status: dto.status,
+      reason: dto.reason,
+    });
   }
 
   async deleteUser(userId: string, actorId: string) {
-    await this.deleteUserTransaction.run({ userId, actorId, reason: "Account deleted from the system administrator console" })
-    return { message: "User deleted" }
+    await this.deleteUserTransaction.run({
+      userId,
+      actorId,
+      reason: "Account deleted from the system administrator console",
+    });
+    return { message: "User deleted" };
   }
 
-  listProgressions(includeInactive = false) { return this.progressionService.listDefinitions(includeInactive) }
-  getProgression(id: string) { return this.progressionService.getDefinition(id) }
-  createProgression(dto: CreateProgressionDto) { return this.progressionService.createDefinition(dto) }
-  updateProgression(id: string, dto: UpdateProgressionDto) { return this.progressionService.updateDefinition(id, dto) }
-  createProgressionTier(progressionId: string, dto: CreateProgressionTierDto) { return this.progressionService.createTier(progressionId, dto) }
-  updateProgressionTier(id: string, dto: UpdateProgressionTierDto) { return this.progressionService.updateTier(id, dto) }
-  deleteProgressionTier(id: string) { return this.progressionService.deleteTier(id) }
-  createProgressionReward(tierId: string, dto: CreateProgressionRewardDto) { return this.progressionService.createReward(tierId, dto) }
-  updateProgressionReward(id: string, dto: UpdateProgressionRewardDto) { return this.progressionService.updateReward(id, dto) }
-  deleteProgressionReward(id: string) { return this.progressionService.deleteReward(id) }
-  awardProgression(userId: string, key: string, dto: AwardProgressionPointsDto, actorId: string) { return this.progressionService.awardAdmin(userId, key, BigInt(dto.amount), dto.sourceId, dto.metadata, actorId, dto.reason) }
-  resetProgression(userId: string, key: string, dto: ResetProgressionDto, actorId: string) { return this.progressionService.resetAdmin(userId, key, dto.sourceId, actorId, dto.reason) }
-  listCurrencies() { return this.walletService.listCurrencies(true) }
-  createCurrency(dto: CreateCurrencyDto) { return this.walletService.createCurrency(dto) }
-  updateCurrency(id: string, dto: UpdateCurrencyDto) { return this.walletService.updateCurrency(id, dto) }
-  getAdminWallet(userId: string) { return this.walletService.getAdminWallet(userId) }
-  creditWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.creditWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", reason: dto.reason, actorId, metadata: { ...(dto.metadata ?? {}), actorId } }) }
-  debitWallet(userId: string, dto: WalletMutationDto, actorId: string) { return this.debitWalletTransaction.run({ userId, currencyCode: dto.currencyCode, amount: BigInt(dto.amount), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", reason: dto.reason, actorId, metadata: { ...(dto.metadata ?? {}), actorId } }) }
-  reverseWallet(userId: string, dto: ReverseWalletDto, actorId: string) { return this.reverseWalletTransaction.run({ userId, ledgerId: dto.ledgerId, originalGrantKey: dto.originalGrantKey, sourceId: dto.sourceId, actorId, reason: dto.reason }) }
-  listLeaderboards(includeInactive = false) { return this.leaderboardService.listDefinitions(includeInactive) }
-  createLeaderboard(dto: CreateLeaderboardDto) { return this.leaderboardService.createDefinition(dto) }
-  updateLeaderboard(id: string, dto: UpdateLeaderboardDto) { return this.leaderboardService.updateDefinition(id, dto) }
-  createLeaderboardSeason(id: string, dto: CreateLeaderboardSeasonDto) { return this.leaderboardService.createSeason(id, dto) }
-  closeLeaderboardSeason(id: string) { return this.leaderboardService.closeSeason(id) }
-  applyLeaderboardScore(key: string, dto: ApplyLeaderboardScoreDto, actorId: string) { return this.leaderboardService.applyScore({ leaderboardKey: key, playerId: dto.playerId, memberKey: dto.memberKey, delta: BigInt(dto.delta), sourceId: dto.sourceId, sourceType: dto.sourceType ?? "ADMIN", reason: dto.reason, actorId, metadata: { ...(dto.metadata ?? {}), actorId } }) }
-  topLeaderboardPlayers(key: string, limit: number) { return this.leaderboardService.topForAdmin(key, limit) }
-  rebuildLeaderboard(key: string) { return this.leaderboardService.rebuild(key) }
-  topProgressionPlayers(key: string, limit: number) { return this.progressionService.topPlayers(key, limit) }
-  topCurrencyPlayers(code: string, limit: number) { return this.walletService.topBalances(code, limit) }
-  listGameConfigs() { return this.gameService.listAdminDefinitions() }
-  updateGameConfig(key: string, dto: UpdateGameConfigDto) { return this.gameService.updateConfig(key, dto) }
-  createGameContent(dto: CreateGameContentDto) { return this.gameService.createContent(dto) }
-  listGameContent(key: string) { return this.gameService.listContent(key, true) }
-  listRewardPolicies() { return this.configService.listAdmin() }
-  publishRewardPolicy(dto: PublishRewardPolicyDto) { return this.configService.publish(dto) }
-  deactivateRewardPolicy(key: string) { return this.configService.deactivate(key) }
-  listAdRewardClaims() {
-    return this.prisma.adRewardClaim.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 500,
-      include: { currency: { select: { code: true, name: true } }, user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } },
-    }).then((items) => this.serialize(items))
+  listProgressions(includeInactive = false) {
+    return this.progressionService.listDefinitions(includeInactive);
   }
-  listPaidRewardRequests(status?: string) { return this.commerceService.listAdminPaidRewardRequests(status) }
-  decidePaidRewardRequest(id: string, dto: PaidRewardDecisionDto, actorId: string) { return this.commerceService.decidePaidRewardRequest(id, dto, actorId) }
-  rebuildPlayerGameStats(userId: string, gameKey: string) { return this.rebuildPlayerGameStatsTransaction.run({ userId, gameKey }) }
+  getProgression(id: string) {
+    return this.progressionService.getDefinition(id);
+  }
+  createProgression(dto: CreateProgressionDto) {
+    return this.progressionService.createDefinition(dto);
+  }
+  updateProgression(id: string, dto: UpdateProgressionDto) {
+    return this.progressionService.updateDefinition(id, dto);
+  }
+  createProgressionTier(progressionId: string, dto: CreateProgressionTierDto) {
+    return this.progressionService.createTier(progressionId, dto);
+  }
+  updateProgressionTier(id: string, dto: UpdateProgressionTierDto) {
+    return this.progressionService.updateTier(id, dto);
+  }
+  deleteProgressionTier(id: string) {
+    return this.progressionService.deleteTier(id);
+  }
+  createProgressionReward(tierId: string, dto: CreateProgressionRewardDto) {
+    return this.progressionService.createReward(tierId, dto);
+  }
+  updateProgressionReward(id: string, dto: UpdateProgressionRewardDto) {
+    return this.progressionService.updateReward(id, dto);
+  }
+  deleteProgressionReward(id: string) {
+    return this.progressionService.deleteReward(id);
+  }
+  awardProgression(
+    userId: string,
+    key: string,
+    dto: AwardProgressionPointsDto,
+    actorId: string,
+  ) {
+    return this.progressionService.awardAdmin(
+      userId,
+      key,
+      BigInt(dto.amount),
+      dto.sourceId,
+      dto.metadata,
+      actorId,
+      dto.reason,
+    );
+  }
+  resetProgression(
+    userId: string,
+    key: string,
+    dto: ResetProgressionDto,
+    actorId: string,
+  ) {
+    return this.progressionService.resetAdmin(
+      userId,
+      key,
+      dto.sourceId,
+      actorId,
+      dto.reason,
+    );
+  }
+  listCurrencies() {
+    return this.walletService.listCurrencies(true);
+  }
+  createCurrency(dto: CreateCurrencyDto) {
+    return this.walletService.createCurrency(dto);
+  }
+  updateCurrency(id: string, dto: UpdateCurrencyDto) {
+    return this.walletService.updateCurrency(id, dto);
+  }
+  getAdminWallet(userId: string) {
+    return this.walletService.getAdminWallet(userId);
+  }
+  searchTransactions(query: { q?: string; limit?: number; offset?: number }) {
+    return this.walletService.searchTransactions(query);
+  }
+  getAdminTransaction(transactionId: string) {
+    return this.walletService.getAdminTransaction(transactionId);
+  }
+  creditWallet(userId: string, dto: WalletMutationDto, actorId: string) {
+    return this.creditWalletTransaction.run({
+      userId,
+      currencyCode: dto.currencyCode,
+      amount: BigInt(dto.amount),
+      sourceId: dto.sourceId,
+      sourceType: dto.sourceType ?? "ADMIN",
+      reason: dto.reason,
+      actorId,
+      metadata: { ...(dto.metadata ?? {}), actorId },
+    });
+  }
+  debitWallet(userId: string, dto: WalletMutationDto, actorId: string) {
+    return this.debitWalletTransaction.run({
+      userId,
+      currencyCode: dto.currencyCode,
+      amount: BigInt(dto.amount),
+      sourceId: dto.sourceId,
+      sourceType: dto.sourceType ?? "ADMIN",
+      reason: dto.reason,
+      actorId,
+      metadata: { ...(dto.metadata ?? {}), actorId },
+    });
+  }
+  reverseWallet(userId: string, dto: ReverseWalletDto, actorId: string) {
+    return this.reverseWalletTransaction.run({
+      userId,
+      ledgerId: dto.ledgerId,
+      originalGrantKey: dto.originalGrantKey,
+      sourceId: dto.sourceId,
+      actorId,
+      reason: dto.reason,
+    });
+  }
+  listLeaderboards(includeInactive = false) {
+    return this.leaderboardService.listDefinitions(includeInactive);
+  }
+  createLeaderboard(dto: CreateLeaderboardDto) {
+    return this.leaderboardService.createDefinition(dto);
+  }
+  updateLeaderboard(id: string, dto: UpdateLeaderboardDto) {
+    return this.leaderboardService.updateDefinition(id, dto);
+  }
+  createLeaderboardSeason(id: string, dto: CreateLeaderboardSeasonDto) {
+    return this.leaderboardService.createSeason(id, dto);
+  }
+  closeLeaderboardSeason(id: string) {
+    return this.leaderboardService.closeSeason(id);
+  }
+  applyLeaderboardScore(
+    key: string,
+    dto: ApplyLeaderboardScoreDto,
+    actorId: string,
+  ) {
+    return this.leaderboardService.applyScore({
+      leaderboardKey: key,
+      playerId: dto.playerId,
+      memberKey: dto.memberKey,
+      delta: BigInt(dto.delta),
+      sourceId: dto.sourceId,
+      sourceType: dto.sourceType ?? "ADMIN",
+      reason: dto.reason,
+      actorId,
+      metadata: { ...(dto.metadata ?? {}), actorId },
+    });
+  }
+  topLeaderboardPlayers(key: string, limit: number) {
+    return this.leaderboardService.topForAdmin(key, limit);
+  }
+  rebuildLeaderboard(key: string) {
+    return this.leaderboardService.rebuild(key);
+  }
+  topProgressionPlayers(key: string, limit: number) {
+    return this.progressionService.topPlayers(key, limit);
+  }
+  topCurrencyPlayers(code: string, limit: number) {
+    return this.walletService.topBalances(code, limit);
+  }
+  listGameConfigs() {
+    return this.gameService.listAdminDefinitions();
+  }
+  updateGameConfig(key: string, dto: UpdateGameConfigDto) {
+    return this.gameService.updateConfig(key, dto);
+  }
+  createGameContent(dto: CreateGameContentDto) {
+    return this.gameService.createContent(dto);
+  }
+  listGameContent(key: string) {
+    return this.gameService.listContent(key, true);
+  }
+  listRewardPolicies() {
+    return this.configService.listAdmin();
+  }
+  publishRewardPolicy(dto: PublishRewardPolicyDto) {
+    return this.configService.publish(dto);
+  }
+  deactivateRewardPolicy(key: string) {
+    return this.configService.deactivate(key);
+  }
+  listAdRewardClaims() {
+    return this.prisma.adRewardClaim
+      .findMany({
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        include: {
+          currency: { select: { code: true, name: true } },
+          user: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              profile: { select: { displayName: true } },
+            },
+          },
+        },
+      })
+      .then((items) => this.serialize(items));
+  }
+  listPaidRewardRequests(status?: string) {
+    return this.commerceService.listAdminPaidRewardRequests(status);
+  }
+  decidePaidRewardRequest(
+    id: string,
+    dto: PaidRewardDecisionDto,
+    actorId: string,
+  ) {
+    return this.commerceService.decidePaidRewardRequest(id, dto, actorId);
+  }
+  rebuildPlayerGameStats(userId: string, gameKey: string) {
+    return this.rebuildPlayerGameStatsTransaction.run({ userId, gameKey });
+  }
   async resetPlayerCognitiveStats(userId: string, actorId: string) {
     const stats = await this.prisma.playerCognitiveStats.upsert({
       where: { userId },
       create: { userId },
-      update: { calculation: 50, speed: 50, accuracy: 50, judgement: 50, observation: 50, memory: 50, matchesEvaluated: 0 },
-    })
-    await writePlayerAudit(this.prisma, { userId, actorType: PlayerAuditActorType.ADMIN, action: "COGNITIVE_STATS_RESET", entityType: "PlayerCognitiveStats", entityId: stats.id, summary: "Reset cognitive skill profile to the neutral baseline", changes: { skills: { old: "previous profile", new: "50/100 baseline" }, matchesEvaluated: { old: "previous evidence", new: 0 } }, metadata: { source: "system-admin", actorId } })
-    return this.getPlayer360(userId)
+      update: {
+        calculation: 50,
+        speed: 50,
+        accuracy: 50,
+        judgement: 50,
+        observation: 50,
+        memory: 50,
+        matchesEvaluated: 0,
+      },
+    });
+    await writePlayerAudit(this.prisma, {
+      userId,
+      actorType: PlayerAuditActorType.ADMIN,
+      action: "COGNITIVE_STATS_RESET",
+      entityType: "PlayerCognitiveStats",
+      entityId: stats.id,
+      summary: "Reset cognitive skill profile to the neutral baseline",
+      changes: {
+        skills: { old: "previous profile", new: "50/100 baseline" },
+        matchesEvaluated: { old: "previous evidence", new: 0 },
+      },
+      metadata: { source: "system-admin", actorId },
+    });
+    return this.getPlayer360(userId);
   }
-  listCommerceCatalogs() { return this.commerceService.listCatalogs(true) }
-  createCommerceCatalog(dto: CreateCatalogDto) { return this.commerceService.createCatalog(dto) }
-  updateCommerceCatalog(id: string, dto: UpdateCatalogDto) { return this.commerceService.updateCatalog(id, dto) }
-  listCommerceAssets() { return this.commerceService.listAssets(true) }
-  createCommerceAsset(dto: CreateAssetDto) { return this.commerceService.createAsset(dto) }
-  updateCommerceAsset(id: string, dto: UpdateAssetDto) { return this.commerceService.updateAsset(id, dto) }
-  bulkInsertRedeemCodes(dto: BulkRedeemCodeDto, actorId: string) { return this.commerceService.bulkInsertRedeemCodes(dto, actorId) }
-  listRedeemCodes(assetKey?: string, status?: string) { return this.commerceService.listRedeemCodes(assetKey, status) }
-  createCommerceItem(dto: CreateCatalogItemDto) { return this.commerceService.createCatalogItem(dto) }
-  updateCommerceItem(id: string, dto: UpdateCatalogItemDto) { return this.commerceService.updateCatalogItem(id, dto) }
-  listCommerceInventory(query: InventoryQueryDto) { return this.commerceService.listInventory(query) }
-  listCommercePurchases(userId?: string) { return this.commerceService.listPurchases(userId) }
-  grantCommerceInventory(userId: string, dto: InventoryMutationDto, actorId: string) { return this.commerceService.grantInventory(userId, dto, actorId) }
-  revokeCommerceInventory(userId: string, dto: InventoryMutationDto, actorId: string) { return this.commerceService.revokeInventory(userId, dto, actorId) }
-  playerEntitlements(userId: string) { return this.commerceService.listPlayerEntitlements(userId) }
-  uploadFile(file: UploadedImage | undefined, dto: UploadFileDto, actorId: string) { return this.storageService.upload(file, dto, undefined, actorId) }
-  listStorage(query: SystemAdminStorageQueryDto) { return this.storageService.listAdminStorage(query) }
-  updatePlayerStorage(userId: string, dto: UpdatePlayerStorageDto) { return this.storageService.updateStorage(userId, dto.payload) }
-  deletePlayerStorage(userId: string, key: string) { return this.storageService.deleteStorage(userId, key) }
-  uploadPlayerFile(file: UploadedImage | undefined, userId: string, dto: UploadFileDto, actorId: string) { return this.storageService.upload(file, dto, userId, actorId) }
-  playerFileUrl(fileId: string, userId: string) { return this.storageService.downloadUrl(fileId, userId, true) }
-  deletePlayerFile(fileId: string, userId: string, actorId: string) { return this.storageService.delete(fileId, userId, true, actorId) }
-  fileUrl(fileId: string) { return this.storageService.downloadUrl(fileId, undefined, true) }
-  deleteFile(fileId: string, actorId?: string) { return this.storageService.delete(fileId, undefined, true, actorId) }
-  listFeedback(query: FeedbackQueryDto) { return this.storageService.listFeedback(query) }
-  updateFeedback(id: string, dto: UpdateFeedbackDto, adminId: string) { return this.storageService.updateFeedback(id, dto, adminId) }
-  listFriends(query: AdminFriendsQueryDto) { return this.friendsService.adminList(query) }
-  listReferrals(search?: string) { return this.referralsService.getAdminState(search) }
-  updateReferralConfig(dto: import("../referrals/dtos").UpdateReferralConfigDto, adminId: string) { return this.referralsService.updateConfig(dto, adminId) }
-  updateReferralPlayerOverride(userId: string, dto: import("../referrals/dtos").UpdateReferralPlayerOverrideDto, adminId: string) { return this.referralsService.updatePlayerOverride(userId, dto, adminId) }
-  makeFriends(userId: string, friendId: string) { return this.friendsService.makeFriends(userId, friendId) }
-  removeFriend(userId: string, friendId: string) { return this.friendsService.removeFriend(userId, friendId) }
-  blockFriend(userId: string, friendId: string) { return this.friendsService.blockPlayer(userId, friendId) }
-  unblockFriend(userId: string, friendId: string) { return this.friendsService.unblockPlayer(userId, friendId) }
+  listCommerceCatalogs() {
+    return this.commerceService.listCatalogs(true);
+  }
+  createCommerceCatalog(dto: CreateCatalogDto) {
+    return this.commerceService.createCatalog(dto);
+  }
+  updateCommerceCatalog(id: string, dto: UpdateCatalogDto) {
+    return this.commerceService.updateCatalog(id, dto);
+  }
+  listCommerceAssets() {
+    return this.commerceService.listAssets(true);
+  }
+  createCommerceAsset(dto: CreateAssetDto) {
+    return this.commerceService.createAsset(dto);
+  }
+  updateCommerceAsset(id: string, dto: UpdateAssetDto) {
+    return this.commerceService.updateAsset(id, dto);
+  }
+  bulkInsertRedeemCodes(dto: BulkRedeemCodeDto, actorId: string) {
+    return this.commerceService.bulkInsertRedeemCodes(dto, actorId);
+  }
+  listRedeemCodes(assetKey?: string, status?: string) {
+    return this.commerceService.listRedeemCodes(assetKey, status);
+  }
+  createCommerceItem(dto: CreateCatalogItemDto) {
+    return this.commerceService.createCatalogItem(dto);
+  }
+  updateCommerceItem(id: string, dto: UpdateCatalogItemDto) {
+    return this.commerceService.updateCatalogItem(id, dto);
+  }
+  listCommerceInventory(query: InventoryQueryDto) {
+    return this.commerceService.listInventory(query);
+  }
+  listCommercePurchases(userId?: string) {
+    return this.commerceService.listPurchases(userId);
+  }
+  grantCommerceInventory(
+    userId: string,
+    dto: InventoryMutationDto,
+    actorId: string,
+  ) {
+    return this.commerceService.grantInventory(userId, dto, actorId);
+  }
+  revokeCommerceInventory(
+    userId: string,
+    dto: InventoryMutationDto,
+    actorId: string,
+  ) {
+    return this.commerceService.revokeInventory(userId, dto, actorId);
+  }
+  playerEntitlements(userId: string) {
+    return this.commerceService.listPlayerEntitlements(userId);
+  }
+  uploadFile(
+    file: UploadedImage | undefined,
+    dto: UploadFileDto,
+    actorId: string,
+  ) {
+    return this.storageService.upload(file, dto, undefined, actorId);
+  }
+  listStorage(query: SystemAdminStorageQueryDto) {
+    return this.storageService.listAdminStorage(query);
+  }
+  updatePlayerStorage(userId: string, dto: UpdatePlayerStorageDto) {
+    return this.storageService.updateStorage(userId, dto.payload);
+  }
+  deletePlayerStorage(userId: string, key: string) {
+    return this.storageService.deleteStorage(userId, key);
+  }
+  uploadPlayerFile(
+    file: UploadedImage | undefined,
+    userId: string,
+    dto: UploadFileDto,
+    actorId: string,
+  ) {
+    return this.storageService.upload(file, dto, userId, actorId);
+  }
+  playerFileUrl(fileId: string, userId: string) {
+    return this.storageService.downloadUrl(fileId, userId, true);
+  }
+  deletePlayerFile(fileId: string, userId: string, actorId: string) {
+    return this.storageService.delete(fileId, userId, true, actorId);
+  }
+  fileUrl(fileId: string) {
+    return this.storageService.downloadUrl(fileId, undefined, true);
+  }
+  deleteFile(fileId: string, actorId?: string) {
+    return this.storageService.delete(fileId, undefined, true, actorId);
+  }
+  listFeedback(query: FeedbackQueryDto) {
+    return this.storageService.listFeedback(query);
+  }
+  updateFeedback(id: string, dto: UpdateFeedbackDto, adminId: string) {
+    return this.storageService.updateFeedback(id, dto, adminId);
+  }
+  listFriends(query: AdminFriendsQueryDto) {
+    return this.friendsService.adminList(query);
+  }
+  listReferrals(search?: string) {
+    return this.referralsService.getAdminState(search);
+  }
+  updateReferralConfig(
+    dto: import("../referrals/dtos").UpdateReferralConfigDto,
+    adminId: string,
+  ) {
+    return this.referralsService.updateConfig(dto, adminId);
+  }
+  updateReferralPlayerOverride(
+    userId: string,
+    dto: import("../referrals/dtos").UpdateReferralPlayerOverrideDto,
+    adminId: string,
+  ) {
+    return this.referralsService.updatePlayerOverride(userId, dto, adminId);
+  }
+  makeFriends(userId: string, friendId: string) {
+    return this.friendsService.makeFriends(userId, friendId);
+  }
+  removeFriend(userId: string, friendId: string) {
+    return this.friendsService.removeFriend(userId, friendId);
+  }
+  blockFriend(userId: string, friendId: string) {
+    return this.friendsService.blockPlayer(userId, friendId);
+  }
+  unblockFriend(userId: string, friendId: string) {
+    return this.friendsService.unblockPlayer(userId, friendId);
+  }
 
   private presenceWindowMs() {
-    const configured = Number(process.env.PRESENCE_ONLINE_WINDOW_SECONDS)
-    return (Number.isFinite(configured) && configured >= 30 && configured <= 3600 ? configured : 300) * 1000
+    const configured = Number(process.env.PRESENCE_ONLINE_WINDOW_SECONDS);
+    return (
+      (Number.isFinite(configured) && configured >= 30 && configured <= 3600
+        ? configured
+        : 300) * 1000
+    );
   }
 
   private async getUser(userId: string, detailed = false) {
@@ -688,67 +1755,112 @@ export class SystemAdminService implements OnModuleInit {
         isSystemAdmin: true,
         createdAt: true,
         lastOnline: true,
-        profile: { select: { displayName: true, avatarUrl: true, countryCode: true, bio: true, isPublic: true, metadata: true, level: true, xp: true, elo: true } },
-        stats: { select: { gamesPlayed: true, wins: true, losses: true, draws: true, currentWinStreak: true, highestWinStreak: true, highestElo: true, totalScore: true } },
-        cognitiveStats: { select: { calculation: true, speed: true, accuracy: true, judgement: true, observation: true, memory: true, matchesEvaluated: true, createdAt: true, updatedAt: true } },
+        profile: {
+          select: {
+            displayName: true,
+            avatarUrl: true,
+            countryCode: true,
+            bio: true,
+            isPublic: true,
+            metadata: true,
+            level: true,
+            xp: true,
+            elo: true,
+          },
+        },
+        stats: {
+          select: {
+            gamesPlayed: true,
+            wins: true,
+            losses: true,
+            draws: true,
+            currentWinStreak: true,
+            highestWinStreak: true,
+            highestElo: true,
+            totalScore: true,
+          },
+        },
+        cognitiveStats: {
+          select: {
+            calculation: true,
+            speed: true,
+            accuracy: true,
+            judgement: true,
+            observation: true,
+            memory: true,
+            matchesEvaluated: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
         _count: { select: { sessions: true } },
-        ...(detailed ? {
-          wallet: {
-            select: {
-              id: true,
-              status: true,
-              balances: {
+        ...(detailed
+          ? {
+              wallet: {
                 select: {
                   id: true,
-                  amount: true,
-                  currency: { select: { code: true, name: true, kind: true } },
+                  status: true,
+                  balances: {
+                    select: {
+                      id: true,
+                      amount: true,
+                      currency: {
+                        select: { code: true, name: true, kind: true },
+                      },
+                    },
+                  },
                 },
               },
-            },
-          },
-          sessions: {
-            orderBy: { lastActiveTimestamp: "desc" },
-            take: 100,
-            select: {
-              id: true,
-              sessionStatus: true,
-              isMobileSession: true,
-              clientVersion: true,
-              deviceInfo: true,
-              deviceName: true,
-              ipAddress: true,
-              location: true,
-              loginTimestamp: true,
-              lastActiveTimestamp: true,
-              expiresAt: true,
-            },
-          },
-          progressions: {
-            orderBy: { progression: { key: "asc" } },
-            take: 100,
-            select: {
-              id: true,
-              points: true,
-              step: true,
-              previousThreshold: true,
-              nextThreshold: true,
-              lastLevelUpAt: true,
-              progression: { select: { key: true, name: true, kind: true, active: true } },
-            },
-          },
-        } : {}),
+              sessions: {
+                orderBy: { lastActiveTimestamp: "desc" },
+                take: 100,
+                select: {
+                  id: true,
+                  sessionStatus: true,
+                  isMobileSession: true,
+                  clientVersion: true,
+                  deviceInfo: true,
+                  deviceName: true,
+                  ipAddress: true,
+                  location: true,
+                  loginTimestamp: true,
+                  lastActiveTimestamp: true,
+                  expiresAt: true,
+                },
+              },
+              progressions: {
+                orderBy: { progression: { key: "asc" } },
+                take: 100,
+                select: {
+                  id: true,
+                  points: true,
+                  step: true,
+                  previousThreshold: true,
+                  nextThreshold: true,
+                  lastLevelUpAt: true,
+                  progression: {
+                    select: { key: true, name: true, kind: true, active: true },
+                  },
+                },
+              },
+            }
+          : {}),
       },
-    })
-    if (!user) throw new NotFoundException("User not found")
-    return this.serializeUser(user)
+    });
+    if (!user) throw new NotFoundException("User not found");
+    return this.serializeUser(user);
   }
 
   private serializeUser(user: any) {
     const serialized = {
       ...user,
-      profile: user.profile ? { ...user.profile, xp: user.profile.xp.toString() } : null,
-      stats: user.stats ? { ...user.stats, totalScore: user.stats.totalScore.toString() } : null,
-    }
+      profile: user.profile
+        ? { ...user.profile, xp: user.profile.xp.toString() }
+        : null,
+      stats: user.stats
+        ? { ...user.stats, totalScore: user.stats.totalScore.toString() }
+        : null,
+    };
     if (user.wallet) {
       serialized.wallet = {
         ...user.wallet,
@@ -756,7 +1868,7 @@ export class SystemAdminService implements OnModuleInit {
           ...balance,
           amount: balance.amount.toString(),
         })),
-      }
+      };
     }
     if (user.progressions) {
       serialized.progressions = user.progressions.map((row: any) => ({
@@ -764,75 +1876,112 @@ export class SystemAdminService implements OnModuleInit {
         points: row.points.toString(),
         previousThreshold: row.previousThreshold.toString(),
         nextThreshold: row.nextThreshold?.toString() ?? null,
-      }))
+      }));
     }
-    return serialized
+    return serialized;
   }
 
   private serialize<T>(value: T): T {
-    return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) as T
+    return JSON.parse(
+      JSON.stringify(value, (_, item) =>
+        typeof item === "bigint" ? item.toString() : item,
+      ),
+    ) as T;
   }
 
   private async getDummyPasswordHash() {
-    this.dummyPasswordHash ??= await HashHelper.encrypt("constant-time-invalid-password")
-    return this.dummyPasswordHash
+    this.dummyPasswordHash ??= await HashHelper.encrypt(
+      "constant-time-invalid-password",
+    );
+    return this.dummyPasswordHash;
   }
 
-  private matchesConfiguredBootstrapAccount(username: string, email: string | null, identifier: string) {
-    const configuredUsername = process.env.SYSTEM_ADMIN_USERNAME?.trim().toLowerCase()
-    const configuredEmail = this.configuredAdminEmail(configuredUsername ?? "").toLowerCase()
-    const normalizedIdentifier = identifier.trim().toLowerCase()
+  private matchesConfiguredBootstrapAccount(
+    username: string,
+    email: string | null,
+    identifier: string,
+  ) {
+    const configuredUsername =
+      process.env.SYSTEM_ADMIN_USERNAME?.trim().toLowerCase();
+    const configuredEmail = this.configuredAdminEmail(
+      configuredUsername ?? "",
+    ).toLowerCase();
+    const normalizedIdentifier = identifier.trim().toLowerCase();
     return Boolean(
       process.env.SYSTEM_ADMIN_PASSWORD &&
-      (normalizedIdentifier === configuredUsername || normalizedIdentifier === configuredEmail) &&
+      (normalizedIdentifier === configuredUsername ||
+        normalizedIdentifier === configuredEmail) &&
       (username === configuredUsername || (email && email === configuredEmail)),
-    )
+    );
   }
 
   private matchesConfiguredBootstrapCredentials(dto: SystemAdminLoginDto) {
-    return this.matchesConfiguredBootstrapIdentity(dto.identifier) && this.matchesConfiguredBootstrapPassword(dto.password)
+    return (
+      this.matchesConfiguredBootstrapIdentity(dto.identifier) &&
+      this.matchesConfiguredBootstrapPassword(dto.password)
+    );
   }
 
   private matchesConfiguredBootstrapIdentity(identifier: string) {
-    const configuredUsername = process.env.SYSTEM_ADMIN_USERNAME?.trim().toLowerCase()
-    const configuredEmail = this.configuredAdminEmail(configuredUsername ?? "").toLowerCase()
-    const normalizedIdentifier = identifier.trim().toLowerCase()
+    const configuredUsername =
+      process.env.SYSTEM_ADMIN_USERNAME?.trim().toLowerCase();
+    const configuredEmail = this.configuredAdminEmail(
+      configuredUsername ?? "",
+    ).toLowerCase();
+    const normalizedIdentifier = identifier.trim().toLowerCase();
     return Boolean(
       configuredUsername &&
-      (normalizedIdentifier === configuredUsername || normalizedIdentifier === configuredEmail),
-    )
+      (normalizedIdentifier === configuredUsername ||
+        normalizedIdentifier === configuredEmail),
+    );
   }
 
   private matchesConfiguredBootstrapPassword(password: string) {
-    return Boolean(process.env.SYSTEM_ADMIN_PASSWORD && password === process.env.SYSTEM_ADMIN_PASSWORD)
+    return Boolean(
+      process.env.SYSTEM_ADMIN_PASSWORD &&
+      password === process.env.SYSTEM_ADMIN_PASSWORD,
+    );
   }
 
-  private getConfiguredBootstrapInput(password: string): EnsureSystemAdminInput {
-    const username = process.env.SYSTEM_ADMIN_USERNAME!.trim()
-    const email = this.configuredAdminEmail(username)
+  private getConfiguredBootstrapInput(
+    password: string,
+  ): EnsureSystemAdminInput {
+    const username = process.env.SYSTEM_ADMIN_USERNAME!.trim();
+    const email = this.configuredAdminEmail(username);
     return {
       username,
       password,
       email,
-      displayName: process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || "System Administrator",
+      displayName:
+        process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || "System Administrator",
       countryCode: process.env.SYSTEM_ADMIN_COUNTRY_CODE?.trim(),
       lookupEmail: email,
-    }
+    };
   }
 
-  private getPromotionInput(user: { username: string; email: string | null }, password: string): EnsureSystemAdminInput {
-    const email = user.email ?? process.env.SYSTEM_ADMIN_EMAIL?.trim() ?? `${user.username}@system-admin.local`
+  private getPromotionInput(
+    user: { username: string; email: string | null },
+    password: string,
+  ): EnsureSystemAdminInput {
+    const email =
+      user.email ??
+      process.env.SYSTEM_ADMIN_EMAIL?.trim() ??
+      `${user.username}@system-admin.local`;
     return {
       username: user.username,
       password,
       email,
-      displayName: process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || user.username,
+      displayName:
+        process.env.SYSTEM_ADMIN_DISPLAY_NAME?.trim() || user.username,
       countryCode: process.env.SYSTEM_ADMIN_COUNTRY_CODE?.trim(),
       lookupEmail: user.email ?? email,
-    }
+    };
   }
 
   private configuredAdminEmail(username: string) {
-    return process.env.SYSTEM_ADMIN_EMAIL?.trim() || `${username.trim().toLowerCase()}@system-admin.local`
+    return (
+      process.env.SYSTEM_ADMIN_EMAIL?.trim() ||
+      `${username.trim().toLowerCase()}@system-admin.local`
+    );
   }
 }

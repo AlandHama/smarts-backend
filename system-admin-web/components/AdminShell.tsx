@@ -22,6 +22,7 @@ import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
+import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -57,7 +58,8 @@ export type AdminView =
   | "storage"
   | "feedback"
   | "referrals"
-  | "ranking";
+  | "ranking"
+  | "transactions";
 
 const navigation = [
   {
@@ -143,6 +145,11 @@ const navigation = [
     key: "ranking" as const,
     label: "Ranking matches",
     icon: <EmojiEventsRoundedIcon />,
+  },
+  {
+    key: "transactions" as const,
+    label: "Transactions 360",
+    icon: <ReceiptLongRoundedIcon />,
   },
 ];
 
