@@ -101,6 +101,27 @@ type GldAdRewardPolicy = {
   enabled: boolean;
 };
 
+const GLD_AD_REWARD_REGIONS = [
+  "DEFAULT",
+  "US",
+  "CA",
+  "GB",
+  "DE",
+  "FR",
+  "IQ",
+  "TR",
+  "AE",
+  "SA",
+  "IN",
+  "PK",
+  "EU",
+  "ASIA",
+  "AFRICA",
+  "NORTH_AMERICA",
+  "SOUTH_AMERICA",
+  "OCEANIA",
+];
+
 const bigintValue = (value: unknown) => {
   try {
     return BigInt(String(value ?? "0"));
@@ -220,8 +241,8 @@ export function GldEconomyView() {
     }
   };
   const saveAdRewardPolicy = async () => {
-    if (!/^\d+$/.test(adRewardForm.rewardAmount.trim())) {
-      setError("Ad reward amount must be a non-negative whole GLD amount.");
+    if (!/^\d+(?:\.\d{1,6})?$/.test(adRewardForm.rewardAmount.trim())) {
+      setError("Ad reward amount must be a non-negative number with up to 6 decimals.");
       return;
     }
     setAdRewardSaving(true);
@@ -974,6 +995,7 @@ export function GldEconomyView() {
               </Grid>
               <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <TextField
+                  select
                   fullWidth
                   size="small"
                   label="Country / continent"
@@ -984,9 +1006,14 @@ export function GldEconomyView() {
                       regionCode: event.target.value,
                     }))
                   }
-                  helperText="Use US, USA, IQ, EU, ASIA, or DEFAULT"
-                  inputProps={{ maxLength: 16 }}
-                />
+                  helperText="Choose a country or continent fallback"
+                >
+                  {GLD_AD_REWARD_REGIONS.map((region) => (
+                    <MenuItem key={region} value={region}>
+                      {region}
+                    </MenuItem>
+                  ))}
+                </TextField>
               </Grid>
               <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <TextField
@@ -1001,7 +1028,8 @@ export function GldEconomyView() {
                       rewardAmount: event.target.value,
                     }))
                   }
-                  inputProps={{ min: 0, step: 1 }}
+                  inputProps={{ min: 0, step: 0.000001, inputMode: "decimal" }}
+                  helperText="Supports up to 6 decimal places"
                 />
               </Grid>
             </Grid>

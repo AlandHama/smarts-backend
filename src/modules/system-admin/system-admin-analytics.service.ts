@@ -168,7 +168,7 @@ export class SystemAdminAnalyticsService {
       ), daily_settled AS (
         SELECT date_trunc('day', COALESCE("settledAt", "endedAt")) AS day, count(*) AS matches_settled FROM "Match" WHERE "status" = 'SETTLED' AND COALESCE("settledAt", "endedAt") >= ${from} AND COALESCE("settledAt", "endedAt") <= ${to} GROUP BY 1
       ), daily_answers AS (
-        SELECT date_trunc('day', "serverReceivedAt") AS day, count(*) AS answers, count(*) FILTER (WHERE payload->>'correct' = 'true') AS correct_answers FROM "MatchEvent" WHERE "eventType" = 'ANSWER' AND "accepted" = true AND "serverReceivedAt" >= ${from} AND "serverReceivedAt" <= ${to} GROUP BY 1
+        SELECT date_trunc('day', "serverReceivedAt") AS day, count(*) AS answers, count(*) FILTER (WHERE payload->>'correct' = 'true') AS correct_answers FROM "MatchEvent" WHERE "eventType" IN ('ANSWER', 'SKIP') AND "accepted" = true AND "serverReceivedAt" >= ${from} AND "serverReceivedAt" <= ${to} GROUP BY 1
       ), daily_xp AS (
         SELECT date_trunc('day', "createdAt") AS day, COALESCE(sum("delta"), 0) AS xp_awarded FROM "ProgressionEvent" WHERE "delta" > 0 AND "createdAt" >= ${from} AND "createdAt" <= ${to} GROUP BY 1
       ), daily_wallet AS (
@@ -248,7 +248,7 @@ export class SystemAdminAnalyticsService {
   }
 
   private answerSummary(from: Date, to: Date) {
-    return this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`SELECT count(*) AS answers, count(*) FILTER (WHERE payload->>'correct' = 'true') AS correct_answers, COALESCE(avg(CASE WHEN payload->>'timeTakenMs' ~ '^[0-9]+$' THEN (payload->>'timeTakenMs')::numeric END), 0) AS average_time_ms FROM "MatchEvent" WHERE "eventType" = 'ANSWER' AND "accepted" = true AND "serverReceivedAt" >= ${from} AND "serverReceivedAt" <= ${to}`)
+    return this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`SELECT count(*) AS answers, count(*) FILTER (WHERE payload->>'correct' = 'true') AS correct_answers, COALESCE(avg(CASE WHEN payload->>'timeTakenMs' ~ '^[0-9]+$' THEN (payload->>'timeTakenMs')::numeric END), 0) AS average_time_ms FROM "MatchEvent" WHERE "eventType" IN ('ANSWER', 'SKIP') AND "accepted" = true AND "serverReceivedAt" >= ${from} AND "serverReceivedAt" <= ${to}`)
   }
 
   private matchSummary(from: Date, to: Date) {
@@ -270,8 +270,8 @@ export class SystemAdminAnalyticsService {
         GROUP BY "gameDefinitionId"
       ), answer_rows AS (
         SELECT m."gameDefinitionId",
-          count(*) FILTER (WHERE e."eventType" = 'ANSWER' AND e."accepted" = true) AS accepted_answers,
-          count(*) FILTER (WHERE e."eventType" = 'ANSWER' AND e."accepted" = true AND e."payload"->>'correct' = 'true') AS correct_answers
+          count(*) FILTER (WHERE e."eventType" IN ('ANSWER', 'SKIP') AND e."accepted" = true) AS accepted_answers,
+          count(*) FILTER (WHERE e."eventType" IN ('ANSWER', 'SKIP') AND e."accepted" = true AND e."payload"->>'correct' = 'true') AS correct_answers
         FROM "Match" m JOIN "MatchEvent" e ON e."matchId" = m."id"
         WHERE m."createdAt" BETWEEN ${from} AND ${to}
         GROUP BY m."gameDefinitionId"

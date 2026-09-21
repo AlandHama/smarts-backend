@@ -106,13 +106,31 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async getHistory(days = 30, requestedGranularity = "day") {
-    const bounded = Math.min(Math.max(Number(days) || 30, 1), 365);
-    const granularity =
-      requestedGranularity === "minute" || requestedGranularity === "hour"
+  async getHistory(
+    days = 30,
+    requestedGranularity = "day",
+    requestedRange?: string,
+  ) {
+    const range = requestedRange?.trim().toLowerCase();
+    const rangeConfig: Record<string, { windowMs: number; granularity: "minute" | "hour" | "day" }> = {
+      "6m": { windowMs: 180 * DAY_MS, granularity: "day" },
+      "30d": { windowMs: 30 * DAY_MS, granularity: "day" },
+      "7d": { windowMs: 7 * DAY_MS, granularity: "day" },
+      "24h": { windowMs: DAY_MS, granularity: "hour" },
+      "1h": { windowMs: 60 * 60 * 1000, granularity: "minute" },
+      "1m": { windowMs: 60 * 1000, granularity: "minute" },
+    };
+    const selectedRange = range ? rangeConfig[range] : undefined;
+    const bounded = selectedRange
+      ? selectedRange.windowMs / DAY_MS
+      : Math.min(Math.max(Number(days) || 30, 1), 365);
+    const granularity = selectedRange?.granularity ??
+      (requestedGranularity === "minute" || requestedGranularity === "hour"
         ? requestedGranularity
-        : "day";
-    const from = new Date(Date.now() - bounded * DAY_MS);
+        : "day");
+    const from = new Date(
+      Date.now() - (selectedRange?.windowMs ?? bounded * DAY_MS),
+    );
     const [state, rows] = await Promise.all([
       this.getOrCreateState(),
       this.prisma.gldEconomySnapshot.findMany({
@@ -151,7 +169,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
         createdAt: point.timestamp,
         displayedValueUsdMicros: point.valueUsdMicros,
       }));
-    return this.serialize({ days: bounded, granularity, points });
+    return this.serialize({ days: bounded, range: selectedRange ? range : null, granularity, points });
   }
 
   simulate(dto: GldSimulationDto) {
@@ -289,16 +307,23 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
         { regionCode: "asc" },
       ],
     });
-    return this.serialize(rows);
+    return this.serialize(
+      rows.map((row) => ({
+        ...row,
+        rewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount,
+        effectiveRewardAmount: row.rewardAmount,
+      })),
+    );
   }
 
   async upsertAdRewardPolicy(dto: UpsertGldAdRewardPolicyDto, actorId: string) {
     const adFormat = dto.adFormat.trim().toLowerCase();
     const eventType = dto.eventType.trim().toLowerCase();
     const regionCode = dto.regionCode.trim().toUpperCase();
-    const rewardAmount = BigInt(dto.rewardAmount);
-    if (rewardAmount < 0n)
-      throw new BadRequestException("Ad reward amount cannot be negative");
+    const configuredAmount = dto.rewardAmount.trim();
+    const [whole, fraction = ""] = configuredAmount.split(".");
+    const rewardAmount = BigInt(whole) + (fraction && /[1-9]/.test(fraction) ? 1n : 0n);
+    const rewardAmountDecimal = new Prisma.Decimal(configuredAmount);
     const row = await this.prisma.$transaction(async (tx) => {
       const policy = await tx.gldAdRewardPolicy.upsert({
         where: {
@@ -309,9 +334,10 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
           eventType,
           regionCode,
           rewardAmount,
+          rewardAmountDecimal,
           enabled: dto.enabled !== false,
         },
-        update: { rewardAmount, enabled: dto.enabled !== false },
+        update: { rewardAmount, rewardAmountDecimal, enabled: dto.enabled !== false },
       });
       await writeAdminAudit(tx, {
         actorId,
@@ -322,13 +348,18 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
           adFormat,
           eventType,
           regionCode,
-          rewardAmount: rewardAmount.toString(),
+          rewardAmount: configuredAmount,
+          effectiveRewardAmount: rewardAmount.toString(),
           enabled: policy.enabled,
         },
       });
       return policy;
     });
-    return this.serialize(row);
+    return this.serialize({
+      ...row,
+      rewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount,
+      effectiveRewardAmount: row.rewardAmount,
+    });
   }
 
   async deleteAdRewardPolicy(id: string, actorId: string) {

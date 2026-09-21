@@ -406,8 +406,9 @@ export class SystemAdminController {
   gldHistory(
     @Query("days") days?: string,
     @Query("granularity") granularity?: string,
+    @Query("range") range?: string,
   ) {
-    return this.gldService.getHistory(Number(days) || 30, granularity);
+    return this.gldService.getHistory(Number(days) || 30, granularity, range);
   }
 
   @UseGuards(SystemAdminGuard)

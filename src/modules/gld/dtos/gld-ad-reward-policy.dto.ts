@@ -40,11 +40,11 @@ export class UpsertGldAdRewardPolicyDto {
   regionCode!: string;
 
   @ApiProperty({
-    example: "2",
-    description: "Whole GLD units granted for the event",
+    example: "0.2",
+    description: "Configured GLD amount, with up to 6 decimal places",
   })
   @IsString()
-  @Matches(/^\d+$/)
+  @Matches(/^\d+(?:\.\d{1,6})?$/)
   rewardAmount!: string;
 
   @ApiPropertyOptional({ default: true })

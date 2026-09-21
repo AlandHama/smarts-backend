@@ -32,7 +32,10 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
 
     const humanParticipants = lockedMatch.participants.filter((item) => item.participantType === "PLAYER")
     if (humanParticipants.some((item) => item.result === "PENDING")) return { status: "PENDING", matchId: lockedMatch.id, message: "Waiting for all players to finish" }
-    const acceptedAnswers = await transaction.matchEvent.count({ where: { matchId: lockedMatch.id, eventType: "ANSWER", accepted: true } })
+    // A paid instant skip is a server-verified correct answer. Count it with
+    // normal answers so a match made entirely from skips can still settle and
+    // its accuracy/progression stats remain truthful.
+    const acceptedAnswers = await transaction.matchEvent.count({ where: { matchId: lockedMatch.id, eventType: { in: ["ANSWER", "SKIP"] }, accepted: true } })
     if (!acceptedAnswers) {
       await transaction.match.update({ where: { id: lockedMatch.id }, data: { status: "REVIEW", endedAt: new Date() } })
       return { status: "REVIEW", matchId: lockedMatch.id, message: "No server-verified answers were recorded; competitive rewards were withheld" }
@@ -97,7 +100,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       const progression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.mainProgressionKey, amount: xp, sourceId: `${lockedMatch.id}:xp:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       const eloProgression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.eloProgressionKey, amount: eloDelta, sourceId: `${lockedMatch.id}:elo:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       const wallet = await this.creditWallet.runWithinTransaction({ userId: player.id, currencyCode: config.rewardCurrencyCode, amount: coinReward, sourceId: `${lockedMatch.id}:currency:${player.id}`, sourceType: WalletTransactionSourceType.MATCH, metadata: { matchId: lockedMatch.id, result, policyVersion } }, transaction)
-      const answerEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: "ANSWER", accepted: true }, select: { payload: true } })
+      const answerEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: { in: ["ANSWER", "SKIP"] }, accepted: true }, select: { payload: true } })
       const answerSummary = answerEvents.reduce((summary, event) => {
         const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {}
         const timeTakenMs = typeof payload.timeTakenMs === "number" && Number.isSafeInteger(payload.timeTakenMs) && payload.timeTakenMs >= 0 ? payload.timeTakenMs : 0

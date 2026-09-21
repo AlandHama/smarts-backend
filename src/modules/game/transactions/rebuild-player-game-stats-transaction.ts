@@ -23,7 +23,7 @@ export class RebuildPlayerGameStatsTransaction extends PrismaTransaction<Rebuild
     })
     const matchIds = matches.map((match) => match.id)
     const answerEvents = matchIds.length
-      ? await transaction.matchEvent.findMany({ where: { matchId: { in: matchIds }, participant: { userId: input.userId }, eventType: "ANSWER", accepted: true }, select: { matchId: true, payload: true } })
+      ? await transaction.matchEvent.findMany({ where: { matchId: { in: matchIds }, participant: { userId: input.userId }, eventType: { in: ["ANSWER", "SKIP"] }, accepted: true }, select: { matchId: true, payload: true } })
       : []
     const answersByMatch = new Map<string, { correct: number; total: number; timeMs: bigint }>()
     for (const event of answerEvents) {

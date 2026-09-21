@@ -1814,14 +1814,17 @@ model GldAdminControl {
 /// Server-owned GLD reward for a client-reported ad event. Region codes are
 /// ISO country codes when available, with DEFAULT as the fallback.
 model GldAdRewardPolicy {
-  id           String   @id @default(uuid()) @db.Uuid
-  adFormat     String   @db.VarChar(40)
-  eventType    String   @db.VarChar(20)
-  regionCode   String   @default("DEFAULT") @db.VarChar(16)
-  rewardAmount BigInt
-  enabled      Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String   @id @default(uuid()) @db.Uuid
+  adFormat            String   @db.VarChar(40)
+  eventType           String   @db.VarChar(20)
+  regionCode          String   @default("DEFAULT") @db.VarChar(16)
+  rewardAmount        BigInt
+  /// Exact configured amount for admin display and future fractional GLD support.
+  /// Wallet settlement remains whole-unit until the GLD currency precision is migrated.
+  rewardAmountDecimal Decimal? @db.Decimal(20, 6)
+  enabled             Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@unique([adFormat, eventType, regionCode])
   @@index([adFormat, eventType, enabled])

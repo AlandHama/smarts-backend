@@ -1031,7 +1031,9 @@ export class SystemAdminService implements OnModuleInit {
       match.assignments.map((assignment) => [assignment.id, assignment]),
     );
     const answerEvents = match.events.filter(
-      (event) => event.eventType === "ANSWER" && event.accepted,
+      (event) =>
+        (event.eventType === "ANSWER" || event.eventType === "SKIP") &&
+        event.accepted,
     );
     const detailsForEvent = (event: (typeof match.events)[number]) => {
       const payload =
@@ -1071,8 +1073,10 @@ export class SystemAdminService implements OnModuleInit {
     };
     const enrichedEvents = match.events.map((event) => ({
       ...event,
-      answerDetails:
-        event.eventType === "ANSWER" ? detailsForEvent(event) : null,
+        answerDetails:
+          event.eventType === "ANSWER" || event.eventType === "SKIP"
+            ? detailsForEvent(event)
+            : null,
     }));
     const enrichedAssignments = match.assignments.map((assignment) => {
       const answer = answerEvents.find((event) => {
