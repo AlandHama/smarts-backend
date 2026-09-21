@@ -1622,6 +1622,7 @@ model GameContentItem {
   gameDefinitionId String                   @db.Uuid
   version          Int                      @default(1)
   contentType      String                   @db.VarChar(40)
+  sourceKey        String?                  @db.VarChar(160)
   prompt           Json
   options          Json
   difficulty       Int                      @default(1)

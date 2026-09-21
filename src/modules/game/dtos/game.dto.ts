@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger"
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, Matches, Max, Min } from "class-validator"
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Matches, Max, Min } from "class-validator"
 
 const DECIMAL = /^\d+(\.\d{1,8})?$/
 
@@ -194,3 +194,19 @@ export class CreateGameContentDto {
 }
 
 export class UpdateGameContentDto extends PartialType(CreateGameContentDto) {}
+
+export class ImportGameContentDto {
+  @ApiProperty({ example: "trivia" })
+  @IsString()
+  gameKey!: string
+
+  @ApiProperty({ enum: ["en", "ar", "ku", "ckb", "tr"] })
+  @IsString()
+  @IsIn(["en", "ar", "ku", "ckb", "tr"])
+  language!: string
+
+  @ApiProperty({ type: [Object], description: "Question records from a JSON array or questions.json export" })
+  @IsArray()
+  @ArrayMaxSize(10000)
+  questions!: unknown[]
+}

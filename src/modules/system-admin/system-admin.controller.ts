@@ -65,7 +65,7 @@ import {
   CreateLeaderboardSeasonDto,
   UpdateLeaderboardDto,
 } from "../leaderboard/dtos";
-import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos";
+import { CreateGameContentDto, ImportGameContentDto, UpdateGameConfigDto } from "../game/dtos";
 import {
   BulkRedeemCodeDto,
   CreateAssetDto,
@@ -1125,6 +1125,14 @@ export class SystemAdminController {
   })
   createGameContent(@Body() dto: CreateGameContentDto) {
     return this.systemAdminService.createGameContent(dto);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/game-content/import")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Import and deduplicate multilingual server game content" })
+  importGameContent(@Body() dto: ImportGameContentDto) {
+    return this.systemAdminService.importGameContent(dto);
   }
 
   @UseGuards(SystemAdminGuard)

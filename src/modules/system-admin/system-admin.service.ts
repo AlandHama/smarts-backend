@@ -61,7 +61,7 @@ import {
   UpdateLeaderboardDto,
 } from "../leaderboard/dtos";
 import { LeaderboardService } from "../leaderboard/leaderboard.service";
-import { CreateGameContentDto, UpdateGameConfigDto } from "../game/dtos";
+import { CreateGameContentDto, ImportGameContentDto, UpdateGameConfigDto } from "../game/dtos";
 import { GameService } from "../game/game.service";
 import { RebuildPlayerGameStatsTransaction } from "../game/transactions/rebuild-player-game-stats-transaction";
 import { TerminateAdminSessionTransaction } from "./transactions/terminate-admin-session-transaction";
@@ -1536,6 +1536,9 @@ export class SystemAdminService implements OnModuleInit {
   }
   createGameContent(dto: CreateGameContentDto) {
     return this.gameService.createContent(dto);
+  }
+  importGameContent(dto: ImportGameContentDto) {
+    return this.gameService.importContent(dto);
   }
   listGameContent(key: string) {
     return this.gameService.listContent(key, true);
