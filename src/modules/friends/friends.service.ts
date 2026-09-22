@@ -173,6 +173,7 @@ export class FriendsService {
           select: {
             displayName: true,
             avatarUrl: true,
+            avatarFrameKey: true,
             countryCode: true,
             level: true,
             elo: true,
@@ -190,6 +191,7 @@ export class FriendsService {
         username: player.username,
         name: player.profile?.displayName || player.username,
         avatarUrl: player.profile?.avatarUrl ?? null,
+        avatarFrameKey: player.profile?.avatarFrameKey ?? null,
         profileUrl: player.profile?.avatarUrl ?? null,
         level: player.profile?.level ?? null,
         elo: player.profile?.elo ?? null,
@@ -386,6 +388,7 @@ export class FriendsService {
         select: {
           displayName: true,
           avatarUrl: true,
+          avatarFrameKey: true,
           countryCode: true,
           isPublic: true,
           level: true,
@@ -425,6 +428,7 @@ export class FriendsService {
         user.profile?.isPublic === false
           ? null
           : (user.profile?.avatarUrl ?? null),
+      avatarFrameKey: user.profile?.avatarFrameKey ?? null,
       level: user.profile?.level ?? null,
       elo: user.profile?.elo ?? null,
       acceptedAt,
@@ -454,6 +458,10 @@ export class FriendsService {
         user.profile?.isPublic === false
           ? null
           : (user.profile?.avatarUrl ?? null),
+      avatarFrameKey:
+        user.profile?.isPublic === false
+          ? null
+          : (user.profile?.avatarFrameKey ?? null),
       createdAt,
       created_at: createdAt,
     };

@@ -395,6 +395,7 @@ export class PlayersService {
   private toProfileResponse(profile: {
     displayName: string
     avatarUrl: string | null
+    avatarFrameKey: string | null
     countryCode: string | null
     bio: string | null
     level: number
@@ -404,6 +405,7 @@ export class PlayersService {
     return {
       displayName: profile.displayName,
       avatarUrl: profile.avatarUrl,
+      avatarFrameKey: profile.avatarFrameKey,
       countryCode: profile.countryCode,
       bio: profile.bio,
       level: profile.level,

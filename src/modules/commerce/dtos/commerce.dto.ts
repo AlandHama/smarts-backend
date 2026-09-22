@@ -93,6 +93,13 @@ export class InventoryMutationDto {
   @ApiProperty({ example: "Compensation for support ticket" }) @IsString() @MaxLength(500) reason!: string
 }
 
+export class EquipAvatarFrameDto {
+  @ApiProperty({ example: "avatar-frame:aurora" })
+  @IsString()
+  @MaxLength(100)
+  assetKey!: string
+}
+
 export class PaidRewardRequestDto {
   @ApiProperty({ example: "gift-card:steam-10" }) @IsString() @MaxLength(100) assetKey!: string
   @ApiPropertyOptional({ example: "us" }) @IsOptional() @IsString() @MaxLength(100) variationKey?: string

@@ -46,6 +46,7 @@ import type {
   AssetRedeemCode,
   CurrencyDefinition,
   ProgressionDefinition,
+  AvatarFramePreset,
 } from "../lib/types";
 
 const field = (form: HTMLFormElement, name: string) =>
@@ -62,25 +63,63 @@ const stableKey = (value: string) =>
     .slice(0, 100);
 const isPositiveInteger = (value: string) =>
   /^\d+$/.test(value) && value.replace(/^0+/, "").length > 0;
-function ImageUploadField({ label, files, onChange, existingUrl, multiple = false }: { label: string; files: File[]; onChange: (files: File[]) => void; existingUrl?: string | null; multiple?: boolean }) {
-  return <Stack spacing={1}>
-    <Button component="label" variant="outlined" startIcon={<CloudUploadRoundedIcon />} sx={{ justifyContent: "flex-start" }}>
-      {files.length ? `${files.length} image${files.length === 1 ? "" : "s"} selected` : label}
-      <input hidden type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple={multiple} onChange={(event) => onChange(Array.from(event.target.files ?? []))} />
-    </Button>
-    {existingUrl && !files.length && <Box component="img" src={existingUrl} alt="Current image" sx={{ width: 64, height: 64, objectFit: "cover", borderRadius: 1.5 }} />}
-    <Typography variant="caption" color="text.secondary">JPEG, PNG, WEBP, or GIF · maximum 10 MB</Typography>
-  </Stack>;
+function ImageUploadField({
+  label,
+  files,
+  onChange,
+  existingUrl,
+  multiple = false,
+}: {
+  label: string;
+  files: File[];
+  onChange: (files: File[]) => void;
+  existingUrl?: string | null;
+  multiple?: boolean;
+}) {
+  return (
+    <Stack spacing={1}>
+      <Button
+        component="label"
+        variant="outlined"
+        startIcon={<CloudUploadRoundedIcon />}
+        sx={{ justifyContent: "flex-start" }}
+      >
+        {files.length
+          ? `${files.length} image${files.length === 1 ? "" : "s"} selected`
+          : label}
+        <input
+          hidden
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          multiple={multiple}
+          onChange={(event) => onChange(Array.from(event.target.files ?? []))}
+        />
+      </Button>
+      {existingUrl && !files.length && (
+        <Box
+          component="img"
+          src={existingUrl}
+          alt="Current image"
+          sx={{ width: 64, height: 64, objectFit: "cover", borderRadius: 1.5 }}
+        />
+      )}
+      <Typography variant="caption" color="text.secondary">
+        JPEG, PNG, WEBP, or GIF · maximum 10 MB
+      </Typography>
+    </Stack>
+  );
 }
 
 function AssetDialog({
   asset,
   assets,
+  framePresets,
   onClose,
   onSaved,
 }: {
   asset?: CommerceAsset;
   assets: CommerceAsset[];
+  framePresets: AvatarFramePreset[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -98,6 +137,12 @@ function AssetDialog({
     typeof metadata.paidRewardProfitPercent === "string"
       ? String(metadata.paidRewardProfitPercent)
       : "";
+  const existingFrameKey =
+    typeof metadata.frameKey === "string" ? metadata.frameKey : "";
+  const [selectedFrameKey, setSelectedFrameKey] = useState(existingFrameKey);
+  const selectedPreset = framePresets.find(
+    (preset) => preset.key === selectedFrameKey,
+  );
   return (
     <Dialog open fullWidth maxWidth="md" onClose={onClose}>
       <DialogTitle>
@@ -123,8 +168,26 @@ function AssetDialog({
                 `An asset with the key "${key}" already exists. Choose a different stable key or edit "${duplicate.name}".`,
               );
             }
-            const primaryUpload = primaryFile[0] ? await uploadFile<{ url: string }>("/uploads", primaryFile[0], "commerce-asset", "PUBLIC") : undefined;
-            const galleryUploads = galleryFiles.length ? await Promise.all(galleryFiles.map((file) => uploadFile<{ url: string }>("/uploads", file, "commerce-asset", "PUBLIC"))) : [];
+            const primaryUpload = primaryFile[0]
+              ? await uploadFile<{ url: string }>(
+                  "/uploads",
+                  primaryFile[0],
+                  "commerce-asset",
+                  "PUBLIC",
+                )
+              : undefined;
+            const galleryUploads = galleryFiles.length
+              ? await Promise.all(
+                  galleryFiles.map((file) =>
+                    uploadFile<{ url: string }>(
+                      "/uploads",
+                      file,
+                      "commerce-asset",
+                      "PUBLIC",
+                    ),
+                  ),
+                )
+              : [];
             const payload = {
               key,
               name: field(form, "name"),
@@ -133,10 +196,22 @@ function AssetDialog({
               description: field(form, "description") || undefined,
               imageUrl: primaryUpload?.url ?? asset?.imageUrl ?? undefined,
               imageAlt: field(form, "imageAlt") || undefined,
-              imageUrls: galleryUploads.length ? [...(asset?.imageUrls ?? []), ...galleryUploads.map((upload) => upload.url)] : (asset?.imageUrls ?? undefined),
+              imageUrls: galleryUploads.length
+                ? [
+                    ...(asset?.imageUrls ?? []),
+                    ...galleryUploads.map((upload) => upload.url),
+                  ]
+                : (asset?.imageUrls ?? undefined),
               paidRewardCostUsd: field(form, "paidRewardCostUsd") || undefined,
               paidRewardProfitPercent: field(form, "paidRewardProfitPercent")
                 ? Number(field(form, "paidRewardProfitPercent"))
+                : undefined,
+              metadata: selectedFrameKey
+                ? {
+                    cosmeticType: "avatar_frame",
+                    frameKey: selectedFrameKey,
+                    animation: selectedPreset?.animation,
+                  }
                 : undefined,
             };
             await api(
@@ -194,6 +269,87 @@ function AssetDialog({
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Select
+                  name="framePreset"
+                  value={selectedFrameKey}
+                  onChange={(event) => setSelectedFrameKey(event.target.value)}
+                  displayEmpty
+                  fullWidth
+                >
+                  <MenuItem value="">
+                    <em>Not an avatar frame</em>
+                  </MenuItem>
+                  {framePresets.map((preset) => (
+                    <MenuItem key={preset.key} value={preset.key}>
+                      {preset.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <Typography variant="caption" color="text.secondary">
+                  Select a server-owned frame preset for this cosmetic.
+                </Typography>
+              </Grid>
+              {selectedPreset && (
+                <Grid size={12}>
+                  <Stack
+                    direction="row"
+                    spacing={2}
+                    alignItems="center"
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 2,
+                      bgcolor: `${selectedPreset.primary}22`,
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: "50%",
+                        p: "5px",
+                        background: `conic-gradient(${selectedPreset.primary}, ${selectedPreset.accent}, ${selectedPreset.secondary}, ${selectedPreset.primary})`,
+                        animation:
+                          selectedPreset.animation === "spin"
+                            ? "spin 3s linear infinite"
+                            : selectedPreset.animation === "pulse"
+                              ? "pulse 1.8s ease-in-out infinite"
+                              : undefined,
+                        "@keyframes spin": {
+                          from: { transform: "rotate(0deg)" },
+                          to: { transform: "rotate(360deg)" },
+                        },
+                        "@keyframes pulse": {
+                          "0%,100%": {
+                            boxShadow: `0 0 4px ${selectedPreset.accent}`,
+                          },
+                          "50%": {
+                            boxShadow: `0 0 22px ${selectedPreset.accent}`,
+                          },
+                        },
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: "100%",
+                          height: "100%",
+                          borderRadius: "50%",
+                          bgcolor: "#171329",
+                        }}
+                      />
+                    </Box>
+                    <Box>
+                      <Typography fontWeight={800}>
+                        {selectedPreset.name}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {selectedPreset.description} ·{" "}
+                        {selectedPreset.animation}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </Grid>
+              )}
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Select
                   name="ownershipPolicy"
                   defaultValue={asset?.ownershipPolicy ?? "STACKABLE"}
                   fullWidth
@@ -234,7 +390,12 @@ function AssetDialog({
                 />
               </Grid>
               <Grid size={{ xs: 12, sm: 8 }}>
-                <ImageUploadField label="Upload primary image" files={primaryFile} onChange={setPrimaryFile} existingUrl={asset?.imageUrl} />
+                <ImageUploadField
+                  label="Upload primary image"
+                  files={primaryFile}
+                  onChange={setPrimaryFile}
+                  existingUrl={asset?.imageUrl}
+                />
               </Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
@@ -245,8 +406,18 @@ function AssetDialog({
                 />
               </Grid>
               <Grid size={12}>
-                <ImageUploadField label="Upload additional images" files={galleryFiles} onChange={setGalleryFiles} multiple />
-                {Boolean(asset?.imageUrls?.length) && <Typography variant="caption" color="text.secondary">Existing gallery images are preserved when new images are added.</Typography>}
+                <ImageUploadField
+                  label="Upload additional images"
+                  files={galleryFiles}
+                  onChange={setGalleryFiles}
+                  multiple
+                />
+                {Boolean(asset?.imageUrls?.length) && (
+                  <Typography variant="caption" color="text.secondary">
+                    Existing gallery images are preserved when new images are
+                    added.
+                  </Typography>
+                )}
               </Grid>
             </Grid>
           </Stack>
@@ -374,6 +545,7 @@ function ItemDialog({
   item,
   catalogs,
   assets,
+  framePresets,
   currencies,
   progressions,
   onClose,
@@ -382,6 +554,7 @@ function ItemDialog({
   item?: CommerceCatalogItem;
   catalogs: CommerceCatalog[];
   assets: CommerceAsset[];
+  framePresets: AvatarFramePreset[];
   currencies: CurrencyDefinition[];
   progressions: ProgressionDefinition[];
   onClose: () => void;
@@ -416,7 +589,8 @@ function ItemDialog({
   const defaultGldCustomPrice =
     typeof itemMetadata.gldCustomPrice === "string"
       ? itemMetadata.gldCustomPrice
-      : item?.prices.find((price) => price.currency.code === "GLD")?.amount ?? "";
+      : (item?.prices.find((price) => price.currency.code === "GLD")?.amount ??
+        "");
   const defaultGiftEnabled =
     itemMetadata.gift === true ||
     itemMetadata.isGift === true ||
@@ -431,9 +605,19 @@ function ItemDialog({
     typeof itemMetadata.giftFeePercent === "string"
       ? String(itemMetadata.giftFeePercent)
       : "0";
+  const existingAsset = assets.find(
+    (asset) => asset.key === item?.assetDefinition?.key,
+  );
+  const existingFrameKey =
+    existingAsset?.metadata && typeof existingAsset.metadata === "object"
+      ? String(existingAsset.metadata.frameKey ?? "")
+      : "";
+  const [selectedAssetKey, setSelectedAssetKey] = useState(
+    item?.assetDefinition?.key ?? "",
+  );
+  const [selectedFrameKey, setSelectedFrameKey] = useState(existingFrameKey);
   const [prices, setPrices] = useState<CatalogPriceForm[]>(defaultPrices);
-  const [rewards, setRewards] =
-    useState<CatalogRewardForm[]>(defaultRewards);
+  const [rewards, setRewards] = useState<CatalogRewardForm[]>(defaultRewards);
   const [giftEnabled, setGiftEnabled] = useState(defaultGiftEnabled);
   const [giftCategory, setGiftCategory] = useState(defaultGiftCategory);
   const [giftFeePercent, setGiftFeePercent] = useState(defaultGiftFeePercent);
@@ -449,8 +633,8 @@ function ItemDialog({
       <DialogTitle>
         {item ? "Edit catalog item" : "Create catalog item"}
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          The server resolves the selected GLD price and reward bundle at purchase time.
-          Never trust price data from the mobile client.
+          The server resolves the selected GLD price and reward bundle at
+          purchase time. Never trust price data from the mobile client.
         </Typography>
       </DialogTitle>
       <form
@@ -466,14 +650,17 @@ function ItemDialog({
             const linkedAssetKey = field(form, "assetKey");
             if (giftEnabled && !linkedAssetKey)
               throw new Error("Gift items must have a primary asset selected.");
-            if (gldPricingMode === "FIXED" && gldCustomPrice && !isPositiveInteger(gldCustomPrice))
-              throw new Error("Custom GLD price must be a positive whole number.");
+            if (
+              gldPricingMode === "FIXED" &&
+              gldCustomPrice &&
+              !isPositiveInteger(gldCustomPrice)
+            )
+              throw new Error(
+                "Custom GLD price must be a positive whole number.",
+              );
             const normalizedPrices = prices.map((price) => {
               const amount = price.amount.trim();
-              if (
-                !price.currencyCode ||
-                !isPositiveInteger(amount)
-              ) {
+              if (!price.currencyCode || !isPositiveInteger(amount)) {
                 throw new Error(
                   "Each price needs a currency and a positive integer amount in minor units.",
                 );
@@ -481,7 +668,9 @@ function ItemDialog({
               return {
                 currencyCode: price.currencyCode,
                 amount:
-                  price.currencyCode === "GLD" && gldPricingMode === "FIXED" && gldCustomPrice
+                  price.currencyCode === "GLD" &&
+                  gldPricingMode === "FIXED" &&
+                  gldCustomPrice
                     ? gldCustomPrice
                     : price.currencyCode === "GLD" && gldPricingMode === "AUTO"
                       ? "1"
@@ -489,49 +678,89 @@ function ItemDialog({
                 active: price.active,
               };
             });
-            if (giftEnabled && !normalizedPrices.some((price) => price.currencyCode === "GLD" && price.active))
+            if (
+              giftEnabled &&
+              !normalizedPrices.some(
+                (price) => price.currencyCode === "GLD" && price.active,
+              )
+            )
               throw new Error("Gift items need an active GLD price.");
             const parsedGiftFee = Number(giftFeePercent);
-            if (giftEnabled && (!Number.isInteger(parsedGiftFee) || parsedGiftFee < 0 || parsedGiftFee > 100))
-              throw new Error("Gift fee must be a whole percentage between 0 and 100.");
+            if (
+              giftEnabled &&
+              (!Number.isInteger(parsedGiftFee) ||
+                parsedGiftFee < 0 ||
+                parsedGiftFee > 100)
+            )
+              throw new Error(
+                "Gift fee must be a whole percentage between 0 and 100.",
+              );
             const normalizedRewards = rewards.map((reward, index) => {
               const payload: Record<string, unknown> = {
                 rewardType: reward.rewardType,
                 quantity: Number(reward.quantity || "1"),
                 sortOrder: index,
               };
-              if (!Number.isInteger(payload.quantity) || Number(payload.quantity) < 1) {
-                throw new Error("Reward quantities must be positive whole numbers.");
+              if (
+                !Number.isInteger(payload.quantity) ||
+                Number(payload.quantity) < 1
+              ) {
+                throw new Error(
+                  "Reward quantities must be positive whole numbers.",
+                );
               }
               if (reward.rewardType === "ASSET") {
-                if (!reward.assetKey) throw new Error("Select an asset for every asset reward.");
+                if (!reward.assetKey)
+                  throw new Error("Select an asset for every asset reward.");
                 payload.assetKey = reward.assetKey;
-                if (reward.variationKey) payload.variationKey = reward.variationKey;
+                if (reward.variationKey)
+                  payload.variationKey = reward.variationKey;
               } else if (reward.rewardType === "CURRENCY") {
-                if (!reward.currencyCode) throw new Error("Select a currency for every currency reward.");
+                if (!reward.currencyCode)
+                  throw new Error(
+                    "Select a currency for every currency reward.",
+                  );
                 if (!isPositiveInteger(reward.amount)) {
-                  throw new Error("Currency rewards need a positive integer amount.");
+                  throw new Error(
+                    "Currency rewards need a positive integer amount.",
+                  );
                 }
                 payload.currencyCode = reward.currencyCode;
                 payload.amount = reward.amount;
               } else if (reward.rewardType === "PROGRESSION_POINTS") {
-                if (!reward.progressionKey) throw new Error("Select a progression for every points reward.");
+                if (!reward.progressionKey)
+                  throw new Error(
+                    "Select a progression for every points reward.",
+                  );
                 if (!isPositiveInteger(reward.amount)) {
-                  throw new Error("Progression rewards need a positive integer amount.");
+                  throw new Error(
+                    "Progression rewards need a positive integer amount.",
+                  );
                 }
                 payload.progressionKey = reward.progressionKey;
                 payload.amount = reward.amount;
               } else if (reward.rewardType === "PROGRESSION_RESET") {
-                if (!reward.progressionKey) throw new Error("Select a progression for every reset reward.");
+                if (!reward.progressionKey)
+                  throw new Error(
+                    "Select a progression for every reset reward.",
+                  );
                 payload.progressionKey = reward.progressionKey;
               } else if (reward.rewardType === "ENTITLEMENT") {
-                if (!reward.targetKey.trim()) throw new Error("Enter an entitlement key.");
+                if (!reward.targetKey.trim())
+                  throw new Error("Enter an entitlement key.");
                 payload.targetKey = stableKey(reward.targetKey);
                 if (reward.assetKey) payload.assetKey = reward.assetKey;
               }
               return payload;
             });
-            const imageUpload = imageFile[0] ? await uploadFile<{ url: string }>("/uploads", imageFile[0], "catalog-item", "PUBLIC") : undefined;
+            const imageUpload = imageFile[0]
+              ? await uploadFile<{ url: string }>(
+                  "/uploads",
+                  imageFile[0],
+                  "catalog-item",
+                  "PUBLIC",
+                )
+              : undefined;
             const nextMetadata: Record<string, unknown> = { ...itemMetadata };
             delete nextMetadata.gift;
             delete nextMetadata.isGift;
@@ -616,7 +845,19 @@ function ItemDialog({
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Select
                   name="assetKey"
-                  defaultValue={item?.assetDefinition?.key ?? ""}
+                  value={selectedAssetKey}
+                  onChange={(event) => {
+                    setSelectedAssetKey(event.target.value);
+                    const selectedAsset = assets.find(
+                      (asset) => asset.key === event.target.value,
+                    );
+                    setSelectedFrameKey(
+                      selectedAsset?.metadata &&
+                        typeof selectedAsset.metadata === "object"
+                        ? String(selectedAsset.metadata.frameKey ?? "")
+                        : "",
+                    );
+                  }}
                   fullWidth
                   displayEmpty
                 >
@@ -631,7 +872,44 @@ function ItemDialog({
                 </Select>
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
-                <ImageUploadField label="Upload catalog image" files={imageFile} onChange={setImageFile} existingUrl={item?.imageUrl} />
+                <Select
+                  value={selectedFrameKey}
+                  onChange={(event) => {
+                    const frameKey = event.target.value;
+                    setSelectedFrameKey(frameKey);
+                    if (frameKey) {
+                      const frameAsset = assets.find(
+                        (asset) =>
+                          asset.key === `avatar-frame:${frameKey}` ||
+                          asset.metadata?.frameKey === frameKey,
+                      );
+                      if (frameAsset) setSelectedAssetKey(frameAsset.key);
+                    }
+                  }}
+                  displayEmpty
+                  fullWidth
+                >
+                  <MenuItem value="">
+                    <em>Not a frame cosmetic</em>
+                  </MenuItem>
+                  {framePresets.map((preset) => (
+                    <MenuItem key={preset.key} value={preset.key}>
+                      {preset.name} · {preset.animation}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <Typography variant="caption" color="text.secondary">
+                  Select a preset to add its seeded avatar frame directly to
+                  this store listing.
+                </Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <ImageUploadField
+                  label="Upload catalog image"
+                  files={imageFile}
+                  onChange={setImageFile}
+                  existingUrl={item?.imageUrl}
+                />
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Select
@@ -640,7 +918,9 @@ function ItemDialog({
                   fullWidth
                 >
                   <MenuItem value="FIXED">Custom fixed GLD price</MenuItem>
-                  <MenuItem value="AUTO">Automatic from asset USD cost</MenuItem>
+                  <MenuItem value="AUTO">
+                    Automatic from asset USD cost
+                  </MenuItem>
                 </Select>
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
@@ -658,18 +938,36 @@ function ItemDialog({
               <Grid size={12}>
                 <Card variant="outlined" sx={{ p: 1.5 }}>
                   <FormControlLabel
-                    control={<Checkbox checked={giftEnabled} onChange={(event) => setGiftEnabled(event.target.checked)} />}
+                    control={
+                      <Checkbox
+                        checked={giftEnabled}
+                        onChange={(event) =>
+                          setGiftEnabled(event.target.checked)
+                        }
+                      />
+                    }
                     label="Available as a player-to-player GLD gift"
                   />
-                  <Typography variant="body2" color="text.secondary" sx={{ ml: 4.5 }}>
-                    Gift items must link to a primary asset and have an active GLD price. They will appear in the mobile gift screen.
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ ml: 4.5 }}
+                  >
+                    Gift items must link to a primary asset and have an active
+                    GLD price. They will appear in the mobile gift screen.
                   </Typography>
                   {giftEnabled && (
-                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 1.5, ml: 4.5 }}>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1.5}
+                      sx={{ mt: 1.5, ml: 4.5 }}
+                    >
                       <TextField
                         label="Gift category"
                         value={giftCategory}
-                        onChange={(event) => setGiftCategory(event.target.value)}
+                        onChange={(event) =>
+                          setGiftCategory(event.target.value)
+                        }
                         placeholder="Popular"
                         size="small"
                         sx={{ maxWidth: 360 }}
@@ -678,7 +976,9 @@ function ItemDialog({
                       <TextField
                         label="Gift fee (%)"
                         value={giftFeePercent}
-                        onChange={(event) => setGiftFeePercent(event.target.value)}
+                        onChange={(event) =>
+                          setGiftFeePercent(event.target.value)
+                        }
                         type="number"
                         size="small"
                         inputProps={{ min: 0, max: 100, step: 1 }}
@@ -709,7 +1009,8 @@ function ItemDialog({
                     <Box>
                       <Typography fontWeight={800}>Prices</Typography>
                       <Typography variant="caption" color="text.secondary">
-                        Add one or more currencies. Amounts use integer minor units.
+                        Add one or more currencies. Amounts use integer minor
+                        units.
                       </Typography>
                     </Box>
                     <Button
@@ -730,7 +1031,11 @@ function ItemDialog({
                     </Button>
                   </Stack>
                   {prices.map((price, index) => (
-                    <Card key={`price-${index}`} variant="outlined" sx={{ p: 1.5 }}>
+                    <Card
+                      key={`price-${index}`}
+                      variant="outlined"
+                      sx={{ p: 1.5 }}
+                    >
                       <Grid container spacing={1.5} alignItems="center">
                         <Grid size={{ xs: 12, sm: 5 }}>
                           <Select
@@ -739,7 +1044,10 @@ function ItemDialog({
                               setPrices((current) =>
                                 current.map((entry, currentIndex) =>
                                   currentIndex === index
-                                    ? { ...entry, currencyCode: event.target.value }
+                                    ? {
+                                        ...entry,
+                                        currencyCode: event.target.value,
+                                      }
                                     : entry,
                                 ),
                               )
@@ -748,7 +1056,9 @@ function ItemDialog({
                             size="small"
                             displayEmpty
                           >
-                            <MenuItem value="" disabled>Select currency</MenuItem>
+                            <MenuItem value="" disabled>
+                              Select currency
+                            </MenuItem>
                             {currencies.map((currency) => (
                               <MenuItem key={currency.id} value={currency.code}>
                                 {currency.name} · {currency.code}
@@ -782,7 +1092,10 @@ function ItemDialog({
                               setPrices((current) =>
                                 current.map((entry, currentIndex) =>
                                   currentIndex === index
-                                    ? { ...entry, active: event.target.value === "active" }
+                                    ? {
+                                        ...entry,
+                                        active: event.target.value === "active",
+                                      }
                                     : entry,
                                 ),
                               )
@@ -797,7 +1110,13 @@ function ItemDialog({
                         <Grid size={{ xs: 3, sm: 1 }}>
                           <Button
                             color="error"
-                            onClick={() => setPrices((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                            onClick={() =>
+                              setPrices((current) =>
+                                current.filter(
+                                  (_, currentIndex) => currentIndex !== index,
+                                ),
+                              )
+                            }
                             aria-label="Remove price"
                             fullWidth
                           >
@@ -820,52 +1139,80 @@ function ItemDialog({
                     <Box>
                       <Typography fontWeight={800}>Rewards</Typography>
                       <Typography variant="caption" color="text.secondary">
-                        Configure the server-granted bundle without editing JSON.
+                        Configure the server-granted bundle without editing
+                        JSON.
                       </Typography>
                     </Box>
                     <Button
                       size="small"
                       startIcon={<AddRoundedIcon />}
-                      onClick={() => setRewards((current) => [...current, emptyReward()])}
+                      onClick={() =>
+                        setRewards((current) => [...current, emptyReward()])
+                      }
                     >
                       Add reward
                     </Button>
                   </Stack>
                   {rewards.length === 0 && (
                     <Typography variant="body2" color="text.secondary">
-                      No rewards configured. Add one if this listing grants a bonus.
+                      No rewards configured. Add one if this listing grants a
+                      bonus.
                     </Typography>
                   )}
                   {rewards.map((reward, index) => {
-                    const selectedAsset = assets.find((asset) => asset.key === reward.assetKey);
+                    const selectedAsset = assets.find(
+                      (asset) => asset.key === reward.assetKey,
+                    );
                     return (
-                      <Card key={`reward-${index}`} variant="outlined" sx={{ p: 1.5 }}>
+                      <Card
+                        key={`reward-${index}`}
+                        variant="outlined"
+                        sx={{ p: 1.5 }}
+                      >
                         <Grid container spacing={1.5} alignItems="center">
                           <Grid size={{ xs: 12, sm: 4 }}>
                             <Select
                               value={reward.rewardType}
-                              onChange={(event) => updateReward(index, { ...emptyReward(event.target.value) })}
+                              onChange={(event) =>
+                                updateReward(index, {
+                                  ...emptyReward(event.target.value),
+                                })
+                              }
                               fullWidth
                               size="small"
                             >
                               <MenuItem value="ASSET">Asset</MenuItem>
                               <MenuItem value="CURRENCY">Currency</MenuItem>
-                              <MenuItem value="PROGRESSION_POINTS">Progression points</MenuItem>
-                              <MenuItem value="PROGRESSION_RESET">Progression reset</MenuItem>
-                              <MenuItem value="ENTITLEMENT">Entitlement</MenuItem>
+                              <MenuItem value="PROGRESSION_POINTS">
+                                Progression points
+                              </MenuItem>
+                              <MenuItem value="PROGRESSION_RESET">
+                                Progression reset
+                              </MenuItem>
+                              <MenuItem value="ENTITLEMENT">
+                                Entitlement
+                              </MenuItem>
                             </Select>
                           </Grid>
-                          {(reward.rewardType === "ASSET" || reward.rewardType === "ENTITLEMENT") && (
+                          {(reward.rewardType === "ASSET" ||
+                            reward.rewardType === "ENTITLEMENT") && (
                             <Grid size={{ xs: 12, sm: 4 }}>
                               <Select
                                 value={reward.assetKey}
-                                onChange={(event) => updateReward(index, { assetKey: event.target.value, variationKey: "" })}
+                                onChange={(event) =>
+                                  updateReward(index, {
+                                    assetKey: event.target.value,
+                                    variationKey: "",
+                                  })
+                                }
                                 fullWidth
                                 size="small"
                                 displayEmpty
                               >
                                 <MenuItem value="">
-                                  {reward.rewardType === "ASSET" ? "Select asset" : "Optional linked asset"}
+                                  {reward.rewardType === "ASSET"
+                                    ? "Select asset"
+                                    : "Optional linked asset"}
                                 </MenuItem>
                                 {assets.map((asset) => (
                                   <MenuItem key={asset.id} value={asset.key}>
@@ -875,18 +1222,26 @@ function ItemDialog({
                               </Select>
                             </Grid>
                           )}
-                          {reward.rewardType === "ASSET" && selectedAsset?.variations?.length ? (
+                          {reward.rewardType === "ASSET" &&
+                          selectedAsset?.variations?.length ? (
                             <Grid size={{ xs: 12, sm: 4 }}>
                               <Select
                                 value={reward.variationKey}
-                                onChange={(event) => updateReward(index, { variationKey: event.target.value })}
+                                onChange={(event) =>
+                                  updateReward(index, {
+                                    variationKey: event.target.value,
+                                  })
+                                }
                                 fullWidth
                                 size="small"
                                 displayEmpty
                               >
                                 <MenuItem value="">Base asset</MenuItem>
                                 {selectedAsset.variations.map((variation) => (
-                                  <MenuItem key={variation.id} value={variation.key}>
+                                  <MenuItem
+                                    key={variation.id}
+                                    value={variation.key}
+                                  >
                                     {variation.name || variation.key}
                                   </MenuItem>
                                 ))}
@@ -897,32 +1252,51 @@ function ItemDialog({
                             <Grid size={{ xs: 12, sm: 4 }}>
                               <Select
                                 value={reward.currencyCode}
-                                onChange={(event) => updateReward(index, { currencyCode: event.target.value })}
+                                onChange={(event) =>
+                                  updateReward(index, {
+                                    currencyCode: event.target.value,
+                                  })
+                                }
                                 fullWidth
                                 size="small"
                                 displayEmpty
                               >
-                                <MenuItem value="" disabled>Select currency</MenuItem>
+                                <MenuItem value="" disabled>
+                                  Select currency
+                                </MenuItem>
                                 {currencies.map((currency) => (
-                                  <MenuItem key={currency.id} value={currency.code}>
+                                  <MenuItem
+                                    key={currency.id}
+                                    value={currency.code}
+                                  >
                                     {currency.name} · {currency.code}
                                   </MenuItem>
                                 ))}
                               </Select>
                             </Grid>
                           )}
-                          {(reward.rewardType === "PROGRESSION_POINTS" || reward.rewardType === "PROGRESSION_RESET") && (
+                          {(reward.rewardType === "PROGRESSION_POINTS" ||
+                            reward.rewardType === "PROGRESSION_RESET") && (
                             <Grid size={{ xs: 12, sm: 4 }}>
                               <Select
                                 value={reward.progressionKey}
-                                onChange={(event) => updateReward(index, { progressionKey: event.target.value })}
+                                onChange={(event) =>
+                                  updateReward(index, {
+                                    progressionKey: event.target.value,
+                                  })
+                                }
                                 fullWidth
                                 size="small"
                                 displayEmpty
                               >
-                                <MenuItem value="" disabled>Select progression</MenuItem>
+                                <MenuItem value="" disabled>
+                                  Select progression
+                                </MenuItem>
                                 {progressions.map((progression) => (
-                                  <MenuItem key={progression.id} value={progression.key}>
+                                  <MenuItem
+                                    key={progression.id}
+                                    value={progression.key}
+                                  >
                                     {progression.name} · {progression.key}
                                   </MenuItem>
                                 ))}
@@ -934,18 +1308,31 @@ function ItemDialog({
                               <TextField
                                 label="Entitlement key"
                                 value={reward.targetKey}
-                                onChange={(event) => updateReward(index, { targetKey: event.target.value })}
+                                onChange={(event) =>
+                                  updateReward(index, {
+                                    targetKey: event.target.value,
+                                  })
+                                }
                                 fullWidth
                                 size="small"
                               />
                             </Grid>
                           )}
-                          {(reward.rewardType === "CURRENCY" || reward.rewardType === "PROGRESSION_POINTS") && (
+                          {(reward.rewardType === "CURRENCY" ||
+                            reward.rewardType === "PROGRESSION_POINTS") && (
                             <Grid size={{ xs: 12, sm: 4 }}>
                               <TextField
-                                label={reward.rewardType === "CURRENCY" ? "Amount" : "Points"}
+                                label={
+                                  reward.rewardType === "CURRENCY"
+                                    ? "Amount"
+                                    : "Points"
+                                }
                                 value={reward.amount}
-                                onChange={(event) => updateReward(index, { amount: event.target.value })}
+                                onChange={(event) =>
+                                  updateReward(index, {
+                                    amount: event.target.value,
+                                  })
+                                }
                                 type="number"
                                 inputProps={{ min: 1, step: 1 }}
                                 fullWidth
@@ -958,7 +1345,11 @@ function ItemDialog({
                               <TextField
                                 label="Quantity"
                                 value={reward.quantity}
-                                onChange={(event) => updateReward(index, { quantity: event.target.value })}
+                                onChange={(event) =>
+                                  updateReward(index, {
+                                    quantity: event.target.value,
+                                  })
+                                }
                                 type="number"
                                 inputProps={{ min: 1, step: 1 }}
                                 fullWidth
@@ -969,7 +1360,13 @@ function ItemDialog({
                           <Grid size={{ xs: 12, sm: 1 }}>
                             <Button
                               color="error"
-                              onClick={() => setRewards((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                              onClick={() =>
+                                setRewards((current) =>
+                                  current.filter(
+                                    (_, currentIndex) => currentIndex !== index,
+                                  ),
+                                )
+                              }
                               aria-label="Remove reward"
                               fullWidth
                             >
@@ -1117,22 +1514,42 @@ function InventoryDialog({
   );
 }
 
-function AssetRedeemCodesPanel({ assets, mode, onChanged }: { assets: CommerceAsset[]; mode: "list" | "bulk"; onChanged: () => void }) {
+function AssetRedeemCodesPanel({
+  assets,
+  mode,
+  onChanged,
+}: {
+  assets: CommerceAsset[];
+  mode: "list" | "bulk";
+  onChanged: () => void;
+}) {
   const [codes, setCodes] = useState<AssetRedeemCode[]>([]);
   const [status, setStatus] = useState("AVAILABLE");
-  const [assetKey, setAssetKey] = useState(mode === "bulk" ? assets[0]?.key ?? "" : "");
+  const [assetKey, setAssetKey] = useState(
+    mode === "bulk" ? (assets[0]?.key ?? "") : "",
+  );
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { if (mode === "bulk" && !assetKey && assets.length) setAssetKey(assets[0].key); }, [assets, assetKey, mode]);
+  useEffect(() => {
+    if (mode === "bulk" && !assetKey && assets.length)
+      setAssetKey(assets[0].key);
+  }, [assets, assetKey, mode]);
 
   const loadCodes = async () => {
     setLoading(true);
     try {
       setError("");
-      const query = new URLSearchParams({ ...(assetKey ? { assetKey } : {}), ...(status ? { status } : {}) });
-      setCodes(await api<AssetRedeemCode[]>(`/commerce/assets/redeem-codes?${query.toString()}`));
+      const query = new URLSearchParams({
+        ...(assetKey ? { assetKey } : {}),
+        ...(status ? { status } : {}),
+      });
+      setCodes(
+        await api<AssetRedeemCode[]>(
+          `/commerce/assets/redeem-codes?${query.toString()}`,
+        ),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load redeem codes");
     } finally {
@@ -1140,31 +1557,212 @@ function AssetRedeemCodesPanel({ assets, mode, onChanged }: { assets: CommerceAs
     }
   };
 
-  useEffect(() => { if (mode === "list") void loadCodes(); }, [mode, assetKey, status]);
+  useEffect(() => {
+    if (mode === "list") void loadCodes();
+  }, [mode, assetKey, status]);
 
   const insert = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
-      setError(""); setMessage("");
+      setError("");
+      setMessage("");
       const form = event.currentTarget;
-      const raw = String((form.elements.namedItem("codes") as HTMLTextAreaElement)?.value ?? "");
-      const codesToInsert = [...new Set(raw.split(/\r?\n/).map((value) => value.trim()).filter(Boolean))];
+      const raw = String(
+        (form.elements.namedItem("codes") as HTMLTextAreaElement)?.value ?? "",
+      );
+      const codesToInsert = [
+        ...new Set(
+          raw
+            .split(/\r?\n/)
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
+      ];
       if (!assetKey) throw new Error("Select an asset first");
-      if (!codesToInsert.length) throw new Error("Paste at least one code, one per line");
-      const result = await api<{ inserted: number; skipped: number }>("/commerce/assets/redeem-codes", { method: "POST", body: JSON.stringify({ assetKey, variationKey: field(form, "variationKey") || undefined, codes: codesToInsert }) });
-      setMessage(`${result.inserted} code${result.inserted === 1 ? "" : "s"} inserted; ${result.skipped} duplicate${result.skipped === 1 ? "" : "s"} skipped.`);
+      if (!codesToInsert.length)
+        throw new Error("Paste at least one code, one per line");
+      const result = await api<{ inserted: number; skipped: number }>(
+        "/commerce/assets/redeem-codes",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            assetKey,
+            variationKey: field(form, "variationKey") || undefined,
+            codes: codesToInsert,
+          }),
+        },
+      );
+      setMessage(
+        `${result.inserted} code${result.inserted === 1 ? "" : "s"} inserted; ${result.skipped} duplicate${result.skipped === 1 ? "" : "s"} skipped.`,
+      );
       form.reset();
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to insert redeem codes");
+      setError(
+        e instanceof Error ? e.message : "Unable to insert redeem codes",
+      );
     }
   };
 
-  return <Box sx={{ p: { xs: 2, md: 3 } }}><Stack spacing={2}>
-    <Box><Typography variant="h6" fontWeight={800}>{mode === "list" ? "Redeem code inventory" : "Asset actions · bulk insert"}</Typography><Typography variant="body2" color="text.secondary">{mode === "list" ? "Full codes are visible to authorized administrators. Approval of a paid reward request claims one AVAILABLE code atomically." : "Paste provider codes one per line. Duplicate codes are ignored safely."}</Typography></Box>
-    {error && <Typography color="error.main">{error}</Typography>}{message && <Typography color="success.main">{message}</Typography>}
-    {mode === "bulk" ? <Card variant="outlined"><form onSubmit={insert}><Stack spacing={2} sx={{ p: 2.5 }}><Select size="small" value={assetKey} onChange={(event) => setAssetKey(event.target.value)} displayEmpty required><MenuItem value="" disabled>Select unique asset</MenuItem>{assets.map((asset) => <MenuItem key={asset.id} value={asset.key}>{asset.name} · {asset.key} · {asset.ownershipPolicy}</MenuItem>)}</Select><TextField name="variationKey" size="small" label="Variation key (optional)" /><TextField name="codes" label="Redeem codes" placeholder="CODE-AAAA-1111\nCODE-BBBB-2222" multiline minRows={8} fullWidth required helperText="One code per line; blank lines are ignored." /><Button type="submit" variant="contained">Insert codes</Button></Stack></form></Card> : <><Stack direction={{ xs: "column", sm: "row" }} spacing={1}><Select size="small" value={assetKey} onChange={(event) => setAssetKey(event.target.value)} displayEmpty sx={{ minWidth: 260 }}><MenuItem value="">All assets</MenuItem>{assets.map((asset) => <MenuItem key={asset.id} value={asset.key}>{asset.name}</MenuItem>)}</Select><Select size="small" value={status} onChange={(event) => setStatus(event.target.value)} sx={{ minWidth: 160 }}><MenuItem value="AVAILABLE">Available</MenuItem><MenuItem value="ASSIGNED">Assigned</MenuItem><MenuItem value="VOID">Void</MenuItem><MenuItem value="">All statuses</MenuItem></Select></Stack>{loading ? <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={28} /></Stack> : <TableContainer><Table size="small"><TableHead><TableRow><TableCell>Asset</TableCell><TableCell>Code</TableCell><TableCell>Status</TableCell><TableCell>Player</TableCell><TableCell>Created</TableCell></TableRow></TableHead><TableBody>{codes.map((code) => <TableRow key={code.id}><TableCell><Typography fontWeight={700}>{code.assetDefinition.name}</Typography><Typography variant="caption" color="text.secondary">{code.assetVariation?.name || code.assetDefinition.key}</Typography></TableCell><TableCell sx={{ fontFamily: "monospace" }}>{code.code}</TableCell><TableCell><Chip size="small" label={code.status} color={code.status === "AVAILABLE" ? "success" : code.status === "ASSIGNED" ? "primary" : "default"} /></TableCell><TableCell>{code.assignedUser?.profile?.displayName || code.assignedUser?.username || "—"}</TableCell><TableCell>{new Date(code.createdAt).toLocaleString()}</TableCell></TableRow>)}{!codes.length && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 5 }}><Typography color="text.secondary">No redeem codes found.</Typography></TableCell></TableRow>}</TableBody></Table></TableContainer>}</>}
-  </Stack></Box>;
+  return (
+    <Box sx={{ p: { xs: 2, md: 3 } }}>
+      <Stack spacing={2}>
+        <Box>
+          <Typography variant="h6" fontWeight={800}>
+            {mode === "list"
+              ? "Redeem code inventory"
+              : "Asset actions · bulk insert"}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {mode === "list"
+              ? "Full codes are visible to authorized administrators. Approval of a paid reward request claims one AVAILABLE code atomically."
+              : "Paste provider codes one per line. Duplicate codes are ignored safely."}
+          </Typography>
+        </Box>
+        {error && <Typography color="error.main">{error}</Typography>}
+        {message && <Typography color="success.main">{message}</Typography>}
+        {mode === "bulk" ? (
+          <Card variant="outlined">
+            <form onSubmit={insert}>
+              <Stack spacing={2} sx={{ p: 2.5 }}>
+                <Select
+                  size="small"
+                  value={assetKey}
+                  onChange={(event) => setAssetKey(event.target.value)}
+                  displayEmpty
+                  required
+                >
+                  <MenuItem value="" disabled>
+                    Select unique asset
+                  </MenuItem>
+                  {assets.map((asset) => (
+                    <MenuItem key={asset.id} value={asset.key}>
+                      {asset.name} · {asset.key} · {asset.ownershipPolicy}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <TextField
+                  name="variationKey"
+                  size="small"
+                  label="Variation key (optional)"
+                />
+                <TextField
+                  name="codes"
+                  label="Redeem codes"
+                  placeholder="CODE-AAAA-1111\nCODE-BBBB-2222"
+                  multiline
+                  minRows={8}
+                  fullWidth
+                  required
+                  helperText="One code per line; blank lines are ignored."
+                />
+                <Button type="submit" variant="contained">
+                  Insert codes
+                </Button>
+              </Stack>
+            </form>
+          </Card>
+        ) : (
+          <>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <Select
+                size="small"
+                value={assetKey}
+                onChange={(event) => setAssetKey(event.target.value)}
+                displayEmpty
+                sx={{ minWidth: 260 }}
+              >
+                <MenuItem value="">All assets</MenuItem>
+                {assets.map((asset) => (
+                  <MenuItem key={asset.id} value={asset.key}>
+                    {asset.name}
+                  </MenuItem>
+                ))}
+              </Select>
+              <Select
+                size="small"
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+                sx={{ minWidth: 160 }}
+              >
+                <MenuItem value="AVAILABLE">Available</MenuItem>
+                <MenuItem value="ASSIGNED">Assigned</MenuItem>
+                <MenuItem value="VOID">Void</MenuItem>
+                <MenuItem value="">All statuses</MenuItem>
+              </Select>
+            </Stack>
+            {loading ? (
+              <Stack alignItems="center" sx={{ py: 6 }}>
+                <CircularProgress size={28} />
+              </Stack>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Asset</TableCell>
+                      <TableCell>Code</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Player</TableCell>
+                      <TableCell>Created</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {codes.map((code) => (
+                      <TableRow key={code.id}>
+                        <TableCell>
+                          <Typography fontWeight={700}>
+                            {code.assetDefinition.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {code.assetVariation?.name ||
+                              code.assetDefinition.key}
+                          </Typography>
+                        </TableCell>
+                        <TableCell sx={{ fontFamily: "monospace" }}>
+                          {code.code}
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            label={code.status}
+                            color={
+                              code.status === "AVAILABLE"
+                                ? "success"
+                                : code.status === "ASSIGNED"
+                                  ? "primary"
+                                  : "default"
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {code.assignedUser?.profile?.displayName ||
+                            code.assignedUser?.username ||
+                            "—"}
+                        </TableCell>
+                        <TableCell>
+                          {new Date(code.createdAt).toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!codes.length && (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
+                          <Typography color="text.secondary">
+                            No redeem codes found.
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </>
+        )}
+      </Stack>
+    </Box>
+  );
 }
 
 export function CommerceView() {
@@ -1175,6 +1773,7 @@ export function CommerceView() {
   const [purchases, setPurchases] = useState<CommercePurchase[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyDefinition[]>([]);
   const [progressions, setProgressions] = useState<ProgressionDefinition[]>([]);
+  const [framePresets, setFramePresets] = useState<AvatarFramePreset[]>([]);
   const [catalogDialog, setCatalogDialog] = useState<
     CommerceCatalog | null | false
   >(false);
@@ -1209,22 +1808,68 @@ export function CommerceView() {
         api<CommercePurchase[]>("/commerce/purchases"),
         api<CurrencyDefinition[]>("/economy/currencies"),
         api<ProgressionDefinition[]>("/progressions?includeInactive=true"),
+        api<AvatarFramePreset[]>("/commerce/avatar-frame-presets"),
       ]);
 
       const errors: string[] = [];
-      const [catalogResult, assetResult, inventoryResult, purchaseResult, currencyResult, progressionResult] = results;
-      if (catalogResult.status === "fulfilled") setCatalogs(catalogResult.value);
-      else errors.push(catalogResult.reason instanceof Error ? catalogResult.reason.message : "Unable to load catalogs");
+      const [
+        catalogResult,
+        assetResult,
+        inventoryResult,
+        purchaseResult,
+        currencyResult,
+        progressionResult,
+        frameResult,
+      ] = results;
+      if (catalogResult.status === "fulfilled")
+        setCatalogs(catalogResult.value);
+      else
+        errors.push(
+          catalogResult.reason instanceof Error
+            ? catalogResult.reason.message
+            : "Unable to load catalogs",
+        );
       if (assetResult.status === "fulfilled") setAssets(assetResult.value);
-      else errors.push(assetResult.reason instanceof Error ? assetResult.reason.message : "Unable to load assets");
-      if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value.items);
-      else errors.push(inventoryResult.reason instanceof Error ? inventoryResult.reason.message : "Unable to load inventory");
-      if (purchaseResult.status === "fulfilled") setPurchases(purchaseResult.value);
-      else errors.push(purchaseResult.reason instanceof Error ? purchaseResult.reason.message : "Unable to load purchases");
-      if (currencyResult.status === "fulfilled") setCurrencies(currencyResult.value);
-      else errors.push(currencyResult.reason instanceof Error ? currencyResult.reason.message : "Unable to load currencies");
-      if (progressionResult.status === "fulfilled") setProgressions(progressionResult.value);
-      else errors.push(progressionResult.reason instanceof Error ? progressionResult.reason.message : "Unable to load progressions");
+      else
+        errors.push(
+          assetResult.reason instanceof Error
+            ? assetResult.reason.message
+            : "Unable to load assets",
+        );
+      if (inventoryResult.status === "fulfilled")
+        setInventory(inventoryResult.value.items);
+      else
+        errors.push(
+          inventoryResult.reason instanceof Error
+            ? inventoryResult.reason.message
+            : "Unable to load inventory",
+        );
+      if (purchaseResult.status === "fulfilled")
+        setPurchases(purchaseResult.value);
+      else
+        errors.push(
+          purchaseResult.reason instanceof Error
+            ? purchaseResult.reason.message
+            : "Unable to load purchases",
+        );
+      if (currencyResult.status === "fulfilled")
+        setCurrencies(currencyResult.value);
+      else
+        errors.push(
+          currencyResult.reason instanceof Error
+            ? currencyResult.reason.message
+            : "Unable to load currencies",
+        );
+      if (progressionResult.status === "fulfilled")
+        setProgressions(progressionResult.value);
+      else
+        errors.push(
+          progressionResult.reason instanceof Error
+            ? progressionResult.reason.message
+            : "Unable to load progressions",
+        );
+      if (frameResult.status === "fulfilled")
+        setFramePresets(frameResult.value);
       setError(errors.join(" · "));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load commerce data");
@@ -1507,8 +2152,12 @@ export function CommerceView() {
             </Grid>
           </Box>
         )}
-        {tab === 2 && <AssetRedeemCodesPanel assets={assets} mode="list" onChanged={load} />}
-        {tab === 3 && <AssetRedeemCodesPanel assets={assets} mode="bulk" onChanged={load} />}
+        {tab === 2 && (
+          <AssetRedeemCodesPanel assets={assets} mode="list" onChanged={load} />
+        )}
+        {tab === 3 && (
+          <AssetRedeemCodesPanel assets={assets} mode="bulk" onChanged={load} />
+        )}
         {tab === 4 && (
           <Box sx={{ p: { xs: 1, md: 3 }, overflowX: "auto" }}>
             <Table size="small">
@@ -1652,6 +2301,7 @@ export function CommerceView() {
         <AssetDialog
           asset={assetDialog || undefined}
           assets={assets}
+          framePresets={framePresets}
           onClose={() => setAssetDialog(false)}
           onSaved={closeAndReload}
         />
@@ -1661,6 +2311,7 @@ export function CommerceView() {
           item={itemDialog || undefined}
           catalogs={catalogs}
           assets={assets}
+          framePresets={framePresets}
           currencies={currencies}
           progressions={progressions}
           onClose={() => setItemDialog(false)}

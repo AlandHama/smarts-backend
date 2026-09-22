@@ -15,6 +15,12 @@ export class UpdateProfileDto {
   @IsUrl({ require_protocol: true })
   readonly avatarUrl?: string | null
 
+  @ApiProperty({ example: "aurora", required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  readonly avatarFrameKey?: string | null
+
   @ApiProperty({ example: "IQ", required: false, nullable: true })
   @IsOptional()
   @IsString()

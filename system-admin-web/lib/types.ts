@@ -514,6 +514,15 @@ export interface CommerceAsset {
   active: boolean;
   variations?: Array<{ id: string; key: string; name: string | null }>;
 }
+export interface AvatarFramePreset {
+  key: string;
+  name: string;
+  description: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  animation: string;
+}
 export interface CommerceCatalogItem {
   id: string;
   catalogId: string;

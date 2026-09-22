@@ -15,6 +15,7 @@ import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-t
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
 import { applyGldPolicyOverrides, getGldConfig } from "../gld/gld.config"
 import { catalogGldPrice } from "./catalog-gld-pricing"
+import { avatarFramePreset } from "./avatar-frame-presets"
 
 @Injectable()
 export class CommerceService {
@@ -147,6 +148,15 @@ export class CommerceService {
   }
 
   listPlayerInventory(userId: string) { return this.prisma.inventoryItem.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: true, assetVariation: true } }).then((value) => this.serialize(value)) }
+  async equipAvatarFrame(userId: string, assetKey: string) {
+    const item = await this.prisma.inventoryItem.findFirst({ where: { userId, assetDefinition: { key: this.assetKey(assetKey) } }, include: { assetDefinition: true } })
+    if (!item) throw new NotFoundException("You do not own this avatar frame")
+    const metadata = item.assetDefinition.metadata && typeof item.assetDefinition.metadata === "object" && !Array.isArray(item.assetDefinition.metadata) ? item.assetDefinition.metadata as Record<string, unknown> : {}
+    const frameKey = typeof metadata.frameKey === "string" ? metadata.frameKey : null
+    if (metadata.cosmeticType !== "avatar_frame" || !frameKey || !avatarFramePreset(frameKey)) throw new BadRequestException("This asset is not a valid avatar frame")
+    const profile = await this.prisma.playerProfile.update({ where: { userId }, data: { avatarFrameKey: frameKey } })
+    return this.serialize({ avatarFrameKey: profile.avatarFrameKey, frame: avatarFramePreset(frameKey) })
+  }
   listPlayerEntitlements(userId: string) { return this.prisma.entitlement.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: true } }).then((value) => this.serialize(value)) }
   listPurchases(userId?: string) { return this.prisma.purchase.findMany({ where: userId ? { userId } : undefined, orderBy: { createdAt: "desc" }, take: 500, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, currency: { select: { code: true, name: true } }, lines: true } }).then((value) => this.serialize(value)) }
 

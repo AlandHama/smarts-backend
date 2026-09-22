@@ -21,6 +21,7 @@ export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string
     const profileData: Prisma.PlayerProfileUpdateInput = {}
     if (dto.displayName !== undefined) profileData.displayName = dto.displayName.trim()
     if (dto.avatarUrl !== undefined) profileData.avatarUrl = dto.avatarUrl
+    if (dto.avatarFrameKey !== undefined) profileData.avatarFrameKey = dto.avatarFrameKey?.trim() || null
     if (dto.countryCode !== undefined) profileData.countryCode = dto.countryCode?.trim().toUpperCase() ?? null
     if (dto.bio !== undefined) profileData.bio = dto.bio?.trim() || null
     if (dto.isPublic !== undefined) profileData.isPublic = dto.isPublic
@@ -41,6 +42,7 @@ export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string
     const changes: Record<string, { old: unknown; new: unknown }> = {}
     if (dto.displayName !== undefined) changes.displayName = { old: profile.displayName, new: dto.displayName.trim() }
     if (dto.avatarUrl !== undefined) changes.avatarUrl = { old: profile.avatarUrl, new: dto.avatarUrl }
+    if (dto.avatarFrameKey !== undefined) changes.avatarFrameKey = { old: profile.avatarFrameKey, new: dto.avatarFrameKey?.trim() || null }
     if (dto.countryCode !== undefined) changes.countryCode = { old: profile.countryCode, new: dto.countryCode?.trim().toUpperCase() ?? null }
     if (dto.bio !== undefined) changes.bio = { old: profile.bio, new: dto.bio?.trim() || null }
     if (dto.isPublic !== undefined) changes.isPublic = { old: profile.isPublic, new: dto.isPublic }
