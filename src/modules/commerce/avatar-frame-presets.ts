@@ -20,6 +20,7 @@ export const AVATAR_FRAME_PRESETS: readonly AvatarFramePreset[] = [
   { key: "golden-comet", name: "Golden Comet", description: "A bright trail around your avatar.", primary: "#f59e0b", secondary: "#f97316", accent: "#fde68a", animation: "orbit" },
   { key: "midnight-stars", name: "Midnight Stars", description: "Deep space with subtle stars.", primary: "#312e81", secondary: "#111827", accent: "#c4b5fd", animation: "sparkle" },
   { key: "candy-pop", name: "Candy Pop", description: "A playful pink and blue loop.", primary: "#ec4899", secondary: "#8b5cf6", accent: "#fbcfe8", animation: "shimmer" },
+  { key: "german", name: "German Crest", description: "A bold black, red, and gold ring inspired by Germany.", primary: "#111111", secondary: "#dc2626", accent: "#facc15", animation: "shimmer" },
 ]
 
 export function avatarFramePreset(key: string | null | undefined) {
