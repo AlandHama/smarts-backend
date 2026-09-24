@@ -140,14 +140,14 @@ export class RealtimeGateway implements OnModuleDestroy {
       if (!force && state.lastSnapshots.get(cacheKey) === key) return
       state.lastSnapshots.set(cacheKey, key)
       this.send(client, "match.snapshot", snapshot)
-      const recentEvents = await this.prisma.matchEvent.findMany({ where: { matchId, accepted: true }, orderBy: { serverReceivedAt: "desc" }, take: 20, select: { id: true, participantId: true, eventType: true, sequence: true, serverReceivedAt: true } })
+      const recentEvents = await this.prisma.matchEvent.findMany({ where: { matchId, accepted: true }, orderBy: { serverReceivedAt: "desc" }, take: 20, select: { id: true, participantId: true, eventType: true, sequence: true, serverReceivedAt: true, payload: true } })
       const eventCacheKey = `events:${matchId}`
       const eventKey = recentEvents.map((event) => event.id).join(",")
       const previousEventKey = state.lastSnapshots.get(eventCacheKey)
       state.lastSnapshots.set(eventCacheKey, eventKey)
       if (previousEventKey && previousEventKey !== eventKey) {
         const previousIds = new Set(previousEventKey.split(","))
-        for (const event of recentEvents.filter((item) => !previousIds.has(item.id)).reverse()) this.send(client, "match.event.accepted", { matchId, event })
+        for (const event of recentEvents.filter((item) => !previousIds.has(item.id)).reverse()) this.send(client, "match.event.accepted", { matchId, event: event.eventType === "EMOTE" ? event : { ...event, payload: undefined } })
       }
       const status = typeof (snapshot as { status?: unknown }).status === "string" ? (snapshot as { status: string }).status : ""
       if (status === "FINISHED" || status === "REVIEW" || status === "SETTLED") this.send(client, "match.settled", { matchId, status })

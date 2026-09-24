@@ -8,11 +8,13 @@ import { MatchEventDto } from "../dtos"
 import { BotGameplayService } from "../bot-gameplay.service"
 import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { hashMatchEventRequest, jsonByteLength } from "../utilities/server-content"
+import { emotePreset } from "../../commerce/emote-presets"
 
 const MAX_EVENT_PAYLOAD_BYTES = 8 * 1024
 const MAX_EVENT_SEQUENCE = 1_000_000
 const ANSWER_KEYS = new Set(["assignmentId", "assignmentToken", "selectedAnswerIndex", "timeTakenMs"])
 const SKIP_KEYS = new Set(["assignmentId", "assignmentToken", "timeTakenMs"])
+const EMOTE_KEYS = new Set(["emoteKey"])
 
 @Injectable()
 export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: string; userId: string; dto: MatchEventDto }, any> {
@@ -60,6 +62,7 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     if (input.dto.eventType === MatchEventType.SCORE_UPDATE) return this.reject(transaction, base, "Score updates are derived by the server from accepted answers")
     if (input.dto.eventType === MatchEventType.ANSWER) return this.answer(transaction, match, participant, round.id, base, input.dto.payload)
     if (input.dto.eventType === MatchEventType.SKIP) return this.skip(transaction, match, participant, round.id, base, input.dto.payload)
+    if (input.dto.eventType === MatchEventType.EMOTE) return this.emote(transaction, participant, base, input.dto.payload)
 
     if ([MatchEventType.READY, MatchEventType.HEARTBEAT, MatchEventType.FINISH, MatchEventType.LEAVE, MatchEventType.FORFEIT].includes(input.dto.eventType)) {
       if (input.dto.payload && Object.keys(input.dto.payload).length) return this.reject(transaction, base, "This event type does not accept a payload")
@@ -79,6 +82,18 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
       return event
     }
     return transaction.matchEvent.create({ data: { ...base, accepted: true, payload: {} } })
+  }
+
+  private async emote(transaction: Prisma.TransactionClient, participant: any, base: any, payload?: Record<string, unknown>) {
+    if (!payload || Object.keys(payload).some((key) => !EMOTE_KEYS.has(key))) return this.reject(transaction, base, "Emote payload is invalid")
+    const emoteKey = typeof payload.emoteKey === "string" ? payload.emoteKey.trim().toLowerCase() : ""
+    const preset = emotePreset(emoteKey)
+    if (!preset) return this.reject(transaction, base, "Unknown emote")
+    if (!preset.free) {
+      const owned = await transaction.inventoryItem.findFirst({ where: { userId: participant.userId, quantity: { gt: 0 }, assetDefinition: { key: `emote:${emoteKey}` } }, select: { id: true } })
+      if (!owned) return this.reject(transaction, base, "You do not own this emote")
+    }
+    return transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { emoteKey, icon: preset.icon, name: preset.name } } })
   }
 
   private async answer(transaction: Prisma.TransactionClient, match: any, participant: any, roundId: string, base: any, payload?: Record<string, unknown>) {

@@ -263,6 +263,7 @@ enum MatchEventType {
   LEAVE
   FORFEIT
   SKIP
+  EMOTE
 }
 
 enum OutboxEventStatus {
