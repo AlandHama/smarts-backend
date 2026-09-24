@@ -11,7 +11,7 @@ export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: n
 
   protected async execute(_: void, transaction: Prisma.TransactionClient) {
     const now = new Date()
-    const matches = await transaction.match.findMany({ where: { status: { in: ["CREATED", "STARTED"] }, OR: [{ createdAt: { lte: now } }] }, include: { gameConfig: { select: { maxMatchDurationSeconds: true } }, rankingMatch: true, participants: { select: { userId: true, participantType: true } } }, take: 100 })
+    const matches = await transaction.match.findMany({ where: { status: { in: ["CREATED", "STARTED"] }, OR: [{ createdAt: { lte: now } }] }, include: { gameConfig: { select: { maxMatchDurationSeconds: true } }, rankingMatch: true, participants: { select: { userId: true, participantType: true, result: true } } }, take: 100 })
     let expired = 0
     for (const match of matches) {
       // Flutter submits FINISH when its synchronized match clock reaches the
@@ -24,6 +24,18 @@ export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: n
       await transaction.$queryRaw`SELECT "id" FROM "Match" WHERE "id" = ${match.id} FOR UPDATE`
       const current = await transaction.match.findUnique({ where: { id: match.id }, select: { status: true } })
       if (current?.status !== "CREATED" && current?.status !== "STARTED") continue
+      // FINISH and expiry can race at the duration boundary. If all human
+      // participants already submitted, preserve the match as completed so a
+      // successful math/bot game is never converted into CANCELLED.
+      const pendingHumans = match.participants.filter(
+        (participant) => participant.participantType === "PLAYER" && participant.result === "PENDING",
+      ).length
+      if (pendingHumans === 0) {
+        await transaction.matchParticipant.updateMany({ where: { matchId: match.id, result: "PENDING" }, data: { result: "COMPLETED", submittedAt: now } })
+        await transaction.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt: now } })
+        await transaction.match.update({ where: { id: match.id }, data: { status: "FINISHED", endedAt: now } })
+        continue
+      }
       await transaction.matchParticipant.updateMany({ where: { matchId: match.id, result: "PENDING" }, data: { result: "FORFEIT", submittedAt: now } })
       await transaction.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "CANCELLED", endedAt: now } })
       await transaction.match.update({ where: { id: match.id }, data: { status: "CANCELLED", endedAt: now } })
