@@ -627,6 +627,7 @@ model PlayerProfile {
   displayName String   @db.VarChar(50)
   avatarUrl   String?  @db.Text
   avatarFrameKey String? @db.VarChar(80)
+  nameEffectKey String? @db.VarChar(80)
   countryCode String?  @db.VarChar(2)
   bio         String?  @db.VarChar(250)
   isPublic    Boolean  @default(true)

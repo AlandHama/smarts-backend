@@ -174,6 +174,7 @@ export class FriendsService {
             displayName: true,
             avatarUrl: true,
             avatarFrameKey: true,
+            nameEffectKey: true,
             countryCode: true,
             level: true,
             elo: true,
@@ -192,6 +193,7 @@ export class FriendsService {
         name: player.profile?.displayName || player.username,
         avatarUrl: player.profile?.avatarUrl ?? null,
         avatarFrameKey: player.profile?.avatarFrameKey ?? null,
+        nameEffectKey: player.profile?.nameEffectKey ?? null,
         profileUrl: player.profile?.avatarUrl ?? null,
         level: player.profile?.level ?? null,
         elo: player.profile?.elo ?? null,
@@ -389,6 +391,7 @@ export class FriendsService {
           displayName: true,
           avatarUrl: true,
           avatarFrameKey: true,
+          nameEffectKey: true,
           countryCode: true,
           isPublic: true,
           level: true,
@@ -429,6 +432,7 @@ export class FriendsService {
           ? null
           : (user.profile?.avatarUrl ?? null),
       avatarFrameKey: user.profile?.avatarFrameKey ?? null,
+      nameEffectKey: user.profile?.nameEffectKey ?? null,
       level: user.profile?.level ?? null,
       elo: user.profile?.elo ?? null,
       acceptedAt,
@@ -462,6 +466,10 @@ export class FriendsService {
         user.profile?.isPublic === false
           ? null
           : (user.profile?.avatarFrameKey ?? null),
+      nameEffectKey:
+        user.profile?.isPublic === false
+          ? null
+          : (user.profile?.nameEffectKey ?? null),
       createdAt,
       created_at: createdAt,
     };

@@ -6,6 +6,7 @@ import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { EquipAvatarFrameDto, PaidRewardRequestDto, PurchaseDto } from "./dtos"
 import { CommerceService } from "./commerce.service"
 import { AVATAR_FRAME_PRESETS } from "./avatar-frame-presets"
+import { NAME_EFFECT_PRESETS } from "./name-effect-presets"
 
 @ApiTags("Commerce")
 @ApiBearerAuth("access-token")
@@ -14,8 +15,10 @@ export class CommerceController {
   constructor(private readonly commerce: CommerceService) {}
   @Get("catalogs/:key") @ApiOperation({ summary: "List active catalog items and server prices" }) catalog(@Param("key") key: string) { return this.commerce.listCatalog(key) }
   @Get("avatar-frame-presets") @ApiOperation({ summary: "List server-owned avatar frame templates" }) avatarFramePresets() { return AVATAR_FRAME_PRESETS }
+  @Get("name-effect-presets") @ApiOperation({ summary: "List server-owned player-name effect templates" }) nameEffectPresets() { return NAME_EFFECT_PRESETS }
   @Get("inventory") inventory(@CurrentUser() user: UserResponseDto) { return this.commerce.listPlayerInventory(user.id) }
   @Post("avatar-frames/equip") equipAvatarFrame(@CurrentUser() user: UserResponseDto, @Body() dto: EquipAvatarFrameDto) { return this.commerce.equipAvatarFrame(user.id, dto.assetKey) }
+  @Post("name-effects/equip") equipNameEffect(@CurrentUser() user: UserResponseDto, @Body() dto: EquipAvatarFrameDto) { return this.commerce.equipNameEffect(user.id, dto.assetKey) }
   @Get("entitlements") entitlements(@CurrentUser() user: UserResponseDto) { return this.commerce.listPlayerEntitlements(user.id) }
   @Get("purchases") purchases(@CurrentUser() user: UserResponseDto) { return this.commerce.listPurchases(user.id) }
   @Post("purchases") @ApiOperation({ summary: "Purchase a catalog item with a virtual wallet" }) purchase(@CurrentUser() user: UserResponseDto, @Body() dto: PurchaseDto) { return this.commerce.purchase(user.id, dto) }

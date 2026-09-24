@@ -90,6 +90,7 @@ export class MatchService {
                     displayName: true,
                     avatarUrl: true,
                     avatarFrameKey: true,
+                    nameEffectKey: true,
                     countryCode: true,
                     level: true,
                     elo: true,

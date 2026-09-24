@@ -396,6 +396,7 @@ export class PlayersService {
     displayName: string
     avatarUrl: string | null
     avatarFrameKey: string | null
+    nameEffectKey: string | null
     countryCode: string | null
     bio: string | null
     level: number
@@ -406,6 +407,7 @@ export class PlayersService {
       displayName: profile.displayName,
       avatarUrl: profile.avatarUrl,
       avatarFrameKey: profile.avatarFrameKey,
+      nameEffectKey: profile.nameEffectKey,
       countryCode: profile.countryCode,
       bio: profile.bio,
       level: profile.level,

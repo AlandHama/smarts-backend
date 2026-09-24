@@ -16,6 +16,7 @@ import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-tra
 import { applyGldPolicyOverrides, getGldConfig } from "../gld/gld.config"
 import { catalogGldPrice } from "./catalog-gld-pricing"
 import { avatarFramePreset } from "./avatar-frame-presets"
+import { nameEffectPreset } from "./name-effect-presets"
 
 @Injectable()
 export class CommerceService {
@@ -156,6 +157,15 @@ export class CommerceService {
     if (metadata.cosmeticType !== "avatar_frame" || !frameKey || !avatarFramePreset(frameKey)) throw new BadRequestException("This asset is not a valid avatar frame")
     const profile = await this.prisma.playerProfile.update({ where: { userId }, data: { avatarFrameKey: frameKey } })
     return this.serialize({ avatarFrameKey: profile.avatarFrameKey, frame: avatarFramePreset(frameKey) })
+  }
+  async equipNameEffect(userId: string, assetKey: string) {
+    const item = await this.prisma.inventoryItem.findFirst({ where: { userId, assetDefinition: { key: this.assetKey(assetKey) } }, include: { assetDefinition: true } })
+    if (!item) throw new NotFoundException("You do not own this name effect")
+    const metadata = item.assetDefinition.metadata && typeof item.assetDefinition.metadata === "object" && !Array.isArray(item.assetDefinition.metadata) ? item.assetDefinition.metadata as Record<string, unknown> : {}
+    const effectKey = typeof metadata.nameEffectKey === "string" ? metadata.nameEffectKey : null
+    if (metadata.cosmeticType !== "name_effect" || !effectKey || !nameEffectPreset(effectKey)) throw new BadRequestException("This asset is not a valid name effect")
+    const profile = await this.prisma.playerProfile.update({ where: { userId }, data: { nameEffectKey: effectKey } })
+    return this.serialize({ nameEffectKey: profile.nameEffectKey, effect: nameEffectPreset(effectKey) })
   }
   listPlayerEntitlements(userId: string) { return this.prisma.entitlement.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: true } }).then((value) => this.serialize(value)) }
   listPurchases(userId?: string) { return this.prisma.purchase.findMany({ where: userId ? { userId } : undefined, orderBy: { createdAt: "desc" }, take: 500, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, currency: { select: { code: true, name: true } }, lines: true } }).then((value) => this.serialize(value)) }

@@ -170,7 +170,7 @@ export class MatchmakingService {
             select: {
               id: true,
               username: true,
-              profile: { select: { displayName: true, avatarUrl: true, avatarFrameKey: true } },
+              profile: { select: { displayName: true, avatarUrl: true, avatarFrameKey: true, nameEffectKey: true } },
             },
           },
           gameDefinition: { select: { key: true, name: true } },
@@ -189,7 +189,7 @@ export class MatchmakingService {
             select: {
               id: true,
               username: true,
-              profile: { select: { displayName: true, avatarUrl: true, avatarFrameKey: true } },
+              profile: { select: { displayName: true, avatarUrl: true, avatarFrameKey: true, nameEffectKey: true } },
             },
           },
           gameDefinition: { select: { key: true, name: true } },
