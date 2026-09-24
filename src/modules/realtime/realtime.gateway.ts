@@ -137,9 +137,15 @@ export class RealtimeGateway implements OnModuleDestroy {
       const snapshot = await this.matches.get(matchId, state.userId)
       const key = JSON.stringify(snapshot)
       const cacheKey = `match:${matchId}`
-      if (!force && state.lastSnapshots.get(cacheKey) === key) return
+      const previousSnapshotKey = state.lastSnapshots.get(cacheKey)
+      const snapshotChanged = force || previousSnapshotKey !== key
       state.lastSnapshots.set(cacheKey, key)
-      this.send(client, "match.snapshot", snapshot)
+      if (snapshotChanged) this.send(client, "match.snapshot", snapshot)
+
+      // Match reactions such as EMOTE are persisted events and do not change
+      // the match projection. Do not return when the snapshot is unchanged;
+      // otherwise an emote sent between two score updates is never delivered
+      // to the opponent's subscribed socket.
       const recentEvents = await this.prisma.matchEvent.findMany({ where: { matchId, accepted: true }, orderBy: { serverReceivedAt: "desc" }, take: 20, select: { id: true, participantId: true, eventType: true, sequence: true, serverReceivedAt: true, payload: true } })
       const eventCacheKey = `events:${matchId}`
       const eventKey = recentEvents.map((event) => event.id).join(",")
