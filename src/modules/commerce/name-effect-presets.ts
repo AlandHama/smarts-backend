@@ -6,6 +6,7 @@ export type NameEffectPreset = {
   secondary: string
   accent: string
   animation: "pulse" | "shimmer" | "rainbow" | "glitch" | "sparkle" | "fire"
+  rarity?: "standard" | "legendary"
 }
 
 /** Server-owned name cosmetics. Asset metadata uses the same stable keys. */
@@ -20,6 +21,16 @@ export const NAME_EFFECT_PRESETS: readonly NameEffectPreset[] = [
   { key: "holographic", name: "Holographic", description: "A shifting rainbow hologram.", primary: "#f0abfc", secondary: "#67e8f9", accent: "#fef3c7", animation: "rainbow" },
   { key: "galaxy-prism", name: "Galaxy Prism", description: "Deep-space colors with a prism sweep.", primary: "#c4b5fd", secondary: "#7c3aed", accent: "#f5d0fe", animation: "rainbow" },
   { key: "glitch-luxe", name: "Glitch Luxe", description: "A sharp animated cyber effect.", primary: "#f0fdf4", secondary: "#a3e635", accent: "#f472b6", animation: "glitch" },
+  { key: "celestial-crown", name: "Celestial Crown", description: "A radiant crown of starlight for elite players.", primary: "#fef08a", secondary: "#a78bfa", accent: "#67e8f9", animation: "sparkle", rarity: "legendary" },
+  { key: "diamond-elite", name: "Diamond Elite", description: "A brilliant diamond shimmer with icy highlights.", primary: "#e0f2fe", secondary: "#93c5fd", accent: "#ffffff", animation: "shimmer", rarity: "legendary" },
+  { key: "inferno-royal", name: "Inferno Royal", description: "A fierce ember trail wrapped in royal crimson.", primary: "#ffedd5", secondary: "#f97316", accent: "#ef4444", animation: "fire", rarity: "legendary" },
+  { key: "aurora-legend", name: "Aurora Legend", description: "A northern-light ribbon reserved for legends.", primary: "#99f6e4", secondary: "#818cf8", accent: "#f0abfc", animation: "rainbow", rarity: "legendary" },
+  { key: "plasma-emperor", name: "Plasma Emperor", description: "A charged violet plasma wave with cyan sparks.", primary: "#f0abfc", secondary: "#c084fc", accent: "#22d3ee", animation: "pulse", rarity: "legendary" },
+  { key: "obsidian-gold", name: "Obsidian Gold", description: "A dark-gold finish with a molten luxury glint.", primary: "#fff7ae", secondary: "#f59e0b", accent: "#292524", animation: "sparkle", rarity: "legendary" },
+  { key: "cosmic-opal", name: "Cosmic Opal", description: "A deep-space opal prism that shifts through color.", primary: "#f5d0fe", secondary: "#67e8f9", accent: "#c4b5fd", animation: "rainbow", rarity: "legendary" },
+  { key: "dragonfire", name: "Dragonfire", description: "A blazing gold-and-crimson effect with dragon energy.", primary: "#facc15", secondary: "#ef4444", accent: "#7f1d1d", animation: "fire", rarity: "legendary" },
+  { key: "quantum-prism", name: "Quantum Prism", description: "A rare prism burst from the edge of the leaderboard.", primary: "#a7f3d0", secondary: "#f0abfc", accent: "#60a5fa", animation: "glitch", rarity: "legendary" },
+  { key: "imperial-violet", name: "Imperial Violet", description: "A regal violet aura finished with a royal-gold sweep.", primary: "#ddd6fe", secondary: "#7c3aed", accent: "#fbbf24", animation: "shimmer", rarity: "legendary" },
 ]
 
 export function nameEffectPreset(key: string | null | undefined) {
