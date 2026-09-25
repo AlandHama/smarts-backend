@@ -60,6 +60,7 @@ export class AdRewardsService {
         },
       },
       serverRewardAmount: policy.rewardAmount,
+      serverRewardAmountDecimal: policy.effectiveRewardAmountDecimal,
     });
   }
 
@@ -80,17 +81,18 @@ export class AdRewardsService {
         this.gldEmission.estimateAdReward(tx, {
           userId,
           baseAmount: configured.rewardAmount,
+          baseAmountDecimal: configured.effectiveRewardAmountDecimal,
           exactAmount: true,
         }),
       );
       return {
         adFormat: normalizedFormat,
         currencyCode: "GLD",
-        amount: estimate.amount.toString(),
+        amount: estimate.amountDecimal,
         regionCode: configured.regionCode,
         remainingDailyAds: estimate.remainingDailyAds,
-        remainingDailyGldCap: estimate.remainingDailyGldCap.toString(),
-        eligible: estimate.amount > 0n,
+        remainingDailyGldCap: estimate.remainingDailyGldCapDecimal,
+        eligible: estimate.amountDecimal !== "0",
         reason: estimate.reason,
       };
     } catch (error) {
@@ -161,6 +163,7 @@ export class AdRewardsService {
         id: true,
         status: true,
         rewardAmount: true,
+        rewardAmountDecimal: true,
         currency: { select: { code: true } },
         grantedAt: true,
         rejectionReason: true,
@@ -178,7 +181,7 @@ export class AdRewardsService {
     return {
       claimId: claim.id,
       status: claim.status,
-      amount: claim.rewardAmount?.toString() ?? null,
+      amount: claim.rewardAmountDecimal?.toString() ?? claim.rewardAmount?.toString() ?? null,
       currencyCode: claim.currency?.code ?? null,
       grantedAt: claim.grantedAt,
       rejectionReason: claim.rejectionReason,

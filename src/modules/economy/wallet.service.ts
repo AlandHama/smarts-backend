@@ -58,11 +58,15 @@ export class WalletService {
         return {
           currency: balance.currency,
           amount: balance.amount,
+          exactAmount: balance.exactAmount,
           ...(displayedValue === null
             ? {}
             : {
                 displayedValueUsdMicros: displayedValue,
-                estimatedDisplayValueUsdMicros: balance.amount * displayedValue,
+                estimatedDisplayValueUsdMicros: balance.exactAmount
+                  .mul(displayedValue.toString())
+                  .floor()
+                  .toFixed(0),
               }),
         };
       }),

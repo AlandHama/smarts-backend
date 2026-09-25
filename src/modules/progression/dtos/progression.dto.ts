@@ -61,6 +61,13 @@ export class CreateProgressionTierDto {
   @MaxLength(100)
   name?: string
 
+  @ApiPropertyOptional({ example: 20, description: "Percentage added to eligible GLD ad rewards at this level and above." })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  adRewardBonusPercent?: number
+
   @ApiPropertyOptional({ type: Object })
   @IsOptional()
   @IsObject()

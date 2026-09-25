@@ -310,8 +310,8 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     return this.serialize(
       rows.map((row) => ({
         ...row,
-        rewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount,
-        effectiveRewardAmount: row.rewardAmount,
+        rewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount.toString(),
+        effectiveRewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount.toString(),
       })),
     );
   }
@@ -321,9 +321,8 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     const eventType = dto.eventType.trim().toLowerCase();
     const regionCode = dto.regionCode.trim().toUpperCase();
     const configuredAmount = dto.rewardAmount.trim();
-    const [whole, fraction = ""] = configuredAmount.split(".");
-    const rewardAmount = BigInt(whole) + (fraction && /[1-9]/.test(fraction) ? 1n : 0n);
     const rewardAmountDecimal = new Prisma.Decimal(configuredAmount);
+    const rewardAmount = BigInt(rewardAmountDecimal.floor().toFixed(0));
     const row = await this.prisma.$transaction(async (tx) => {
       const policy = await tx.gldAdRewardPolicy.upsert({
         where: {
@@ -349,7 +348,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
           eventType,
           regionCode,
           rewardAmount: configuredAmount,
-          effectiveRewardAmount: rewardAmount.toString(),
+          effectiveRewardAmount: rewardAmountDecimal.toString(),
           enabled: policy.enabled,
         },
       });
@@ -357,8 +356,8 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     });
     return this.serialize({
       ...row,
-      rewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount,
-      effectiveRewardAmount: row.rewardAmount,
+      rewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount.toString(),
+      effectiveRewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount.toString(),
     });
   }
 
@@ -413,12 +412,29 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException(
         "No GLD reward is configured for this ad event",
       );
+    const playerProgression = await this.prisma.playerProgression.findFirst({
+      where: { userId, progression: { key: "main" } },
+      select: { step: true },
+    });
+    const reachedTier = playerProgression
+      ? await this.prisma.progressionTier.findFirst({
+          where: { progression: { key: "main" }, step: { lte: playerProgression.step } },
+          orderBy: { step: "desc" },
+          select: { adRewardBonusPercent: true },
+        })
+      : null;
+    const rewardAmountDecimal = policy.rewardAmountDecimal ?? new Prisma.Decimal(policy.rewardAmount.toString());
+    const adRewardBonusPercent = reachedTier?.adRewardBonusPercent ?? 0;
+    const effectiveRewardAmountDecimal = rewardAmountDecimal.mul(100 + adRewardBonusPercent).div(100);
     return {
       adFormat,
       eventType,
       countryCode,
       regionCode: policy.regionCode,
       rewardAmount: policy.rewardAmount,
+      rewardAmountDecimal: rewardAmountDecimal.toString(),
+      adRewardBonusPercent,
+      effectiveRewardAmountDecimal: effectiveRewardAmountDecimal.toString(),
     };
   }
 

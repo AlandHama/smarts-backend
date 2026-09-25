@@ -109,6 +109,7 @@ export interface ProgressionTier {
   step: number;
   pointsThreshold: string;
   name: string | null;
+  adRewardBonusPercent?: number;
   rewards: RewardDefinition[];
 }
 

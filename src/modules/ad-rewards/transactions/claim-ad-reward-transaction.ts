@@ -42,6 +42,7 @@ type ClaimAdRewardInput = {
   signature?: string;
   trustedVerification?: TrustedAdProviderVerification;
   serverRewardAmount?: bigint;
+  serverRewardAmountDecimal?: string;
 };
 
 @Injectable()
@@ -115,6 +116,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
     if (claim.status === "GRANTED")
       return this.result(
         claim.rewardAmount,
+        claim.rewardAmountDecimal,
         claim.currencyId,
         claim.grantedAt,
         "already-granted",
@@ -137,24 +139,25 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
       };
     }
     const reward = policy.privateConfig.rewards?.[claim.adFormat];
-    const baseAmount = input.serverRewardAmount?.toString() ?? reward?.amount;
+    const baseAmount = input.serverRewardAmountDecimal ?? input.serverRewardAmount?.toString() ?? reward?.amount;
     const currencyCode =
       input.trustedVerification?.source === "CLIENT_EVENT"
         ? "GLD"
         : policy.privateConfig.currencyCode?.trim().toUpperCase();
     if (
       !currencyCode ||
-      (!baseAmount && input.serverRewardAmount === undefined) ||
-      (baseAmount !== undefined && !/^\d+$/.test(baseAmount)) ||
-      (baseAmount !== undefined && BigInt(baseAmount) <= 0n)
+      (!baseAmount && input.serverRewardAmount === undefined && input.serverRewardAmountDecimal === undefined) ||
+      (baseAmount !== undefined && !/^\d+(?:\.\d{1,6})?$/.test(baseAmount)) ||
+      (baseAmount !== undefined && new Prisma.Decimal(baseAmount).lte(0))
     )
       return this.reject(
         transaction,
         claim.id,
         "Ad reward policy is not configured",
       );
-    const amountSource = input.serverRewardAmount?.toString() ?? baseAmount!;
-    let amount = BigInt(amountSource);
+    const amountSource = input.serverRewardAmountDecimal ?? input.serverRewardAmount?.toString() ?? baseAmount!;
+    let amountDecimal = new Prisma.Decimal(amountSource);
+    let amount = BigInt(amountDecimal.floor().toFixed(0));
     const country = claim.user.profile?.countryCode?.trim().toUpperCase();
     const multiplier =
       input.serverRewardAmount !== undefined
@@ -162,7 +165,10 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
         : country
           ? reward?.multiplierByCountry?.[country]
           : undefined;
-    if (multiplier) amount = this.applyMultiplier(amount, multiplier);
+    if (multiplier) {
+      amountDecimal = this.applyMultiplier(amountDecimal, multiplier);
+      amount = BigInt(amountDecimal.floor().toFixed(0));
+    }
     if (amount <= 0n && currencyCode !== "GLD")
       return this.reject(transaction, claim.id, "Ad reward amount is invalid");
 
@@ -237,8 +243,9 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
       emission = await this.gldEmission.issueAdReward(transaction, {
         userId: claim.userId,
         baseAmount: amount,
+        baseAmountDecimal: amountDecimal.toString(),
         sourceId: claim.id,
-        exactAmount: input.serverRewardAmount !== undefined,
+        exactAmount: input.serverRewardAmount !== undefined || input.serverRewardAmountDecimal !== undefined,
         metadata: {
           provider: claim.provider,
           providerEventId,
@@ -247,6 +254,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
         },
       });
       amount = emission.amount;
+      amountDecimal = new Prisma.Decimal(emission.amountDecimal);
     }
     const referralSplit =
       currencyCode === "GLD"
@@ -262,13 +270,22 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
             referralId: null as string | null,
           };
     amount = referralSplit.playerAmount;
+    if (currencyCode === "GLD" && referralSplit.referralRewardAmount > 0n) {
+      amountDecimal = amountDecimal.sub(
+        new Prisma.Decimal(referralSplit.referralRewardAmount.toString()),
+      );
+      if (amountDecimal.lt(0)) amountDecimal = new Prisma.Decimal(0);
+      amount = BigInt(amountDecimal.floor().toFixed(0));
+    }
+    const hasReward = currencyCode === "GLD" ? amountDecimal.gt(0) : amount > 0n;
     const ledger =
-      amount > 0n
+      hasReward
         ? await this.creditWallet.runWithinTransaction(
             {
               userId: claim.userId,
               currencyCode,
               amount,
+              ...(currencyCode === "GLD" ? { amountDecimal: amountDecimal.toString() } : {}),
               sourceId: claim.id,
               sourceType: WalletTransactionSourceType.AD,
               rewardGrantKey: `AD:${claim.id}`,
@@ -295,6 +312,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
         countryCode: country ?? null,
         currencyId: currency?.id,
         rewardAmount: amount,
+        rewardAmountDecimal: amountDecimal,
         status: "GRANTED",
         verificationPayload: {
           providerVerified: input.trustedVerification?.source === "ADMOB_SSV",
@@ -306,7 +324,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
             : {}),
           ...(emission
             ? {
-                rewarded: amount > 0n,
+                rewarded: hasReward,
                 remainingDailyAds: emission.remainingDailyAds,
                 remainingDailyGldCap: emission.remainingDailyGldCap.toString(),
                 reason: emission.reason,
@@ -325,7 +343,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
         payload: {
           claimId: claim.id,
           userId: claim.userId,
-          amount: amount.toString(),
+          amount: amountDecimal.toString(),
           currencyCode,
           ledger,
           ...(referralSplit.referralRewardAmount > 0n
@@ -342,7 +360,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
             ? {
                 remainingDailyAds: emission.remainingDailyAds,
                 remainingDailyGldCap: emission.remainingDailyGldCap.toString(),
-                rewarded: amount > 0n,
+                rewarded: hasReward,
                 reason: emission.reason,
               }
             : {}),
@@ -355,7 +373,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
       action: "AD_REWARD_GRANTED",
       entityType: "AdRewardClaim",
       entityId: claim.id,
-      summary: `Granted ${amount.toString()} ${currencyCode} for a verified ad`,
+      summary: `Granted ${amountDecimal.toString()} ${currencyCode} for a verified ad`,
       changes: {
         status: { old: claim.status, new: "GRANTED" },
         rewardAmount: { old: claim.rewardAmount ?? 0n, new: amount },
@@ -373,10 +391,10 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
     return {
       claimId: updated.id,
       status: updated.status,
-      amount: amount.toString(),
+      amount: amountDecimal.toString(),
       currencyCode,
       grantedAt: updated.grantedAt,
-      rewarded: amount > 0n,
+      rewarded: hasReward,
       ...(emission
         ? {
             remainingDailyAds: emission.remainingDailyAds,
@@ -399,24 +417,22 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
     throw new BadRequestException(reason);
   }
 
-  private applyMultiplier(amount: bigint, value: string) {
-    const match = value.match(/^(\d+)(?:\.(\d{1,6}))?$/);
-    if (!match)
+  private applyMultiplier(amount: Prisma.Decimal, value: string) {
+    if (!/^\d+(?:\.\d{1,6})?$/.test(value))
       throw new BadRequestException("Ad reward policy multiplier is invalid");
-    const scale = 10n ** BigInt(match[2]?.length ?? 0);
-    const numerator = BigInt(match[1]) * scale + BigInt(match[2] ?? "0");
-    return (amount * numerator) / scale;
+    return amount.mul(new Prisma.Decimal(value));
   }
 
   private result(
     amount: bigint | null,
+    amountDecimal: Prisma.Decimal | null,
     currencyId: string | null,
     grantedAt: Date | null,
     status: string,
   ) {
     return {
       status,
-      amount: amount?.toString() ?? null,
+      amount: amountDecimal?.toString() ?? amount?.toString() ?? null,
       currencyId,
       grantedAt,
     };

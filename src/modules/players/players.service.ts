@@ -35,7 +35,7 @@ export class PlayersService {
           select: {
             status: true,
             balances: {
-              select: { amount: true, currency: { select: { code: true } } },
+              select: { amount: true, exactAmount: true, currency: { select: { code: true } } },
               orderBy: { currency: { code: "asc" } },
             },
           },
@@ -324,7 +324,7 @@ export class PlayersService {
     cognitiveStats: Prisma.UserGetPayload<{ select: { cognitiveStats: true } }>["cognitiveStats"]
     wallet: {
       status: string
-      balances: Array<{ amount: bigint; currency: { code: string } }>
+      balances: Array<{ amount: bigint; exactAmount: Prisma.Decimal; currency: { code: string } }>
     } | null
   }): PlayerResponseDto {
     if (!player.profile || !player.stats || !player.wallet) throw new NotFoundException("Player profile is not initialized")
@@ -341,6 +341,7 @@ export class PlayersService {
         balances: player.wallet.balances.map((balance) => ({
           code: balance.currency.code,
           amount: balance.amount.toString(),
+          exactAmount: balance.exactAmount.toString(),
         })),
       },
     }

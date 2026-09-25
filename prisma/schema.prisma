@@ -623,22 +623,22 @@ model ReferralReward {
 }
 
 model PlayerProfile {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @unique @db.Uuid
-  displayName String   @db.VarChar(50)
-  avatarUrl   String?  @db.Text
-  avatarFrameKey String? @db.VarChar(80)
-  nameEffectKey String? @db.VarChar(80)
-  countryCode String?  @db.VarChar(2)
-  bio         String?  @db.VarChar(250)
-  isPublic    Boolean  @default(true)
-  metadata    Json?
-  level       Int      @default(1)
-  xp          BigInt   @default(0)
-  elo         Int      @default(1000)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @unique @db.Uuid
+  displayName    String   @db.VarChar(50)
+  avatarUrl      String?  @db.Text
+  avatarFrameKey String?  @db.VarChar(80)
+  nameEffectKey  String?  @db.VarChar(80)
+  countryCode    String?  @db.VarChar(2)
+  bio            String?  @db.VarChar(250)
+  isPublic       Boolean  @default(true)
+  metadata       Json?
+  level          Int      @default(1)
+  xp             BigInt   @default(0)
+  elo            Int      @default(1000)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([elo])
   @@index([level])
@@ -1052,15 +1052,16 @@ model Wallet {
 }
 
 model WalletBalance {
-  id         String             @id @default(uuid()) @db.Uuid
-  walletId   String             @db.Uuid
-  currencyId String             @db.Uuid
-  amount     BigInt             @default(0)
-  version    BigInt             @default(0)
-  createdAt  DateTime           @default(now())
-  updatedAt  DateTime           @updatedAt
-  wallet     Wallet             @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  currency   CurrencyDefinition @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  id          String             @id @default(uuid()) @db.Uuid
+  walletId    String             @db.Uuid
+  currencyId  String             @db.Uuid
+  amount      BigInt             @default(0)
+  exactAmount Decimal            @default(0) @db.Decimal(30, 6)
+  version     BigInt             @default(0)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  wallet      Wallet             @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  currency    CurrencyDefinition @relation(fields: [currencyId], references: [id], onDelete: Restrict)
 
   @@unique([walletId, currencyId])
   @@index([currencyId])
@@ -1129,16 +1130,17 @@ model ProgressionDefinition {
 }
 
 model ProgressionTier {
-  id              String                  @id @default(uuid()) @db.Uuid
-  progressionId   String                  @db.Uuid
-  step            Int
-  pointsThreshold BigInt
-  name            String?                 @db.VarChar(100)
-  metadata        Json?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-  progression     ProgressionDefinition   @relation(fields: [progressionId], references: [id], onDelete: Cascade)
-  rewards         ProgressionTierReward[]
+  id                   String                  @id @default(uuid()) @db.Uuid
+  progressionId        String                  @db.Uuid
+  step                 Int
+  pointsThreshold      BigInt
+  name                 String?                 @db.VarChar(100)
+  adRewardBonusPercent Int                     @default(0)
+  metadata             Json?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  progression          ProgressionDefinition   @relation(fields: [progressionId], references: [id], onDelete: Cascade)
+  rewards              ProgressionTierReward[]
 
   @@unique([progressionId, step])
   @@unique([progressionId, pointsThreshold])
@@ -1215,6 +1217,7 @@ model RewardGrant {
   progressionDefinitionId String?                     @db.Uuid
   currencyId              String?                     @db.Uuid
   amount                  BigInt?
+  amountDecimal           Decimal?                    @db.Decimal(30, 6)
   targetKey               String?                     @db.VarChar(120)
   status                  RewardGrantStatus           @default(GRANTED)
   policyVersion           String?                     @db.VarChar(32)
@@ -1230,21 +1233,24 @@ model RewardGrant {
 }
 
 model WalletTransaction {
-  id               String                      @id @default(uuid()) @db.Uuid
-  walletId         String                      @db.Uuid
-  currencyId       String                      @db.Uuid
-  direction        WalletTransactionDirection
-  amount           BigInt
-  balanceBefore    BigInt
-  balanceAfter     BigInt
-  sourceType       WalletTransactionSourceType
-  sourceId         String                      @db.VarChar(255)
-  grantKey         String?                     @unique @db.VarChar(255)
-  idempotencyKeyId String?                     @db.Uuid
-  metadata         Json?
-  createdAt        DateTime                    @default(now())
-  wallet           Wallet                      @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  currency         CurrencyDefinition          @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  id                 String                      @id @default(uuid()) @db.Uuid
+  walletId           String                      @db.Uuid
+  currencyId         String                      @db.Uuid
+  direction          WalletTransactionDirection
+  amount             BigInt
+  balanceBefore      BigInt
+  balanceAfter       BigInt
+  exactAmount        Decimal                     @default(0) @db.Decimal(30, 6)
+  exactBalanceBefore Decimal                     @default(0) @db.Decimal(30, 6)
+  exactBalanceAfter  Decimal                     @default(0) @db.Decimal(30, 6)
+  sourceType         WalletTransactionSourceType
+  sourceId           String                      @db.VarChar(255)
+  grantKey           String?                     @unique @db.VarChar(255)
+  idempotencyKeyId   String?                     @db.Uuid
+  metadata           Json?
+  createdAt          DateTime                    @default(now())
+  wallet             Wallet                      @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  currency           CurrencyDefinition          @relation(fields: [currencyId], references: [id], onDelete: Restrict)
 
   @@index([walletId, currencyId, createdAt])
   @@index([sourceType, sourceId])
@@ -1749,6 +1755,7 @@ model AdRewardClaim {
   countryCode         String?             @db.Char(2)
   currencyId          String?             @db.Uuid
   rewardAmount        BigInt?
+  rewardAmountDecimal Decimal?            @db.Decimal(30, 6)
   status              AdRewardClaimStatus @default(PENDING)
   verificationPayload Json?
   rejectionReason     String?             @db.VarChar(255)
@@ -1882,16 +1889,18 @@ model GldEconomySnapshot {
 
 /// Per-UTC-day budget and accounting for all GLD issuance and burns.
 model GldEmissionDay {
-  id                   String   @id @default(uuid()) @db.Uuid
-  dateKey              String   @unique @db.Char(10)
-  emissionBudget       BigInt
-  emittedAmount        BigInt   @default(0)
-  burnedAmount         BigInt   @default(0)
-  adRewardAmount       BigInt   @default(0)
-  gameplayRewardAmount BigInt   @default(0)
-  promotionalAmount    BigInt   @default(0)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                    String   @id @default(uuid()) @db.Uuid
+  dateKey               String   @unique @db.Char(10)
+  emissionBudget        BigInt
+  emittedAmount         BigInt   @default(0)
+  burnedAmount          BigInt   @default(0)
+  adRewardAmount        BigInt   @default(0)
+  emittedAmountDecimal  Decimal  @default(0) @db.Decimal(30, 6)
+  adRewardAmountDecimal Decimal  @default(0) @db.Decimal(30, 6)
+  gameplayRewardAmount  BigInt   @default(0)
+  promotionalAmount     BigInt   @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 /// Explicit destruction of GLD through an approved economy sink.
@@ -1919,6 +1928,7 @@ model GldPlayerDailyAdState {
   validatedAds         Int       @default(0)
   rewardedAds          Int       @default(0)
   gldEarned            BigInt    @default(0)
+  gldEarnedDecimal     Decimal   @default(0) @db.Decimal(30, 6)
   rewardValueUsdMicros BigInt    @default(0)
   lastRewardedAt       DateTime?
   createdAt            DateTime  @default(now())

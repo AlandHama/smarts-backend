@@ -25,6 +25,7 @@ export class CreateProgressionTierTransaction extends PrismaTransaction<{ progre
         step: data.dto.step,
         pointsThreshold: threshold,
         name: data.dto.name?.trim(),
+        adRewardBonusPercent: data.dto.adRewardBonusPercent ?? 0,
         metadata: data.dto.metadata as Prisma.InputJsonValue | undefined,
       } })
     } catch (error) {
@@ -33,4 +34,3 @@ export class CreateProgressionTierTransaction extends PrismaTransaction<{ progre
     }
   }
 }
-

@@ -27,6 +27,7 @@ export class UpdateProgressionTierTransaction extends PrismaTransaction<{ id: st
         pointsThreshold: threshold,
         ...(data.dto.name !== undefined ? { name: data.dto.name?.trim() || null } : {}),
         ...(data.dto.metadata !== undefined ? { metadata: data.dto.metadata as Prisma.InputJsonValue } : {}),
+        ...(data.dto.adRewardBonusPercent !== undefined ? { adRewardBonusPercent: data.dto.adRewardBonusPercent } : {}),
       } })
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new ConflictException("Tier step or threshold already exists")
@@ -34,4 +35,3 @@ export class UpdateProgressionTierTransaction extends PrismaTransaction<{ id: st
     }
   }
 }
-
