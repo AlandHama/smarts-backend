@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { CreateProgressionTierDto } from "../dtos"
+import { reconcilePlayerProgressionRows } from "./reconcile-player-progression"
 
 @Injectable()
 export class CreateProgressionTierTransaction extends PrismaTransaction<{ progressionId: string; dto: CreateProgressionTierDto }, any> {
@@ -20,7 +21,7 @@ export class CreateProgressionTierTransaction extends PrismaTransaction<{ progre
     if (previous && threshold <= previous.pointsThreshold) throw new BadRequestException("Tier thresholds must increase with step")
     if (next && threshold >= next.pointsThreshold) throw new BadRequestException("Tier thresholds must increase with step")
     try {
-      return await transaction.progressionTier.create({ data: {
+      const created = await transaction.progressionTier.create({ data: {
         progressionId: data.progressionId,
         step: data.dto.step,
         pointsThreshold: threshold,
@@ -28,6 +29,8 @@ export class CreateProgressionTierTransaction extends PrismaTransaction<{ progre
         adRewardBonusPercent: data.dto.adRewardBonusPercent ?? 0,
         metadata: data.dto.metadata as Prisma.InputJsonValue | undefined,
       } })
+      await reconcilePlayerProgressionRows(transaction, data.progressionId)
+      return created
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new ConflictException("Tier step or threshold already exists")
       throw error
