@@ -36,16 +36,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const [user, session] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: payload.userId } }),
       this.prisma.session.findFirst({
-        where: {
-          userId: payload.userId,
-          tokenId: payload.tokenId,
-          sessionStatus: "ACTIVE",
-          expiresAt: { gt: new Date() },
-        },
+        where: { userId: payload.userId, tokenId: payload.tokenId },
+        select: { id: true, sessionStatus: true, expiresAt: true },
       }),
     ])
 
-    if (!user || !session) throw new UnauthorizedException("Session is no longer active")
+    if (!user) throw new UnauthorizedException("Session is no longer active")
+    if (!session || session.sessionStatus !== "ACTIVE" || session.expiresAt <= new Date()) {
+      if (session?.sessionStatus === "TERMINATED") {
+        throw new UnauthorizedException({ message: "Your account was signed in on another device.", error: "SESSION_REVOKED" })
+      }
+      throw new UnauthorizedException({ message: "Your session is no longer active.", error: "SESSION_INVALID" })
+    }
     if (user.status === "BANNED") throw new UnauthorizedException("User is banned")
     if (user.status !== "ACTIVE") throw new UnauthorizedException("User is inactive")
 

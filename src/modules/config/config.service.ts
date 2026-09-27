@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
 import { PublishRewardPolicyDto } from "./dtos/reward-policy.dto"
+import { UpdateAppConfigurationDto } from "./dtos/update-app-configuration.dto"
 import { PublishRewardPolicyTransaction } from "./transactions/publish-reward-policy-transaction"
 import { DeactivateRewardPolicyTransaction } from "./transactions/deactivate-reward-policy-transaction"
 import { GameService } from "../game/game.service"
@@ -37,7 +38,44 @@ export class ConfigService {
       gameDefinitions: await this.gameService.listDefinitions(false),
       policies: policies.map((policy) => ({ key: policy.key, version: policy.version, config: policy.publicConfig })),
       googleAuth: await this.googleAuthService.getPublicConfig(),
+      appUpdate: await this.getAppUpdateConfig(),
     }
+  }
+
+  getAppUpdateConfig() {
+    return this.prisma.appConfiguration.upsert({
+      where: { key: "default" },
+      create: {},
+      update: {},
+      select: {
+        productionVersion: true,
+        developmentVersion: true,
+        playStoreUrl: true,
+        updatedAt: true,
+      },
+    })
+  }
+
+  updateAppConfiguration(dto: UpdateAppConfigurationDto) {
+    return this.prisma.appConfiguration.upsert({
+      where: { key: "default" },
+      create: {
+        productionVersion: dto.productionVersion.trim(),
+        developmentVersion: dto.developmentVersion.trim(),
+        playStoreUrl: dto.playStoreUrl?.trim() || undefined,
+      },
+      update: {
+        productionVersion: dto.productionVersion.trim(),
+        developmentVersion: dto.developmentVersion.trim(),
+        ...(dto.playStoreUrl?.trim() ? { playStoreUrl: dto.playStoreUrl.trim() } : {}),
+      },
+      select: {
+        productionVersion: true,
+        developmentVersion: true,
+        playStoreUrl: true,
+        updatedAt: true,
+      },
+    })
   }
 
   async getActivePrivate<T extends Record<string, unknown>>(key: string): Promise<{ version: number; publicConfig: Record<string, unknown>; privateConfig: T }> {

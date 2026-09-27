@@ -1200,6 +1200,28 @@ function AudienceReport({
                   />
                 ))}
               </Stack>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
+                Operating systems
+              </Typography>
+              <Stack spacing={0.5} sx={{ mt: 1 }}>
+                {(data?.deviceInsights?.operatingSystems ?? []).slice(0, 6).map((item) => (
+                  <Stack key={`${item.name}-${item.version}`} direction="row" justifyContent="space-between">
+                    <Typography variant="body2">{item.name} {item.version}</Typography>
+                    <Typography variant="body2" color="text.secondary">{fmt(item.users)} players</Typography>
+                  </Stack>
+                ))}
+              </Stack>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
+                Device models
+              </Typography>
+              <Stack spacing={0.5} sx={{ mt: 1 }}>
+                {(data?.deviceInsights?.models ?? []).slice(0, 6).map((item) => (
+                  <Stack key={`${item.manufacturer}-${item.model}`} direction="row" justifyContent="space-between">
+                    <Typography variant="body2">{item.manufacturer} {item.model}</Typography>
+                    <Typography variant="body2" color="text.secondary">{fmt(item.users)} players</Typography>
+                  </Stack>
+                ))}
+              </Stack>
             </Box>
           </>
         )}

@@ -99,8 +99,19 @@ export interface SessionSummary {
   sessionStatus: string;
   expiresAt: string;
   isMobileSession: boolean;
+  clientVersion?: string | null;
   deviceName: string | null;
   deviceInfo: string | null;
+  appBuildNumber?: string | null;
+  platform?: string | null;
+  osName?: string | null;
+  osVersion?: string | null;
+  deviceType?: string | null;
+  deviceModel?: string | null;
+  deviceManufacturer?: string | null;
+  deviceLocale?: string | null;
+  deviceTimezone?: string | null;
+  isPhysicalDevice?: boolean | null;
   ipAddress: string | null;
   location: string | null;
   lastActiveTimestamp: string;
@@ -398,6 +409,11 @@ export interface SystemAdminAnalytics {
     newPlayers: number;
   }>;
   devices: Array<{ type: string; users: number; sessions: number }>;
+  deviceInsights?: {
+    platforms: Array<{ type: string; users: number; sessions: number }>;
+    operatingSystems: Array<{ name: string; version: string; users: number; sessions: number }>;
+    models: Array<{ manufacturer: string; model: string; users: number; sessions: number }>;
+  };
   gameplay: {
     averageMatchDurationSeconds: number;
     reviewMatches: number;
@@ -1104,6 +1120,16 @@ export interface AdminSession {
   effectiveStatus: "ACTIVE" | "EXPIRED" | "TERMINATED";
   isMobileSession: boolean;
   clientVersion: string | null;
+  appBuildNumber?: string | null;
+  platform?: string | null;
+  osName?: string | null;
+  osVersion?: string | null;
+  deviceType?: string | null;
+  deviceModel?: string | null;
+  deviceManufacturer?: string | null;
+  deviceLocale?: string | null;
+  deviceTimezone?: string | null;
+  isPhysicalDevice?: boolean | null;
   deviceName: string | null;
   deviceInfo: string | null;
   ipAddress: string | null;

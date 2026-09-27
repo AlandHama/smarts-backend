@@ -88,6 +88,8 @@ import {
 import type { UploadedImage } from "../storage/types";
 import { AdminFriendsQueryDto } from "../friends/dtos/friends.dto";
 import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto";
+import { UpdateAppConfigurationDto } from "../config/dtos/update-app-configuration.dto";
+import { ConfigService } from "../config/config.service";
 import { RefreshTokenRequestDto } from "../auth/dtos/refresh-token-request.dto";
 import { TokenService } from "../auth/services/token.service";
 import { AdMobService } from "../admob/admob.service";
@@ -121,6 +123,7 @@ export class SystemAdminController {
     private readonly gldReconciliationService: GldReconciliationService,
     private readonly googleAuthService: GoogleAuthService,
     private readonly notificationsService: NotificationsService,
+    private readonly configService: ConfigService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -321,6 +324,22 @@ export class SystemAdminController {
   })
   analytics(@Query() query: SystemAdminAnalyticsQueryDto) {
     return this.systemAdminService.analytics(query.days);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/app-config")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Read public mobile app configuration" })
+  appConfiguration() {
+    return this.configService.getAppUpdateConfig();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Put("api/app-config")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Configure mobile app version policy" })
+  updateAppConfiguration(@Body() dto: UpdateAppConfigurationDto) {
+    return this.configService.updateAppConfiguration(dto);
   }
 
   @UseGuards(SystemAdminGuard)

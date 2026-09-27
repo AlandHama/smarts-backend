@@ -21,14 +21,12 @@ export class RotateSessionTransaction extends PrismaTransaction<RotateSessionDat
 
   protected async execute(data: RotateSessionData, transaction: Prisma.TransactionClient) {
     const session = await transaction.session.findFirst({
-      where: {
-        userId: data.userId,
-        tokenId: data.tokenId,
-        sessionStatus: "ACTIVE",
-        expiresAt: { gt: new Date() },
-      },
+      where: { userId: data.userId, tokenId: data.tokenId },
     })
-    if (!session || !(await HashHelper.compare(data.refreshToken, session.refreshTokenHash))) {
+    if (session?.sessionStatus === "TERMINATED") {
+      throw new UnauthorizedException({ message: "Your account was signed in on another device.", error: "SESSION_REVOKED" })
+    }
+    if (!session || session.expiresAt <= new Date() || !(await HashHelper.compare(data.refreshToken, session.refreshTokenHash))) {
       throw new UnauthorizedException("Invalid refresh token")
     }
 

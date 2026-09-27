@@ -56,6 +56,7 @@ export type AdminView =
   | "leaderboards"
   | "game-config"
   | "google-auth"
+  | "app-config"
   | "reward-policies"
   | "admob"
   | "storage"
@@ -137,6 +138,11 @@ const navigation = [
     key: "google-auth" as const,
     label: "Google Sign-In",
     icon: <LoginRoundedIcon />,
+  },
+  {
+    key: "app-config" as const,
+    label: "App configuration",
+    icon: <SettingsSuggestRoundedIcon />,
   },
   {
     key: "reward-policies" as const,

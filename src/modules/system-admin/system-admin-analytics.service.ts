@@ -25,7 +25,7 @@ export class SystemAdminAnalyticsService {
     const from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate() - (days - 1)))
     const retentionTo = new Date(to)
 
-    const [trend, summary, answerSummary, matchSummary, commerceSummary, gameRows, progressionRows, retention, countries, devices, timeSummary, health, admob] = await Promise.all([
+    const [trend, summary, answerSummary, matchSummary, commerceSummary, gameRows, progressionRows, retention, countries, deviceReport, timeSummary, health, admob] = await Promise.all([
       this.safeQuery("daily trend", this.trend(from, to), []),
       this.safeQuery("active-user summary", this.summary(from, to), []),
       this.safeQuery("answer summary", this.answerSummary(from, to), []),
@@ -35,7 +35,7 @@ export class SystemAdminAnalyticsService {
       this.safeQuery("progression breakdown", this.progressionBreakdown(from, to), []),
       this.safeQuery("retention", this.retention(from, retentionTo), []),
       this.safeQuery("country breakdown", this.countryBreakdown(from, to), []),
-      this.safeQuery("device breakdown", this.deviceBreakdown(from, to), []),
+      this.safeQuery("device breakdown", this.deviceBreakdown(from, to), this.emptyDeviceReport()),
       this.safeQuery("play-time summary", this.timeSummary(from, to), []),
       this.safeQuery("live health", this.health(), { onlinePlayers: 0, searchingTickets: 0, activeMatches: 0, failedOutbox: 0, openFeedback: 0 }),
       this.safeQuery("AdMob analytics", this.adMobService.analytics(days), this.adMobService.emptyAnalyticsForSystemAdmin(days)),
@@ -121,7 +121,12 @@ export class SystemAdminAnalyticsService {
         periodDelta: this.number(row.period_delta),
       })),
       countries: countries.map((row) => ({ countryCode: String(row.country_code || "UN"), activeUsers: this.number(row.active_users), newPlayers: this.number(row.new_players) })),
-      devices: devices.map((row) => ({ type: String(row.type), users: this.number(row.users), sessions: this.number(row.sessions) })),
+      devices: deviceReport.platforms.map((row) => ({ type: String(row.type), users: this.number(row.users), sessions: this.number(row.sessions) })),
+      deviceInsights: {
+        platforms: deviceReport.platforms.map((row) => ({ type: String(row.type), users: this.number(row.users), sessions: this.number(row.sessions) })),
+        operatingSystems: deviceReport.operatingSystems.map((row) => ({ name: String(row.name), version: String(row.version), users: this.number(row.users), sessions: this.number(row.sessions) })),
+        models: deviceReport.models.map((row) => ({ manufacturer: String(row.manufacturer), model: String(row.model), users: this.number(row.users), sessions: this.number(row.sessions) })),
+      },
       gameplay: {
         averageMatchDurationSeconds: this.number(matchSummary[0]?.average_duration_seconds),
         reviewMatches: this.number(matchSummary[0]?.review),
@@ -313,8 +318,17 @@ export class SystemAdminAnalyticsService {
     return this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`WITH active AS (SELECT DISTINCT a."userId" FROM "PlayerAuditEvent" a WHERE a."createdAt" BETWEEN ${from} AND ${to} UNION SELECT DISTINCT s."userId" FROM "Session" s WHERE s."loginTimestamp" BETWEEN ${from} AND ${to}) SELECT COALESCE(p."countryCode", 'UN') AS country_code, count(DISTINCT active."userId") AS active_users, count(DISTINCT u."id") FILTER (WHERE u."createdAt" BETWEEN ${from} AND ${to}) AS new_players FROM active JOIN "User" u ON u."id" = active."userId" LEFT JOIN "PlayerProfile" p ON p."userId" = u."id" GROUP BY COALESCE(p."countryCode", 'UN') ORDER BY active_users DESC LIMIT 10`)
   }
 
-  private deviceBreakdown(from: Date, to: Date) {
-    return this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`SELECT CASE WHEN "isMobileSession" = true THEN 'Mobile' ELSE 'Web' END AS type, count(DISTINCT "userId") AS users, count(*) AS sessions FROM "Session" WHERE "loginTimestamp" BETWEEN ${from} AND ${to} GROUP BY 1 ORDER BY users DESC`)
+  private async deviceBreakdown(from: Date, to: Date) {
+    const [platforms, operatingSystems, models] = await Promise.all([
+      this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`SELECT COALESCE(NULLIF("platform", ''), CASE WHEN "isMobileSession" = true THEN 'mobile' ELSE 'web' END) AS type, count(DISTINCT "userId") AS users, count(*) AS sessions FROM "Session" WHERE "loginTimestamp" BETWEEN ${from} AND ${to} GROUP BY 1 ORDER BY users DESC`),
+      this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`SELECT COALESCE(NULLIF("osName", ''), 'Unknown') AS name, COALESCE(NULLIF("osVersion", ''), 'Unknown') AS version, count(DISTINCT "userId") AS users, count(*) AS sessions FROM "Session" WHERE "loginTimestamp" BETWEEN ${from} AND ${to} GROUP BY 1, 2 ORDER BY users DESC LIMIT 20`),
+      this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`SELECT COALESCE(NULLIF("deviceManufacturer", ''), 'Unknown') AS manufacturer, COALESCE(NULLIF("deviceModel", ''), 'Unknown') AS model, count(DISTINCT "userId") AS users, count(*) AS sessions FROM "Session" WHERE "loginTimestamp" BETWEEN ${from} AND ${to} GROUP BY 1, 2 ORDER BY users DESC LIMIT 20`),
+    ])
+    return { platforms, operatingSystems, models }
+  }
+
+  private emptyDeviceReport() {
+    return { platforms: [] as NumericRow[], operatingSystems: [] as NumericRow[], models: [] as NumericRow[] }
   }
 
   private async health() {

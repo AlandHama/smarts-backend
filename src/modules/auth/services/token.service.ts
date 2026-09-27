@@ -26,7 +26,7 @@ export class TokenService {
   ) {}
 
   async generateAuthToken(user: { id: string; username: string; isSystemAdmin?: boolean }, request?: any, isMobile = false): Promise<TokenDto> {
-    return this.createTokenPair(user, request, isMobile)
+    return this.createTokenPair(user, request, isMobile, isMobile)
   }
 
   async generateRefreshToken(refreshToken: string, request?: any, isMobile = false): Promise<TokenDto> {
@@ -39,6 +39,7 @@ export class TokenService {
       { id: user.id, username: user.username, isSystemAdmin: user.isSystemAdmin },
       request,
       isMobile,
+      false,
     )
     await this.rotateSessionTransaction.run({
       userId: payload.userId,
@@ -82,8 +83,9 @@ export class TokenService {
     user: { id: string; username: string; isSystemAdmin?: boolean },
     request: any,
     isMobile: boolean,
+    enforceSingleMobileSession: boolean,
   ): Promise<TokenDto> {
-    const pair = await this.createTokenPairData(user, request, isMobile)
+    const pair = await this.createTokenPairData(user, request, isMobile, enforceSingleMobileSession)
     await this.createSessionTransaction.run(pair.session)
     return pair.token
   }
@@ -92,6 +94,7 @@ export class TokenService {
     user: { id: string; username: string; isSystemAdmin?: boolean },
     request: any,
     isMobile: boolean,
+    enforceSingleMobileSession: boolean,
   ): Promise<{ token: TokenDto; session: SessionCreateData }> {
     const tokenId = randomUUID()
     const payload = { sub: user.id, userId: user.id, username: user.username, isSystemAdmin: user.isSystemAdmin === true, tokenId }
@@ -108,7 +111,7 @@ export class TokenService {
       algorithm: "HS256",
     })
     const headers = request?.headers ?? {}
-    const raw = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 500) || undefined : undefined
+    const raw = (value: unknown, max = 500) => typeof value === "string" ? value.trim().slice(0, max) || undefined : undefined
     const expiresAt = new Date(Date.now() + this.config.refreshExpiresInSeconds * 1000)
     return {
       token: {
@@ -124,11 +127,22 @@ export class TokenService {
         refreshTokenHash: await HashHelper.encrypt(refreshToken),
         expiresAt,
         isMobileSession: isMobile,
-        clientVersion: raw(headers["x-client-version"] ?? headers["x-app-version"])?.slice(0, 32),
+        clientVersion: raw(headers["x-client-version"] ?? headers["x-app-version"], 32),
+        appBuildNumber: raw(headers["x-app-build"], 32),
+        platform: raw(headers["x-client-platform"], 32),
+        osName: raw(headers["x-device-os"], 40),
+        osVersion: raw(headers["x-device-os-version"], 80),
+        deviceType: raw(headers["x-device-type"], 40),
+        deviceModel: raw(headers["x-device-model"], 120),
+        deviceManufacturer: raw(headers["x-device-manufacturer"], 80),
+        deviceLocale: raw(headers["x-device-locale"], 40),
+        deviceTimezone: raw(headers["x-device-timezone"], 80),
+        isPhysicalDevice: headers["x-physical-device"] === "true" ? true : headers["x-physical-device"] === "false" ? false : undefined,
         deviceInfo: raw(headers["user-agent"]),
         ipAddress: raw(headers["x-forwarded-for"] ?? request?.ip)?.split(",")[0],
         deviceName: raw(headers["device-name"]) ?? (isMobile ? "Mobile Device" : "Browser"),
         location: raw(headers.location),
+        enforceSingleMobileSession,
       },
     }
   }
