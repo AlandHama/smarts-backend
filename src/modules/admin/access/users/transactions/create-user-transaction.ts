@@ -21,6 +21,7 @@ export type CreateUserInput = RegisterRequestDto & {
     avatarUrl?: string | null
   }
   avatarUrl?: string | null
+  accountOrigin?: "WHITELABEL" | "GOOGLE"
 }
 
 @Injectable()
@@ -60,6 +61,7 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
           firstName: dto.firstName?.trim() || null,
           lastName: dto.lastName?.trim() || null,
           email: dto.email.trim().toLowerCase(),
+          accountOrigin: dto.accountOrigin ?? "WHITELABEL",
           isSystemAdmin: dto.isSystemAdmin ?? false,
           profile: {
             create: {

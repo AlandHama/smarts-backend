@@ -1,9 +1,11 @@
 import { Injectable, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common"
 import { OAuth2Client } from "google-auth-library"
+import { PlayerAuditActorType } from "@prisma/client"
 
 import { PrismaService } from "../../../prisma.service"
 import { UpdateGoogleAuthConfigDto } from "../dtos/google-auth.dto"
 import { AuthenticateGoogleTransaction, GoogleIdentityClaims } from "../transactions/authenticate-google-transaction"
+import { LinkGoogleIdentityTransaction, UnlinkGoogleIdentityTransaction } from "../transactions/manage-google-identity-transaction"
 import { UsersService } from "../../admin/access/users/users.service"
 import { TokenService } from "./token.service"
 
@@ -16,6 +18,8 @@ export class GoogleAuthService {
     private readonly usersService: UsersService,
     private readonly authenticateGoogleTransaction: AuthenticateGoogleTransaction,
     private readonly tokenService: TokenService,
+    private readonly linkGoogleIdentityTransaction: LinkGoogleIdentityTransaction,
+    private readonly unlinkGoogleIdentityTransaction: UnlinkGoogleIdentityTransaction,
   ) {}
 
   async login(idToken: string, request: any) {
@@ -70,6 +74,38 @@ export class GoogleAuthService {
       desktopClientId: config?.desktopClientId ?? null,
       packageName: config?.packageName ?? null,
     }
+  }
+
+  async link(userId: string, idToken: string) {
+    const claims = await this.verifyIdToken(idToken)
+    return this.linkGoogleIdentityTransaction.run({ userId, claims })
+  }
+
+  getLinkStatus(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        accountOrigin: true,
+        externalIdentities: {
+          where: { provider: "google" },
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: { email: true, displayName: true, avatarUrl: true, createdAt: true },
+        },
+      },
+    }).then((user) => {
+      const identity = user?.externalIdentities[0] ?? null
+      return {
+        accountOrigin: user?.accountOrigin ?? "WHITELABEL",
+        linked: Boolean(identity),
+        canUnlink: Boolean(identity) && user?.accountOrigin !== "GOOGLE",
+        identity,
+      }
+    })
+  }
+
+  unlink(userId: string, actorId = userId, actorType: PlayerAuditActorType = PlayerAuditActorType.PLAYER) {
+    return this.unlinkGoogleIdentityTransaction.run({ userId, actorId, actorType })
   }
 
   updateConfig(dto: UpdateGoogleAuthConfigDto) {

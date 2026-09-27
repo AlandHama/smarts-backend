@@ -18,6 +18,11 @@ enum UserStatus {
   BANNED
 }
 
+enum AccountOrigin {
+  WHITELABEL
+  GOOGLE
+}
+
 enum SessionStatus {
   ACTIVE
   TERMINATED
@@ -393,6 +398,7 @@ model User {
   lastName                   String?                 @db.VarChar(100)
   email                      String?                 @unique @db.VarChar(255)
   status                     UserStatus              @default(ACTIVE)
+  accountOrigin              AccountOrigin           @default(WHITELABEL)
   isSystemAdmin              Boolean                 @default(false)
   lastOnline                 DateTime?
   createdAt                  DateTime                @default(now())

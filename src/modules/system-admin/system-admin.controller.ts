@@ -104,6 +104,8 @@ import {
   UpdateReferralPlayerOverrideDto,
 } from "../referrals/dtos";
 import { UpdateGoogleAuthConfigDto } from "../auth/dtos/google-auth.dto";
+import { GoogleAuthService } from "../auth/services/google-auth.service";
+import { PlayerAuditActorType } from "@prisma/client";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -115,6 +117,7 @@ export class SystemAdminController {
     private readonly gldService: GldService,
     private readonly gldRevenueService: GldRevenueService,
     private readonly gldReconciliationService: GldReconciliationService,
+    private readonly googleAuthService: GoogleAuthService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -614,6 +617,17 @@ export class SystemAdminController {
   @ApiOperation({ summary: "View the complete Player 360 account workspace" })
   getPlayer360(@Param("userId", ParseUUIDPipe) userId: string) {
     return this.systemAdminService.getPlayer360(userId);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/users/:userId/google-link")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Unlink a player's Google identity" })
+  unlinkPlayerGoogle(
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.googleAuthService.unlink(userId, admin.id, PlayerAuditActorType.ADMIN);
   }
 
   @UseGuards(SystemAdminGuard)

@@ -14,6 +14,7 @@ import { AuthService } from "./services/auth.service"
 import { TokenService } from "./services/token.service"
 import { GoogleAuthService } from "./services/google-auth.service"
 import { AuthenticateGoogleTransaction } from "./transactions/authenticate-google-transaction"
+import { LinkGoogleIdentityTransaction, UnlinkGoogleIdentityTransaction } from "./transactions/manage-google-identity-transaction"
 
 @Module({
   imports: [
@@ -29,6 +30,8 @@ import { AuthenticateGoogleTransaction } from "./transactions/authenticate-googl
     TokenService,
     GoogleAuthService,
     AuthenticateGoogleTransaction,
+    LinkGoogleIdentityTransaction,
+    UnlinkGoogleIdentityTransaction,
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],

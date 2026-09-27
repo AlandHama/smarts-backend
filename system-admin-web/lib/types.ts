@@ -7,6 +7,7 @@ export interface AdminUser {
   firstName: string | null;
   lastName: string | null;
   status: UserStatus;
+  accountOrigin?: "WHITELABEL" | "GOOGLE" | string;
   isSystemAdmin: boolean;
   createdAt: string;
   lastOnline: string | null;
@@ -46,6 +47,16 @@ export interface AdminUser {
   wallet?: WalletSummary;
   progressions?: PlayerProgression[];
   sessions?: SessionSummary[];
+  externalIdentities?: ExternalIdentitySummary[];
+}
+
+export interface ExternalIdentitySummary {
+  id: string;
+  provider: string;
+  email: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
 }
 
 export interface WalletSummary {

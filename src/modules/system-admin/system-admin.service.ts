@@ -1768,6 +1768,7 @@ export class SystemAdminService implements OnModuleInit {
         firstName: true,
         lastName: true,
         status: true,
+        accountOrigin: true,
         isSystemAdmin: true,
         createdAt: true,
         lastOnline: true,
@@ -1808,6 +1809,12 @@ export class SystemAdminService implements OnModuleInit {
             createdAt: true,
             updatedAt: true,
           },
+        },
+        externalIdentities: {
+          where: { provider: "google" },
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: { id: true, provider: true, email: true, displayName: true, avatarUrl: true, createdAt: true },
         },
         _count: { select: { sessions: true } },
         ...(detailed

@@ -41,6 +41,27 @@ export class AuthController {
     return this.googleAuthService.login(dto.idToken, request)
   }
 
+  @Get("google/link")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Read the authenticated player's Google link status" })
+  googleLinkStatus(@CurrentUser() user: UserResponseDto) {
+    return this.googleAuthService.getLinkStatus(user.id)
+  }
+
+  @Post("google/link")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Link a verified Google account to the authenticated player" })
+  linkGoogle(@CurrentUser() user: UserResponseDto, @Body() dto: GoogleAuthRequestDto) {
+    return this.googleAuthService.link(user.id, dto.idToken)
+  }
+
+  @Delete("google/link")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Unlink the authenticated player's Google account" })
+  unlinkGoogle(@CurrentUser() user: UserResponseDto) {
+    return this.googleAuthService.unlink(user.id)
+  }
+
   @SkipAuth()
   @Post("refresh")
   @Post("token/refresh")

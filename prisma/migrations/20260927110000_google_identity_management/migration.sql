@@ -1,0 +1,3 @@
+CREATE TYPE "AccountOrigin" AS ENUM ('WHITELABEL', 'GOOGLE');
+
+ALTER TABLE "User" ADD COLUMN "accountOrigin" "AccountOrigin" NOT NULL DEFAULT 'WHITELABEL';

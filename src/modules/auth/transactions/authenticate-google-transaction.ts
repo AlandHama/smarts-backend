@@ -57,6 +57,7 @@ export class AuthenticateGoogleTransaction extends PrismaTransaction<Authenticat
       firstName: input.claims.firstName ?? undefined,
       lastName: input.claims.lastName ?? undefined,
       avatarUrl: input.claims.avatarUrl ?? undefined,
+      accountOrigin: "GOOGLE",
       externalIdentity: {
         provider: "google",
         providerSubject: input.claims.subject,
