@@ -25,9 +25,10 @@ import { SystemAdminAnalyticsService } from "./system-admin-analytics.service"
 import { AdMobModule } from "../admob/admob.module"
 import { GldModule } from "../gld/gld.module"
 import { ReferralsModule } from "../referrals/referrals.module"
+import { NotificationsModule } from "../notifications/notifications.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,

@@ -23,6 +23,7 @@ import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
+import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
@@ -61,7 +62,8 @@ export type AdminView =
   | "feedback"
   | "referrals"
   | "ranking"
-  | "transactions";
+  | "transactions"
+  | "notifications";
 
 const navigation = [
   {
@@ -157,6 +159,11 @@ const navigation = [
     key: "transactions" as const,
     label: "Transactions 360",
     icon: <ReceiptLongRoundedIcon />,
+  },
+  {
+    key: "notifications" as const,
+    label: "Notifications",
+    icon: <NotificationsRoundedIcon />,
   },
 ];
 

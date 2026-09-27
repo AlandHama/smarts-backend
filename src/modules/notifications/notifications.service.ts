@@ -4,9 +4,16 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import { NotificationStatus, OutboxEventStatus, Prisma } from "@prisma/client";
+import {
+  NotificationPushStatus,
+  NotificationStatus,
+  OutboxEventStatus,
+  Prisma,
+} from "@prisma/client";
 
 import { PrismaService } from "../../prisma.service";
+import { FirebaseMessagingService } from "./firebase-messaging.service";
+import { RegisterDeviceTokenDto, SendGlobalNotificationDto } from "./dtos";
 
 @Injectable()
 export class NotificationsService implements OnModuleInit, OnModuleDestroy {
@@ -14,7 +21,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
   private processing = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly firebaseMessaging: FirebaseMessagingService,
+  ) {}
 
   onModuleInit() {
     this.timer = setInterval(() => {
@@ -50,6 +60,125 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       data: { status: NotificationStatus.READ, readAt: new Date() },
     });
     return { updated: updated.count };
+  }
+
+  registerDevice(userId: string, dto: RegisterDeviceTokenDto) {
+    return this.firebaseMessaging.registerDevice(userId, dto);
+  }
+
+  unregisterDevice(userId: string, token: string) {
+    return this.firebaseMessaging.unregisterDevice(userId, token);
+  }
+
+  pushStatus() {
+    return this.firebaseMessaging.status();
+  }
+
+  async listBroadcasts() {
+    const items = await this.prisma.notificationBroadcast.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        recipientCount: true,
+        pushSentCount: true,
+        pushFailedCount: true,
+        createdAt: true,
+        createdBy: { select: { username: true, email: true } },
+      },
+    });
+    return this.serialize(items);
+  }
+
+  async sendGlobalBroadcast(adminId: string, dto: SendGlobalNotificationDto) {
+    const title = dto.title.trim();
+    const body = dto.body.trim();
+    const users = await this.prisma.user.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true },
+    });
+    const data = dto.route?.trim() ? { route: dto.route.trim() } : undefined;
+    const broadcast = await this.prisma.notificationBroadcast.create({
+      data: {
+        createdById: adminId,
+        title,
+        body,
+        data: data as Prisma.InputJsonValue | undefined,
+        recipientCount: users.length,
+      },
+      select: { id: true },
+    });
+
+    for (let offset = 0; offset < users.length; offset += 500) {
+      const batch = users.slice(offset, offset + 500);
+      await this.prisma.notification.createMany({
+        data: batch.map((user) => ({
+          userId: user.id,
+          broadcastId: broadcast.id,
+          notificationType: "admin.global",
+          title,
+          body,
+          data: {
+            broadcastId: broadcast.id,
+            ...(data ?? {}),
+          } as Prisma.InputJsonValue,
+          status: NotificationStatus.DISPATCHED,
+          pushStatus: NotificationPushStatus.PENDING,
+          dispatchedAt: new Date(),
+        })),
+      });
+    }
+
+    let push = {
+      configured: this.firebaseMessaging.isConfigured(),
+      deviceCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      invalidTokenCount: 0,
+    };
+    try {
+      push = await this.firebaseMessaging.sendToUsers(
+        users.map((user) => user.id),
+        {
+          notificationType: "admin.global",
+          title,
+          body,
+          data: { broadcastId: broadcast.id, ...(data ?? {}) },
+        },
+        { throwOnTransientFailure: false },
+      );
+    } catch (error) {
+      this.logger.warn(`Global FCM broadcast failed: ${String(error)}`);
+      push = { ...push, failureCount: 1 };
+    }
+    await this.prisma.notificationBroadcast.update({
+      where: { id: broadcast.id },
+      data: {
+        pushSentCount: push.successCount,
+        pushFailedCount: push.failureCount,
+      },
+    });
+    await this.prisma.notification.updateMany({
+      where: { broadcastId: broadcast.id },
+      data: {
+        pushStatus: !push.configured
+          ? NotificationPushStatus.SKIPPED
+          : push.failureCount
+            ? NotificationPushStatus.FAILED
+            : NotificationPushStatus.SENT,
+        pushAttemptedAt: new Date(),
+        pushFailureReason: push.failureCount
+          ? `${push.failureCount} device deliveries failed`
+          : null,
+      },
+    });
+    return this.serialize({
+      broadcastId: broadcast.id,
+      recipientCount: users.length,
+      push,
+    });
   }
 
   private async processOutbox() {
@@ -123,6 +252,15 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     ) as Record<string, Prisma.JsonValue>;
     const userIds = new Set<string>();
     if (typeof payload.userId === "string") userIds.add(payload.userId);
+    if (event.eventType === "MATCH_SETTLED" && Array.isArray(payload.results)) {
+      for (const result of payload.results) {
+        if (result && typeof result === "object" && !Array.isArray(result)) {
+          const playerId = (result as Record<string, Prisma.JsonValue>).playerId;
+          const participantType = (result as Record<string, Prisma.JsonValue>).participantType;
+          if (typeof playerId === "string" && participantType !== "BOT") userIds.add(playerId);
+        }
+      }
+    }
     // `recipientUserId` identifies the recipient on gift events. Transfer
     // events have separate sent/received outbox records, so do not leak the
     // sender's notification to the recipient a second time.
@@ -141,7 +279,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }
     if (!userIds.size) return;
     const title =
-      event.eventType === "commerce.purchase.completed"
+      event.eventType === "wallet.gld.updated"
+        ? "GLD balance updated"
+        : event.eventType === "MATCH_SETTLED"
+          ? "Match complete"
+          : event.eventType === "commerce.purchase.completed"
         ? "Purchase completed"
         : event.eventType === "commerce.paid-reward.fulfilled"
           ? "Reward fulfilled"
@@ -168,7 +310,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
                               ? "Game invite"
                               : "Account activity";
     const body =
-      event.eventType === "commerce.purchase.completed"
+      event.eventType === "wallet.gld.updated"
+        ? `Your GLD balance was ${String(payload.direction ?? "updated").toLowerCase()} by ${String(payload.amount ?? "0")} GLD. New balance: ${String(payload.balanceAfter ?? "0")} GLD.`
+        : event.eventType === "MATCH_SETTLED"
+          ? "Your match result and rewards are ready to review."
+          : event.eventType === "commerce.purchase.completed"
         ? `Purchase ${event.aggregateId} was completed.`
         : event.eventType === "commerce.paid-reward.fulfilled"
           ? "Your paid reward was approved and is ready to redeem."
@@ -205,10 +351,60 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         body,
         data: { ...payload, outboxEventId: event.id } as Prisma.InputJsonValue,
         status: NotificationStatus.DISPATCHED,
+        pushStatus: NotificationPushStatus.PENDING,
         dispatchedAt: new Date(),
       })),
       skipDuplicates: true,
     });
+
+    const pushBody = this.pushBody(event.eventType, body);
+    let push = {
+      configured: this.firebaseMessaging.isConfigured(),
+      deviceCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      invalidTokenCount: 0,
+    };
+    try {
+      push = await this.firebaseMessaging.sendToUsers(
+        [...userIds],
+        {
+          notificationId: event.id,
+          notificationType: event.eventType,
+          title,
+          body: pushBody,
+        },
+        { throwOnTransientFailure: false },
+      );
+    } catch (error) {
+      this.logger.warn(`Specific FCM notification failed: ${String(error)}`);
+      push = { ...push, failureCount: 1 };
+    }
+    await this.prisma.notification.updateMany({
+      where: { outboxEventId: event.id, userId: { in: [...userIds] } },
+      data: {
+        pushStatus: !push.configured
+          ? NotificationPushStatus.SKIPPED
+          : push.failureCount
+            ? NotificationPushStatus.FAILED
+            : NotificationPushStatus.SENT,
+        pushAttemptedAt: new Date(),
+        pushFailureReason: push.failureCount
+          ? `${push.failureCount} device deliveries failed`
+          : null,
+      },
+    });
+  }
+
+  private pushBody(eventType: string, body: string) {
+    if (
+      eventType.startsWith("gld.") ||
+      eventType.startsWith("commerce.") ||
+      eventType.startsWith("wallet.")
+    ) {
+      return "You have a new account update. Tap to view it.";
+    }
+    return body;
   }
 
   private serialize<T>(value: T): T {

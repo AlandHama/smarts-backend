@@ -106,6 +106,8 @@ import {
 import { UpdateGoogleAuthConfigDto } from "../auth/dtos/google-auth.dto";
 import { GoogleAuthService } from "../auth/services/google-auth.service";
 import { PlayerAuditActorType } from "@prisma/client";
+import { NotificationsService } from "../notifications/notifications.service";
+import { SendGlobalNotificationDto } from "../notifications/dtos";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -118,6 +120,7 @@ export class SystemAdminController {
     private readonly gldRevenueService: GldRevenueService,
     private readonly gldReconciliationService: GldReconciliationService,
     private readonly googleAuthService: GoogleAuthService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -1130,6 +1133,33 @@ export class SystemAdminController {
     @Body() dto: UpdateGameConfigDto,
   ) {
     return this.systemAdminService.updateGameConfig(gameKey, dto);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/notifications/status")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Read FCM configuration and registered device status" })
+  notificationPushStatus() {
+    return this.notificationsService.pushStatus();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/notifications/broadcasts")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List global notification broadcasts" })
+  notificationBroadcasts() {
+    return this.notificationsService.listBroadcasts();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/notifications/broadcast")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Send a global notification to all active players" })
+  sendNotificationBroadcast(
+    @Body() dto: SendGlobalNotificationDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.notificationsService.sendGlobalBroadcast(admin.id, dto);
   }
 
   @UseGuards(SystemAdminGuard)

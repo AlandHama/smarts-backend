@@ -37,6 +37,9 @@ export class DebitWalletTransaction extends PrismaTransaction<WalletMutationInpu
     const after = BigInt(exactAfter.floor().toFixed(0))
     await transaction.walletBalance.update({ where: { id: locked.id }, data: { amount: after, exactAmount: exactAfter, version: { increment: 1n } } })
     const ledger = await transaction.walletTransaction.create({ data: { walletId: wallet.id, currencyId: currency.id, direction: WalletTransactionDirection.DEBIT, amount: legacyAmount, balanceBefore: locked.amount, balanceAfter: after, exactAmount, exactBalanceBefore: locked.exactAmount, exactBalanceAfter: exactAfter, sourceType: input.sourceType, sourceId, grantKey, idempotencyKeyId: idem.id, metadata: input.metadata as Prisma.InputJsonValue | undefined } })
+    if (code === "GLD" && this.shouldNotifyWallet(input)) {
+      await transaction.outboxEvent.create({ data: { eventType: "wallet.gld.updated", aggregateType: "WalletTransaction", aggregateId: ledger.id, payload: { userId: input.userId, direction: "DEBIT", amount: exactAmount.toString(), balanceAfter: exactAfter.toString(), sourceType: input.sourceType, sourceId } as Prisma.InputJsonValue } })
+    }
     const response = this.serializeBalance(ledger.exactBalanceAfter, wallet.id, currency.id, code)
     if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "WALLET_DEBIT", entityType: "Wallet", entityId: wallet.id, reason: input.reason, metadata: { userId: input.userId, currencyCode: code, amount: input.amount.toString(), sourceId } })
     await writePlayerAudit(transaction, { userId: input.userId, actorType: input.actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "WALLET_DEBIT", entityType: "WalletTransaction", entityId: ledger.id, summary: `Debited ${exactAmount.toString()} ${code}`, changes: { balance: { old: locked.exactAmount.toString(), new: exactAfter.toString() }, amount: { old: "0", new: exactAmount.toString() } }, metadata: { currencyCode: code, sourceId, sourceType: input.sourceType } })
@@ -45,6 +48,12 @@ export class DebitWalletTransaction extends PrismaTransaction<WalletMutationInpu
   }
 
   private serializeBalance(exactAmount: Prisma.Decimal, walletId: string, currencyId: string, code: string) { return { walletId, currencyId, currencyCode: code, amount: exactAmount.floor().toFixed(0), exactAmount: exactAmount.toString() } }
+
+  private shouldNotifyWallet(input: WalletMutationInput) {
+    const notableSources: WalletTransactionSourceType[] = [WalletTransactionSourceType.MATCH, WalletTransactionSourceType.RANKING_MATCH_ENTRY, WalletTransactionSourceType.RANKING_MATCH_PAYOUT, WalletTransactionSourceType.RANKING_MATCH_REFUND, WalletTransactionSourceType.REFUND, WalletTransactionSourceType.ADMIN]
+    if (notableSources.includes(input.sourceType)) return true
+    return input.sourceType === WalletTransactionSourceType.SYSTEM && input.metadata?.reason !== "GLD_PLAYER_TRANSFER"
+  }
 
   private parseExactAmount(value: string) {
     const normalized = String(value).trim()
