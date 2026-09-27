@@ -21,6 +21,7 @@ import {
   SeasonManagerPanel,
 } from "../components/LeaderboardView";
 import { GameConfigView } from "../components/GameConfigView";
+import { GoogleAuthView } from "../components/GoogleAuthView";
 import { UsersView } from "../components/UsersView";
 import { SessionsView } from "../components/SessionsView";
 import { CommerceView } from "../components/CommerceView";
@@ -60,6 +61,7 @@ const viewPaths: Record<
   "paid-rewards": "/paid-rewards/",
   leaderboards: "/leaderboards/",
   "game-config": "/game-config/",
+  "google-auth": "/google-auth/",
   "reward-policies": "/reward-policies/",
   admob: "/admob/",
   storage: "/storage/",
@@ -201,6 +203,7 @@ export default function AdminPage() {
             </>
           )}
           {view === "game-config" && <GameConfigView />}
+          {view === "google-auth" && <GoogleAuthView />}
           {view === "reward-policies" && (
             <RewardPoliciesView onOpenPlayer360={openPlayer360} />
           )}

@@ -7,7 +7,8 @@ import { SessionResponseDto } from "../admin/access/sessions/dtos/session-respon
 import { SessionsService } from "../admin/access/sessions/sessions.service"
 import { AuthService } from "./services/auth.service"
 import { TokenService } from "./services/token.service"
-import { AuthCredentialsRequestDto, ChangePasswordRequestDto, LoginResponseDto, RefreshTokenRequestDto, RegisterRequestDto, UserResponseDto, ValidateTokenRequestDto } from "./dtos"
+import { AuthCredentialsRequestDto, ChangePasswordRequestDto, GoogleAuthRequestDto, LoginResponseDto, RefreshTokenRequestDto, RegisterRequestDto, UserResponseDto, ValidateTokenRequestDto } from "./dtos"
+import { GoogleAuthService } from "./services/google-auth.service"
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -16,6 +17,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly tokenService: TokenService,
     private readonly sessionsService: SessionsService,
+    private readonly googleAuthService: GoogleAuthService,
   ) {}
 
   @SkipAuth()
@@ -30,6 +32,13 @@ export class AuthController {
   @ApiOperation({ summary: "Register a user and create a session" })
   register(@Body() dto: RegisterRequestDto, @Req() request: any): Promise<LoginResponseDto> {
     return this.authService.register(dto, request)
+  }
+
+  @SkipAuth()
+  @Post("google")
+  @ApiOperation({ summary: "Authenticate with a verified Google OpenID Connect ID token" })
+  google(@Body() dto: GoogleAuthRequestDto, @Req() request: any): Promise<LoginResponseDto> {
+    return this.googleAuthService.login(dto.idToken, request)
   }
 
   @SkipAuth()

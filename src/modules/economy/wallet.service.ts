@@ -457,8 +457,14 @@ export class WalletService {
           ? `Sent to ${counterparty?.profile?.displayName || counterparty?.username || "player"}`
           : `Received from ${counterparty?.profile?.displayName || counterparty?.username || "player"}`
         : this.transactionTitle(item.sourceType, item.direction);
+    // `amount` is retained as the legacy whole-unit BIGINT field. Expose the
+    // exact decimal ledger value explicitly for mobile and admin consumers.
+    const exactAmount =
+      item.exactAmount?.toString?.() ?? item.amount?.toString?.() ?? "0";
     return {
       ...item,
+      exactAmount,
+      amountDecimal: exactAmount,
       transactionId: item.id,
       title,
       description:

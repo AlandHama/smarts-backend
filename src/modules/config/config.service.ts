@@ -6,6 +6,7 @@ import { PublishRewardPolicyDto } from "./dtos/reward-policy.dto"
 import { PublishRewardPolicyTransaction } from "./transactions/publish-reward-policy-transaction"
 import { DeactivateRewardPolicyTransaction } from "./transactions/deactivate-reward-policy-transaction"
 import { GameService } from "../game/game.service"
+import { GoogleAuthService } from "../auth/services/google-auth.service"
 
 @Injectable()
 export class ConfigService {
@@ -14,6 +15,7 @@ export class ConfigService {
     private readonly publishTransaction: PublishRewardPolicyTransaction,
     private readonly deactivateTransaction: DeactivateRewardPolicyTransaction,
     private readonly gameService: GameService,
+    private readonly googleAuthService: GoogleAuthService,
   ) {}
 
   listAdmin() {
@@ -31,7 +33,11 @@ export class ConfigService {
       take: 100,
       select: { key: true, version: true, publicConfig: true },
     })
-    return { gameDefinitions: await this.gameService.listDefinitions(false), policies: policies.map((policy) => ({ key: policy.key, version: policy.version, config: policy.publicConfig })) }
+    return {
+      gameDefinitions: await this.gameService.listDefinitions(false),
+      policies: policies.map((policy) => ({ key: policy.key, version: policy.version, config: policy.publicConfig })),
+      googleAuth: await this.googleAuthService.getPublicConfig(),
+    }
   }
 
   async getActivePrivate<T extends Record<string, unknown>>(key: string): Promise<{ version: number; publicConfig: Record<string, unknown>; privateConfig: T }> {

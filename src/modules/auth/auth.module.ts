@@ -12,6 +12,8 @@ import { AuthController } from "./auth.controller"
 import { JwtStrategy } from "./jwt.strategy"
 import { AuthService } from "./services/auth.service"
 import { TokenService } from "./services/token.service"
+import { GoogleAuthService } from "./services/google-auth.service"
+import { AuthenticateGoogleTransaction } from "./transactions/authenticate-google-transaction"
 
 @Module({
   imports: [
@@ -25,9 +27,11 @@ import { TokenService } from "./services/token.service"
   providers: [
     AuthService,
     TokenService,
+    GoogleAuthService,
+    AuthenticateGoogleTransaction,
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
-  exports: [AuthService, TokenService, JwtStrategy, PassportModule, JwtModule],
+  exports: [AuthService, TokenService, GoogleAuthService, JwtStrategy, PassportModule, JwtModule],
 })
 export class AuthModule {}

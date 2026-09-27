@@ -9,7 +9,19 @@ import { CreditWalletTransaction } from "../../../../economy/transactions/credit
 import { writeAdminAudit } from "../../../../../common/helpers/admin-audit"
 import { writePlayerAudit } from "../../../../../common/helpers/player-audit"
 
-export type CreateUserInput = RegisterRequestDto & { isSystemAdmin?: boolean; actorId?: string; reason?: string }
+export type CreateUserInput = RegisterRequestDto & {
+  isSystemAdmin?: boolean
+  actorId?: string
+  reason?: string
+  externalIdentity?: {
+    provider: string
+    providerSubject: string
+    email?: string | null
+    displayName?: string | null
+    avatarUrl?: string | null
+  }
+  avatarUrl?: string | null
+}
 
 @Injectable()
 export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, any> {
@@ -52,6 +64,7 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
           profile: {
             create: {
               displayName: dto.displayName.trim(),
+              avatarUrl: dto.avatarUrl?.trim() || null,
               countryCode: dto.countryCode?.trim().toUpperCase(),
               level: 1,
               xp: 0n,
@@ -91,6 +104,19 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
               nextThreshold: progression.tiers[1]?.pointsThreshold ?? null,
             })),
           },
+          ...(dto.externalIdentity
+            ? {
+                externalIdentities: {
+                  create: {
+                    provider: dto.externalIdentity.provider,
+                    providerSubject: dto.externalIdentity.providerSubject,
+                    email: dto.externalIdentity.email ?? null,
+                    displayName: dto.externalIdentity.displayName ?? null,
+                    avatarUrl: dto.externalIdentity.avatarUrl ?? null,
+                  },
+                },
+              }
+            : {}),
         },
       })
       const signupAmountText = process.env.SIGNUP_MCN_AMOUNT?.trim() || "1500"

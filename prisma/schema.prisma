@@ -398,6 +398,7 @@ model User {
   createdAt                  DateTime                @default(now())
   updatedAt                  DateTime                @updatedAt
   sessions                   Session[]
+  externalIdentities         ExternalIdentity[]
   profile                    PlayerProfile?
   stats                      PlayerStats?
   wallet                     Wallet?
@@ -448,6 +449,40 @@ model User {
   referralConfigUpdates      ReferralConfig[]        @relation("ReferralConfigUpdater")
   referralPolicyOverride     ReferralPlayerOverride?
   rankingWins                RankingMatch[]          @relation("RankingMatchWinner")
+}
+
+/// A provider identity is linked to a local account after the provider token
+/// has been verified by the backend. The provider subject, not the email, is
+/// the durable Google identity key.
+model ExternalIdentity {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @db.Uuid
+  provider        String   @db.VarChar(40)
+  providerSubject String   @db.VarChar(255)
+  email           String?  @db.VarChar(255)
+  displayName     String?  @db.VarChar(120)
+  avatarUrl       String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId, provider])
+}
+
+/// Public Google client IDs are safe to deliver to the mobile app. No client
+/// secret or Play Store service-account credential belongs in this record.
+model GoogleAuthConfig {
+  id              String   @id @default(uuid()) @db.Uuid
+  key             String   @unique @default("default") @db.VarChar(40)
+  enabled         Boolean  @default(false)
+  webClientId     String?  @db.VarChar(255)
+  androidClientId String?  @db.VarChar(255)
+  iosClientId     String?  @db.VarChar(255)
+  desktopClientId String?  @db.VarChar(255)
+  packageName     String?  @db.VarChar(255)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model Session {

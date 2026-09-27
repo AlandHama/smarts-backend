@@ -94,6 +94,8 @@ import { PublishRewardPolicyDto } from "../config/dtos/reward-policy.dto";
 import { SystemAdminAnalyticsService } from "./system-admin-analytics.service";
 import { ReferralsService } from "../referrals/referrals.service";
 import { writePlayerAudit } from "../../common/helpers/player-audit";
+import { GoogleAuthService } from "../auth/services/google-auth.service";
+import { UpdateGoogleAuthConfigDto } from "../auth/dtos/google-auth.dto";
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -124,6 +126,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly analyticsService: SystemAdminAnalyticsService,
     private readonly referralsService: ReferralsService,
+    private readonly googleAuthService: GoogleAuthService,
   ) {}
 
   async onModuleInit() {
@@ -1530,6 +1533,12 @@ export class SystemAdminService implements OnModuleInit {
   }
   listGameConfigs() {
     return this.gameService.listAdminDefinitions();
+  }
+  getGoogleAuthConfig() {
+    return this.googleAuthService.getAdminConfig();
+  }
+  updateGoogleAuthConfig(dto: UpdateGoogleAuthConfigDto) {
+    return this.googleAuthService.updateConfig(dto);
   }
   updateGameConfig(key: string, dto: UpdateGameConfigDto) {
     return this.gameService.updateConfig(key, dto);

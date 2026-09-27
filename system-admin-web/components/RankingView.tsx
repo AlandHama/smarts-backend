@@ -97,10 +97,18 @@ export function RankingView() {
               : Number(patch.stakeAmountGld),
           entryFeeGld:
             patch.entryFeeGld === undefined ? undefined : patch.entryFeeGld,
+          sortOrder:
+            patch.sortOrder === undefined ? undefined : Number(patch.sortOrder),
         }),
       });
       setTiers((items) =>
-        items.map((item) => (item.id === tier.id ? next : item)),
+        items
+          .map((item) => (item.id === tier.id ? next : item))
+          .sort(
+            (left, right) =>
+              left.sortOrder - right.sortOrder ||
+              Number(left.stakeAmountGld) - Number(right.stakeAmountGld),
+          ),
       );
     } catch (reason) {
       setError(
@@ -125,7 +133,13 @@ export function RankingView() {
           enabled: true,
         }),
       });
-      setTiers((items) => [...items, next]);
+      setTiers((items) =>
+        [...items, next].sort(
+          (left, right) =>
+            left.sortOrder - right.sortOrder ||
+            Number(left.stakeAmountGld) - Number(right.stakeAmountGld),
+        ),
+      );
       setDraft({
         name: "",
         stakeAmountGld: "5",
@@ -308,6 +322,27 @@ export function RankingView() {
                     }
                     onBlur={() =>
                       void update(tier, { entryFeeGld: tier.entryFeeGld })
+                    }
+                  />
+                  <TextField
+                    label="Display order"
+                    type="number"
+                    inputProps={{ min: 0, step: 1 }}
+                    value={tier.sortOrder}
+                    onChange={(event) =>
+                      setTiers((items) =>
+                        items.map((item) =>
+                          item.id === tier.id
+                            ? {
+                                ...item,
+                                sortOrder: Number(event.target.value) || 0,
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                    onBlur={() =>
+                      void update(tier, { sortOrder: tier.sortOrder })
                     }
                   />
                   <Typography variant="body2" color="text.secondary">

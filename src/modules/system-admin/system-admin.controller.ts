@@ -103,6 +103,7 @@ import {
   UpdateReferralConfigDto,
   UpdateReferralPlayerOverrideDto,
 } from "../referrals/dtos";
+import { UpdateGoogleAuthConfigDto } from "../auth/dtos/google-auth.dto";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -1115,6 +1116,22 @@ export class SystemAdminController {
     @Body() dto: UpdateGameConfigDto,
   ) {
     return this.systemAdminService.updateGameConfig(gameKey, dto);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/google-auth")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Read the Google Sign-In client configuration" })
+  googleAuthConfig() {
+    return this.systemAdminService.getGoogleAuthConfig();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/google-auth")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Enable Google Sign-In and configure its OAuth client IDs" })
+  updateGoogleAuthConfig(@Body() dto: UpdateGoogleAuthConfigDto) {
+    return this.systemAdminService.updateGoogleAuthConfig(dto);
   }
 
   @UseGuards(SystemAdminGuard)

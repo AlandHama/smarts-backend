@@ -23,6 +23,7 @@ import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
+import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -53,6 +54,7 @@ export type AdminView =
   | "paid-rewards"
   | "leaderboards"
   | "game-config"
+  | "google-auth"
   | "reward-policies"
   | "admob"
   | "storage"
@@ -128,6 +130,11 @@ const navigation = [
     key: "game-config" as const,
     label: "Game config",
     icon: <TuneRoundedIcon />,
+  },
+  {
+    key: "google-auth" as const,
+    label: "Google Sign-In",
+    icon: <LoginRoundedIcon />,
   },
   {
     key: "reward-policies" as const,
