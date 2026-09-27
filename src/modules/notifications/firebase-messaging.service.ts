@@ -91,6 +91,14 @@ export class FirebaseMessagingService {
       const payload: MulticastMessage = {
         tokens: batch.map((device) => device.token),
         notification: { title: message.title, body: message.body },
+        android: {
+          priority: "high",
+          notification: {
+            channelId: "smarts_notifications_v2",
+            icon: "ic_notification_small",
+            sound: "default",
+          },
+        },
         data,
       };
       const response = await messaging.sendEachForMulticast(payload);
