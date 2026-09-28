@@ -1,5 +1,5 @@
 import { Type } from "class-transformer"
-import { IsBoolean, IsDateString, IsIn, IsInt, IsJSON, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator"
+import { Allow, IsBoolean, IsDateString, IsIn, IsInt, IsJSON, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator"
 
 export const ENGAGEMENT_EVENT_TYPES = [
   "MATCH_PLAYED",
@@ -31,7 +31,14 @@ export class CreateMissionDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) sortOrder?: number
 }
 
-export class UpdateMissionDto extends CreateMissionDto {}
+export class UpdateMissionDto extends CreateMissionDto {
+  // The admin console edits API response objects and therefore may send
+  // server-managed fields back with the editable values. These are accepted
+  // for compatibility but are intentionally ignored by missionData().
+  @Allow() id?: unknown
+  @Allow() createdAt?: unknown
+  @Allow() updatedAt?: unknown
+}
 
 export class CreateAchievementDto {
   @IsString() @MinLength(2) @MaxLength(80) key!: string
@@ -45,7 +52,14 @@ export class CreateAchievementDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) sortOrder?: number
 }
 
-export class UpdateAchievementDto extends CreateAchievementDto {}
+export class UpdateAchievementDto extends CreateAchievementDto {
+  // See UpdateMissionDto. Tiers are edited through their own endpoint and
+  // must never be written as part of an achievement definition update.
+  @Allow() id?: unknown
+  @Allow() createdAt?: unknown
+  @Allow() updatedAt?: unknown
+  @Allow() tiers?: unknown
+}
 
 export class CreateAchievementTierDto {
   @Type(() => Number) @IsInt() @Min(1) @Max(1000) tier!: number
@@ -55,7 +69,11 @@ export class CreateAchievementTierDto {
   @IsOptional() @IsString() @MaxLength(30) rewardXp?: string
 }
 
-export class UpdateAchievementTierDto extends CreateAchievementTierDto {}
+export class UpdateAchievementTierDto extends CreateAchievementTierDto {
+  @Allow() id?: unknown
+  @Allow() createdAt?: unknown
+  @Allow() updatedAt?: unknown
+}
 
 export class ClaimAchievementDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) tier?: number
