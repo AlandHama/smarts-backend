@@ -17,6 +17,7 @@ import { applyGldPolicyOverrides, getGldConfig } from "../gld/gld.config"
 import { catalogGldPrice } from "./catalog-gld-pricing"
 import { avatarFramePreset } from "./avatar-frame-presets"
 import { nameEffectPreset } from "./name-effect-presets"
+import { FraudService } from "../fraud/fraud.service"
 
 @Injectable()
 export class CommerceService {
@@ -29,6 +30,7 @@ export class CommerceService {
     private readonly storageService: StorageService,
     private readonly creditWallet: CreditWalletTransaction,
     private readonly debitWallet: DebitWalletTransaction,
+    private readonly fraudService: FraudService,
   ) {}
 
   async listCatalog(key: string, includeInactive = false) {
@@ -82,7 +84,7 @@ export class CommerceService {
   createCatalogItem(dto: CreateCatalogItemDto) { return this.createCatalogItemTransaction.run(dto).then((value) => this.serialize(value)) }
 
   async updateCatalogItem(id: string, dto: UpdateCatalogItemDto) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const item = await tx.catalogItem.findUnique({ where: { id } })
       if (!item) throw new NotFoundException("Catalog item not found")
       let assetDefinitionId: string | null | undefined
@@ -140,6 +142,7 @@ export class CommerceService {
       }
       return this.serialize(await tx.catalogItem.findUniqueOrThrow({ where: { id: updated.id }, include: this.itemInclude() }))
     })
+    return result
   }
 
   listInventory(query: InventoryQueryDto) {
@@ -192,7 +195,8 @@ export class CommerceService {
   }
 
   async requestPaidReward(userId: string, dto: PaidRewardRequestDto) {
-    return this.prisma.$transaction(async (tx) => {
+    await this.fraudService.assertRewardAllowed(userId)
+    const result = await this.prisma.$transaction(async (tx) => {
       const requester = await tx.user.findUnique({
         where: { id: userId },
         select: { id: true, status: true },
@@ -242,6 +246,9 @@ export class CommerceService {
       await tx.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as Prisma.InputJsonValue, completedAt: new Date() } })
       return result
     })
+    const resultId = result && typeof result === "object" && "id" in result ? String((result as { id: unknown }).id) : dto.idempotencyKey
+    void this.fraudService.observe(userId, { type: "PAID_REWARD_REVIEW", sourceType: "PAID_REWARD_REQUEST", sourceId: resultId, metadata: { assetKey: dto.assetKey } }).catch(() => undefined)
+    return result
   }
 
   listPaidRewardRequests(userId: string) {

@@ -3,12 +3,14 @@ import { Prisma } from "@prisma/client"
 import { PrismaService } from "../../prisma.service"
 import { SendGiftTransaction } from "./transactions/send-gift-transaction"
 import { SendGiftDto } from "./dtos/gift.dto"
+import { FraudService } from "../fraud/fraud.service"
 
 @Injectable()
 export class GiftsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sendGiftTransaction: SendGiftTransaction,
+    private readonly fraudService: FraudService,
   ) {}
 
   /** Public social-gift definitions. Commerce catalogs are deliberately not read here. */
@@ -41,8 +43,10 @@ export class GiftsService {
     })))
   }
 
-  send(senderUserId: string, dto: SendGiftDto) {
-    return this.sendGiftTransaction.run({ senderUserId, dto })
+  async send(senderUserId: string, dto: SendGiftDto) {
+    const result = await this.sendGiftTransaction.run({ senderUserId, dto })
+    void this.fraudService.observe(senderUserId, { type: "GLD_FUNNELING", sourceType: "SOCIAL_GIFT", sourceId: result.giftId, metadata: { recipientUserId: dto.recipientUserId } }).catch(() => undefined)
+    return result
   }
 
   async listForPlayer(viewerUserId: string, targetUserId: string) {

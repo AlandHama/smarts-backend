@@ -8,6 +8,7 @@ import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-t
 import { ClaimReferralTransaction } from "./transactions/claim-referral-transaction"
 import { UpdateReferralConfigTransaction } from "./transactions/update-referral-config-transaction"
 import { ClaimReferralDto, UpdateReferralConfigDto, UpdateReferralPlayerOverrideDto } from "./dtos"
+import { FraudService } from "../fraud/fraud.service"
 
 @Injectable()
 export class ReferralsService {
@@ -16,9 +17,14 @@ export class ReferralsService {
     private readonly claimTransaction: ClaimReferralTransaction,
     private readonly updateConfigTransaction: UpdateReferralConfigTransaction,
     private readonly creditWallet: CreditWalletTransaction,
+    private readonly fraudService: FraudService,
   ) {}
 
-  claim(userId: string, dto: ClaimReferralDto) { return this.claimTransaction.run({ userId, dto }) }
+  async claim(userId: string, dto: ClaimReferralDto) {
+    const result = await this.claimTransaction.run({ userId, dto })
+    void this.fraudService.observe(userId, { type: "REFERRAL_DEVICE_MATCH", sourceType: "REFERRAL", sourceId: result.referralId, metadata: { code: dto.code.trim().toUpperCase() } }).catch(() => undefined)
+    return result
+  }
 
   async getForUser(userId: string) {
     const [config, override] = await Promise.all([

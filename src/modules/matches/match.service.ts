@@ -10,6 +10,7 @@ import { CompleteMatchTransaction } from "./transactions/complete-match-transact
 import { ForfeitMatchTransaction } from "./transactions/forfeit-match-transaction";
 import { StartMatchTransaction } from "./transactions/start-match-transaction";
 import { botDisplayName } from "./utilities/bot-display-name";
+import { FraudService } from "../fraud/fraud.service";
 
 @Injectable()
 export class MatchService {
@@ -20,6 +21,7 @@ export class MatchService {
     private readonly completeMatch: CompleteMatchTransaction,
     private readonly startMatch: StartMatchTransaction,
     private readonly forfeitMatch: ForfeitMatchTransaction,
+    private readonly fraudService: FraudService,
   ) {}
 
   create(userId: string, dto: CreateMatchDto) {
@@ -30,7 +32,27 @@ export class MatchService {
   recordEventForPlayer(matchId: string, userId: string, dto: MatchEventDto) {
     return this.recordEvent
       .run({ matchId, userId, dto })
-      .then((value) => this.serialize(value));
+      .then((value) => {
+        const event = value as { accepted?: boolean; payload?: Record<string, unknown> };
+        if (event.accepted === false) {
+          void this.fraudService.observe(userId, {
+            type: "REPEATED_INVALID_EVENTS",
+            sourceType: "MATCH_EVENT_REJECTED",
+            sourceId: dto.clientEventId,
+            metadata: { matchId, eventType: dto.eventType },
+          }).catch(() => undefined);
+        }
+        const timeTakenMs = event.payload?.timeTakenMs;
+        if (dto.eventType === "ANSWER" && typeof timeTakenMs === "number" && timeTakenMs < 500) {
+          void this.fraudService.observe(userId, {
+            type: "IMPOSSIBLE_ANSWER_SPEED",
+            sourceType: "MATCH_ANSWER",
+            sourceId: dto.clientEventId,
+            metadata: { matchId, timeTakenMs },
+          }).catch(() => undefined);
+        }
+        return this.serialize(value);
+      });
   }
   complete(matchId: string, userId: string, dto: CompleteMatchDto) {
     return this.completeMatch

@@ -11,6 +11,7 @@ import { GldModule } from "../gld/gld.module";
 import { ReferralsModule } from "../referrals/referrals.module";
 import { AdMobSsvService } from "./admob-ssv.service";
 import { MissionsModule } from "../missions/missions.module";
+import { FraudModule } from "../fraud/fraud.module";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { MissionsModule } from "../missions/missions.module";
     GldModule,
     ReferralsModule,
     MissionsModule,
+    FraudModule,
   ],
   controllers: [AdRewardsController],
   providers: [

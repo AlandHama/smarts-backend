@@ -6,6 +6,7 @@ import { ChangePasswordTransaction } from "../../admin/access/users/transactions
 import { UsersService } from "../../admin/access/users/users.service"
 import { AuthCredentialsRequestDto, ChangePasswordRequestDto, LoginResponseDto, RegisterRequestDto } from "../dtos"
 import { TokenService } from "./token.service"
+import { FraudService } from "../../fraud/fraud.service"
 
 @Injectable()
 export class AuthService {
@@ -16,6 +17,7 @@ export class AuthService {
     private readonly sessionsService: SessionsService,
     private readonly changePasswordTransaction: ChangePasswordTransaction,
     private readonly tokenService: TokenService,
+    private readonly fraudService: FraudService,
   ) {}
 
   async login(dto: AuthCredentialsRequestDto, request: any): Promise<LoginResponseDto> {
@@ -31,6 +33,10 @@ export class AuthService {
 
     const token = await this.tokenService.generateAuthToken({ ...user, isSystemAdmin: user.isSystemAdmin }, request, this.isMobile(request))
     await this.usersService.updateLastOnline(user.id)
+    const headers = request?.headers ?? {}
+    const deviceFingerprint = [headers["x-device-manufacturer"], headers["x-device-model"], headers["x-device-os"], headers["x-device-os-version"]].filter((value) => typeof value === "string" && value.trim()).join("|") || String(headers["user-agent"] ?? "credentials")
+    void this.fraudService.observe(user.id, { type: "ABNORMAL_SESSION_SWITCHING", sourceType: "LOGIN", sourceId: `${deviceFingerprint}:${Date.now()}` }).catch(() => undefined)
+    void this.fraudService.observeSharedDevice(user.id, deviceFingerprint).catch(() => undefined)
     return { token, user: this.usersService.toResponse(user) }
   }
 
@@ -38,6 +44,10 @@ export class AuthService {
     const user = await this.usersService.create(dto)
     const token = await this.tokenService.generateAuthToken(user, request, this.isMobile(request))
     await this.usersService.updateLastOnline(user.id)
+    const headers = request?.headers ?? {}
+    const deviceFingerprint = [headers["x-device-manufacturer"], headers["x-device-model"], headers["x-device-os"], headers["x-device-os-version"]].filter((value) => typeof value === "string" && value.trim()).join("|") || String(headers["user-agent"] ?? "registration")
+    void this.fraudService.observe(user.id, { type: "ABNORMAL_SESSION_SWITCHING", sourceType: "REGISTER", sourceId: `${deviceFingerprint}:${Date.now()}` }).catch(() => undefined)
+    void this.fraudService.observeSharedDevice(user.id, deviceFingerprint).catch(() => undefined)
     return { token, user: this.usersService.toResponse(user) }
   }
 

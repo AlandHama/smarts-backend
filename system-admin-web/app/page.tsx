@@ -44,6 +44,7 @@ import { RankingView } from "../components/RankingView";
 import { TransactionsView } from "../components/TransactionsView";
 import { NotificationsView } from "../components/NotificationsView";
 import { MissionsAchievementsView } from "../components/MissionsAchievementsView";
+import { FraudView } from "../components/FraudView";
 import { api, clearSession, hasSession, login } from "../lib/api";
 import { adminTheme } from "../lib/theme";
 
@@ -76,6 +77,7 @@ const viewPaths: Record<
   ranking: "/ranking/",
   transactions: "/transactions/",
   notifications: "/notifications/",
+  fraud: "/fraud/",
   "missions-achievements": "/missions-achievements/",
 };
 
@@ -224,6 +226,7 @@ export default function AdminPage() {
           {view === "ranking" && <RankingView />}
           {view === "transactions" && <TransactionsView />}
           {view === "notifications" && <NotificationsView />}
+          {view === "fraud" && <FraudView />}
         </AdminShell>
       )}
     </ThemeProvider>

@@ -8,6 +8,7 @@ import { AuthenticateGoogleTransaction, GoogleIdentityClaims } from "../transact
 import { LinkGoogleIdentityTransaction, UnlinkGoogleIdentityTransaction } from "../transactions/manage-google-identity-transaction"
 import { UsersService } from "../../admin/access/users/users.service"
 import { TokenService } from "./token.service"
+import { FraudService } from "../../fraud/fraud.service"
 
 @Injectable()
 export class GoogleAuthService {
@@ -20,6 +21,7 @@ export class GoogleAuthService {
     private readonly tokenService: TokenService,
     private readonly linkGoogleIdentityTransaction: LinkGoogleIdentityTransaction,
     private readonly unlinkGoogleIdentityTransaction: UnlinkGoogleIdentityTransaction,
+    private readonly fraudService: FraudService,
   ) {}
 
   async login(idToken: string, request: any) {
@@ -29,6 +31,10 @@ export class GoogleAuthService {
     if (user.status !== "ACTIVE") throw new UnauthorizedException("User is inactive")
     const token = await this.tokenService.generateAuthToken({ ...user, isSystemAdmin: user.isSystemAdmin }, request, this.isMobile(request))
     await this.usersService.updateLastOnline(user.id)
+    const headers = request?.headers ?? {}
+    const deviceFingerprint = [headers["x-device-manufacturer"], headers["x-device-model"], headers["x-device-os"], headers["x-device-os-version"]].filter((value) => typeof value === "string" && value.trim()).join("|") || String(headers["user-agent"] ?? "google")
+    void this.fraudService.observe(user.id, { type: "ABNORMAL_SESSION_SWITCHING", sourceType: "GOOGLE_LOGIN", sourceId: `${deviceFingerprint}:${Date.now()}` }).catch(() => undefined)
+    void this.fraudService.observeSharedDevice(user.id, deviceFingerprint).catch(() => undefined)
     return { token, user: this.usersService.toResponse(user) }
   }
 

@@ -13,6 +13,7 @@ import { ConfigService } from "../config/config.service";
 import { GldEmissionService } from "../gld/gld.emission.service";
 import { AdMobSsvService } from "./admob-ssv.service";
 import { GldService } from "../gld/gld.service";
+import { FraudService } from "../fraud/fraud.service";
 
 @Injectable()
 export class AdRewardsService {
@@ -24,6 +25,7 @@ export class AdRewardsService {
     private readonly gldEmission: GldEmissionService,
     private readonly admobSsv: AdMobSsvService,
     private readonly gldService: GldService,
+    private readonly fraudService: FraudService,
   ) {}
 
   createImpression(userId: string, dto: CreateAdImpressionDto) {
@@ -37,6 +39,7 @@ export class AdRewardsService {
   }
 
   async completeClientEvent(userId: string, dto: CompleteClientAdEventDto) {
+    await this.fraudService.assertRewardAllowed(userId)
     const adFormat = dto.adFormat.trim().toLowerCase();
     const eventType = dto.eventType.trim().toLowerCase();
     const policy = await this.gldService.resolveAdRewardPolicy(
@@ -44,7 +47,7 @@ export class AdRewardsService {
       adFormat,
       eventType,
     );
-    return this.claimTransaction.run({
+    const result = await this.claimTransaction.run({
       dto: {
         claimId: dto.claimId,
         providerEventId: dto.providerEventId.trim(),
@@ -62,6 +65,8 @@ export class AdRewardsService {
       serverRewardAmount: policy.rewardAmount,
       serverRewardAmountDecimal: policy.effectiveRewardAmountDecimal,
     });
+    void this.fraudService.observe(userId, { type: "RAPID_AD_REWARDS", sourceType: "AD_REWARD", sourceId: dto.claimId, metadata: { adFormat, eventType } }).catch(() => undefined)
+    return result
   }
 
   async estimate(userId: string, adFormat: string) {

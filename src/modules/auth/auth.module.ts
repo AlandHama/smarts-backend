@@ -15,6 +15,7 @@ import { TokenService } from "./services/token.service"
 import { GoogleAuthService } from "./services/google-auth.service"
 import { AuthenticateGoogleTransaction } from "./transactions/authenticate-google-transaction"
 import { LinkGoogleIdentityTransaction, UnlinkGoogleIdentityTransaction } from "./transactions/manage-google-identity-transaction"
+import { FraudModule } from "../fraud/fraud.module"
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { LinkGoogleIdentityTransaction, UnlinkGoogleIdentityTransaction } from "
     SessionsModule,
     PassportModule.register({ defaultStrategy: "jwt" }),
     JwtModule.register({ secret: getAuthConfig().accessSecret }),
+    FraudModule,
   ],
   controllers: [AuthController],
   providers: [

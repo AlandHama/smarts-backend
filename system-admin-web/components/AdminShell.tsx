@@ -68,6 +68,7 @@ export type AdminView =
   | "ranking"
   | "transactions"
   | "notifications"
+  | "fraud"
   | "missions-achievements";
 
 const navigation = [
@@ -161,6 +162,11 @@ const navigation = [
   {
     key: "reward-policies" as const,
     label: "Reward policies",
+    icon: <SecurityRoundedIcon />,
+  },
+  {
+    key: "fraud" as const,
+    label: "Fraud & risk",
     icon: <SecurityRoundedIcon />,
   },
   {

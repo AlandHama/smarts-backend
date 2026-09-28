@@ -12,9 +12,10 @@ import { CreateCatalogItemTransaction } from "./transactions/create-catalog-item
 import { CreatePurchaseTransaction } from "./transactions/create-purchase-transaction"
 import { GrantInventoryItemTransaction } from "./transactions/grant-inventory-item-transaction"
 import { RevokeInventoryItemTransaction } from "./transactions/revoke-inventory-item-transaction"
+import { FraudModule } from "../fraud/fraud.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, ProgressionModule, StorageModule, GldModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, ProgressionModule, StorageModule, GldModule, FraudModule],
   controllers: [CommerceController],
   providers: [CommerceService, CreateCatalogItemTransaction, CreatePurchaseTransaction, GrantInventoryItemTransaction, RevokeInventoryItemTransaction],
   exports: [CommerceService, CreateCatalogItemTransaction, CreatePurchaseTransaction, GrantInventoryItemTransaction, RevokeInventoryItemTransaction],
