@@ -6,11 +6,18 @@ export class SendGiftDto {
   @IsUUID()
   recipientUserId!: string
 
-  @ApiProperty({ example: "steam-gift-card" })
+  @ApiProperty({ example: "rose" })
   @IsString()
   @MinLength(1)
   @MaxLength(100)
-  catalogItemKey!: string
+  socialGiftKey!: string
+
+  /** @deprecated Kept for one release so older clients receive a clear migration path. */
+  @ApiProperty({ required: false, example: "rose" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  catalogItemKey?: string
 
   @ApiProperty({ description: "A unique key for this send request" })
   @IsString()

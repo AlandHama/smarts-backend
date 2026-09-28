@@ -13,10 +13,10 @@ export class GiftsController {
 
   @Get("catalog")
   @ApiOperation({ summary: "List active GLD gift catalog items" })
-  catalog(@Query() query: GiftCatalogQueryDto) { return this.giftsService.listCatalog(query.catalogKey) }
+  catalog(@Query() _query: GiftCatalogQueryDto) { return this.giftsService.listCatalog() }
 
   @Post("send")
-  @ApiOperation({ summary: "Send a catalog gift and burn its GLD price" })
+  @ApiOperation({ summary: "Send a configured social gift and allocate its GLD reward" })
   send(@CurrentUser() user: UserResponseDto, @Body() dto: SendGiftDto) { return this.giftsService.send(user.id, dto) }
 }
 

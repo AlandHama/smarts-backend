@@ -26,6 +26,7 @@ import { AppConfigurationView } from "../components/AppConfigurationView";
 import { UsersView } from "../components/UsersView";
 import { SessionsView } from "../components/SessionsView";
 import { CommerceView } from "../components/CommerceView";
+import { SocialGiftsView } from "../components/SocialGiftsView";
 import { Player360View } from "../components/Player360View";
 import { FeedbackView } from "../components/FeedbackView";
 import { RewardPoliciesView } from "../components/RewardPoliciesView";
@@ -60,6 +61,7 @@ const viewPaths: Record<
   economy: "/economy/",
   gld: "/gld/",
   commerce: "/commerce/",
+  "social-gifts": "/social-gifts/",
   "paid-rewards": "/paid-rewards/",
   leaderboards: "/leaderboards/",
   "game-config": "/game-config/",
@@ -196,6 +198,7 @@ export default function AdminPage() {
           )}
           {view === "gld" && <GldEconomyView />}
           {view === "commerce" && <CommerceView />}
+          {view === "social-gifts" && <SocialGiftsView />}
           {view === "paid-rewards" && (
             <PaidRewardsView onOpenPlayer360={openPlayer360} />
           )}

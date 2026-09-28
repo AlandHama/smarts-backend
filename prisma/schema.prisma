@@ -925,6 +925,26 @@ model CatalogItem {
   @@index([assetDefinitionId])
 }
 
+/// Player-to-player social gifts are intentionally independent from Commerce.
+/// A gift is a simple GLD transfer/burn definition, not a store entitlement.
+model SocialGiftDefinition {
+  id                    String       @id @default(uuid()) @db.Uuid
+  key                   String       @unique @db.VarChar(80)
+  name                  String       @db.VarChar(120)
+  icon                  String?      @db.VarChar(16)
+  description           String?      @db.Text
+  imageUrl              String?      @db.Text
+  priceGld              BigInt
+  recipientRewardBps    Int          @default(5000)
+  active                Boolean      @default(true)
+  sortOrder             Int          @default(0)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  gifts                 PlayerGift[]
+
+  @@index([active, sortOrder])
+}
+
 model CatalogPrice {
   id            String             @id @default(uuid()) @db.Uuid
   catalogItemId String             @db.Uuid
@@ -1164,7 +1184,8 @@ model PlayerGift {
   id               String         @id @default(uuid()) @db.Uuid
   senderUserId     String         @db.Uuid
   recipientUserId  String         @db.Uuid
-  catalogItemId    String         @db.Uuid
+  catalogItemId    String?        @db.Uuid
+  socialGiftDefinitionId String?   @db.Uuid
   gldPrice         BigInt
   giftFeeAmount    BigInt         @default(0)
   chargedAmount    BigInt         @default(0)
@@ -1178,11 +1199,13 @@ model PlayerGift {
   createdAt        DateTime       @default(now())
   sender           User           @relation("SentGifts", fields: [senderUserId], references: [id])
   recipient        User           @relation("ReceivedGifts", fields: [recipientUserId], references: [id])
-  catalogItem      CatalogItem    @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  catalogItem      CatalogItem?   @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  socialGiftDefinition SocialGiftDefinition? @relation(fields: [socialGiftDefinitionId], references: [id], onDelete: Restrict)
   idempotencyKey   IdempotencyKey @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
 
   @@index([senderUserId, createdAt])
   @@index([recipientUserId, createdAt])
+  @@index([socialGiftDefinitionId])
 }
 
 model ProgressionDefinition {

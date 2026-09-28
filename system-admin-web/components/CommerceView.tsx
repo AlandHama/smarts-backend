@@ -11,7 +11,6 @@ import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
-import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
@@ -19,7 +18,6 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import Grid from "@mui/material/Grid2";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
@@ -591,25 +589,6 @@ function ItemDialog({
       ? itemMetadata.gldCustomPrice
       : (item?.prices.find((price) => price.currency.code === "GLD")?.amount ??
         "");
-  const defaultGiftEnabled =
-    itemMetadata.gift === true ||
-    itemMetadata.isGift === true ||
-    itemMetadata.kind === "GIFT" ||
-    itemMetadata.type === "GIFT";
-  const defaultGiftCategory =
-    typeof itemMetadata.category === "string" && itemMetadata.category.trim()
-      ? itemMetadata.category
-      : "Popular";
-  const defaultGiftFeePercent =
-    typeof itemMetadata.giftFeePercent === "number" ||
-    typeof itemMetadata.giftFeePercent === "string"
-      ? String(itemMetadata.giftFeePercent)
-      : "0";
-  const defaultRecipientRewardPercent =
-    typeof itemMetadata.recipientRewardPercent === "number" ||
-    typeof itemMetadata.recipientRewardPercent === "string"
-      ? String(itemMetadata.recipientRewardPercent)
-      : "50";
   const existingAsset = assets.find(
     (asset) => asset.key === item?.assetDefinition?.key,
   );
@@ -623,12 +602,6 @@ function ItemDialog({
   const [selectedFrameKey, setSelectedFrameKey] = useState(existingFrameKey);
   const [prices, setPrices] = useState<CatalogPriceForm[]>(defaultPrices);
   const [rewards, setRewards] = useState<CatalogRewardForm[]>(defaultRewards);
-  const [giftEnabled, setGiftEnabled] = useState(defaultGiftEnabled);
-  const [giftCategory, setGiftCategory] = useState(defaultGiftCategory);
-  const [giftFeePercent, setGiftFeePercent] = useState(defaultGiftFeePercent);
-  const [recipientRewardPercent, setRecipientRewardPercent] = useState(
-    defaultRecipientRewardPercent,
-  );
   const updateReward = (index: number, patch: Partial<CatalogRewardForm>) => {
     setRewards((current) =>
       current.map((reward, currentIndex) =>
@@ -655,9 +628,6 @@ function ItemDialog({
               throw new Error("At least one price is required");
             const gldPricingMode = field(form, "gldPricingMode");
             const gldCustomPrice = field(form, "gldCustomPrice");
-            const linkedAssetKey = field(form, "assetKey");
-            if (giftEnabled && !linkedAssetKey)
-              throw new Error("Gift items must have a primary asset selected.");
             if (
               gldPricingMode === "FIXED" &&
               gldCustomPrice &&
@@ -686,33 +656,6 @@ function ItemDialog({
                 active: price.active,
               };
             });
-            if (
-              giftEnabled &&
-              !normalizedPrices.some(
-                (price) => price.currencyCode === "GLD" && price.active,
-              )
-            )
-              throw new Error("Gift items need an active GLD price.");
-            const parsedGiftFee = Number(giftFeePercent);
-            if (
-              giftEnabled &&
-              (!Number.isInteger(parsedGiftFee) ||
-                parsedGiftFee < 0 ||
-                parsedGiftFee > 100)
-            )
-              throw new Error(
-                "Gift fee must be a whole percentage between 0 and 100.",
-              );
-            const parsedRecipientReward = Number(recipientRewardPercent);
-            if (
-              giftEnabled &&
-              (!Number.isInteger(parsedRecipientReward) ||
-                parsedRecipientReward < 0 ||
-                parsedRecipientReward > 100)
-            )
-              throw new Error(
-                "Receiver reward must be a whole percentage between 0 and 100.",
-              );
             const normalizedRewards = rewards.map((reward, index) => {
               const payload: Record<string, unknown> = {
                 rewardType: reward.rewardType,
@@ -787,12 +730,6 @@ function ItemDialog({
             delete nextMetadata.category;
             delete nextMetadata.giftFeePercent;
             delete nextMetadata.recipientRewardPercent;
-            if (giftEnabled) {
-              nextMetadata.gift = true;
-              nextMetadata.category = giftCategory.trim() || "Popular";
-              nextMetadata.giftFeePercent = parsedGiftFee;
-              nextMetadata.recipientRewardPercent = parsedRecipientReward;
-            }
             const payload = {
               ...(item ? {} : { catalogId: field(form, "catalogId") }),
               key: stableKey(field(form, "key")),
@@ -954,70 +891,6 @@ function ItemDialog({
                   helperText="Used only in fixed mode. Automatic mode derives the price from the linked asset USD cost and current GLD value."
                   fullWidth
                 />
-              </Grid>
-              <Grid size={12}>
-                <Card variant="outlined" sx={{ p: 1.5 }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={giftEnabled}
-                        onChange={(event) =>
-                          setGiftEnabled(event.target.checked)
-                        }
-                      />
-                    }
-                    label="Available as a player-to-player GLD gift"
-                  />
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ ml: 4.5 }}
-                  >
-                    Gift items must link to a primary asset and have an active
-                    GLD price. They will appear in the mobile gift screen.
-                  </Typography>
-                  {giftEnabled && (
-                    <Stack
-                      direction={{ xs: "column", sm: "row" }}
-                      spacing={1.5}
-                      sx={{ mt: 1.5, ml: 4.5 }}
-                    >
-                      <TextField
-                        label="Gift category"
-                        value={giftCategory}
-                        onChange={(event) =>
-                          setGiftCategory(event.target.value)
-                        }
-                        placeholder="Popular"
-                        size="small"
-                        sx={{ maxWidth: 360 }}
-                        helperText="Used for filtering gifts in the mobile app."
-                      />
-                      <TextField
-                        label="Gift fee (%)"
-                        value={giftFeePercent}
-                        onChange={(event) =>
-                          setGiftFeePercent(event.target.value)
-                        }
-                        type="number"
-                        size="small"
-                        inputProps={{ min: 0, max: 100, step: 1 }}
-                        helperText="Added to the sender’s GLD debit."
-                      />
-                      <TextField
-                        label="Receiver reward (%)"
-                        value={recipientRewardPercent}
-                        onChange={(event) =>
-                          setRecipientRewardPercent(event.target.value)
-                        }
-                        type="number"
-                        size="small"
-                        inputProps={{ min: 0, max: 100, step: 1 }}
-                        helperText="Percentage of the gift GLD price credited to the receiver."
-                      />
-                    </Stack>
-                  )}
-                </Card>
               </Grid>
               <Grid size={12}>
                 <TextField

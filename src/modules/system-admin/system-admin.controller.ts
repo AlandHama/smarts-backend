@@ -42,6 +42,8 @@ import {
   SystemAdminUsersQueryDto,
   UpdateUserProfileDto,
   UpdateUserStatusDto,
+  CreateSocialGiftDto,
+  UpdateSocialGiftDto,
 } from "./dtos";
 import {
   AwardProgressionPointsDto,
@@ -1293,6 +1295,30 @@ export class SystemAdminController {
   @ApiBearerAuth("access-token")
   commerceCatalogs() {
     return this.systemAdminService.listCommerceCatalogs();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/social-gifts")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "List independent social gift definitions" })
+  socialGifts() {
+    return this.systemAdminService.listSocialGifts();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/social-gifts")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Create an independent social gift definition" })
+  createSocialGift(@Body() dto: CreateSocialGiftDto) {
+    return this.systemAdminService.createSocialGift(dto);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/social-gifts/:id")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Update an independent social gift definition" })
+  updateSocialGift(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateSocialGiftDto) {
+    return this.systemAdminService.updateSocialGift(id, dto);
   }
 
   @UseGuards(SystemAdminGuard)

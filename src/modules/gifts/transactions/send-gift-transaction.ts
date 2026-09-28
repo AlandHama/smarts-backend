@@ -1,15 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash, randomUUID } from "node:crypto"
-import { InventoryAcquisitionSource, PlayerAuditActorType, Prisma, WalletTransactionSourceType } from "@prisma/client"
+import { PlayerAuditActorType, Prisma, WalletTransactionSourceType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
 import { PrismaService } from "../../../prisma.service"
 import { ConfigService } from "../../config/config.service"
-import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
-import { GrantInventoryItemTransaction } from "../../commerce/transactions/grant-inventory-item-transaction"
-import { catalogGldPrice, catalogGldPricingMode } from "../../commerce/catalog-gld-pricing"
+import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { SendGiftDto } from "../dtos/gift.dto"
 
 type SendGiftInput = { senderUserId: string; dto: SendGiftDto }
@@ -20,7 +18,6 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
     prisma: PrismaService,
     private readonly debitWallet: DebitWalletTransaction,
     private readonly creditWallet: CreditWalletTransaction,
-    private readonly grantInventory: GrantInventoryItemTransaction,
     private readonly configService: ConfigService,
   ) { super(prisma) }
 
@@ -30,22 +27,22 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
     if (senderUserId === recipientUserId) throw new BadRequestException("You cannot send a gift to yourself")
     const controls = await transaction.gldAdminControl.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default" }, update: {} })
     if (controls.giftsPaused) throw new ConflictException("GLD gifts are temporarily paused")
-    const itemKey = input.dto.catalogItemKey.trim().toLowerCase()
-    const catalogKey = "main"
+
+    const giftKey = (input.dto.socialGiftKey || input.dto.catalogItemKey || "").trim().toLowerCase()
     const idempotencyKey = input.dto.idempotencyKey.trim()
+    if (!giftKey) throw new BadRequestException("A social gift key is required")
     if (!idempotencyKey) throw new BadRequestException("An idempotency key is required")
 
     const lockUsers = [senderUserId, recipientUserId].sort().join(":")
-    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`gld-gift:${lockUsers}:${itemKey}`}))`
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`social-gift:${lockUsers}:${giftKey}`}))`
     const [sender, recipient] = await Promise.all([
       transaction.user.findUnique({ where: { id: senderUserId }, select: { id: true, username: true, status: true, profile: { select: { displayName: true } } } }),
-      transaction.user.findUnique({ where: { id: recipientUserId }, select: { id: true, username: true, status: true, profile: { select: { displayName: true, isPublic: true } } } }),
+      transaction.user.findUnique({ where: { id: recipientUserId }, select: { id: true, username: true, status: true, profile: { select: { displayName: true } } } }),
     ])
     if (!sender || sender.status !== "ACTIVE") throw new BadRequestException("Sender account is not active")
     if (!recipient || recipient.status !== "ACTIVE") throw new NotFoundException("Recipient account not found")
 
-    const requireFriendship = process.env.GLD_GIFT_REQUIRE_FRIENDSHIP === "true"
-    if (requireFriendship) {
+    if (process.env.GLD_GIFT_REQUIRE_FRIENDSHIP === "true") {
       const friendship = await transaction.friendship.findFirst({ where: { OR: [{ userId: senderUserId, friendId: recipientUserId }, { userId: recipientUserId, friendId: senderUserId }] }, select: { id: true } })
       if (!friendship) throw new BadRequestException("You must be friends before sending a gift")
     }
@@ -57,101 +54,49 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
     const sentToday = await transaction.playerGift.count({ where: { senderUserId, createdAt: { gte: startOfDay } } })
     if (sentToday >= dailyLimit) throw new BadRequestException("Daily gift sending limit reached")
 
-    const item = await transaction.catalogItem.findFirst({
-      where: { key: itemKey, active: true, purchasable: true, catalog: { key: catalogKey, active: true } },
-      include: { catalog: true, assetDefinition: { select: { key: true, name: true, imageUrl: true, metadata: true } }, prices: { where: { active: true }, include: { currency: { select: { id: true, code: true, active: true } } } } },
-    })
-    if (!item || !this.isAvailable(item.startsAt, item.endsAt) || !this.isAvailable(item.catalog.startsAt, item.catalog.endsAt)) throw new NotFoundException("Gift catalog item is not available")
-    if (!this.isGiftItem(item.metadata)) throw new BadRequestException("This catalog item is not configured as a gift")
-    if (!item.assetDefinition) throw new BadRequestException("This gift is missing its primary asset configuration")
-    let price: any = item.prices.find((entry) => entry.currency.code === "GLD" && entry.currency.active)
-    const state = await transaction.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { displayedValueUsdMicros: true } })
-    const dynamicAmount = state?.displayedValueUsdMicros
-      ? catalogGldPrice({ catalogMetadata: item.metadata, assetMetadata: item.assetDefinition.metadata, currentGldValueUsdMicros: state.displayedValueUsdMicros, storedGldPrice: price?.amount ?? null })
-      : null
-    if (catalogGldPricingMode(item.metadata) === "AUTO" && dynamicAmount === null) throw new BadRequestException("Automatic GLD pricing requires an asset USD cost and a current GLD value")
-    if (dynamicAmount !== null) {
-      const currency = price?.currency ?? await transaction.currencyDefinition.findUnique({ where: { code: "GLD" } })
-      if (currency?.active) price = { ...(price ?? {}), amount: dynamicAmount, currencyId: currency.id, currency }
-    }
-    if (!price || price.amount <= 0n) throw new BadRequestException("This gift is not priced in GLD")
-    const giftFeeBps = this.giftFeeBps(item.metadata)
-    const giftFeeAmount = (price.amount * BigInt(giftFeeBps) + 9_999n) / 10_000n
-    const chargedAmount = price.amount + giftFeeAmount
-    const recipientRewardBps = this.recipientRewardBps(item.metadata)
-    const recipientAmountDecimal = new Prisma.Decimal(price.amount.toString())
-      .mul(recipientRewardBps)
-      .div(10_000)
-      .toDecimalPlaces(6)
-    const recipientAmount = BigInt(recipientAmountDecimal.floor().toFixed(0))
+    const definition = await transaction.socialGiftDefinition.findFirst({ where: { key: giftKey, active: true } })
+    if (!definition || definition.priceGld <= 0n) throw new NotFoundException("Social gift is not available")
+    if (definition.recipientRewardBps < 0 || definition.recipientRewardBps > 10_000) throw new BadRequestException("Social gift reward configuration is invalid")
 
-    const requestHash = createHash("sha256").update(JSON.stringify({ senderUserId, recipientUserId, catalogKey, itemKey })).digest("hex")
-    const scope = `gift:${senderUserId}`
+    const price = definition.priceGld
+    const recipientAmountDecimal = new Prisma.Decimal(price.toString()).mul(definition.recipientRewardBps).div(10_000).toDecimalPlaces(6)
+    const burnedAmountDecimal = new Prisma.Decimal(price.toString()).sub(recipientAmountDecimal)
+    const recipientAmount = BigInt(recipientAmountDecimal.floor().toFixed(0))
+    const burnedAmount = BigInt(burnedAmountDecimal.floor().toFixed(0))
+    const requestHash = createHash("sha256").update(JSON.stringify({ senderUserId, recipientUserId, giftKey })).digest("hex")
+    const scope = `social-gift:${senderUserId}`
     const idem = await transaction.idempotencyKey.upsert({ where: { scope_key: { scope, key: idempotencyKey } }, create: { userId: senderUserId, scope, key: idempotencyKey, requestHash, status: "PROCESSING" }, update: {} })
     if (idem.requestHash !== requestHash) throw new ConflictException("The idempotency key was already used for a different gift")
     if (idem.status === "COMPLETED" && idem.responseJson) return idem.responseJson
     const existingGift = await transaction.playerGift.findUnique({ where: { idempotencyKeyId: idem.id } })
     if (existingGift) return this.serialize(existingGift)
 
-    // The configured sender/receiver ratio is the complete GLD allocation:
-    // the receiver gets the configured share and the remainder is burned.
-    // This keeps a 5 GLD gift with a 50% reward at 2.5 GLD received and 2.5
-    // GLD burned, while any configured sender fee is also burned.
-    const chargedAmountDecimal = new Prisma.Decimal(chargedAmount.toString())
-    const burnedAmountDecimal = chargedAmountDecimal.sub(recipientAmountDecimal)
-    const burnedAmount = BigInt(burnedAmountDecimal.floor().toFixed(0))
-    const retainedAmount = 0n
     const giftId = randomUUID()
-    const wallet = await this.debitWallet.runWithinTransaction({ userId: senderUserId, currencyCode: "GLD", amount: chargedAmount, sourceId: giftId, sourceType: WalletTransactionSourceType.PURCHASE, metadata: { reason: "GLD_GIFT_PURCHASE", recipientUserId, catalogItemKey: item.key, giftFeeAmount: giftFeeAmount.toString(), giftFeeBps, chargedAmount: chargedAmount.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps, burnedAmount: burnedAmountDecimal.toString(), retainedAmount: retainedAmount.toString() } }, transaction)
+    const wallet = await this.debitWallet.runWithinTransaction({
+      userId: senderUserId,
+      currencyCode: "GLD",
+      amount: price,
+      sourceId: giftId,
+      sourceType: WalletTransactionSourceType.PURCHASE,
+      metadata: { reason: "GLD_SOCIAL_GIFT_SENT", recipientUserId, socialGiftKey: definition.key, chargedAmount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps, burnedAmount: burnedAmountDecimal.toString() },
+    }, transaction)
     const ledger = await transaction.walletTransaction.findUnique({ where: { grantKey: `PURCHASE:${giftId}:${senderUserId}:GLD` }, select: { id: true } })
-    await transaction.gldBurnEvent.create({ data: { userId: senderUserId, amount: burnedAmount, exactAmount: burnedAmountDecimal, sourceType: "GIFT_PURCHASE", sourceId: giftId, ledgerEntryId: ledger?.id, reason: "Digital gift burn and receiver reward", metadata: { recipientUserId, catalogItemKey: item.key, gldPrice: price.amount.toString(), giftFeeAmount: giftFeeAmount.toString(), giftFeeBps, chargedAmount: chargedAmount.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps, retainedAmount: retainedAmount.toString() } } })
-    const gift = await transaction.playerGift.create({ data: { id: giftId, senderUserId, recipientUserId, catalogItemId: item.id, gldPrice: price.amount, giftFeeAmount, chargedAmount, burnedAmount, retainedAmount, burnedAmountDecimal, retainedAmountDecimal: 0, recipientAmount: recipientAmountDecimal, recipientRewardBps, idempotencyKeyId: idem.id } })
+    await transaction.gldBurnEvent.create({ data: { userId: senderUserId, amount: burnedAmount, exactAmount: burnedAmountDecimal, sourceType: "GIFT_PURCHASE", sourceId: giftId, ledgerEntryId: ledger?.id, reason: "Social gift allocation burn", metadata: { recipientUserId, socialGiftKey: definition.key, priceGld: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } } })
+    const gift = await transaction.playerGift.create({ data: { id: giftId, senderUserId, recipientUserId, catalogItemId: null, socialGiftDefinitionId: definition.id, gldPrice: price, giftFeeAmount: 0n, chargedAmount: price, burnedAmount, retainedAmount: 0n, burnedAmountDecimal, retainedAmountDecimal: 0, recipientAmount: recipientAmountDecimal, recipientRewardBps: definition.recipientRewardBps, idempotencyKeyId: idem.id } })
     if (recipientAmountDecimal.gt(0)) {
-      await this.creditWallet.runWithinTransaction({ userId: recipientUserId, currencyCode: "GLD", amount: recipientAmount, amountDecimal: recipientAmountDecimal.toString(), sourceId: giftId, sourceType: WalletTransactionSourceType.SYSTEM, metadata: { reason: "GLD_GIFT_RECEIVED", senderUserId, catalogItemKey: item.key, giftId, senderAmount: price.amount.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps } }, transaction)
-    }
-    if (item.assetDefinition) {
-      const variationKey = this.metadataString(item.metadata, "variationKey")
-      await this.grantInventory.runWithinTransaction({ userId: recipientUserId, assetKey: item.assetDefinition.key, variationKey, quantity: 1, source: InventoryAcquisitionSource.SYSTEM, sourceId: `${gift.id}:asset`, metadata: { reason: "GLD_GIFT_RECEIVED", giftId: gift.id, senderUserId, catalogItemKey: item.key } }, transaction)
+      await this.creditWallet.runWithinTransaction({ userId: recipientUserId, currencyCode: "GLD", amount: recipientAmount, amountDecimal: recipientAmountDecimal.toString(), sourceId: giftId, sourceType: WalletTransactionSourceType.SYSTEM, metadata: { reason: "GLD_SOCIAL_GIFT_RECEIVED", senderUserId, socialGiftKey: definition.key, giftId, senderAmount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } }, transaction)
     }
 
-    const result = this.serialize({ giftId: gift.id, status: "SENT", senderUserId, recipientUserId, recipientName: recipient.profile?.displayName ?? recipient.username, catalogItemKey: item.key, catalogItemName: item.name, assetKey: item.assetDefinition?.key ?? null, imageUrl: item.imageUrl ?? item.assetDefinition?.imageUrl ?? null, gldPrice: price.amount, giftFeeAmount, giftFeeBps, chargedAmount, recipientAmount: recipientAmountDecimal, recipientRewardBps, burnedAmount: burnedAmountDecimal, retainedAmount, balanceAfter: wallet.amount, createdAt: gift.createdAt })
+    const result = this.serialize({ giftId: gift.id, status: "SENT", senderUserId, recipientUserId, recipientName: recipient.profile?.displayName ?? recipient.username, socialGiftKey: definition.key, socialGiftName: definition.name, icon: definition.icon, gldPrice: price, chargedAmount: price, giftFeeAmount: 0n, recipientAmount: recipientAmountDecimal, recipientRewardBps: definition.recipientRewardBps, burnedAmount: burnedAmountDecimal, balanceAfter: wallet.amount, createdAt: gift.createdAt })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as Prisma.InputJsonValue, completedAt: new Date() } })
-    await transaction.outboxEvent.create({ data: { eventType: "gift.received", aggregateType: "PlayerGift", aggregateId: gift.id, payload: { giftId: gift.id, userId: recipientUserId, recipientUserId, senderUserId, senderName: sender.profile?.displayName ?? sender.username, catalogItemKey: item.key, catalogItemName: item.name, amount: price.amount.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps, giftFeeAmount: giftFeeAmount.toString(), chargedAmount: chargedAmount.toString() } as Prisma.InputJsonValue } })
-    await transaction.outboxEvent.create({ data: { eventType: "gift.sent", aggregateType: "PlayerGift", aggregateId: gift.id, payload: { giftId: gift.id, userId: senderUserId, recipientUserId, recipientName: recipient.profile?.displayName ?? recipient.username, catalogItemKey: item.key, catalogItemName: item.name, amount: price.amount.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps, giftFeeAmount: giftFeeAmount.toString(), chargedAmount: chargedAmount.toString() } as Prisma.InputJsonValue } })
-    await writePlayerAudit(transaction, { userId: senderUserId, actorType: PlayerAuditActorType.PLAYER, action: "GLD_GIFT_SENT", entityType: "PlayerGift", entityId: gift.id, summary: `Sent ${item.name} to ${recipient.profile?.displayName ?? recipient.username}`, changes: { gldBalance: { old: null, new: wallet.amount } }, metadata: { recipientUserId, catalogItemKey: item.key, price: price.amount.toString(), burnedAmount: burnedAmount.toString() } })
-    await writePlayerAudit(transaction, { userId: recipientUserId, actorType: PlayerAuditActorType.SYSTEM, action: "GLD_GIFT_RECEIVED", entityType: "PlayerGift", entityId: gift.id, summary: `Received ${item.name} from ${sender.profile?.displayName ?? sender.username}`, metadata: { senderUserId, catalogItemKey: item.key, price: price.amount.toString() } })
+    await transaction.outboxEvent.create({ data: { eventType: "gift.received", aggregateType: "PlayerGift", aggregateId: gift.id, payload: { giftId: gift.id, userId: recipientUserId, recipientUserId, senderUserId, senderName: sender.profile?.displayName ?? sender.username, socialGiftKey: definition.key, socialGiftName: definition.name, icon: definition.icon, amount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } as Prisma.InputJsonValue } })
+    await transaction.outboxEvent.create({ data: { eventType: "gift.sent", aggregateType: "PlayerGift", aggregateId: gift.id, payload: { giftId: gift.id, userId: senderUserId, recipientUserId, recipientName: recipient.profile?.displayName ?? recipient.username, socialGiftKey: definition.key, socialGiftName: definition.name, icon: definition.icon, amount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } as Prisma.InputJsonValue } })
+    await writePlayerAudit(transaction, { userId: senderUserId, actorType: PlayerAuditActorType.PLAYER, action: "GLD_GIFT_SENT", entityType: "PlayerGift", entityId: gift.id, summary: `Sent ${definition.name} to ${recipient.profile?.displayName ?? recipient.username}`, changes: { gldBalance: { old: null, new: wallet.amount } }, metadata: { recipientUserId, socialGiftKey: definition.key, price: price.toString(), burnedAmount: burnedAmountDecimal.toString() } })
+    await writePlayerAudit(transaction, { userId: recipientUserId, actorType: PlayerAuditActorType.SYSTEM, action: "GLD_GIFT_RECEIVED", entityType: "PlayerGift", entityId: gift.id, summary: `Received ${definition.name} from ${sender.profile?.displayName ?? sender.username}`, metadata: { senderUserId, socialGiftKey: definition.key, price: price.toString(), recipientAmount: recipientAmountDecimal.toString() } })
     return result
   }
 
-  private isGiftItem(metadata: Prisma.JsonValue | null) {
-    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false
-    const value = metadata as Record<string, unknown>
-    return value.gift === true || value.isGift === true || value.kind === "GIFT" || value.type === "GIFT"
+  private serialize(value: unknown): any {
+    return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item))
   }
-
-  private metadataString(metadata: Prisma.JsonValue | null, key: string) {
-    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return undefined
-    const value = (metadata as Record<string, unknown>)[key]
-    return typeof value === "string" ? value : undefined
-  }
-
-  private giftFeeBps(metadata: Prisma.JsonValue | null) {
-    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return 0
-    const raw = (metadata as Record<string, unknown>).giftFeePercent
-    const percent = typeof raw === "number" && Number.isInteger(raw) ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : 0
-    return Math.min(Math.max(percent, 0), 100) * 100
-  }
-
-  private recipientRewardBps(metadata: Prisma.JsonValue | null) {
-    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return 5_000
-    const value = metadata as Record<string, unknown>
-    const raw = value.recipientRewardPercent ?? value.recipientRewardBps
-    const percent = typeof raw === "number" && Number.isInteger(raw) ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : null
-    if (percent === null) return 5_000
-    if (value.recipientRewardBps !== undefined && percent > 100) return Math.min(Math.max(percent, 0), 10_000)
-    return Math.min(Math.max(percent, 0), 100) * 100
-  }
-
-  private isAvailable(startsAt: Date | null, endsAt: Date | null) { const now = Date.now(); return (!startsAt || startsAt.getTime() <= now) && (!endsAt || endsAt.getTime() > now) }
-  private serialize(value: unknown): any { return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) }
 }

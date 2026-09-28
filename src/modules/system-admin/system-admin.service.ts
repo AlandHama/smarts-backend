@@ -24,6 +24,8 @@ import {
   SystemAdminUsersQueryDto,
   UpdateUserProfileDto,
   UpdateUserStatusDto,
+  CreateSocialGiftDto,
+  UpdateSocialGiftDto,
 } from "./dtos";
 import { DeleteUserTransaction } from "./transactions/delete-user-transaction";
 import {
@@ -1634,6 +1636,59 @@ export class SystemAdminService implements OnModuleInit {
   }
   listCommerceCatalogs() {
     return this.commerceService.listCatalogs(true);
+  }
+  listSocialGifts() {
+    return this.prisma.socialGiftDefinition.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }).then((gifts) => this.serialize(gifts.map((gift) => ({
+      ...gift,
+      priceGld: gift.priceGld,
+      recipientRewardPercent: gift.recipientRewardBps / 100,
+    }))));
+  }
+  async createSocialGift(dto: CreateSocialGiftDto) {
+    const priceGld = this.parseSocialGiftPrice(dto.priceGld);
+    const gift = await this.prisma.socialGiftDefinition.create({
+      data: {
+        key: this.socialGiftKey(dto.key),
+        name: dto.name.trim(),
+        icon: dto.icon?.trim() || null,
+        description: dto.description?.trim() || null,
+        imageUrl: dto.imageUrl?.trim() || null,
+        priceGld,
+        recipientRewardBps: Math.round((dto.recipientRewardPercent ?? 50) * 100),
+        sortOrder: dto.sortOrder ?? 0,
+        active: dto.active ?? true,
+      },
+    });
+    return this.serialize({ ...gift, recipientRewardPercent: gift.recipientRewardBps / 100 });
+  }
+  async updateSocialGift(id: string, dto: UpdateSocialGiftDto) {
+    const priceGld = this.parseSocialGiftPrice(dto.priceGld);
+    const gift = await this.prisma.socialGiftDefinition.update({
+      where: { id },
+      data: {
+        key: this.socialGiftKey(dto.key),
+        name: dto.name.trim(),
+        icon: dto.icon?.trim() || null,
+        description: dto.description?.trim() || null,
+        imageUrl: dto.imageUrl?.trim() || null,
+        priceGld,
+        recipientRewardBps: Math.round((dto.recipientRewardPercent ?? 50) * 100),
+        sortOrder: dto.sortOrder ?? 0,
+        active: dto.active ?? true,
+      },
+    });
+    return this.serialize({ ...gift, recipientRewardPercent: gift.recipientRewardBps / 100 });
+  }
+  private socialGiftKey(value: string) {
+    const key = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (!key) throw new NotFoundException("A valid social gift key is required");
+    return key;
+  }
+  private parseSocialGiftPrice(value: string) {
+    if (!/^\d+$/.test(value.trim()) || BigInt(value) <= 0n) throw new NotFoundException("Social gift price must be a positive whole GLD amount");
+    return BigInt(value.trim());
   }
   createCommerceCatalog(dto: CreateCatalogDto) {
     return this.commerceService.createCatalog(dto);

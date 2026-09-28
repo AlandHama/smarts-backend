@@ -16,6 +16,7 @@ import FolderCopyRoundedIcon from "@mui/icons-material/FolderCopyRounded";
 import PeopleAltRoundedIcon from "@mui/icons-material/PeopleAltRounded";
 import SecurityRoundedIcon from "@mui/icons-material/SecurityRounded";
 import RedeemRoundedIcon from "@mui/icons-material/RedeemRounded";
+import CardGiftcardRoundedIcon from "@mui/icons-material/CardGiftcardRounded";
 import MonitorHeartRoundedIcon from "@mui/icons-material/MonitorHeartRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
@@ -52,6 +53,7 @@ export type AdminView =
   | "economy"
   | "gld"
   | "commerce"
+  | "social-gifts"
   | "paid-rewards"
   | "leaderboards"
   | "game-config"
@@ -113,6 +115,11 @@ const navigation = [
     key: "commerce" as const,
     label: "Commerce",
     icon: <StorefrontRoundedIcon />,
+  },
+  {
+    key: "social-gifts" as const,
+    label: "Social gifts",
+    icon: <CardGiftcardRoundedIcon />,
   },
   {
     key: "paid-rewards" as const,
