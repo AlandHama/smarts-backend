@@ -70,7 +70,7 @@ export class CreatePurchaseTransaction extends PrismaTransaction<CreatePurchaseI
       const ledger = await transaction.walletTransaction.findUnique({ where: { grantKey: `${WalletTransactionSourceType.PURCHASE}:${purchase.id}:${input.userId}:GLD` }, select: { id: true } })
       const burn = await transaction.gldBurnEvent.findFirst({ where: { sourceType: "CATALOG_PURCHASE", sourceId: purchase.id }, select: { id: true } })
       if (!burn) {
-        await transaction.gldBurnEvent.create({ data: { userId: input.userId, amount: total, sourceType: "CATALOG_PURCHASE", sourceId: purchase.id, reason: `GLD catalog purchase ${item.key}`, ledgerEntryId: ledger?.id, metadata: { catalogItemKey: item.key, quantity: input.quantity } } })
+        await transaction.gldBurnEvent.create({ data: { userId: input.userId, amount: total, exactAmount: total.toString(), sourceType: "CATALOG_PURCHASE", sourceId: purchase.id, reason: `GLD catalog purchase ${item.key}`, ledgerEntryId: ledger?.id, metadata: { catalogItemKey: item.key, quantity: input.quantity } } })
         const dateKey = new Date().toISOString().slice(0, 10)
         await transaction.gldEmissionDay.upsert({ where: { dateKey }, create: { dateKey, emissionBudget: 0n, burnedAmount: total }, update: { burnedAmount: { increment: total } } })
       }

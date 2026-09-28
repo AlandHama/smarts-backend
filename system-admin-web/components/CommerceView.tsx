@@ -605,6 +605,11 @@ function ItemDialog({
     typeof itemMetadata.giftFeePercent === "string"
       ? String(itemMetadata.giftFeePercent)
       : "0";
+  const defaultRecipientRewardPercent =
+    typeof itemMetadata.recipientRewardPercent === "number" ||
+    typeof itemMetadata.recipientRewardPercent === "string"
+      ? String(itemMetadata.recipientRewardPercent)
+      : "50";
   const existingAsset = assets.find(
     (asset) => asset.key === item?.assetDefinition?.key,
   );
@@ -621,6 +626,9 @@ function ItemDialog({
   const [giftEnabled, setGiftEnabled] = useState(defaultGiftEnabled);
   const [giftCategory, setGiftCategory] = useState(defaultGiftCategory);
   const [giftFeePercent, setGiftFeePercent] = useState(defaultGiftFeePercent);
+  const [recipientRewardPercent, setRecipientRewardPercent] = useState(
+    defaultRecipientRewardPercent,
+  );
   const updateReward = (index: number, patch: Partial<CatalogRewardForm>) => {
     setRewards((current) =>
       current.map((reward, currentIndex) =>
@@ -695,6 +703,16 @@ function ItemDialog({
               throw new Error(
                 "Gift fee must be a whole percentage between 0 and 100.",
               );
+            const parsedRecipientReward = Number(recipientRewardPercent);
+            if (
+              giftEnabled &&
+              (!Number.isInteger(parsedRecipientReward) ||
+                parsedRecipientReward < 0 ||
+                parsedRecipientReward > 100)
+            )
+              throw new Error(
+                "Receiver reward must be a whole percentage between 0 and 100.",
+              );
             const normalizedRewards = rewards.map((reward, index) => {
               const payload: Record<string, unknown> = {
                 rewardType: reward.rewardType,
@@ -768,10 +786,12 @@ function ItemDialog({
             delete nextMetadata.type;
             delete nextMetadata.category;
             delete nextMetadata.giftFeePercent;
+            delete nextMetadata.recipientRewardPercent;
             if (giftEnabled) {
               nextMetadata.gift = true;
               nextMetadata.category = giftCategory.trim() || "Popular";
               nextMetadata.giftFeePercent = parsedGiftFee;
+              nextMetadata.recipientRewardPercent = parsedRecipientReward;
             }
             const payload = {
               ...(item ? {} : { catalogId: field(form, "catalogId") }),
@@ -983,6 +1003,17 @@ function ItemDialog({
                         size="small"
                         inputProps={{ min: 0, max: 100, step: 1 }}
                         helperText="Added to the sender’s GLD debit."
+                      />
+                      <TextField
+                        label="Receiver reward (%)"
+                        value={recipientRewardPercent}
+                        onChange={(event) =>
+                          setRecipientRewardPercent(event.target.value)
+                        }
+                        type="number"
+                        size="small"
+                        inputProps={{ min: 0, max: 100, step: 1 }}
+                        helperText="Percentage of the gift GLD price credited to the receiver."
                       />
                     </Stack>
                   )}

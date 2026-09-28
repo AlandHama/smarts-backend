@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common"
+import { Prisma } from "@prisma/client"
 import { PrismaService } from "../../prisma.service"
 import { SendGiftTransaction } from "./transactions/send-gift-transaction"
 import { SendGiftDto } from "./dtos/gift.dto"
@@ -24,7 +25,9 @@ export class GiftsService {
         const gldPrice = BigInt(String(price.amount))
         const giftFeeBps = this.giftFeeBps(item.metadata)
         const giftFeeAmount = (gldPrice * BigInt(giftFeeBps) + 9_999n) / 10_000n
-        return { id: item.id, key: item.key, name: item.name, description: item.description, category: this.metadataString(item.metadata, "category") ?? "Popular", imageUrl: item.imageUrl ?? item.assetDefinition.imageUrl ?? null, assetKey: item.assetDefinition.key, gldPrice: gldPrice.toString(), giftFeeAmount: giftFeeAmount.toString(), chargedAmount: (gldPrice + giftFeeAmount).toString(), giftFeeBps }
+        const recipientRewardBps = this.recipientRewardBps(item.metadata)
+        const recipientAmount = new Prisma.Decimal(gldPrice.toString()).mul(recipientRewardBps).div(10_000).toDecimalPlaces(6)
+        return { id: item.id, key: item.key, name: item.name, description: item.description, category: this.metadataString(item.metadata, "category") ?? "Popular", imageUrl: item.imageUrl ?? item.assetDefinition.imageUrl ?? null, assetKey: item.assetDefinition.key, gldPrice: gldPrice.toString(), giftFeeAmount: giftFeeAmount.toString(), chargedAmount: (gldPrice + giftFeeAmount).toString(), giftFeeBps, recipientRewardBps, recipientRewardPercent: recipientRewardBps / 100, recipientAmount }
       })
   }
 
@@ -38,8 +41,35 @@ export class GiftsService {
 
   async stats(viewerUserId: string, targetUserId: string) {
     await this.assertCanView(viewerUserId, targetUserId)
-    const rows = await this.prisma.playerGift.findMany({ where: { OR: [{ senderUserId: targetUserId }, { recipientUserId: targetUserId }] }, select: { senderUserId: true, recipientUserId: true, gldPrice: true, chargedAmount: true, burnedAmount: true } })
-    return this.serialize({ sent: rows.filter((row) => row.senderUserId === targetUserId).length, received: rows.filter((row) => row.recipientUserId === targetUserId).length, totalGldSent: rows.filter((row) => row.senderUserId === targetUserId).reduce((sum, row) => sum + (row.chargedAmount > 0n ? row.chargedAmount : row.gldPrice), 0n), totalGldReceived: rows.filter((row) => row.recipientUserId === targetUserId).reduce((sum, row) => sum + row.gldPrice, 0n), totalGldBurned: rows.filter((row) => row.senderUserId === targetUserId).reduce((sum, row) => sum + row.burnedAmount, 0n) })
+    const rows = await this.prisma.playerGift.findMany({ where: { OR: [{ senderUserId: targetUserId }, { recipientUserId: targetUserId }] }, select: { senderUserId: true, recipientUserId: true, gldPrice: true, chargedAmount: true, burnedAmount: true, burnedAmountDecimal: true, recipientAmount: true, catalogItem: { select: { key: true, name: true, imageUrl: true, assetDefinition: { select: { imageUrl: true } } } }, sender: { select: { id: true, username: true, profile: { select: { displayName: true } } } } } })
+    const sent = rows.filter((row) => row.senderUserId === targetUserId)
+    const received = rows.filter((row) => row.recipientUserId === targetUserId)
+    const byGift = new Map<string, { key: string; name: string; imageUrl: string | null; count: number; gldValue: bigint; gldReward: Prisma.Decimal }>()
+    for (const row of received) {
+      const key = row.catalogItem.key
+      const current = byGift.get(key) ?? { key, name: row.catalogItem.name, imageUrl: row.catalogItem.imageUrl ?? row.catalogItem.assetDefinition?.imageUrl ?? null, count: 0, gldValue: 0n, gldReward: new Prisma.Decimal(0) }
+      current.count += 1
+      current.gldValue += row.gldPrice
+      current.gldReward = current.gldReward.add(row.recipientAmount)
+      byGift.set(key, current)
+    }
+    const supporters = new Map<string, { userId: string; name: string; points: bigint }>()
+    for (const row of received) {
+      const current = supporters.get(row.senderUserId) ?? { userId: row.sender.id, name: row.sender.profile?.displayName ?? row.sender.username, points: 0n }
+      current.points += row.gldPrice
+      supporters.set(row.senderUserId, current)
+    }
+    const topSupporter = [...supporters.values()].sort((a, b) => b.points > a.points ? 1 : b.points < a.points ? -1 : 0)[0] ?? null
+    return this.serialize({
+      sent: sent.length,
+      received: received.length,
+      totalGldSent: sent.reduce((sum, row) => sum + (row.chargedAmount > 0n ? row.chargedAmount : row.gldPrice), 0n),
+      totalGldReceived: received.reduce((sum, row) => sum.add(row.recipientAmount), new Prisma.Decimal(0)),
+      totalGiftValueReceived: received.reduce((sum, row) => sum + row.gldPrice, 0n),
+      totalGldBurned: sent.reduce((sum, row) => sum.add(row.burnedAmountDecimal), new Prisma.Decimal(0)),
+      receivedByGift: [...byGift.values()].sort((a, b) => b.count - a.count),
+      topSupporter,
+    })
   }
 
   private async assertCanView(viewerUserId: string, targetUserId: string) {
@@ -58,6 +88,13 @@ export class GiftsService {
     const raw = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata.giftFeePercent : 0
     const percent = typeof raw === "number" && Number.isInteger(raw) ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : 0
     return Math.min(Math.max(percent, 0), 100) * 100
+  }
+  private recipientRewardBps(metadata: any) {
+    const raw = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata.recipientRewardPercent ?? metadata.recipientRewardBps : undefined
+    const value = typeof raw === "number" && Number.isInteger(raw) ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : null
+    if (value === null) return 5_000
+    if (metadata?.recipientRewardBps !== undefined && value > 100) return Math.min(Math.max(value, 0), 10_000)
+    return Math.min(Math.max(value, 0), 100) * 100
   }
   private serialize(value: unknown): any { return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) }
 }

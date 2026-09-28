@@ -68,7 +68,7 @@ export class CreditWalletTransaction extends PrismaTransaction<WalletMutationInp
   private shouldNotifyWallet(input: WalletMutationInput) {
     const notableSources: WalletTransactionSourceType[] = [WalletTransactionSourceType.MATCH, WalletTransactionSourceType.RANKING_MATCH_ENTRY, WalletTransactionSourceType.RANKING_MATCH_PAYOUT, WalletTransactionSourceType.RANKING_MATCH_REFUND, WalletTransactionSourceType.REFUND, WalletTransactionSourceType.ADMIN]
     if (notableSources.includes(input.sourceType)) return true
-    return input.sourceType === WalletTransactionSourceType.SYSTEM && input.metadata?.reason !== "GLD_PLAYER_TRANSFER"
+    return input.sourceType === WalletTransactionSourceType.SYSTEM && !["GLD_PLAYER_TRANSFER", "GLD_GIFT_RECEIVED"].includes(String(input.metadata?.reason ?? ""))
   }
 
   private parseExactAmount(value: string, label: string) {

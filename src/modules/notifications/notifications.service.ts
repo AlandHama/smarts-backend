@@ -325,7 +325,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
               : event.eventType === "leaderboard.reward.granted"
                 ? `You placed #${String(payload.rank ?? "")} and earned a leaderboard reward.`
                 : event.eventType === "gift.received"
-                  ? `${String(payload.senderName ?? "A player")} sent you ${String(payload.catalogItemName ?? "a gift")}.`
+                  ? `${String(payload.senderName ?? "A player")} sent you ${String(payload.catalogItemName ?? "a gift")}. ${String(payload.recipientAmount ?? "0")} GLD was credited to your wallet.`
                   : event.eventType === "gift.sent"
                     ? `Your ${String(payload.catalogItemName ?? "gift")} was sent to ${String(payload.recipientName ?? "another player")}.`
                     : event.eventType === "gld.transfer.sent"

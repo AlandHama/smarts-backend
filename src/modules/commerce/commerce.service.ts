@@ -320,7 +320,7 @@ export class CommerceService {
       if ((effectiveGldPrice ?? 0n) > 0n) {
         const existingBurn = await tx.gldBurnEvent.findFirst({ where: { sourceType: "PAID_REWARD_FULFILLMENT", sourceId: id }, select: { id: true } })
         if (!existingBurn) {
-          await tx.gldBurnEvent.create({ data: { userId: request.userId, amount: effectiveGldPrice!, sourceType: "PAID_REWARD_FULFILLMENT", sourceId: id, reason: `Fulfilled paid reward ${request.assetDefinition.key}`, metadata: { assetKey: request.assetDefinition.key, redeemCodeId: code.id, gldUnitPriceUsdMicros: gldUnitPriceUsdMicros?.toString() ?? null, reserveCostUsdMicros: reserveCostUsdMicros.toString() } } })
+          await tx.gldBurnEvent.create({ data: { userId: request.userId, amount: effectiveGldPrice!, exactAmount: effectiveGldPrice!.toString(), sourceType: "PAID_REWARD_FULFILLMENT", sourceId: id, reason: `Fulfilled paid reward ${request.assetDefinition.key}`, metadata: { assetKey: request.assetDefinition.key, redeemCodeId: code.id, gldUnitPriceUsdMicros: gldUnitPriceUsdMicros?.toString() ?? null, reserveCostUsdMicros: reserveCostUsdMicros.toString() } } })
           const dateKey = now.toISOString().slice(0, 10)
           await tx.gldEmissionDay.upsert({ where: { dateKey }, create: { dateKey, emissionBudget: 0n, burnedAmount: effectiveGldPrice! }, update: { burnedAmount: { increment: effectiveGldPrice! } } })
         }

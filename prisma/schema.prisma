@@ -1170,6 +1170,10 @@ model PlayerGift {
   chargedAmount    BigInt         @default(0)
   burnedAmount     BigInt
   retainedAmount   BigInt
+  burnedAmountDecimal Decimal     @default(0) @db.Decimal(30, 6)
+  retainedAmountDecimal Decimal   @default(0) @db.Decimal(30, 6)
+  recipientAmount  Decimal        @default(0) @db.Decimal(30, 6)
+  recipientRewardBps Int           @default(0)
   idempotencyKeyId String         @unique @db.Uuid
   createdAt        DateTime       @default(now())
   sender           User           @relation("SentGifts", fields: [senderUserId], references: [id])
@@ -1980,6 +1984,7 @@ model GldBurnEvent {
   id            String   @id @default(uuid()) @db.Uuid
   userId        String?  @db.Uuid
   amount        BigInt
+  exactAmount   Decimal  @default(0) @db.Decimal(30, 6)
   sourceType    String   @db.VarChar(60)
   sourceId      String?  @db.VarChar(255)
   reason        String   @db.VarChar(255)

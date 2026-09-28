@@ -42,7 +42,7 @@ export class TransferGldTransaction extends PrismaTransaction<TransferInput, any
     const credit = await this.creditWallet.runWithinTransaction({ userId: recipientUserId, currencyCode: "GLD", amount, sourceId: transferId, sourceType: WalletTransactionSourceType.SYSTEM, metadata: { reason: "GLD_PLAYER_TRANSFER", senderUserId: input.senderUserId, amount: amount.toString(), feeAmount: feeAmount.toString(), feeBps } }, transaction)
     if (feeAmount > 0n) {
       const ledger = await transaction.walletTransaction.findUnique({ where: { grantKey: `SYSTEM:${transferId}:${input.senderUserId}:GLD` }, select: { id: true } })
-      await transaction.gldBurnEvent.create({ data: { userId: input.senderUserId, amount: feeAmount, sourceType: "GLD_TRANSFER_FEE", sourceId: transferId, ledgerEntryId: ledger?.id, reason: "GLD player transfer fee", metadata: { recipientUserId, amount: amount.toString(), feeBps } } })
+      await transaction.gldBurnEvent.create({ data: { userId: input.senderUserId, amount: feeAmount, exactAmount: feeAmount.toString(), sourceType: "GLD_TRANSFER_FEE", sourceId: transferId, ledgerEntryId: ledger?.id, reason: "GLD player transfer fee", metadata: { recipientUserId, amount: amount.toString(), feeBps } } })
       const dateKey = new Date().toISOString().slice(0, 10)
       await transaction.gldEmissionDay.upsert({ where: { dateKey }, create: { dateKey, emissionBudget: 0n, burnedAmount: feeAmount }, update: { burnedAmount: { increment: feeAmount } } })
     }
