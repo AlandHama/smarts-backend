@@ -51,7 +51,6 @@ export class ConfigService {
         productionVersion: true,
         developmentVersion: true,
         playStoreUrl: true,
-        updatedAt: true,
       },
     })
   }
@@ -73,7 +72,6 @@ export class ConfigService {
         productionVersion: true,
         developmentVersion: true,
         playStoreUrl: true,
-        updatedAt: true,
       },
     })
   }

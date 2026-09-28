@@ -14,4 +14,9 @@ export class ConfigController {
   @ApiOperation({ summary: "Get the safe public configuration projection" })
   publicConfig() { return this.configService.publicProjection() }
 
+  @SkipAuth()
+  @Get("app-update")
+  @ApiOperation({ summary: "Get the public mobile app update policy" })
+  appUpdate() { return this.configService.getAppUpdateConfig() }
+
 }

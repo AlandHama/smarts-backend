@@ -79,7 +79,11 @@ export class GldRevenueService {
       ] as const
       for (const [entryType, amount, allocation] of deltas) {
         if (amount === 0n) continue
-        await tx.gldTreasuryEntry.create({ data: { revenueSnapshotId: existing.id, entryType: "ADJUSTMENT", amountUsdMicros: amount, idempotencyKey: `admob-restatement:${existing.id}:${allocation}:${amount.toString()}`, metadata: { allocation, originalEntryType: entryType } } })
+        await tx.gldTreasuryEntry.upsert({
+          where: { idempotencyKey: `admob-restatement:${existing.id}:${allocation}:${amount.toString()}` },
+          create: { revenueSnapshotId: existing.id, entryType: "ADJUSTMENT", amountUsdMicros: amount, idempotencyKey: `admob-restatement:${existing.id}:${allocation}:${amount.toString()}`, metadata: { allocation, originalEntryType: entryType } },
+          update: {},
+        })
       }
     })
     this.logger.warn(`Restated GLD AdMob revenue snapshot ${existing.id}`)
