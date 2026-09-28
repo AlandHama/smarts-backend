@@ -9,6 +9,7 @@ import { AwardProgressionPointsTransaction } from "../../progression/transaction
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
 import { botDisplayName } from "../utilities/bot-display-name"
+import { MissionsService } from "../../missions/missions.service"
 
 type SettleInput = { matchId: string; userId: string; idempotencyKey: string }
 
@@ -19,6 +20,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     private readonly awardProgression: AwardProgressionPointsTransaction,
     private readonly creditWallet: CreditWalletTransaction,
     private readonly applyLeaderboardScore: ApplyLeaderboardScoreTransaction,
+    private readonly missions: MissionsService,
   ) { super(prisma) }
 
   protected async execute(input: SettleInput, transaction: Prisma.TransactionClient) {
@@ -106,6 +108,15 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         const timeTakenMs = typeof payload.timeTakenMs === "number" && Number.isSafeInteger(payload.timeTakenMs) && payload.timeTakenMs >= 0 ? payload.timeTakenMs : 0
         return { totalQuestions: summary.totalQuestions + 1, totalCorrect: summary.totalCorrect + (payload.correct === true ? 1 : 0), totalTimeMs: summary.totalTimeMs + BigInt(timeTakenMs) }
       }, { totalQuestions: 0, totalCorrect: 0, totalTimeMs: 0n })
+      const engagementPayload = { matchId: lockedMatch.id, gameKey: lockedMatch.gameDefinition.key, mode: lockedMatch.mode, ranking: Boolean(lockedMatch.rankingMatch) }
+      await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:played`, payload: engagementPayload }, transaction)
+      if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:won`, payload: engagementPayload }, transaction)
+      if (answerSummary.totalCorrect > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "CORRECT_ANSWER", sourceId: `${lockedMatch.id}:${player.id}:correct`, amount: answerSummary.totalCorrect, payload: engagementPayload }, transaction)
+      if (answerSummary.totalQuestions > 0 && answerSummary.totalCorrect === answerSummary.totalQuestions) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "PERFECT_MATCH", sourceId: `${lockedMatch.id}:${player.id}:perfect`, payload: engagementPayload }, transaction)
+      if (lockedMatch.rankingMatch) {
+        await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:ranked-played`, payload: engagementPayload }, transaction)
+        if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:ranked-won`, payload: engagementPayload }, transaction)
+      }
       await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
       const cognitiveStats = await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
       if (eloDelta > 0n && winner?.participant.id === item.participant.id) {

@@ -4,12 +4,13 @@ import { FriendRequestStatus, PlayerAuditActorType, Prisma } from "@prisma/clien
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
+import { MissionsService } from "../../missions/missions.service"
 
 export class AcceptFriendRequestInput { requesterId!: string; addresseeId!: string; actorId!: string }
 
 @Injectable()
 export class AcceptFriendRequestTransaction extends PrismaTransaction<AcceptFriendRequestInput, any> {
-  constructor(prisma: PrismaService) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly missions: MissionsService) { super(prisma) }
 
   protected async execute(input: AcceptFriendRequestInput, transaction: Prisma.TransactionClient) {
     if (input.actorId !== input.addresseeId) throw new ConflictException("Only the request recipient can accept it")
@@ -20,6 +21,8 @@ export class AcceptFriendRequestTransaction extends PrismaTransaction<AcceptFrie
     const updated = await transaction.friendRequest.update({ where: { id: request.id }, data: { status: FriendRequestStatus.ACCEPTED, respondedAt: now } })
     await writePlayerAudit(transaction, { userId: input.addresseeId, actorType: PlayerAuditActorType.PLAYER, action: "FRIEND_REQUEST_ACCEPTED", entityType: "FriendRequest", entityId: request.id, summary: "Accepted a friend request", changes: { relationship: { old: "PENDING", new: "ACCEPTED" } }, metadata: { requesterId: input.requesterId } })
     await writePlayerAudit(transaction, { userId: input.requesterId, actorType: PlayerAuditActorType.SYSTEM, action: "FRIEND_REQUEST_ACCEPTED", entityType: "FriendRequest", entityId: request.id, summary: "A friend request was accepted", changes: { relationship: { old: "PENDING", new: "ACCEPTED" } }, metadata: { addresseeId: input.addresseeId } })
+    await this.missions.recordWithinTransaction({ userId: input.requesterId, eventType: "FRIEND_ADDED", sourceId: request.id, payload: { friendId: input.addresseeId } }, transaction)
+    await this.missions.recordWithinTransaction({ userId: input.addresseeId, eventType: "FRIEND_ADDED", sourceId: `${request.id}:recipient`, payload: { friendId: input.requesterId } }, transaction)
     return updated
   }
 }

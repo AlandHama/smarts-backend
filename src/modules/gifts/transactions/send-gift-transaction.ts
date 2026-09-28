@@ -9,6 +9,7 @@ import { ConfigService } from "../../config/config.service"
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { SendGiftDto } from "../dtos/gift.dto"
+import { MissionsService } from "../../missions/missions.service"
 
 type SendGiftInput = { senderUserId: string; dto: SendGiftDto }
 
@@ -19,6 +20,7 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
     private readonly debitWallet: DebitWalletTransaction,
     private readonly creditWallet: CreditWalletTransaction,
     private readonly configService: ConfigService,
+    private readonly missions: MissionsService,
   ) { super(prisma) }
 
   protected async execute(input: SendGiftInput, transaction: Prisma.TransactionClient) {
@@ -96,6 +98,7 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as Prisma.InputJsonValue, completedAt: new Date() } })
     await transaction.outboxEvent.create({ data: { eventType: "gift.received", aggregateType: "PlayerGift", aggregateId: gift.id, payload: { giftId: gift.id, userId: recipientUserId, recipientUserId, senderUserId, senderName: sender.profile?.displayName ?? sender.username, socialGiftKey: definition.key, socialGiftName: definition.name, icon: definition.icon, amount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } as Prisma.InputJsonValue } })
     await transaction.outboxEvent.create({ data: { eventType: "gift.sent", aggregateType: "PlayerGift", aggregateId: gift.id, payload: { giftId: gift.id, userId: senderUserId, recipientUserId, recipientName: recipient.profile?.displayName ?? recipient.username, socialGiftKey: definition.key, socialGiftName: definition.name, icon: definition.icon, amount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } as Prisma.InputJsonValue } })
+    await this.missions.recordWithinTransaction({ userId: senderUserId, eventType: "GIFT_SENT", sourceId: gift.id, payload: { socialGiftKey: definition.key, recipientUserId } }, transaction)
     await writePlayerAudit(transaction, { userId: senderUserId, actorType: PlayerAuditActorType.PLAYER, action: "GLD_GIFT_SENT", entityType: "PlayerGift", entityId: gift.id, summary: `Sent ${definition.name} to ${recipient.profile?.displayName ?? recipient.username}`, changes: { gldBalance: { old: null, new: wallet.amount } }, metadata: { recipientUserId, socialGiftKey: definition.key, price: price.toString(), burnedAmount: burnedAmountDecimal.toString() } })
     await writePlayerAudit(transaction, { userId: recipientUserId, actorType: PlayerAuditActorType.SYSTEM, action: "GLD_GIFT_RECEIVED", entityType: "PlayerGift", entityId: gift.id, summary: `Received ${definition.name} from ${sender.profile?.displayName ?? sender.username}`, metadata: { senderUserId, socialGiftKey: definition.key, price: price.toString(), recipientAmount: recipientAmountDecimal.toString() } })
     return result

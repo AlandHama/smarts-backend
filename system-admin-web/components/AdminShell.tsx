@@ -25,6 +25,7 @@ import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
@@ -66,7 +67,8 @@ export type AdminView =
   | "referrals"
   | "ranking"
   | "transactions"
-  | "notifications";
+  | "notifications"
+  | "missions-achievements";
 
 const navigation = [
   {
@@ -100,6 +102,11 @@ const navigation = [
     key: "progressions" as const,
     label: "Progressions",
     icon: <SettingsSuggestRoundedIcon />,
+  },
+  {
+    key: "missions-achievements" as const,
+    label: "Missions & achievements",
+    icon: <AutoAwesomeRoundedIcon />,
   },
   {
     key: "economy" as const,

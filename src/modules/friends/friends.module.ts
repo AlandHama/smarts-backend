@@ -11,6 +11,7 @@ import { RespondFriendRequestTransaction } from "./transactions/respond-friend-r
 import { UnblockPlayerTransaction } from "./transactions/unblock-player-transaction"
 import { FriendsController } from "./friends.controller"
 import { FriendsService } from "./friends.service"
+import { MissionsModule } from "../missions/missions.module"
 
-@Module({ imports: [DatabaseModule], controllers: [FriendsController], providers: [FriendsService, CreateFriendRequestTransaction, CreateFriendshipTransaction, AcceptFriendRequestTransaction, RespondFriendRequestTransaction, RemoveFriendshipTransaction, BlockPlayerTransaction, UnblockPlayerTransaction, HeartbeatPresenceTransaction], exports: [FriendsService] })
+@Module({ imports: [DatabaseModule, MissionsModule], controllers: [FriendsController], providers: [FriendsService, CreateFriendRequestTransaction, CreateFriendshipTransaction, AcceptFriendRequestTransaction, RespondFriendRequestTransaction, RemoveFriendshipTransaction, BlockPlayerTransaction, UnblockPlayerTransaction, HeartbeatPresenceTransaction], exports: [FriendsService] })
 export class FriendsModule {}

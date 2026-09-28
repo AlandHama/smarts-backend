@@ -82,6 +82,17 @@ enum ProgressionEventSourceType {
   SYSTEM
 }
 
+enum MissionPeriod {
+  DAILY
+  WEEKLY
+}
+
+enum MissionStatus {
+  ACTIVE
+  COMPLETED
+  CLAIMED
+}
+
 enum RewardGrantStatus {
   GRANTED
   PENDING
@@ -465,6 +476,9 @@ model User {
   referralConfigUpdates      ReferralConfig[]        @relation("ReferralConfigUpdater")
   referralPolicyOverride     ReferralPlayerOverride?
   rankingWins                RankingMatch[]          @relation("RankingMatchWinner")
+  missionRows                PlayerMission[]
+  achievementRows            PlayerAchievement[]
+  engagementEvents           EngagementEvent[]
 }
 
 /// A provider identity is linked to a local account after the provider token
@@ -1306,6 +1320,119 @@ model ProgressionEvent {
   @@index([userId, progressionId, createdAt])
   @@index([sourceType, sourceId])
   @@index([idempotencyKeyId])
+}
+
+/// A server-owned, idempotent event consumed by the mission and achievement
+/// engine. Mobile clients never write this table directly.
+model EngagementEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  eventType String   @db.VarChar(80)
+  sourceId  String   @db.VarChar(255)
+  amount    Int      @default(1)
+  payload   Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventType, sourceId])
+  @@index([userId, eventType, createdAt])
+}
+
+model MissionDefinition {
+  id          String          @id @default(uuid()) @db.Uuid
+  key         String          @unique @db.VarChar(80)
+  title       String          @db.VarChar(120)
+  description String          @db.VarChar(300)
+  icon        String          @default("target") @db.VarChar(40)
+  category    String          @default("daily") @db.VarChar(40)
+  eventType   String          @db.VarChar(80)
+  target      Int
+  period      MissionPeriod   @default(DAILY)
+  rewardGld   Decimal         @default(0) @db.Decimal(30, 6)
+  rewardXp    BigInt          @default(0)
+  filters     Json?
+  enabled     Boolean         @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  playerRows  PlayerMission[]
+
+  @@index([enabled, period, sortOrder])
+  @@index([eventType, enabled])
+}
+
+model PlayerMission {
+  id                  String            @id @default(uuid()) @db.Uuid
+  userId              String            @db.Uuid
+  missionDefinitionId String            @db.Uuid
+  periodKey           String            @db.VarChar(32)
+  progress            Int               @default(0)
+  targetSnapshot      Int
+  status              MissionStatus     @default(ACTIVE)
+  completedAt         DateTime?
+  claimedAt           DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  missionDefinition   MissionDefinition @relation(fields: [missionDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, missionDefinitionId, periodKey])
+  @@index([userId, status, periodKey])
+}
+
+model AchievementDefinition {
+  id          String              @id @default(uuid()) @db.Uuid
+  key         String              @unique @db.VarChar(80)
+  title       String              @db.VarChar(120)
+  description String              @db.VarChar(300)
+  icon        String              @default("trophy") @db.VarChar(40)
+  category    String              @default("general") @db.VarChar(40)
+  eventType   String              @db.VarChar(80)
+  filters     Json?
+  enabled     Boolean             @default(true)
+  sortOrder   Int                 @default(0)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  tiers       AchievementTier[]
+  playerRows  PlayerAchievement[]
+
+  @@index([eventType, enabled])
+  @@index([enabled, sortOrder])
+}
+
+model AchievementTier {
+  id                      String                @id @default(uuid()) @db.Uuid
+  achievementDefinitionId String                @db.Uuid
+  tier                    Int
+  title                   String                @db.VarChar(100)
+  target                  Int
+  rewardGld               Decimal               @default(0) @db.Decimal(30, 6)
+  rewardXp                BigInt                @default(0)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  achievementDefinition   AchievementDefinition @relation(fields: [achievementDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([achievementDefinitionId, tier])
+  @@index([achievementDefinitionId, target])
+}
+
+model PlayerAchievement {
+  id                      String                @id @default(uuid()) @db.Uuid
+  userId                  String                @db.Uuid
+  achievementDefinitionId String                @db.Uuid
+  progress                Int                   @default(0)
+  completedTier           Int                   @default(0)
+  claimedTier             Int                   @default(0)
+  lastCompletedAt         DateTime?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  user                    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementDefinition   AchievementDefinition @relation(fields: [achievementDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementDefinitionId])
+  @@index([userId, completedTier, claimedTier])
 }
 
 model RewardGrant {

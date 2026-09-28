@@ -279,7 +279,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }
     if (!userIds.size) return;
     const title =
-      event.eventType === "wallet.gld.updated"
+      event.eventType === "mission.completed"
+        ? String(payload.title ?? "Mission complete")
+        : event.eventType === "achievement.completed"
+          ? String(payload.title ?? "Achievement unlocked")
+          : event.eventType === "wallet.gld.updated"
         ? "GLD balance updated"
         : event.eventType === "MATCH_SETTLED"
           ? "Match complete"
@@ -310,7 +314,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
                               ? "Game invite"
                               : "Account activity";
     const body =
-      event.eventType === "wallet.gld.updated"
+      event.eventType === "mission.completed" || event.eventType === "achievement.completed"
+        ? String(payload.body ?? "A new reward is ready to claim.")
+        : event.eventType === "wallet.gld.updated"
         ? `Your GLD balance was ${String(payload.direction ?? "updated").toLowerCase()} by ${String(payload.amount ?? "0")} GLD. New balance: ${String(payload.balanceAfter ?? "0")} GLD.`
         : event.eventType === "MATCH_SETTLED"
           ? "Your match result and rewards are ready to review."

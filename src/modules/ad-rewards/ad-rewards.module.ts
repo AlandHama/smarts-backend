@@ -10,6 +10,7 @@ import { VerifyAdImpressionTransaction } from "./transactions/verify-ad-impressi
 import { GldModule } from "../gld/gld.module";
 import { ReferralsModule } from "../referrals/referrals.module";
 import { AdMobSsvService } from "./admob-ssv.service";
+import { MissionsModule } from "../missions/missions.module";
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { AdMobSsvService } from "./admob-ssv.service";
     EconomyModule,
     GldModule,
     ReferralsModule,
+    MissionsModule,
   ],
   controllers: [AdRewardsController],
   providers: [

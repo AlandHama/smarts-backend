@@ -20,6 +20,7 @@ import { ClaimAdRewardDto } from "../dtos/ad-reward.dto";
 import { writePlayerAudit } from "../../../common/helpers/player-audit";
 import { GldEmissionService } from "../../gld/gld.emission.service";
 import { ReferralsService } from "../../referrals/referrals.service";
+import { MissionsService } from "../../missions/missions.service";
 
 type AdPolicy = {
   currencyCode?: string;
@@ -56,6 +57,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
     private readonly creditWallet: CreditWalletTransaction,
     private readonly gldEmission: GldEmissionService,
     private readonly referralsService: ReferralsService,
+    private readonly missions: MissionsService,
   ) {
     super(prisma);
   }
@@ -335,6 +337,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
         grantedAt: now,
       },
     });
+    await this.missions.recordWithinTransaction({ userId: claim.userId, eventType: "REWARDED_AD_VERIFIED", sourceId: claim.id, payload: { adFormat: claim.adFormat, provider: claim.provider } }, transaction);
     await transaction.outboxEvent.create({
       data: {
         eventType: "ad-reward.granted",

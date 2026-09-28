@@ -43,6 +43,7 @@ import { ReferralsView } from "../components/ReferralsView";
 import { RankingView } from "../components/RankingView";
 import { TransactionsView } from "../components/TransactionsView";
 import { NotificationsView } from "../components/NotificationsView";
+import { MissionsAchievementsView } from "../components/MissionsAchievementsView";
 import { api, clearSession, hasSession, login } from "../lib/api";
 import { adminTheme } from "../lib/theme";
 
@@ -75,6 +76,7 @@ const viewPaths: Record<
   ranking: "/ranking/",
   transactions: "/transactions/",
   notifications: "/notifications/",
+  "missions-achievements": "/missions-achievements/",
 };
 
 function routeState() {
@@ -190,6 +192,7 @@ export default function AdminPage() {
               <ProgressionTopPlayersPanel />
             </>
           )}
+          {view === "missions-achievements" && <MissionsAchievementsView />}
           {view === "economy" && (
             <>
               <EconomyView />
