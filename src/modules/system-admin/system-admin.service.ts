@@ -1642,7 +1642,7 @@ export class SystemAdminService implements OnModuleInit {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }).then((gifts) => this.serialize(gifts.map((gift) => ({
       ...gift,
-      priceGld: gift.priceGld,
+      priceGld: this.socialGiftPrice(gift),
       recipientRewardPercent: gift.recipientRewardBps / 100,
     }))));
   }
@@ -1656,12 +1656,13 @@ export class SystemAdminService implements OnModuleInit {
         description: dto.description?.trim() || null,
         imageUrl: dto.imageUrl?.trim() || null,
         priceGld,
+        priceGldDecimal: new Prisma.Decimal(dto.priceGld.trim()),
         recipientRewardBps: Math.round((dto.recipientRewardPercent ?? 50) * 100),
         sortOrder: dto.sortOrder ?? 0,
         active: dto.active ?? true,
       },
     });
-    return this.serialize({ ...gift, recipientRewardPercent: gift.recipientRewardBps / 100 });
+    return this.serialize({ ...gift, priceGld: this.socialGiftPrice(gift), recipientRewardPercent: gift.recipientRewardBps / 100 });
   }
   async updateSocialGift(id: string, dto: UpdateSocialGiftDto) {
     const priceGld = this.parseSocialGiftPrice(dto.priceGld);
@@ -1674,12 +1675,13 @@ export class SystemAdminService implements OnModuleInit {
         description: dto.description?.trim() || null,
         imageUrl: dto.imageUrl?.trim() || null,
         priceGld,
+        priceGldDecimal: new Prisma.Decimal(dto.priceGld.trim()),
         recipientRewardBps: Math.round((dto.recipientRewardPercent ?? 50) * 100),
         sortOrder: dto.sortOrder ?? 0,
         active: dto.active ?? true,
       },
     });
-    return this.serialize({ ...gift, recipientRewardPercent: gift.recipientRewardBps / 100 });
+    return this.serialize({ ...gift, priceGld: this.socialGiftPrice(gift), recipientRewardPercent: gift.recipientRewardBps / 100 });
   }
   private socialGiftKey(value: string) {
     const key = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -1687,8 +1689,14 @@ export class SystemAdminService implements OnModuleInit {
     return key;
   }
   private parseSocialGiftPrice(value: string) {
-    if (!/^\d+$/.test(value.trim()) || BigInt(value) <= 0n) throw new NotFoundException("Social gift price must be a positive whole GLD amount");
-    return BigInt(value.trim());
+    const normalized = value.trim();
+    if (!/^\d+(?:\.\d{1,6})?$/.test(normalized)) throw new NotFoundException("Social gift price must be a positive GLD amount with up to 6 decimals");
+    const decimal = new Prisma.Decimal(normalized);
+    if (decimal.lte(0)) throw new NotFoundException("Social gift price must be positive");
+    return BigInt(decimal.floor().toFixed(0));
+  }
+  private socialGiftPrice(gift: { priceGld: bigint; priceGldDecimal: Prisma.Decimal }) {
+    return gift.priceGldDecimal.gt(0) ? gift.priceGldDecimal : gift.priceGld;
   }
   createCommerceCatalog(dto: CreateCatalogDto) {
     return this.commerceService.createCatalog(dto);

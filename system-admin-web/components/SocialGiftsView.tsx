@@ -160,7 +160,7 @@ export function SocialGiftsView() {
             </Stack>
             <TextField label="Stable key" value={form.key} onChange={(e) => update("key", e.target.value)} disabled={Boolean(editing)} helperText="Example: rose or diamond" required />
             <Stack direction="row" spacing={2}>
-              <TextField label="Sender price (GLD)" value={form.priceGld} onChange={(e) => update("priceGld", e.target.value)} type="number" inputProps={{ min: 1, step: 1 }} fullWidth required />
+              <TextField label="Sender price (GLD)" value={form.priceGld} onChange={(e) => update("priceGld", e.target.value)} type="number" inputProps={{ min: 0.000001, step: 0.000001 }} helperText="Supports up to 6 decimal places, e.g. 0.001" fullWidth required />
               <TextField label="Receiver reward (%)" value={form.recipientRewardPercent} onChange={(e) => update("recipientRewardPercent", e.target.value)} type="number" inputProps={{ min: 0, max: 100, step: 1 }} fullWidth required />
             </Stack>
             <TextField label="Description" value={form.description} onChange={(e) => update("description", e.target.value)} multiline minRows={2} />

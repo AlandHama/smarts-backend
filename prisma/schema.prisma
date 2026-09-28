@@ -935,6 +935,7 @@ model SocialGiftDefinition {
   description           String?      @db.Text
   imageUrl              String?      @db.Text
   priceGld              BigInt
+  priceGldDecimal       Decimal      @default(0) @db.Decimal(30, 6)
   recipientRewardBps    Int          @default(5000)
   active                Boolean      @default(true)
   sortOrder             Int          @default(0)
@@ -1187,6 +1188,7 @@ model PlayerGift {
   catalogItemId    String?        @db.Uuid
   socialGiftDefinitionId String?   @db.Uuid
   gldPrice         BigInt
+  gldPriceDecimal  Decimal        @default(0) @db.Decimal(30, 6)
   giftFeeAmount    BigInt         @default(0)
   chargedAmount    BigInt         @default(0)
   burnedAmount     BigInt

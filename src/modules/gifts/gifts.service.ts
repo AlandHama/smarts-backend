@@ -14,7 +14,10 @@ export class GiftsService {
   /** Public social-gift definitions. Commerce catalogs are deliberately not read here. */
   async listCatalog() {
     const definitions = await this.prisma.socialGiftDefinition.findMany({
-      where: { active: true, priceGld: { gt: 0n } },
+      where: {
+        active: true,
+        OR: [{ priceGld: { gt: 0n } }, { priceGldDecimal: { gt: new Prisma.Decimal(0) } }],
+      },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     })
     return this.serialize(definitions.map((gift) => ({
@@ -25,13 +28,13 @@ export class GiftsService {
       description: gift.description,
       imageUrl: gift.imageUrl,
       category: "Social gifts",
-      gldPrice: gift.priceGld,
-      chargedAmount: gift.priceGld,
+      gldPrice: this.giftPrice(gift),
+      chargedAmount: this.giftPrice(gift),
       giftFeeAmount: 0n,
       giftFeeBps: 0,
       recipientRewardBps: gift.recipientRewardBps,
       recipientRewardPercent: gift.recipientRewardBps / 100,
-      recipientAmount: new Prisma.Decimal(gift.priceGld.toString())
+      recipientAmount: this.giftPrice(gift)
         .mul(gift.recipientRewardBps)
         .div(10_000)
         .toDecimalPlaces(6),
@@ -57,6 +60,8 @@ export class GiftsService {
     })
     return this.serialize(rows.map((row) => ({
       ...row,
+      gldPrice: this.giftPrice(row),
+      chargedAmount: row.gldPriceDecimal?.gt(0) ? row.gldPriceDecimal : row.chargedAmount,
       direction: row.senderUserId === targetUserId ? "SENT" : "RECEIVED",
       gift: this.giftInfo(row),
     })))
@@ -70,6 +75,7 @@ export class GiftsService {
         senderUserId: true,
         recipientUserId: true,
         gldPrice: true,
+        gldPriceDecimal: true,
         chargedAmount: true,
         burnedAmountDecimal: true,
         recipientAmount: true,
@@ -80,28 +86,28 @@ export class GiftsService {
     })
     const sent = rows.filter((row) => row.senderUserId === targetUserId)
     const received = rows.filter((row) => row.recipientUserId === targetUserId)
-    const byGift = new Map<string, { key: string; name: string; icon: string | null; imageUrl: string | null; count: number; gldValue: bigint; gldReward: Prisma.Decimal }>()
+    const byGift = new Map<string, { key: string; name: string; icon: string | null; imageUrl: string | null; count: number; gldValue: Prisma.Decimal; gldReward: Prisma.Decimal }>()
     for (const row of received) {
       const gift = this.giftInfo(row)
-      const current = byGift.get(gift.key) ?? { key: gift.key, name: gift.name, icon: gift.icon, imageUrl: gift.imageUrl, count: 0, gldValue: 0n, gldReward: new Prisma.Decimal(0) }
+      const current = byGift.get(gift.key) ?? { key: gift.key, name: gift.name, icon: gift.icon, imageUrl: gift.imageUrl, count: 0, gldValue: new Prisma.Decimal(0), gldReward: new Prisma.Decimal(0) }
       current.count += 1
-      current.gldValue += row.gldPrice
+      current.gldValue = current.gldValue.add(this.giftPrice(row))
       current.gldReward = current.gldReward.add(row.recipientAmount)
       byGift.set(gift.key, current)
     }
-    const supporters = new Map<string, { userId: string; name: string; points: bigint }>()
+    const supporters = new Map<string, { userId: string; name: string; points: Prisma.Decimal }>()
     for (const row of received) {
-      const current = supporters.get(row.senderUserId) ?? { userId: row.sender.id, name: row.sender.profile?.displayName ?? row.sender.username, points: 0n }
-      current.points += row.gldPrice
+      const current = supporters.get(row.senderUserId) ?? { userId: row.sender.id, name: row.sender.profile?.displayName ?? row.sender.username, points: new Prisma.Decimal(0) }
+      current.points = current.points.add(this.giftPrice(row))
       supporters.set(row.senderUserId, current)
     }
-    const topSupporter = [...supporters.values()].sort((a, b) => b.points > a.points ? 1 : b.points < a.points ? -1 : 0)[0] ?? null
+    const topSupporter = [...supporters.values()].sort((a, b) => b.points.comparedTo(a.points))[0] ?? null
     return this.serialize({
       sent: sent.length,
       received: received.length,
-      totalGldSent: sent.reduce((sum, row) => sum + (row.chargedAmount > 0n ? row.chargedAmount : row.gldPrice), 0n),
+      totalGldSent: sent.reduce((sum, row) => sum.add(this.giftPrice(row)), new Prisma.Decimal(0)),
       totalGldReceived: received.reduce((sum, row) => sum.add(row.recipientAmount), new Prisma.Decimal(0)),
-      totalGiftValueReceived: received.reduce((sum, row) => sum + row.gldPrice, 0n),
+      totalGiftValueReceived: received.reduce((sum, row) => sum.add(this.giftPrice(row)), new Prisma.Decimal(0)),
       totalGldBurned: sent.reduce((sum, row) => sum.add(row.burnedAmountDecimal), new Prisma.Decimal(0)),
       receivedByGift: [...byGift.values()].sort((a, b) => b.count - a.count),
       topSupporter,
@@ -114,6 +120,15 @@ export class GiftsService {
     }
     const item = row.catalogItem
     return { id: item?.id ?? null, key: item?.key ?? "legacy-gift", name: item?.name ?? "Gift", icon: null, imageUrl: item?.imageUrl ?? item?.assetDefinition?.imageUrl ?? null }
+  }
+
+  private giftPrice(row: { priceGld?: bigint; gldPrice?: bigint; priceGldDecimal?: Prisma.Decimal; gldPriceDecimal?: Prisma.Decimal }) {
+    const exactPrice = row.priceGldDecimal ?? row.gldPriceDecimal
+    return row.priceGldDecimal?.gt(0)
+      ? row.priceGldDecimal
+      : exactPrice?.gt(0)
+      ? exactPrice
+      : new Prisma.Decimal((row.priceGld ?? row.gldPrice ?? 0n).toString())
   }
 
   private async assertCanView(viewerUserId: string, targetUserId: string) {

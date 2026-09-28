@@ -55,12 +55,16 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
     if (sentToday >= dailyLimit) throw new BadRequestException("Daily gift sending limit reached")
 
     const definition = await transaction.socialGiftDefinition.findFirst({ where: { key: giftKey, active: true } })
-    if (!definition || definition.priceGld <= 0n) throw new NotFoundException("Social gift is not available")
+    if (!definition) throw new NotFoundException("Social gift is not available")
     if (definition.recipientRewardBps < 0 || definition.recipientRewardBps > 10_000) throw new BadRequestException("Social gift reward configuration is invalid")
 
-    const price = definition.priceGld
-    const recipientAmountDecimal = new Prisma.Decimal(price.toString()).mul(definition.recipientRewardBps).div(10_000).toDecimalPlaces(6)
-    const burnedAmountDecimal = new Prisma.Decimal(price.toString()).sub(recipientAmountDecimal)
+    const price = definition.priceGldDecimal.gt(0)
+      ? definition.priceGldDecimal
+      : new Prisma.Decimal(definition.priceGld.toString())
+    if (price.lte(0)) throw new NotFoundException("Social gift is not available")
+    const legacyPrice = BigInt(price.floor().toFixed(0))
+    const recipientAmountDecimal = price.mul(definition.recipientRewardBps).div(10_000).toDecimalPlaces(6)
+    const burnedAmountDecimal = price.sub(recipientAmountDecimal)
     const recipientAmount = BigInt(recipientAmountDecimal.floor().toFixed(0))
     const burnedAmount = BigInt(burnedAmountDecimal.floor().toFixed(0))
     const requestHash = createHash("sha256").update(JSON.stringify({ senderUserId, recipientUserId, giftKey })).digest("hex")
@@ -75,19 +79,20 @@ export class SendGiftTransaction extends PrismaTransaction<SendGiftInput, any> {
     const wallet = await this.debitWallet.runWithinTransaction({
       userId: senderUserId,
       currencyCode: "GLD",
-      amount: price,
+      amount: legacyPrice,
+      amountDecimal: price.toString(),
       sourceId: giftId,
       sourceType: WalletTransactionSourceType.PURCHASE,
       metadata: { reason: "GLD_SOCIAL_GIFT_SENT", recipientUserId, socialGiftKey: definition.key, chargedAmount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps, burnedAmount: burnedAmountDecimal.toString() },
     }, transaction)
     const ledger = await transaction.walletTransaction.findUnique({ where: { grantKey: `PURCHASE:${giftId}:${senderUserId}:GLD` }, select: { id: true } })
     await transaction.gldBurnEvent.create({ data: { userId: senderUserId, amount: burnedAmount, exactAmount: burnedAmountDecimal, sourceType: "GIFT_PURCHASE", sourceId: giftId, ledgerEntryId: ledger?.id, reason: "Social gift allocation burn", metadata: { recipientUserId, socialGiftKey: definition.key, priceGld: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } } })
-    const gift = await transaction.playerGift.create({ data: { id: giftId, senderUserId, recipientUserId, catalogItemId: null, socialGiftDefinitionId: definition.id, gldPrice: price, giftFeeAmount: 0n, chargedAmount: price, burnedAmount, retainedAmount: 0n, burnedAmountDecimal, retainedAmountDecimal: 0, recipientAmount: recipientAmountDecimal, recipientRewardBps: definition.recipientRewardBps, idempotencyKeyId: idem.id } })
+    const gift = await transaction.playerGift.create({ data: { id: giftId, senderUserId, recipientUserId, catalogItemId: null, socialGiftDefinitionId: definition.id, gldPrice: legacyPrice, gldPriceDecimal: price, giftFeeAmount: 0n, chargedAmount: legacyPrice, burnedAmount, retainedAmount: 0n, burnedAmountDecimal, retainedAmountDecimal: 0, recipientAmount: recipientAmountDecimal, recipientRewardBps: definition.recipientRewardBps, idempotencyKeyId: idem.id } })
     if (recipientAmountDecimal.gt(0)) {
       await this.creditWallet.runWithinTransaction({ userId: recipientUserId, currencyCode: "GLD", amount: recipientAmount, amountDecimal: recipientAmountDecimal.toString(), sourceId: giftId, sourceType: WalletTransactionSourceType.SYSTEM, metadata: { reason: "GLD_SOCIAL_GIFT_RECEIVED", senderUserId, socialGiftKey: definition.key, giftId, senderAmount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } }, transaction)
     }
 
-    const result = this.serialize({ giftId: gift.id, status: "SENT", senderUserId, recipientUserId, recipientName: recipient.profile?.displayName ?? recipient.username, socialGiftKey: definition.key, socialGiftName: definition.name, icon: definition.icon, gldPrice: price, chargedAmount: price, giftFeeAmount: 0n, recipientAmount: recipientAmountDecimal, recipientRewardBps: definition.recipientRewardBps, burnedAmount: burnedAmountDecimal, balanceAfter: wallet.amount, createdAt: gift.createdAt })
+    const result = this.serialize({ giftId: gift.id, status: "SENT", senderUserId, recipientUserId, recipientName: recipient.profile?.displayName ?? recipient.username, socialGiftKey: definition.key, socialGiftName: definition.name, icon: definition.icon, gldPrice: price, chargedAmount: price, giftFeeAmount: 0n, recipientAmount: recipientAmountDecimal, recipientRewardBps: definition.recipientRewardBps, burnedAmount: burnedAmountDecimal, balanceAfter: wallet.exactAmount, createdAt: gift.createdAt })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: result as Prisma.InputJsonValue, completedAt: new Date() } })
     await transaction.outboxEvent.create({ data: { eventType: "gift.received", aggregateType: "PlayerGift", aggregateId: gift.id, payload: { giftId: gift.id, userId: recipientUserId, recipientUserId, senderUserId, senderName: sender.profile?.displayName ?? sender.username, socialGiftKey: definition.key, socialGiftName: definition.name, icon: definition.icon, amount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } as Prisma.InputJsonValue } })
     await transaction.outboxEvent.create({ data: { eventType: "gift.sent", aggregateType: "PlayerGift", aggregateId: gift.id, payload: { giftId: gift.id, userId: senderUserId, recipientUserId, recipientName: recipient.profile?.displayName ?? recipient.username, socialGiftKey: definition.key, socialGiftName: definition.name, icon: definition.icon, amount: price.toString(), recipientAmount: recipientAmountDecimal.toString(), recipientRewardBps: definition.recipientRewardBps } as Prisma.InputJsonValue } })
