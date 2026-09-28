@@ -148,7 +148,13 @@ export class CommerceService {
     return this.prisma.$transaction([this.prisma.inventoryItem.count({ where }), this.prisma.inventoryItem.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, assetDefinition: true, assetVariation: true } })]).then(([total, items]) => ({ items: this.serialize(items), pagination: { page, limit, total, pages: Math.ceil(total / limit) } }))
   }
 
-  listPlayerInventory(userId: string) { return this.prisma.inventoryItem.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: true, assetVariation: true } }).then((value) => this.serialize(value)) }
+  async listPlayerInventory(userId: string) {
+    const items = await this.prisma.inventoryItem.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: true, assetVariation: true } })
+    // Inventory assets can point at private storage object keys. Return the
+    // same stable public URLs used by the store catalog so mobile can render
+    // owned item artwork reliably.
+    return this.storageService.normalizePublicImageUrls(this.serialize(items))
+  }
   async equipAvatarFrame(userId: string, assetKey: string) {
     const item = await this.prisma.inventoryItem.findFirst({ where: { userId, assetDefinition: { key: this.assetKey(assetKey) } }, include: { assetDefinition: true } })
     if (!item) throw new NotFoundException("You do not own this avatar frame")

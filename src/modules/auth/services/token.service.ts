@@ -30,24 +30,33 @@ export class TokenService {
   }
 
   async generateRefreshToken(refreshToken: string, request?: any, isMobile = false): Promise<TokenDto> {
-    const payload = this.verify(refreshToken, TokenType.RefreshToken)
-    if (payload.tokenUse !== TokenType.RefreshToken) throw new UnauthorizedException("Invalid refresh token")
-    const user = await this.usersService.findById(payload.userId)
-    if (!user || user.status !== "ACTIVE") throw new UnauthorizedException("Invalid refresh token")
+    try {
+      const payload = this.verify(refreshToken, TokenType.RefreshToken)
+      if (payload.tokenUse !== TokenType.RefreshToken) throw new UnauthorizedException("Invalid refresh token")
+      const user = await this.usersService.findById(payload.userId)
+      if (!user || user.status !== "ACTIVE") throw new UnauthorizedException("Invalid refresh token")
 
-    const replacement = await this.createTokenPairData(
-      { id: user.id, username: user.username, isSystemAdmin: user.isSystemAdmin },
-      request,
-      isMobile,
-      false,
-    )
-    await this.rotateSessionTransaction.run({
-      userId: payload.userId,
-      tokenId: payload.tokenId,
-      refreshToken,
-      replacement: replacement.session,
-    })
-    return replacement.token
+      const replacement = await this.createTokenPairData(
+        { id: user.id, username: user.username, isSystemAdmin: user.isSystemAdmin },
+        request,
+        isMobile,
+        false,
+      )
+      await this.rotateSessionTransaction.run({
+        userId: payload.userId,
+        tokenId: payload.tokenId,
+        refreshToken,
+        replacement: replacement.session,
+      })
+      return replacement.token
+    } catch (error) {
+      // Old, revoked, malformed, or already-rotated refresh tokens are an
+      // authentication failure. Never expose a transaction/hash error as a
+      // 500, because the mobile client must clear the local session and show
+      // the login screen.
+      if (error instanceof UnauthorizedException) throw error
+      throw new UnauthorizedException("Invalid or expired refresh token")
+    }
   }
 
   verifyAccessToken(token: string): JwtPayload {
