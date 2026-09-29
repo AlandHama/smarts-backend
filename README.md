@@ -145,7 +145,7 @@ npm run dev
 | `JWT_ACCESS_SECRET` | production | HMAC secret for access tokens |
 | `JWT_REFRESH_SECRET` | production | HMAC secret for refresh tokens |
 | `JWT_ACCESS_EXPIRES_IN` | no | Defaults to `15m` |
-| `JWT_REFRESH_EXPIRES_IN` | no | Defaults to `30d` |
+| `JWT_REFRESH_EXPIRES_IN` | no | Refresh sessions are kept for at least 30 days; shorter configured values are raised to `30d` |
 | `SYSTEM_ADMIN_USERNAME` | no | On first boot or first valid configured login, creates or promotes this username to system admin when paired with the password |
 | `SYSTEM_ADMIN_PASSWORD` | no | Initial system-admin password; never overwrites an existing account password |
 | `SYSTEM_ADMIN_RESET_PASSWORD` | no | Set to `true` for one recovery deploy to replace the configured admin account password, then remove it |

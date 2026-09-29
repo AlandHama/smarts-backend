@@ -35,20 +35,26 @@ export class TokenService {
       if (payload.tokenUse !== TokenType.RefreshToken) throw new UnauthorizedException("Invalid refresh token")
       const user = await this.usersService.findById(payload.userId)
       if (!user || user.status !== "ACTIVE") throw new UnauthorizedException("Invalid refresh token")
+      const session = await this.sessionsService.findByTokenId(user.id, payload.tokenId)
+      if (!session || session.expiresAt <= new Date() || session.sessionStatus !== "ACTIVE") {
+        if (session?.sessionStatus === "TERMINATED") {
+          throw new UnauthorizedException({ message: "Your account was signed in on another device.", error: "SESSION_REVOKED" })
+        }
+        throw new UnauthorizedException("Invalid or expired refresh token")
+      }
+      if (!(await HashHelper.compare(refreshToken, session.refreshTokenHash))) throw new UnauthorizedException("Invalid or expired refresh token")
 
-      const replacement = await this.createTokenPairData(
+      // Keep the refresh credential stable. The previous one-time rotation
+      // made parallel mobile polling, app resume, and multiple admin tabs race
+      // each other: the first request rotated the session and every request
+      // holding the old token received 401 and cleared local auth. The session
+      // is still revocable by logout, admin termination, or a new mobile login.
+      return this.issueAccessToken(
         { id: user.id, username: user.username, isSystemAdmin: user.isSystemAdmin },
-        request,
-        isMobile,
-        false,
-      )
-      await this.rotateSessionTransaction.run({
-        userId: payload.userId,
-        tokenId: payload.tokenId,
+        payload.tokenId,
         refreshToken,
-        replacement: replacement.session,
-      })
-      return replacement.token
+        payload.exp,
+      )
     } catch (error) {
       // Old, revoked, malformed, or already-rotated refresh tokens are an
       // authentication failure. Never expose a transaction/hash error as a
@@ -56,6 +62,32 @@ export class TokenService {
       // the login screen.
       if (error instanceof UnauthorizedException) throw error
       throw new UnauthorizedException("Invalid or expired refresh token")
+    }
+  }
+
+  private issueAccessToken(
+    user: { id: string; username: string; isSystemAdmin?: boolean },
+    tokenId: string,
+    refreshToken: string,
+    refreshExpiry?: number,
+  ): TokenDto {
+    const accessExpiresIn = user.isSystemAdmin ? this.config.adminAccessExpiresIn : this.config.accessExpiresIn
+    const accessExpiresInSeconds = user.isSystemAdmin ? this.config.adminAccessExpiresInSeconds : this.config.accessExpiresInSeconds
+    const payload = { sub: user.id, userId: user.id, username: user.username, isSystemAdmin: user.isSystemAdmin === true, tokenId }
+    const accessToken = this.jwtService.sign({ ...payload, tokenUse: TokenType.AccessToken }, {
+      secret: this.config.accessSecret,
+      expiresIn: accessExpiresIn as any,
+      algorithm: "HS256",
+    })
+    const remainingRefreshSeconds = refreshExpiry
+      ? Math.max(0, refreshExpiry - Math.floor(Date.now() / 1000))
+      : this.config.refreshExpiresInSeconds
+    return {
+      tokenType: TOKEN_TYPE,
+      accessToken,
+      accessTokenExpires: accessExpiresInSeconds,
+      refreshToken,
+      refreshTokenExpires: remainingRefreshSeconds,
     }
   }
 

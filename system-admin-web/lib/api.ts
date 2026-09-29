@@ -33,7 +33,13 @@ async function rotateSession() {
   // not the stable public mount for the exported console.
   const response = await fetch('/system-admin/api/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken }) });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) { clearSession(); throw new Error(body.message || 'Session expired'); }
+  if (!response.ok) {
+    // A transient Railway/proxy error must not destroy a valid 30-day local
+    // session. Only an explicit auth rejection proves that credentials are
+    // invalid or the session was revoked.
+    if (response.status === 401 || response.status === 403) clearSession();
+    throw new Error(body.message || (response.status >= 500 ? 'Authentication service temporarily unavailable' : 'Session expired'));
+  }
   saveSession(body);
 }
 

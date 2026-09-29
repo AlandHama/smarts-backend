@@ -33,6 +33,10 @@ export class SessionsService {
     })
   }
 
+  findByTokenId(userId: string, tokenId: string) {
+    return this.prisma.session.findFirst({ where: { userId, tokenId } })
+  }
+
   updateLastActive(sessionId: string) {
     return this.updateSessionLastActiveTransaction.run(sessionId)
   }

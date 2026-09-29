@@ -18,6 +18,8 @@ function durationToSeconds(value: string): number {
   return amount * multipliers[match[2].toLowerCase()]
 }
 
+const MIN_REFRESH_LIFETIME_SECONDS = 30 * 24 * 60 * 60
+
 export function getAuthConfig(): AuthConfig {
   const environmentSuffix =
     (process.env.ENVIRONMENT ?? process.env.NODE_ENV ?? "development").toLowerCase() === "production"
@@ -43,11 +45,21 @@ export function getAuthConfig(): AuthConfig {
     process.env[`ACCESS_TOKEN_EXPIRES_IN_${environmentSuffix}`] ??
     process.env.ACCESS_TOKEN_EXPIRES_IN ??
     "15m"
-  const refreshExpiresIn =
+  const configuredRefreshExpiresIn =
     process.env.JWT_REFRESH_EXPIRES_IN ??
     process.env[`REFRESH_TOKEN_EXPIRES_IN_${environmentSuffix}`] ??
     process.env.REFRESH_TOKEN_EXPIRES_IN ??
     "30d"
+  // Refresh credentials are the mechanism that keeps a player or the admin
+  // console signed in. A stale Railway variable such as `10m` must not make
+  // both clients silently log out during normal use. Keep the requested
+  // policy at least 30 days; access tokens remain short-lived and are still
+  // refreshed through this credential.
+  const refreshExpiresInSeconds = Math.max(
+    durationToSeconds(configuredRefreshExpiresIn),
+    MIN_REFRESH_LIFETIME_SECONDS,
+  )
+  const refreshExpiresIn = `${refreshExpiresInSeconds}s`
   const adminAccessExpiresIn =
     process.env.SYSTEM_ADMIN_ACCESS_TOKEN_EXPIRES_IN ??
     process.env.JWT_ADMIN_ACCESS_EXPIRES_IN ??
@@ -61,6 +73,6 @@ export function getAuthConfig(): AuthConfig {
     refreshExpiresIn,
     accessExpiresInSeconds: durationToSeconds(accessExpiresIn),
     adminAccessExpiresInSeconds: durationToSeconds(adminAccessExpiresIn),
-    refreshExpiresInSeconds: durationToSeconds(refreshExpiresIn),
+    refreshExpiresInSeconds,
   }
 }
