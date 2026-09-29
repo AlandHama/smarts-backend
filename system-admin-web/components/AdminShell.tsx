@@ -25,6 +25,7 @@ import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
+import LocalFireDepartmentRoundedIcon from "@mui/icons-material/LocalFireDepartmentRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
@@ -69,7 +70,8 @@ export type AdminView =
   | "transactions"
   | "notifications"
   | "fraud"
-  | "missions-achievements";
+  | "missions-achievements"
+  | "streaks";
 
 const navigation = [
   {
@@ -109,6 +111,7 @@ const navigation = [
     label: "Missions & achievements",
     icon: <AutoAwesomeRoundedIcon />,
   },
+  { key: "streaks" as const, label: "Daily streaks", icon: <LocalFireDepartmentRoundedIcon /> },
   {
     key: "economy" as const,
     label: "Economy",

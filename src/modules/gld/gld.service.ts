@@ -16,6 +16,7 @@ import { GldSimulationDto } from "./dtos/gld-simulation.dto";
 import { GldManualBackingDto } from "./dtos/gld-manual-backing.dto";
 import { UpsertGldAdRewardPolicyDto } from "./dtos/gld-ad-reward-policy.dto";
 import { writeAdminAudit } from "../../common/helpers/admin-audit";
+import { StreaksService } from "../streaks/streaks.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -28,6 +29,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly revenue: GldRevenueService,
+    private readonly streaks: StreaksService,
   ) {}
 
   onModuleInit() {
@@ -424,7 +426,9 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
         })
       : null;
     const rewardAmountDecimal = policy.rewardAmountDecimal ?? new Prisma.Decimal(policy.rewardAmount.toString());
-    const adRewardBonusPercent = reachedTier?.adRewardBonusPercent ?? 0;
+    const progressionBonusPercent = reachedTier?.adRewardBonusPercent ?? 0;
+    const streakBonusPercent = await this.streaks.getBonusPercent(userId);
+    const adRewardBonusPercent = progressionBonusPercent + streakBonusPercent;
     const effectiveRewardAmountDecimal = rewardAmountDecimal.mul(100 + adRewardBonusPercent).div(100);
     return {
       adFormat,
@@ -434,6 +438,8 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
       rewardAmount: policy.rewardAmount,
       rewardAmountDecimal: rewardAmountDecimal.toString(),
       adRewardBonusPercent,
+      progressionBonusPercent,
+      streakBonusPercent,
       effectiveRewardAmountDecimal: effectiveRewardAmountDecimal.toString(),
     };
   }

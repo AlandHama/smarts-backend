@@ -517,6 +517,8 @@ model User {
   missionRows                PlayerMission[]
   achievementRows            PlayerAchievement[]
   engagementEvents           EngagementEvent[]
+  dailyStreak                PlayerDailyStreak?
+  streakActivities           StreakActivity[]
   fraudProfile               FraudProfile?
   fraudSignals               FraudSignal[]
   fraudCases                 FraudCase[]          @relation("FraudCasesForUser")
@@ -603,6 +605,72 @@ model AppConfiguration {
   playStoreUrl       String   @default("https://play.google.com/store/apps/details?id=com.pheonix.gaemverse") @db.Text
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+}
+
+/// Server-owned daily activity streak policy. The singleton is editable from
+/// System Admin; milestone rows make each bonus auditable and independently
+/// editable without shipping a new mobile build.
+model StreakConfiguration {
+  id                  String            @id @default(uuid()) @db.Uuid
+  key                 String            @unique @default("default") @db.VarChar(40)
+  enabled             Boolean           @default(true)
+  qualifyingActivity  String            @default("MATCH_COMPLETED") @db.VarChar(40)
+  timezone            String            @default("UTC") @db.VarChar(40)
+  maxBonusPercent     Int               @default(30)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  milestones          StreakMilestone[]
+}
+
+model StreakMilestone {
+  id              String             @id @default(uuid()) @db.Uuid
+  configurationId String             @db.Uuid
+  day             Int
+  bonusPercent    Int
+  title           String?            @db.VarChar(120)
+  description     String?            @db.VarChar(300)
+  enabled         Boolean            @default(true)
+  sortOrder       Int                @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  configuration   StreakConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+
+  @@unique([configurationId, day])
+  @@index([configurationId, enabled, day])
+}
+
+model PlayerDailyStreak {
+  id                  String           @id @default(uuid()) @db.Uuid
+  userId              String           @unique @db.Uuid
+  currentDays         Int              @default(0)
+  longestDays         Int              @default(0)
+  lastQualifiedDate   DateTime?        @db.Date
+  lastQualifiedAt     DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities          StreakActivity[]
+
+  @@index([lastQualifiedDate])
+}
+
+/// One qualifying activity per player/day is retained as the idempotency and
+/// audit record. A match may be settled more than once by retrying clients,
+/// but it can never advance a streak twice.
+model StreakActivity {
+  id             String            @id @default(uuid()) @db.Uuid
+  userId         String            @db.Uuid
+  streakId       String            @db.Uuid
+  activityType   String            @db.VarChar(40)
+  activityDate   DateTime          @db.Date
+  sourceId       String            @db.VarChar(255)
+  createdAt      DateTime          @default(now())
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  streak         PlayerDailyStreak @relation(fields: [streakId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, activityType, activityDate])
+  @@unique([userId, activityType, sourceId])
+  @@index([userId, activityDate])
 }
 
 model Presence {

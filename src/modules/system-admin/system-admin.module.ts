@@ -26,9 +26,10 @@ import { AdMobModule } from "../admob/admob.module"
 import { GldModule } from "../gld/gld.module"
 import { ReferralsModule } from "../referrals/referrals.module"
 import { NotificationsModule } from "../notifications/notifications.module"
+import { StreaksModule } from "../streaks/streaks.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,

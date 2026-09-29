@@ -14,6 +14,7 @@ import { GldEmissionService } from "../gld/gld.emission.service";
 import { AdMobSsvService } from "./admob-ssv.service";
 import { GldService } from "../gld/gld.service";
 import { FraudService } from "../fraud/fraud.service";
+import { StreaksService } from "../streaks/streaks.service";
 
 @Injectable()
 export class AdRewardsService {
@@ -26,6 +27,7 @@ export class AdRewardsService {
     private readonly admobSsv: AdMobSsvService,
     private readonly gldService: GldService,
     private readonly fraudService: FraudService,
+    private readonly streaks: StreaksService,
   ) {}
 
   createImpression(userId: string, dto: CreateAdImpressionDto) {
@@ -94,6 +96,11 @@ export class AdRewardsService {
         adFormat: normalizedFormat,
         currencyCode: "GLD",
         amount: estimate.amountDecimal,
+        baseAmount: configured.rewardAmountDecimal,
+        progressionBonusPercent: configured.progressionBonusPercent,
+        streakBonusPercent: configured.streakBonusPercent,
+        totalBonusPercent: configured.adRewardBonusPercent,
+        currentStreakDays: (await this.streaks.getStatus(userId)).currentStreakDays,
         regionCode: configured.regionCode,
         remainingDailyAds: estimate.remainingDailyAds,
         remainingDailyGldCap: estimate.remainingDailyGldCapDecimal,

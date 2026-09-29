@@ -2,11 +2,13 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { createPublicKey, createVerify, KeyObject } from "node:crypto";
 
 import { PrismaService } from "../../prisma.service";
+import { GldService } from "../gld/gld.service";
 import {
   ClaimAdRewardTransaction,
   TrustedAdProviderVerification,
@@ -29,6 +31,7 @@ export class AdMobSsvService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly claimTransaction: ClaimAdRewardTransaction,
+    private readonly gldService: GldService,
   ) {}
 
   async handleCallback(originalUrl: string) {
@@ -61,7 +64,7 @@ export class AdMobSsvService {
 
     const claim = await this.prisma.adRewardClaim.findUnique({
       where: { id: claimId },
-      select: { id: true, provider: true, adFormat: true },
+      select: { id: true, provider: true, adFormat: true, userId: true },
     });
     if (!claim || claim.provider !== "admob")
       throw new BadRequestException("AdMob reward claim not found");
@@ -79,6 +82,18 @@ export class AdMobSsvService {
       },
     };
 
+    let serverRewardAmount: bigint | undefined;
+    let serverRewardAmountDecimal: string | undefined;
+    try {
+      const policy = await this.gldService.resolveAdRewardPolicy(claim.userId, claim.adFormat, "rewarded");
+      serverRewardAmount = policy.rewardAmount;
+      serverRewardAmountDecimal = policy.effectiveRewardAmountDecimal;
+    } catch (error) {
+      // Keep the legacy private policy fallback available while an installation
+      // is migrating to the GLD matrix; configured GLD policies always use the
+      // streak-aware server amount above.
+      if (!(error instanceof NotFoundException)) throw error;
+    }
     const result = await this.claimTransaction.run({
       dto: {
         claimId: claim.id,
@@ -87,6 +102,8 @@ export class AdMobSsvService {
         claimToken,
       },
       trustedVerification,
+      serverRewardAmount,
+      serverRewardAmountDecimal,
     });
 
     return { accepted: true, claimId: claim.id, status: result.status };

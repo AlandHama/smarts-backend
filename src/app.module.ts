@@ -26,9 +26,10 @@ import { ReferralsModule } from "./modules/referrals/referrals.module"
 import { RankingModule } from "./modules/ranking/ranking.module"
 import { MissionsModule } from "./modules/missions/missions.module"
 import { FraudModule } from "./modules/fraud/fraud.module"
+import { StreaksModule } from "./modules/streaks/streaks.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

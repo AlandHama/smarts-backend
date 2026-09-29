@@ -17,9 +17,10 @@ import { MatchService } from "./match.service"
 import { BotGameplayService } from "./bot-gameplay.service"
 import { MissionsModule } from "../missions/missions.module"
 import { FraudModule } from "../fraud/fraud.module"
+import { StreaksModule } from "../streaks/streaks.module"
 
 @Module({
-  imports: [DatabaseModule, GameModule, ProgressionModule, EconomyModule, LeaderboardModule, MissionsModule, FraudModule],
+  imports: [DatabaseModule, GameModule, ProgressionModule, EconomyModule, LeaderboardModule, MissionsModule, FraudModule, StreaksModule],
   controllers: [MatchController],
   providers: [MatchService, CreateMatchTransaction, RecordMatchEventTransaction, CompleteMatchTransaction, SettleMatchTransaction, StartMatchTransaction, ForfeitMatchTransaction, ExpireMatchTransaction, BotGameplayService],
   exports: [MatchService, SettleMatchTransaction, ExpireMatchTransaction, BotGameplayService],

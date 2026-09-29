@@ -12,6 +12,7 @@ import { ReferralsModule } from "../referrals/referrals.module";
 import { AdMobSsvService } from "./admob-ssv.service";
 import { MissionsModule } from "../missions/missions.module";
 import { FraudModule } from "../fraud/fraud.module";
+import { StreaksModule } from "../streaks/streaks.module";
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { FraudModule } from "../fraud/fraud.module";
     ReferralsModule,
     MissionsModule,
     FraudModule,
+    StreaksModule,
   ],
   controllers: [AdRewardsController],
   providers: [

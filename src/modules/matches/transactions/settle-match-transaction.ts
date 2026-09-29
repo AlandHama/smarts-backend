@@ -10,6 +10,7 @@ import { CreditWalletTransaction } from "../../economy/transactions/credit-walle
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
 import { botDisplayName } from "../utilities/bot-display-name"
 import { MissionsService } from "../../missions/missions.service"
+import { StreaksService } from "../../streaks/streaks.service"
 
 type SettleInput = { matchId: string; userId: string; idempotencyKey: string }
 
@@ -21,6 +22,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     private readonly creditWallet: CreditWalletTransaction,
     private readonly applyLeaderboardScore: ApplyLeaderboardScoreTransaction,
     private readonly missions: MissionsService,
+    private readonly streaks: StreaksService,
   ) { super(prisma) }
 
   protected async execute(input: SettleInput, transaction: Prisma.TransactionClient) {
@@ -110,6 +112,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       }, { totalQuestions: 0, totalCorrect: 0, totalTimeMs: 0n })
       const engagementPayload = { matchId: lockedMatch.id, gameKey: lockedMatch.gameDefinition.key, mode: lockedMatch.mode, ranking: Boolean(lockedMatch.rankingMatch) }
       await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:played`, payload: engagementPayload }, transaction)
+      await this.streaks.recordWithinTransaction({ userId: player.id, sourceId: lockedMatch.id, activityType: "MATCH_COMPLETED" }, transaction)
       if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:won`, payload: engagementPayload }, transaction)
       if (answerSummary.totalCorrect > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "CORRECT_ANSWER", sourceId: `${lockedMatch.id}:${player.id}:correct`, amount: answerSummary.totalCorrect, payload: engagementPayload }, transaction)
       if (answerSummary.totalQuestions > 0 && answerSummary.totalCorrect === answerSummary.totalQuestions) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "PERFECT_MATCH", sourceId: `${lockedMatch.id}:${player.id}:perfect`, payload: engagementPayload }, transaction)
