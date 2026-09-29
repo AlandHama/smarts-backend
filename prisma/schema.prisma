@@ -616,7 +616,7 @@ model StreakConfiguration {
   enabled             Boolean           @default(true)
   qualifyingActivity  String            @default("MATCH_COMPLETED") @db.VarChar(40)
   timezone            String            @default("UTC") @db.VarChar(40)
-  maxBonusPercent     Int               @default(30)
+  maxBonusPercent     Decimal           @default(30) @db.Decimal(20, 6)
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   milestones          StreakMilestone[]
@@ -626,7 +626,7 @@ model StreakMilestone {
   id              String             @id @default(uuid()) @db.Uuid
   configurationId String             @db.Uuid
   day             Int
-  bonusPercent    Int
+  bonusPercent    Decimal            @db.Decimal(20, 6)
   title           String?            @db.VarChar(120)
   description     String?            @db.VarChar(300)
   enabled         Boolean            @default(true)

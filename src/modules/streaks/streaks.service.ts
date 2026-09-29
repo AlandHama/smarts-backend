@@ -44,7 +44,7 @@ export class StreaksService {
     if (!config.milestones.length) {
       await client.streakMilestone.createMany({
         data: DEFAULT_MILESTONES.map(([day, bonusPercent, title, description], index) => ({
-          configurationId: config.id, day, bonusPercent, title, description, sortOrder: (index + 1) * 10,
+          configurationId: config.id, day, bonusPercent: String(bonusPercent), title, description, sortOrder: (index + 1) * 10,
         })),
         skipDuplicates: true,
       })
@@ -57,7 +57,7 @@ export class StreaksService {
   }
 
   async getConfiguration() {
-    return this.prisma.$transaction((tx) => this.ensureConfiguration(tx))
+    return this.prisma.$transaction(async (tx) => this.serializeConfiguration(await this.ensureConfiguration(tx)))
   }
 
   async updateConfiguration(dto: UpdateStreakConfigurationDto) {
@@ -68,7 +68,7 @@ export class StreaksService {
         ...(dto.enabled !== undefined ? { enabled: dto.enabled } : {}),
         ...(dto.qualifyingActivity !== undefined ? { qualifyingActivity: dto.qualifyingActivity.trim().toUpperCase() } : {}),
         ...(dto.timezone !== undefined ? { timezone: dto.timezone.trim() } : {}),
-        ...(dto.maxBonusPercent !== undefined ? { maxBonusPercent: dto.maxBonusPercent } : {}),
+        ...(dto.maxBonusPercent !== undefined ? { maxBonusPercent: new Prisma.Decimal(String(dto.maxBonusPercent)) } : {}),
       },
       include: { milestones: { orderBy: [{ day: "asc" }, { sortOrder: "asc" }] } },
     })
@@ -81,7 +81,7 @@ export class StreaksService {
       data: {
         configurationId: config.id,
         day: dto.day,
-        bonusPercent: dto.bonusPercent,
+        bonusPercent: new Prisma.Decimal(String(dto.bonusPercent)),
         title: dto.title?.trim() || null,
         description: dto.description?.trim() || null,
         enabled: dto.enabled ?? true,
@@ -98,7 +98,7 @@ export class StreaksService {
       where: { id },
       data: {
         day: dto.day,
-        bonusPercent: dto.bonusPercent,
+        bonusPercent: new Prisma.Decimal(String(dto.bonusPercent)),
         title: dto.title?.trim() || null,
         description: dto.description?.trim() || null,
         enabled: dto.enabled ?? true,
@@ -156,10 +156,16 @@ export class StreaksService {
   }
 
   private bonusFor(config: any, streak: { currentDays: number; lastQualifiedDate: Date | null } | null) {
-    if (!config.enabled) return 0
+    if (!config.enabled) return new Prisma.Decimal(0)
     const days = this.currentDays(streak)
     const milestone = [...config.milestones].filter((item: any) => item.enabled && item.day <= days).sort((a: any, b: any) => b.day - a.day)[0]
-    return Math.min(config.maxBonusPercent, milestone?.bonusPercent ?? 0)
+    return this.clampBonus(config, milestone?.bonusPercent ?? 0)
+  }
+
+  private clampBonus(config: any, value: unknown) {
+    const cap = new Prisma.Decimal(String(config.maxBonusPercent ?? 0))
+    const bonus = new Prisma.Decimal(String(value ?? 0))
+    return bonus.gt(cap) ? cap : bonus
   }
 
   private statusFor(config: any, streak: any) {
@@ -170,22 +176,22 @@ export class StreaksService {
       enabled: config.enabled,
       qualifyingActivity: config.qualifyingActivity,
       timezone: config.timezone,
-      maxBonusPercent: config.maxBonusPercent,
+      maxBonusPercent: new Prisma.Decimal(String(config.maxBonusPercent ?? 0)).toString(),
       currentStreakDays,
       longestStreakDays: streak?.longestDays ?? 0,
       activeToday: this.dateKey(streak?.lastQualifiedDate) === this.dateKey(new Date()),
       lastQualifiedDate: streak?.lastQualifiedDate ?? null,
-      currentBonusPercent,
-      nextMilestone: nextMilestone ? { day: nextMilestone.day, bonusPercent: Math.min(config.maxBonusPercent, nextMilestone.bonusPercent), title: nextMilestone.title, daysRemaining: Math.max(0, nextMilestone.day - currentStreakDays) } : null,
-      milestones: config.milestones.filter((item: any) => item.enabled).map((item: any) => ({ day: item.day, bonusPercent: Math.min(config.maxBonusPercent, item.bonusPercent), title: item.title, description: item.description })),
+      currentBonusPercent: currentBonusPercent.toString(),
+      nextMilestone: nextMilestone ? { day: nextMilestone.day, bonusPercent: this.clampBonus(config, nextMilestone.bonusPercent).toString(), title: nextMilestone.title, daysRemaining: Math.max(0, nextMilestone.day - currentStreakDays) } : null,
+      milestones: config.milestones.filter((item: any) => item.enabled).map((item: any) => ({ day: item.day, bonusPercent: this.clampBonus(config, item.bonusPercent).toString(), title: item.title, description: item.description })),
     }
   }
 
   private serializeConfiguration(value: any) {
-    return { ...value, milestones: value.milestones.map((row: any) => this.serializeMilestone(row)) }
+    return { ...value, maxBonusPercent: new Prisma.Decimal(String(value.maxBonusPercent ?? 0)).toString(), milestones: value.milestones.map((row: any) => this.serializeMilestone(row)) }
   }
 
   private serializeMilestone(value: any) {
-    return { ...value }
+    return { ...value, bonusPercent: new Prisma.Decimal(String(value.bonusPercent ?? 0)).toString() }
   }
 }

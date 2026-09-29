@@ -426,10 +426,10 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
         })
       : null;
     const rewardAmountDecimal = policy.rewardAmountDecimal ?? new Prisma.Decimal(policy.rewardAmount.toString());
-    const progressionBonusPercent = reachedTier?.adRewardBonusPercent ?? 0;
+    const progressionBonusPercent = new Prisma.Decimal(String(reachedTier?.adRewardBonusPercent ?? 0));
     const streakBonusPercent = await this.streaks.getBonusPercent(userId);
-    const adRewardBonusPercent = progressionBonusPercent + streakBonusPercent;
-    const effectiveRewardAmountDecimal = rewardAmountDecimal.mul(100 + adRewardBonusPercent).div(100);
+    const adRewardBonusPercent = progressionBonusPercent.add(streakBonusPercent);
+    const effectiveRewardAmountDecimal = rewardAmountDecimal.mul(new Prisma.Decimal(100).add(adRewardBonusPercent)).div(100);
     return {
       adFormat,
       eventType,
@@ -437,9 +437,9 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
       regionCode: policy.regionCode,
       rewardAmount: policy.rewardAmount,
       rewardAmountDecimal: rewardAmountDecimal.toString(),
-      adRewardBonusPercent,
-      progressionBonusPercent,
-      streakBonusPercent,
+      adRewardBonusPercent: adRewardBonusPercent.toString(),
+      progressionBonusPercent: progressionBonusPercent.toString(),
+      streakBonusPercent: streakBonusPercent.toString(),
       effectiveRewardAmountDecimal: effectiveRewardAmountDecimal.toString(),
     };
   }
