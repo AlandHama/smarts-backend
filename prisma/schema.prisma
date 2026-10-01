@@ -95,6 +95,12 @@ enum MissionStatus {
 
 enum ChatConversationType {
   DIRECT_FRIEND
+  GROUP
+}
+
+enum ChatParticipantRole {
+  MEMBER
+  ADMIN
 }
 
 enum ChatMessageState {
@@ -554,6 +560,7 @@ model User {
   fraudActionsForUser        FraudAction[]           @relation("FraudActionsForUser")
   chatParticipants           ChatParticipant[]
   chatMessagesSent           ChatMessage[]           @relation("ChatMessageSender")
+  createdChatConversations   ChatConversation[]      @relation("ChatConversationCreator")
   chatRestrictions           ChatRestriction[]
   chatReportsFiled           ChatReport[]            @relation("ChatReportReporter")
 }
@@ -781,13 +788,17 @@ model ChatConfiguration {
 
 model ChatConversation {
   id            String               @id @default(uuid()) @db.Uuid
-  pairKey       String               @unique @db.VarChar(80)
+  pairKey       String?              @unique @db.VarChar(80)
   type          ChatConversationType @default(DIRECT_FRIEND)
+  name          String?              @db.VarChar(80)
+  imageUrl      String?              @db.Text
+  createdById   String?              @db.Uuid
   lastMessageAt DateTime?
   lastMessageId String?              @db.Uuid
   archivedAt    DateTime?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
+  createdBy     User?                @relation("ChatConversationCreator", fields: [createdById], references: [id], onDelete: SetNull)
   participants  ChatParticipant[]
   messages      ChatMessage[]
   reports       ChatReport[]
@@ -799,6 +810,8 @@ model ChatParticipant {
   id               String           @id @default(uuid()) @db.Uuid
   conversationId   String           @db.Uuid
   userId           String           @db.Uuid
+  role             ChatParticipantRole @default(MEMBER)
+  wallpaperKey     String?          @db.VarChar(80)
   lastReadSequence Int              @default(0)
   mutedUntil       DateTime?
   joinedAt         DateTime         @default(now())

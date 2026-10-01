@@ -8,7 +8,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common"
-import { ChatMessageState, Prisma, UserStatus } from "@prisma/client"
+import { ChatConversationType, ChatMessageState, ChatParticipantRole, Prisma, UserStatus } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
 import { NotificationsService } from "../notifications/notifications.service"
@@ -166,7 +166,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     const hasMore = rows.length > limit
     const page = rows.slice(0, limit)
     const conversations = await Promise.all(page.map(async (row) => {
-      const other = row.conversation.participants.find((participant) => participant.userId !== userId)
+      const other = row.conversation.type === ChatConversationType.DIRECT_FRIEND ? row.conversation.participants.find((participant) => participant.userId !== userId) : undefined
       const unreadCount = await this.prisma.chatMessage.count({
         where: {
           conversationId: row.conversationId,
@@ -176,7 +176,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
           expiresAt: { gt: new Date() },
         },
       })
-      return this.serializeConversation(row.conversation, other?.user ?? null, unreadCount)
+      return this.serializeConversation(row.conversation, other?.user ?? null, unreadCount, userId)
     }))
     return {
       configuration: this.serializePublicConfig(config, restriction),
@@ -198,7 +198,94 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
       return row
     })
     const other = conversation.participants.find((participant) => participant.userId !== userId)
-    return this.serializeConversation(conversation, other?.user ?? null, 0)
+    return this.serializeConversation(conversation, other?.user ?? null, 0, userId)
+  }
+
+  async createGroup(userId: string, name: string, memberIds: string[], imageUrl?: string | null) {
+    const config = await this.ensureConfiguration()
+    this.assertEnabled(config)
+    const cleanName = name.trim()
+    if (!cleanName) throw new ForbiddenException("Group name is required")
+    const members = [...new Set(memberIds.filter((id) => id !== userId))]
+    if (!members.length) throw new ForbiddenException("Add at least one friend to the group")
+    if (members.length > 49) throw new ForbiddenException("A group can have at most 50 players")
+    for (const memberId of members) await this.assertChatAvailable(userId, memberId)
+    const conversation = await this.prisma.chatConversation.create({
+      data: {
+        type: ChatConversationType.GROUP,
+        name: cleanName,
+        imageUrl: imageUrl?.trim() || null,
+        createdById: userId,
+        participants: {
+          create: [
+            { userId, role: ChatParticipantRole.ADMIN },
+            ...members.map((memberId) => ({ userId: memberId, role: ChatParticipantRole.MEMBER })),
+          ],
+        },
+      },
+      include: { participants: { include: { user: { select: publicUserSelect } } } },
+    })
+    return this.serializeConversation(conversation, null, 0, userId)
+  }
+
+  async addGroupMembers(userId: string, conversationId: string, memberIds: string[]) {
+    const participant = await this.getAuthorizedParticipant(userId, conversationId)
+    if (participant.conversation.type !== ChatConversationType.GROUP) throw new ForbiddenException("Members can only be added to group chats")
+    if (participant.role !== ChatParticipantRole.ADMIN) throw new ForbiddenException("Only group admins can add members")
+    const existingIds = new Set(participant.conversation.participants.map((row) => row.userId))
+    const members = [...new Set(memberIds)].filter((id) => !existingIds.has(id) && id !== userId)
+    if (existingIds.size + members.length > 50) throw new ForbiddenException("A group can have at most 50 players")
+    for (const memberId of members) await this.assertChatAvailable(userId, memberId)
+    if (members.length) await this.prisma.chatParticipant.createMany({ data: members.map((memberId) => ({ conversationId, userId: memberId, role: ChatParticipantRole.MEMBER })), skipDuplicates: true })
+    return this.getConversationForUser(userId, conversationId)
+  }
+
+  async removeGroupMember(userId: string, conversationId: string, memberId: string) {
+    const participant = await this.getAuthorizedParticipant(userId, conversationId)
+    if (participant.conversation.type !== ChatConversationType.GROUP) throw new ForbiddenException("This is not a group chat")
+    if (memberId !== userId && participant.role !== ChatParticipantRole.ADMIN) throw new ForbiddenException("Only group admins can remove members")
+    const target = participant.conversation.participants.find((row) => row.userId === memberId)
+    if (!target) throw new NotFoundException("Group member not found")
+    if (target.role === ChatParticipantRole.ADMIN && memberId !== userId && participant.conversation.participants.filter((row) => row.role === ChatParticipantRole.ADMIN).length <= 1) throw new ForbiddenException("Promote another admin before removing the last admin")
+    await this.prisma.chatParticipant.delete({ where: { conversationId_userId: { conversationId, userId: memberId } } })
+    return { removed: true, conversationId, userId: memberId }
+  }
+
+  async leaveGroup(userId: string, conversationId: string) {
+    const participant = await this.getAuthorizedParticipant(userId, conversationId)
+    if (participant.conversation.type !== ChatConversationType.GROUP) throw new ForbiddenException("Only group chats can be left")
+    const members = participant.conversation.participants.filter((row) => row.userId !== userId)
+    await this.prisma.$transaction(async (tx) => {
+      await tx.chatParticipant.delete({ where: { conversationId_userId: { conversationId, userId } } })
+      if (participant.role === ChatParticipantRole.ADMIN && members.length && !members.some((row) => row.role === ChatParticipantRole.ADMIN)) {
+        await tx.chatParticipant.update({ where: { conversationId_userId: { conversationId, userId: members[0].userId } }, data: { role: ChatParticipantRole.ADMIN } })
+      }
+      if (!members.length) await tx.chatConversation.update({ where: { id: conversationId }, data: { archivedAt: new Date() } })
+    })
+    return { left: true, conversationId }
+  }
+
+  async updateGroup(userId: string, conversationId: string, dto: { name?: string; imageUrl?: string | null }) {
+    const participant = await this.getAuthorizedParticipant(userId, conversationId)
+    if (participant.conversation.type !== ChatConversationType.GROUP || participant.role !== ChatParticipantRole.ADMIN) throw new ForbiddenException("Only group admins can edit the group")
+    const name = dto.name?.trim()
+    if (dto.name !== undefined && !name) throw new ForbiddenException("Group name is required")
+    const updated = await this.prisma.chatConversation.update({ where: { id: conversationId }, data: { ...(name === undefined ? {} : { name }), ...(dto.imageUrl === undefined ? {} : { imageUrl: dto.imageUrl?.trim() || null }) }, include: { participants: { include: { user: { select: publicUserSelect } } } } })
+    return this.serializeConversation(updated, null, 0, userId)
+  }
+
+  async setWallpaper(userId: string, conversationId: string, wallpaperKey?: string | null) {
+    const participant = await this.getAuthorizedParticipant(userId, conversationId)
+    const normalized = wallpaperKey?.trim() || null
+    if (normalized && !/^wallpaper-[a-z0-9-]+$/.test(normalized)) throw new ForbiddenException("Invalid chat wallpaper")
+    const updated = await this.prisma.chatParticipant.update({ where: { id: participant.id }, data: { wallpaperKey: normalized } })
+    return { conversationId, wallpaperKey: updated.wallpaperKey }
+  }
+
+  private async getConversationForUser(userId: string, conversationId: string) {
+    const participant = await this.getAuthorizedParticipant(userId, conversationId)
+    const other = participant.conversation.type === ChatConversationType.DIRECT_FRIEND ? participant.conversation.participants.find((row) => row.userId !== userId) : undefined
+    return this.serializeConversation(participant.conversation, other?.user ?? null, 0, userId)
   }
 
   async listMessages(userId: string, conversationId: string, limit: number, before?: number) {
@@ -217,7 +304,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     const hasMore = rows.length > limit
     const messages = rows.slice(0, limit).reverse().map((row) => this.serializeMessage(row))
     return {
-      conversation: this.serializeConversation(participant.conversation, this.otherUser(participant, userId), 0),
+      conversation: this.serializeConversation(participant.conversation, this.otherUser(participant, userId), 0, userId),
       messages,
       hasMore,
       nextBefore: hasMore ? messages[0]?.sequence ?? null : null,
@@ -229,8 +316,8 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     this.assertEnabled(config)
     const participant = await this.getAuthorizedParticipant(userId, conversationId)
     await this.assertCanSend(userId)
-    const recipient = participant.conversation.participants.find((row) => row.userId !== userId)
-    if (recipient) await this.assertCanReceive(recipient.userId)
+    const recipients = participant.conversation.participants.filter((row) => row.userId !== userId)
+    if (participant.conversation.type === ChatConversationType.DIRECT_FRIEND && recipients[0]) await this.assertCanReceive(recipients[0].userId)
     const cleanBody = body.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim()
     if (!cleanBody) throw new ForbiddenException("Message cannot be empty")
     if (cleanBody.length > config.maxMessageLength) throw new ForbiddenException(`Message is limited to ${config.maxMessageLength} characters`)
@@ -239,8 +326,8 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
 
     const existing = await this.prisma.chatMessage.findUnique({ where: { senderId_clientMessageId: { senderId: userId, clientMessageId } }, include: { sender: { select: publicUserSelect }, conversation: { include: { participants: true } } } })
     if (existing) {
-      const recipient = existing.conversation.participants.find((row) => row.userId !== userId)
-      if (recipient) void this.notifyMessage(config, existing, recipient.userId, existing.conversationId, existing.body).catch((error) => this.logger.warn(`Chat notification failed: ${String(error)}`))
+      const recipients = existing.conversation.participants.filter((row) => row.userId !== userId)
+      for (const recipient of recipients) void this.notifyMessage(config, existing, recipient.userId, existing.conversationId, existing.body, recipient.mutedUntil).catch((error) => this.logger.warn(`Chat notification failed: ${String(error)}`))
       return this.serializeMessage(existing)
     }
 
@@ -271,9 +358,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
       await tx.chatConversation.update({ where: { id: conversationId }, data: { lastMessageAt: created.createdAt, lastMessageId: created.id } })
       return created
     })
-    if (recipient) {
-      void this.notifyMessage(config, message, recipient.userId, conversationId, cleanBody, recipient.mutedUntil).catch((error) => this.logger.warn(`Chat notification failed: ${String(error)}`))
-    }
+    for (const recipient of recipients) void this.notifyMessage(config, message, recipient.userId, conversationId, cleanBody, recipient.mutedUntil).catch((error) => this.logger.warn(`Chat notification failed: ${String(error)}`))
     return this.serializeMessage(message)
   }
 
@@ -483,9 +568,14 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
       include: { conversation: { include: { participants: { include: { user: { select: publicUserSelect } } } } } },
     })
     if (!participant) throw new NotFoundException("Conversation not found")
-    const other = participant.conversation.participants.find((row) => row.userId !== userId)
-    if (!other) throw new NotFoundException("Conversation not found")
-    await this.assertChatAvailable(userId, other.userId)
+    if (participant.conversation.type === ChatConversationType.GROUP) {
+      const config = await this.ensureConfiguration()
+      this.assertEnabled(config)
+    } else {
+      const other = participant.conversation.participants.find((row) => row.userId !== userId)
+      if (!other) throw new NotFoundException("Conversation not found")
+      await this.assertChatAvailable(userId, other.userId)
+    }
     return participant
   }
 
@@ -520,8 +610,22 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     return user ? { id: user.id, username: user.username, name: user.profile?.displayName || user.username, avatarUrl: user.profile?.avatarUrl ?? null } : null
   }
 
-  private serializeConversation(conversation: any, otherUser: any, unreadCount: number) {
-    return { id: conversation.id, type: conversation.type, friend: this.serializeUser(otherUser), lastMessageAt: conversation.lastMessageAt?.toISOString() ?? null, lastMessage: conversation.messages?.[0] ? this.serializeMessage(conversation.messages[0]) : null, unreadCount }
+  private serializeConversation(conversation: any, otherUser: any, unreadCount: number, viewerId?: string) {
+    const viewer = viewerId ? conversation.participants?.find((row: any) => row.userId === viewerId) : null
+    return {
+      id: conversation.id,
+      type: conversation.type,
+      friend: this.serializeUser(otherUser),
+      title: conversation.name ?? null,
+      imageUrl: conversation.imageUrl ?? null,
+      createdById: conversation.createdById ?? null,
+      wallpaperKey: viewer?.wallpaperKey ?? null,
+      mutedUntil: viewer?.mutedUntil?.toISOString() ?? null,
+      participants: conversation.type === ChatConversationType.GROUP ? (conversation.participants ?? []).map((row: any) => ({ ...this.serializeUser(row.user), role: row.role })) : [],
+      lastMessageAt: conversation.lastMessageAt?.toISOString() ?? null,
+      lastMessage: conversation.messages?.[0] ? this.serializeMessage(conversation.messages[0]) : null,
+      unreadCount,
+    }
   }
 
   private serializeMessage(message: any) {

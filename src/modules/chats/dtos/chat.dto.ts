@@ -1,5 +1,5 @@
 import { Type } from "class-transformer"
-import { IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator"
+import { ArrayMaxSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator"
 
 export enum ChatReportCategoryDto {
   HARASSMENT = "HARASSMENT",
@@ -42,6 +42,25 @@ export class ChatMessagesQueryDto {
 export class CreateChatConversationDto {
   @IsUUID()
   friendId!: string
+}
+
+export class CreateChatGroupDto {
+  @IsString() @MinLength(1) @MaxLength(80) name!: string
+  @IsArray() @ArrayUnique() @ArrayMaxSize(49) @IsUUID("4", { each: true }) memberIds!: string[]
+  @IsOptional() @IsString() @MaxLength(2000) imageUrl?: string | null
+}
+
+export class AddChatGroupMembersDto {
+  @IsArray() @ArrayUnique() @ArrayMaxSize(49) @IsUUID("4", { each: true }) memberIds!: string[]
+}
+
+export class UpdateChatGroupDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(80) name?: string
+  @IsOptional() @IsString() @MaxLength(2000) imageUrl?: string | null
+}
+
+export class ChatWallpaperDto {
+  @IsOptional() @IsString() @MaxLength(80) wallpaperKey?: string | null
 }
 
 export class SendChatMessageDto {
