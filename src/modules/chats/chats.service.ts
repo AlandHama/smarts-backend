@@ -379,6 +379,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
 
   private chatNotificationPreview(body: string) {
     const fallback = body.slice(0, 160)
+    if (body.startsWith("smarts-image:")) return "Sent an image"
     if (!body.startsWith("smarts-event:")) return fallback
     try {
       const event = JSON.parse(body.slice("smarts-event:".length)) as Record<string, unknown>

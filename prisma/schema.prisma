@@ -125,6 +125,44 @@ enum ChatReportStatus {
   DISMISSED
 }
 
+enum SupportTicketStatus {
+  OPEN
+  TRIAGED
+  ASSIGNED
+  WAITING_FOR_PLAYER
+  WAITING_FOR_SUPPORT
+  ESCALATED
+  RESOLVED
+  CLOSED
+  REOPENED
+}
+
+enum SupportTicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum SupportAgentLevel {
+  AGENT
+  SENIOR
+  SUPERVISOR
+}
+
+enum SupportAgentStatus {
+  OFFLINE
+  AVAILABLE
+  BUSY
+  SUSPENDED
+}
+
+enum SupportMessageSenderKind {
+  PLAYER
+  AGENT
+  SYSTEM
+}
+
 enum RewardGrantStatus {
   GRANTED
   PENDING
@@ -563,6 +601,15 @@ model User {
   createdChatConversations   ChatConversation[]      @relation("ChatConversationCreator")
   chatRestrictions           ChatRestriction[]
   chatReportsFiled           ChatReport[]            @relation("ChatReportReporter")
+  supportAgentProfile        SupportAgent?
+  supportTickets              SupportTicket[]         @relation("SupportTicketPlayer")
+  supportMessages             SupportTicketMessage[]  @relation("SupportMessageSender")
+  supportTicketEvents         SupportTicketEvent[]    @relation("SupportTicketEventActor")
+  supportAuditEvents          SupportAuditEvent[]     @relation("SupportAuditActor")
+  supportTicketReads          SupportTicketRead[]
+  supportConfigurationUpdates  SupportConfiguration[]  @relation("SupportConfigurationUpdater")
+  supportAgentsGranted        SupportAgent[]          @relation("SupportAgentGrantedBy")
+  supportAgentsRevoked        SupportAgent[]          @relation("SupportAgentRevokedBy")
 }
 
 /// A provider identity is linked to a local account after the provider token
@@ -2722,6 +2769,177 @@ model NotificationBroadcast {
   notifications   Notification[]
 
   @@index([createdAt])
+}
+
+/// Independent, free player support configuration. Live chat pricing is stored
+/// here for the next phase, but is not charged by the Phase 1 ticket APIs.
+model SupportConfiguration {
+  id                       String   @id @default(uuid()) @db.Uuid
+  key                      String   @unique @default("default") @db.VarChar(40)
+  enabled                  Boolean  @default(true)
+  maintenanceMessage      String?  @db.VarChar(300)
+  ticketRetentionDays      Int      @default(30)
+  messageRetentionDays     Int      @default(30)
+  maxOpenTicketsPerPlayer  Int      @default(3)
+  maxMessageLength         Int      @default(4000)
+  maxSubjectLength         Int      @default(160)
+  firstResponseSlaMinutes  Int      @default(1440)
+  playerReplyTimeoutHours  Int      @default(72)
+  pushNotificationsEnabled Boolean  @default(true)
+  liveChatEnabled          Boolean  @default(false)
+  liveChatPriceGld         Decimal  @default(2) @db.Decimal(20, 6)
+  updatedById              String?  @db.Uuid
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  updatedBy                User?    @relation("SupportConfigurationUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([enabled])
+}
+
+model SupportCategory {
+  id              String                 @id @default(uuid()) @db.Uuid
+  key             String                 @unique @db.VarChar(60)
+  name            String                 @db.VarChar(100)
+  description     String?                @db.VarChar(300)
+  queueKey        String?                @db.VarChar(60)
+  defaultPriority SupportTicketPriority  @default(NORMAL)
+  sortOrder       Int                    @default(0)
+  active          Boolean                @default(true)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  tickets         SupportTicket[]
+
+  @@index([active, sortOrder])
+}
+
+model SupportAgent {
+  id                   String             @id @default(uuid()) @db.Uuid
+  userId               String             @unique @db.Uuid
+  level                SupportAgentLevel  @default(AGENT)
+  status               SupportAgentStatus @default(OFFLINE)
+  maxConcurrentTickets Int                @default(10)
+  lastSeenAt           DateTime?
+  grantedAt            DateTime           @default(now())
+  grantedById          String?            @db.Uuid
+  revokedAt            DateTime?
+  revokedById          String?            @db.Uuid
+  suspensionReason     String?            @db.VarChar(500)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy            User?              @relation("SupportAgentGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  revokedBy            User?              @relation("SupportAgentRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+  assignedTickets      SupportTicket[]    @relation("SupportTicketAssignee")
+  assignments          SupportTicketAssignment[]
+
+  @@index([status, level])
+}
+
+model SupportTicket {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  ticketNumber       String                 @unique @db.VarChar(30)
+  playerId           String                 @db.Uuid
+  categoryId         String                 @db.Uuid
+  assignedAgentId    String?                @db.Uuid
+  subject            String                 @db.VarChar(160)
+  status             SupportTicketStatus    @default(OPEN)
+  priority           SupportTicketPriority  @default(NORMAL)
+  lastSequence       Int                    @default(0)
+  firstResponseAt    DateTime?
+  resolvedAt         DateTime?
+  closedAt           DateTime?
+  lastPlayerActivity DateTime              @default(now())
+  lastAgentActivity  DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  player             User                   @relation("SupportTicketPlayer", fields: [playerId], references: [id], onDelete: Cascade)
+  category           SupportCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  assignedAgent      SupportAgent?          @relation("SupportTicketAssignee", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  messages           SupportTicketMessage[]
+  events             SupportTicketEvent[]
+  assignments        SupportTicketAssignment[]
+  reads              SupportTicketRead[]
+  auditEvents        SupportAuditEvent[]
+
+  @@index([playerId, status, updatedAt])
+  @@index([status, priority, updatedAt])
+  @@index([assignedAgentId, status, updatedAt])
+  @@index([categoryId, status])
+}
+
+model SupportTicketMessage {
+  id             String                   @id @default(uuid()) @db.Uuid
+  ticketId       String                   @db.Uuid
+  senderId       String?                  @db.Uuid
+  senderKind     SupportMessageSenderKind
+  sequence       Int
+  clientMessageId String?                 @db.VarChar(120)
+  body           String                   @db.Text
+  internal       Boolean                  @default(false)
+  createdAt      DateTime                 @default(now())
+  ticket         SupportTicket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender         User?                    @relation("SupportMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@unique([ticketId, sequence])
+  @@unique([ticketId, clientMessageId])
+  @@index([ticketId, createdAt])
+}
+
+model SupportTicketAssignment {
+  id         String       @id @default(uuid()) @db.Uuid
+  ticketId   String       @db.Uuid
+  agentId    String       @db.Uuid
+  assignedById String?    @db.Uuid
+  assignedAt DateTime     @default(now())
+  unassignedAt DateTime?
+  reason     String?      @db.VarChar(500)
+  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  agent      SupportAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, unassignedAt, assignedAt])
+  @@index([ticketId, assignedAt])
+}
+
+model SupportTicketEvent {
+  id         String              @id @default(uuid()) @db.Uuid
+  ticketId   String              @db.Uuid
+  actorId    String?             @db.Uuid
+  fromStatus SupportTicketStatus?
+  toStatus   SupportTicketStatus?
+  action     String              @db.VarChar(80)
+  note       String?             @db.VarChar(1000)
+  createdAt  DateTime            @default(now())
+  ticket     SupportTicket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor      User?               @relation("SupportTicketEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+}
+
+model SupportTicketRead {
+  id           String        @id @default(uuid()) @db.Uuid
+  ticketId     String        @db.Uuid
+  userId       String        @db.Uuid
+  lastSequence Int           @default(0)
+  updatedAt    DateTime      @updatedAt
+  ticket       SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, userId])
+}
+
+model SupportAuditEvent {
+  id         String        @id @default(uuid()) @db.Uuid
+  actorId    String?       @db.Uuid
+  ticketId   String?       @db.Uuid
+  action     String        @db.VarChar(100)
+  metadata   Json?
+  createdAt  DateTime      @default(now())
+  actor      User?         @relation("SupportAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  ticket     SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
 }
 
 /// Immutable record of a privileged operation performed from the system console.

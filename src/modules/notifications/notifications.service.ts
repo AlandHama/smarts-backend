@@ -142,6 +142,51 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     return notification;
   }
 
+  /** Durable inbox + push notification for the independent support center. */
+  async createSupportNotification(input: {
+    recipientId: string;
+    ticketId: string;
+    notificationType: string;
+    title: string;
+    body: string;
+    enabled: boolean;
+    pushEnabled: boolean;
+  }) {
+    if (!input.enabled) return null;
+    const dedupeKey = `support:${input.notificationType}:${input.ticketId}:${input.recipientId}:${Date.now()}`;
+    const notification = await this.prisma.notification.create({
+      data: {
+        dedupeKey,
+        userId: input.recipientId,
+        notificationType: input.notificationType,
+        title: input.title,
+        body: input.body.slice(0, 500),
+        data: {
+          route: `/support/tickets/${input.ticketId}`,
+          ticketId: input.ticketId,
+        } as Prisma.InputJsonValue,
+        status: NotificationStatus.DISPATCHED,
+        pushStatus: input.pushEnabled ? NotificationPushStatus.PENDING : NotificationPushStatus.SKIPPED,
+        dispatchedAt: new Date(),
+      },
+    });
+    if (!input.pushEnabled) return notification;
+    try {
+      const push = await this.firebaseMessaging.sendToUsers([input.recipientId], {
+        notificationId: notification.id,
+        notificationType: input.notificationType,
+        title: input.title,
+        body: input.body.slice(0, 500),
+        data: { route: `/support/tickets/${input.ticketId}`, ticketId: input.ticketId },
+      }, { throwOnTransientFailure: false });
+      await this.prisma.notification.update({ where: { id: notification.id }, data: { pushStatus: !push.configured ? NotificationPushStatus.SKIPPED : push.failureCount ? NotificationPushStatus.FAILED : NotificationPushStatus.SENT, pushAttemptedAt: new Date(), pushFailureReason: push.failureCount ? `${push.failureCount} device deliveries failed` : null } });
+    } catch (error) {
+      this.logger.warn(`Support FCM notification failed: ${String(error)}`);
+      await this.prisma.notification.update({ where: { id: notification.id }, data: { pushStatus: NotificationPushStatus.FAILED, pushAttemptedAt: new Date(), pushFailureReason: "Push delivery failed" } }).catch(() => undefined);
+    }
+    return notification;
+  }
+
   pushStatus() {
     return this.firebaseMessaging.status();
   }

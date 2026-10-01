@@ -47,6 +47,7 @@ import { MissionsAchievementsView } from "../components/MissionsAchievementsView
 import { FraudView } from "../components/FraudView";
 import { StreaksView } from "../components/StreaksView";
 import { ChatsView } from "../components/ChatsView";
+import { SupportCenterView } from "../components/SupportCenterView";
 import { api, clearSession, hasSession, login } from "../lib/api";
 import { adminTheme } from "../lib/theme";
 
@@ -83,6 +84,7 @@ const viewPaths: Record<
   fraud: "/fraud/",
   "missions-achievements": "/missions-achievements/",
   streaks: "/streaks/",
+  support: "/support/",
 };
 
 function routeState() {
@@ -201,6 +203,7 @@ export default function AdminPage() {
           )}
           {view === "missions-achievements" && <MissionsAchievementsView />}
           {view === "streaks" && <StreaksView />}
+          {view === "support" && <SupportCenterView />}
           {view === "economy" && (
             <>
               <EconomyView />
