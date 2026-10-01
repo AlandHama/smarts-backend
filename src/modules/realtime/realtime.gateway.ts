@@ -7,6 +7,7 @@ import { MatchmakingService } from "../matchmaking/matchmaking.service"
 import { MatchService } from "../matches/match.service"
 import { PrismaService } from "../../prisma.service"
 import { getAuthConfig } from "../auth/auth.config"
+import { ChatsService } from "../chats/chats.service"
 import type { JwtPayload } from "../auth/dtos/jwt-payload.dto"
 import type { WebSocket } from "ws"
 
@@ -15,6 +16,7 @@ type ClientState = {
   matchIds: Set<string>
   playerIds: Set<string>
   queueSubscribed: boolean
+  chatConversationIds: Set<string>
   lastSnapshots: Map<string, string>
 }
 
@@ -31,6 +33,8 @@ type ClientState = {
 export class RealtimeGateway implements OnModuleDestroy {
   private readonly logger = new Logger(RealtimeGateway.name)
   private readonly clients = new Map<WebSocket, ClientState>()
+  private readonly typingTimers = new Map<string, NodeJS.Timeout>()
+  private readonly typingLastSent = new Map<string, number>()
   private readonly timer: NodeJS.Timeout
 
   constructor(
@@ -38,6 +42,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly jwt: JwtService,
     private readonly matches: MatchService,
     private readonly matchmaking: MatchmakingService,
+    private readonly chats: ChatsService,
   ) {
     this.timer = setInterval(() => void this.publishChanges(), 1000)
     this.timer.unref()
@@ -50,12 +55,16 @@ export class RealtimeGateway implements OnModuleDestroy {
   handleDisconnect(client: WebSocket) {
     const state = this.clients.get(client)
     this.clients.delete(client)
+    if (state) void this.clearTypingForClient(state)
     if (state && !this.isOnline(state.userId)) this.broadcastPresence(state.userId, false)
   }
 
   onModuleDestroy() {
     clearInterval(this.timer)
     for (const client of this.clients.keys()) client.close(1001, "Server shutting down")
+    for (const timer of this.typingTimers.values()) clearTimeout(timer)
+    this.typingTimers.clear()
+    this.typingLastSent.clear()
     this.clients.clear()
   }
 
@@ -69,7 +78,7 @@ export class RealtimeGateway implements OnModuleDestroy {
       const user = await this.prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true, status: true } })
       if (!session || !user || user.status !== "ACTIVE") throw new Error("Session is no longer active")
 
-      const state: ClientState = { userId: user.id, matchIds: new Set(), playerIds: new Set([user.id]), queueSubscribed: false, lastSnapshots: new Map() }
+      const state: ClientState = { userId: user.id, matchIds: new Set(), playerIds: new Set([user.id]), queueSubscribed: false, chatConversationIds: new Set(), lastSnapshots: new Map() }
       this.clients.set(client, state)
       client.on("message", (message) => void this.handleMessage(client, state, message.toString()))
       client.on("close", () => this.handleDisconnect(client))
@@ -111,7 +120,157 @@ export class RealtimeGateway implements OnModuleDestroy {
       }
       return
     }
+    if (event === "unsubscribe_player") {
+      if (typeof data.userId === "string") state.playerIds.delete(data.userId.trim())
+      return
+    }
+    if (event === "chat.subscribe") {
+      await this.subscribeChat(client, state, data)
+      return
+    }
+    if (event === "chat.unsubscribe") {
+      if (typeof data.conversationId === "string") state.chatConversationIds.delete(data.conversationId)
+      return
+    }
+    if (event === "chat.message.send") {
+      await this.sendChatMessage(client, state, data)
+      return
+    }
+    if (event === "chat.typing.start" || event === "chat.typing.stop") {
+      await this.changeTyping(client, state, data, event === "chat.typing.start")
+      return
+    }
+    if (event === "chat.read") {
+      await this.readChat(client, state, data)
+      return
+    }
+    if (event === "chat.presence.subscribe") {
+      await this.subscribeChatPresence(client, state, data)
+      return
+    }
+    if (event === "chat.presence.unsubscribe") {
+      if (typeof data.userId === "string") state.playerIds.delete(data.userId.trim())
+      return
+    }
     this.send(client, "error", { message: "Unknown event" })
+  }
+
+  private async subscribeChat(client: WebSocket, state: ClientState, data: Record<string, unknown>) {
+    const conversationId = this.string(data.conversationId)
+    if (!conversationId) return this.chatError(client, "INVALID_CONVERSATION", "Conversation is required")
+    try {
+      const authorized = await this.chats.authorizeConversation(state.userId, conversationId)
+      state.chatConversationIds.add(conversationId)
+      this.send(client, "chat.ready", { conversationId, retentionDays: authorized.retentionDays })
+    } catch (error) { this.chatError(client, this.chatErrorCode(error), this.errorMessage(error)) }
+  }
+
+  private async sendChatMessage(client: WebSocket, state: ClientState, data: Record<string, unknown>) {
+    const conversationId = this.string(data.conversationId)
+    const clientMessageId = this.string(data.clientMessageId)
+    const body = typeof data.body === "string" ? data.body : ""
+    if (!conversationId || !clientMessageId) return this.chatError(client, "INVALID_MESSAGE", "Conversation and client message id are required", clientMessageId)
+    try {
+      const message = await this.chats.sendMessage(state.userId, conversationId, clientMessageId, body)
+      const participantIds = await this.chats.participantIds(conversationId)
+      this.send(client, "chat.message.accepted", { message })
+      for (const [otherClient, otherState] of this.clients) {
+        if (otherClient === client) continue
+        if (!participantIds.includes(otherState.userId)) continue
+        this.send(otherClient, "chat.message.created", { message })
+      }
+    } catch (error) { this.chatError(client, this.chatErrorCode(error), this.errorMessage(error), clientMessageId) }
+  }
+
+  private async changeTyping(client: WebSocket, state: ClientState, data: Record<string, unknown>, typing: boolean) {
+    const conversationId = this.string(data.conversationId)
+    if (!conversationId || !state.chatConversationIds.has(conversationId)) return this.chatError(client, "NOT_SUBSCRIBED", "Subscribe to the conversation first")
+    try {
+      const config = await this.chats.getPublicConfiguration()
+      if (!config.enabled || !config.typingEnabled) return
+      await this.chats.authorizeConversation(state.userId, conversationId)
+      const key = `${conversationId}:${state.userId}`
+      const now = Date.now()
+      const lastSent = this.typingLastSent.get(key) ?? 0
+      if (typing && now - lastSent < 250) return
+      this.typingLastSent.set(key, now)
+      const timer = this.typingTimers.get(key)
+      if (timer) clearTimeout(timer)
+      await this.broadcastToConversation(conversationId, "chat.typing.changed", { conversationId, userId: state.userId, typing }, client)
+      if (typing) {
+        this.typingTimers.set(key, setTimeout(() => {
+          this.typingTimers.delete(key)
+          void this.broadcastToConversation(conversationId, "chat.typing.changed", { conversationId, userId: state.userId, typing: false })
+        }, 5000))
+      } else {
+        this.typingLastSent.delete(key)
+      }
+    } catch (error) { this.chatError(client, this.chatErrorCode(error), this.errorMessage(error)) }
+  }
+
+  private async readChat(client: WebSocket, state: ClientState, data: Record<string, unknown>) {
+    const conversationId = this.string(data.conversationId)
+    const sequence = typeof data.sequence === "number" ? Math.floor(data.sequence) : Number(data.sequence)
+    if (!conversationId || !Number.isFinite(sequence) || sequence < 0) return this.chatError(client, "INVALID_READ", "A valid conversation and sequence are required")
+    try {
+      await this.chats.markRead(state.userId, conversationId, sequence)
+      await this.broadcastToConversation(conversationId, "chat.read.changed", { conversationId, userId: state.userId, sequence })
+    } catch (error) { this.chatError(client, this.chatErrorCode(error), this.errorMessage(error)) }
+  }
+
+  private async subscribeChatPresence(client: WebSocket, state: ClientState, data: Record<string, unknown>) {
+    const userId = this.string(data.userId)
+    if (!userId) return this.chatError(client, "INVALID_PLAYER", "Player is required")
+    try {
+      await this.chats.authorizeFriendPresence(state.userId, userId)
+      state.playerIds.add(userId)
+      const player = await this.prisma.user.findUnique({ where: { id: userId }, select: { lastOnline: true } })
+      this.send(client, "presence.snapshot", { userId, state: this.isOnline(userId) ? "ONLINE" : "OFFLINE", lastSeenAt: player?.lastOnline?.toISOString() ?? null })
+    } catch (error) { this.chatError(client, this.chatErrorCode(error), this.errorMessage(error)) }
+  }
+
+  private async broadcastToConversation(conversationId: string, event: string, data: unknown, exclude?: WebSocket) {
+    const participantIds = await this.chats.participantIds(conversationId)
+    for (const [client, state] of this.clients) {
+      if (client === exclude || !participantIds.includes(state.userId)) continue
+      this.send(client, event, data)
+    }
+  }
+
+  private async clearTypingForClient(state: ClientState) {
+    for (const conversationId of state.chatConversationIds) {
+      const key = `${conversationId}:${state.userId}`
+      const timer = this.typingTimers.get(key)
+      if (timer) clearTimeout(timer)
+      this.typingTimers.delete(key)
+      this.typingLastSent.delete(key)
+      await this.broadcastToConversation(conversationId, "chat.typing.changed", { conversationId, userId: state.userId, typing: false })
+    }
+  }
+
+  private chatError(client: WebSocket, code: string, message: string, clientMessageId?: string) {
+    this.send(client, "chat.error", { code, message, ...(clientMessageId ? { clientMessageId } : {}) })
+  }
+
+  private string(value: unknown) { return typeof value === "string" ? value.trim() : "" }
+
+  private errorMessage(error: unknown) {
+    if (error && typeof error === "object" && "getResponse" in error) {
+      const response = (error as { getResponse: () => unknown }).getResponse()
+      if (typeof response === "object" && response && "message" in response) return String((response as { message: unknown }).message)
+      if (typeof response === "string") return response
+    }
+    return error instanceof Error ? error.message : "Chat request failed"
+  }
+
+  private chatErrorCode(error: unknown) {
+    const message = this.errorMessage(error).toLowerCase()
+    if (message.includes("temporarily") || message.includes("disabled")) return "CHAT_DISABLED"
+    if (message.includes("accepted friends")) return "NOT_FRIENDS"
+    if (message.includes("blocked") || message.includes("unavailable")) return "CHAT_RESTRICTED"
+    if (message.includes("limited to")) return "MESSAGE_TOO_LONG"
+    if (message.includes("rate limit")) return "RATE_LIMITED"
+    return "CHAT_ERROR"
   }
 
   private async publishChanges() {
@@ -177,6 +336,6 @@ export class RealtimeGateway implements OnModuleDestroy {
   }
 
   private broadcastPresence(userId: string, online: boolean) {
-    for (const [client, state] of this.clients) if (state.playerIds.has(userId)) this.send(client, "presence.changed", { userId, state: online ? "ONLINE" : "OFFLINE" })
+    for (const [client, state] of this.clients) if (state.playerIds.has(userId)) this.send(client, "presence.changed", { userId, state: online ? "ONLINE" : "OFFLINE", lastSeenAt: online ? null : new Date().toISOString() })
   }
 }
