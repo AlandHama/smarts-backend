@@ -189,7 +189,7 @@ export default function AdminPage() {
           )}
           {view === "sessions" && <SessionsView />}
           {view === "friends" && <FriendsView />}
-          {view === "chats" && <ChatsView />}
+          {view === "chats" && <ChatsView onOpenPlayer360={openPlayer360} />}
           {view === "player-audits" && (
             <PlayerAuditsView onOpenPlayer360={openPlayer360} />
           )}

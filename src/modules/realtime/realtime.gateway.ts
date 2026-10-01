@@ -8,6 +8,7 @@ import { MatchService } from "../matches/match.service"
 import { PrismaService } from "../../prisma.service"
 import { getAuthConfig } from "../auth/auth.config"
 import { ChatsService } from "../chats/chats.service"
+import { ChatPresenceRegistry } from "../chats/chat-presence.registry"
 import type { JwtPayload } from "../auth/dtos/jwt-payload.dto"
 import type { WebSocket } from "ws"
 
@@ -43,6 +44,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly matches: MatchService,
     private readonly matchmaking: MatchmakingService,
     private readonly chats: ChatsService,
+    private readonly chatPresence: ChatPresenceRegistry,
   ) {
     this.timer = setInterval(() => void this.publishChanges(), 1000)
     this.timer.unref()
@@ -55,7 +57,10 @@ export class RealtimeGateway implements OnModuleDestroy {
   handleDisconnect(client: WebSocket) {
     const state = this.clients.get(client)
     this.clients.delete(client)
-    if (state) void this.clearTypingForClient(state)
+    if (state) {
+      this.chatPresence.clearUser(state.userId, state.chatConversationIds)
+      void this.clearTypingForClient(state)
+    }
     if (state && !this.isOnline(state.userId)) this.broadcastPresence(state.userId, false)
   }
 
@@ -129,7 +134,10 @@ export class RealtimeGateway implements OnModuleDestroy {
       return
     }
     if (event === "chat.unsubscribe") {
-      if (typeof data.conversationId === "string") state.chatConversationIds.delete(data.conversationId)
+      if (typeof data.conversationId === "string") {
+        state.chatConversationIds.delete(data.conversationId)
+        this.chatPresence.unsubscribe(state.userId, data.conversationId)
+      }
       return
     }
     if (event === "chat.message.send") {
@@ -160,7 +168,10 @@ export class RealtimeGateway implements OnModuleDestroy {
     if (!conversationId) return this.chatError(client, "INVALID_CONVERSATION", "Conversation is required")
     try {
       const authorized = await this.chats.authorizeConversation(state.userId, conversationId)
-      state.chatConversationIds.add(conversationId)
+      if (!state.chatConversationIds.has(conversationId)) {
+        state.chatConversationIds.add(conversationId)
+        this.chatPresence.subscribe(state.userId, conversationId)
+      }
       this.send(client, "chat.ready", { conversationId, retentionDays: authorized.retentionDays })
     } catch (error) { this.chatError(client, this.chatErrorCode(error), this.errorMessage(error)) }
   }

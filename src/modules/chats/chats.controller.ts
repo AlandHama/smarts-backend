@@ -4,7 +4,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger"
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { ChatsService } from "./chats.service"
-import { ChatConversationsQueryDto, ChatMessagesQueryDto, CreateChatConversationDto, MarkChatReadDto, MuteChatDto, SendChatMessageDto } from "./dtos"
+import { ChatConversationsQueryDto, ChatMessagesQueryDto, CreateChatConversationDto, MarkChatReadDto, MuteChatDto, ReportChatMessageDto, SendChatMessageDto } from "./dtos"
 
 @ApiTags("Friend chats")
 @ApiBearerAuth("access-token")
@@ -12,7 +12,7 @@ import { ChatConversationsQueryDto, ChatMessagesQueryDto, CreateChatConversation
 export class ChatsController {
   constructor(private readonly chats: ChatsService) {}
 
-  @Get("configuration") configuration() { return this.chats.getPublicConfiguration() }
+  @Get("configuration") configuration(@CurrentUser() user: UserResponseDto) { return this.chats.getPublicConfiguration(user.id) }
 
   @Get("conversations") conversations(@CurrentUser() user: UserResponseDto, @Query() query: ChatConversationsQueryDto) { return this.chats.listConversations(user.id, query.limit, query.cursor) }
 
@@ -25,4 +25,8 @@ export class ChatsController {
   @Patch("conversations/:conversationId/read") read(@CurrentUser() user: UserResponseDto, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() dto: MarkChatReadDto) { return this.chats.markRead(user.id, conversationId, dto.sequence) }
 
   @Patch("conversations/:conversationId/mute") mute(@CurrentUser() user: UserResponseDto, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() dto: MuteChatDto) { return this.chats.mute(user.id, conversationId, dto.mutedUntil) }
+
+  @Post("conversations/:conversationId/messages/:messageId/report") report(@CurrentUser() user: UserResponseDto, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Param("messageId", ParseUUIDPipe) messageId: string, @Body() dto: ReportChatMessageDto) { return this.chats.reportMessage(user.id, conversationId, messageId, dto) }
+
+  @Post("conversations/:conversationId/report") reportConversation(@CurrentUser() user: UserResponseDto, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() dto: ReportChatMessageDto) { return this.chats.reportConversation(user.id, conversationId, dto) }
 }

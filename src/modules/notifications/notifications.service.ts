@@ -70,6 +70,78 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     return this.firebaseMessaging.unregisterDevice(userId, token);
   }
 
+  /** Creates one durable inbox item and one idempotent push attempt for a chat message. */
+  async createChatMessageNotification(input: {
+    recipientId: string;
+    messageId: string;
+    conversationId: string;
+    senderName: string;
+    preview: string;
+    enabled: boolean;
+    pushEnabled: boolean;
+  }) {
+    if (!input.enabled) return null;
+    const dedupeKey = `chat-message:${input.messageId}:${input.recipientId}`;
+    let notification = await this.prisma.notification.findUnique({ where: { dedupeKey } });
+    if (!notification) {
+      try {
+        notification = await this.prisma.notification.create({
+          data: {
+            dedupeKey,
+            userId: input.recipientId,
+            notificationType: "chat.message.received",
+            title: input.senderName,
+            body: input.preview,
+            data: {
+              route: `/chat/${input.conversationId}`,
+              conversationId: input.conversationId,
+              messageId: input.messageId,
+            } as Prisma.InputJsonValue,
+            status: NotificationStatus.DISPATCHED,
+            pushStatus: NotificationPushStatus.PENDING,
+            dispatchedAt: new Date(),
+          },
+        });
+      } catch (error) {
+        if ((error as { code?: string }).code !== "P2002") throw error;
+        notification = await this.prisma.notification.findUnique({ where: { dedupeKey } });
+      }
+    }
+    if (!notification) return null;
+    if (!input.pushEnabled || notification.pushStatus === NotificationPushStatus.SENT || notification.pushStatus === NotificationPushStatus.SKIPPED) {
+      if (!input.pushEnabled && notification.pushStatus === NotificationPushStatus.PENDING) await this.prisma.notification.update({ where: { id: notification.id }, data: { pushStatus: NotificationPushStatus.SKIPPED } });
+      return notification;
+    }
+    try {
+      const push = await this.firebaseMessaging.sendToUsers([input.recipientId], {
+        notificationId: notification.id,
+        notificationType: "chat.message.received",
+        title: input.senderName,
+        body: input.preview,
+        data: {
+          route: `/chat/${input.conversationId}`,
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+        },
+      }, { throwOnTransientFailure: false });
+      await this.prisma.notification.update({
+        where: { id: notification.id },
+        data: {
+          pushStatus: !push.configured ? NotificationPushStatus.SKIPPED : push.failureCount ? NotificationPushStatus.FAILED : NotificationPushStatus.SENT,
+          pushAttemptedAt: new Date(),
+          pushFailureReason: push.failureCount ? `${push.failureCount} device deliveries failed` : null,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Chat FCM notification failed: ${String(error)}`);
+      await this.prisma.notification.update({
+        where: { id: notification.id },
+        data: { pushStatus: NotificationPushStatus.FAILED, pushAttemptedAt: new Date(), pushFailureReason: "Push delivery failed" },
+      }).catch(() => undefined);
+    }
+    return notification;
+  }
+
   pushStatus() {
     return this.firebaseMessaging.status();
   }

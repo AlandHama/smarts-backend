@@ -99,7 +99,24 @@ enum ChatConversationType {
 
 enum ChatMessageState {
   VISIBLE
+  FLAGGED
   REMOVED
+}
+
+enum ChatReportCategory {
+  HARASSMENT
+  HATE_THREATS
+  SEXUAL_UNSAFE
+  SPAM_SCAM
+  CHEATING_SOLICITATION
+  INAPPROPRIATE_LINK
+  OTHER
+}
+
+enum ChatReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
 }
 
 enum RewardGrantStatus {
@@ -530,13 +547,15 @@ model User {
   streakActivities           StreakActivity[]
   fraudProfile               FraudProfile?
   fraudSignals               FraudSignal[]
-  fraudCases                 FraudCase[]          @relation("FraudCasesForUser")
-  fraudCasesAssigned         FraudCase[]          @relation("FraudCaseAssignee")
-  fraudProfilesReviewed      FraudProfile[]       @relation("FraudProfileReviewer")
-  fraudActions               FraudAction[]        @relation("FraudActionActor")
-  fraudActionsForUser        FraudAction[]        @relation("FraudActionsForUser")
+  fraudCases                 FraudCase[]             @relation("FraudCasesForUser")
+  fraudCasesAssigned         FraudCase[]             @relation("FraudCaseAssignee")
+  fraudProfilesReviewed      FraudProfile[]          @relation("FraudProfileReviewer")
+  fraudActions               FraudAction[]           @relation("FraudActionActor")
+  fraudActionsForUser        FraudAction[]           @relation("FraudActionsForUser")
   chatParticipants           ChatParticipant[]
-  chatMessagesSent           ChatMessage[]        @relation("ChatMessageSender")
+  chatMessagesSent           ChatMessage[]           @relation("ChatMessageSender")
+  chatRestrictions           ChatRestriction[]
+  chatReportsFiled           ChatReport[]            @relation("ChatReportReporter")
 }
 
 /// A provider identity is linked to a local account after the provider token
@@ -622,28 +641,28 @@ model AppConfiguration {
 /// System Admin; milestone rows make each bonus auditable and independently
 /// editable without shipping a new mobile build.
 model StreakConfiguration {
-  id                  String            @id @default(uuid()) @db.Uuid
-  key                 String            @unique @default("default") @db.VarChar(40)
-  enabled             Boolean           @default(true)
-  qualifyingActivity  String            @default("MATCH_COMPLETED") @db.VarChar(40)
-  timezone            String            @default("UTC") @db.VarChar(40)
-  maxBonusPercent     Decimal           @default(30) @db.Decimal(20, 6)
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  milestones          StreakMilestone[]
+  id                 String            @id @default(uuid()) @db.Uuid
+  key                String            @unique @default("default") @db.VarChar(40)
+  enabled            Boolean           @default(true)
+  qualifyingActivity String            @default("MATCH_COMPLETED") @db.VarChar(40)
+  timezone           String            @default("UTC") @db.VarChar(40)
+  maxBonusPercent    Decimal           @default(30) @db.Decimal(20, 6)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  milestones         StreakMilestone[]
 }
 
 model StreakMilestone {
-  id              String             @id @default(uuid()) @db.Uuid
-  configurationId String             @db.Uuid
+  id              String              @id @default(uuid()) @db.Uuid
+  configurationId String              @db.Uuid
   day             Int
-  bonusPercent    Decimal            @db.Decimal(20, 6)
-  title           String?            @db.VarChar(120)
-  description     String?            @db.VarChar(300)
-  enabled         Boolean            @default(true)
-  sortOrder       Int                @default(0)
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  bonusPercent    Decimal             @db.Decimal(20, 6)
+  title           String?             @db.VarChar(120)
+  description     String?             @db.VarChar(300)
+  enabled         Boolean             @default(true)
+  sortOrder       Int                 @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
   configuration   StreakConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
 
   @@unique([configurationId, day])
@@ -651,16 +670,16 @@ model StreakMilestone {
 }
 
 model PlayerDailyStreak {
-  id                  String           @id @default(uuid()) @db.Uuid
-  userId              String           @unique @db.Uuid
-  currentDays         Int              @default(0)
-  longestDays         Int              @default(0)
-  lastQualifiedDate   DateTime?        @db.Date
-  lastQualifiedAt     DateTime?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
-  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  activities          StreakActivity[]
+  id                String           @id @default(uuid()) @db.Uuid
+  userId            String           @unique @db.Uuid
+  currentDays       Int              @default(0)
+  longestDays       Int              @default(0)
+  lastQualifiedDate DateTime?        @db.Date
+  lastQualifiedAt   DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities        StreakActivity[]
 
   @@index([lastQualifiedDate])
 }
@@ -669,15 +688,15 @@ model PlayerDailyStreak {
 /// audit record. A match may be settled more than once by retrying clients,
 /// but it can never advance a streak twice.
 model StreakActivity {
-  id             String            @id @default(uuid()) @db.Uuid
-  userId         String            @db.Uuid
-  streakId       String            @db.Uuid
-  activityType   String            @db.VarChar(40)
-  activityDate   DateTime          @db.Date
-  sourceId       String            @db.VarChar(255)
-  createdAt      DateTime          @default(now())
-  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  streak         PlayerDailyStreak @relation(fields: [streakId], references: [id], onDelete: Cascade)
+  id           String            @id @default(uuid()) @db.Uuid
+  userId       String            @db.Uuid
+  streakId     String            @db.Uuid
+  activityType String            @db.VarChar(40)
+  activityDate DateTime          @db.Date
+  sourceId     String            @db.VarChar(255)
+  createdAt    DateTime          @default(now())
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  streak       PlayerDailyStreak @relation(fields: [streakId], references: [id], onDelete: Cascade)
 
   @@unique([userId, activityType, activityDate])
   @@unique([userId, activityType, sourceId])
@@ -740,36 +759,38 @@ model FriendBlock {
 }
 
 model ChatConfiguration {
-  id                       String   @id @default(uuid()) @db.Uuid
-  key                      String   @unique @default("default") @db.VarChar(40)
-  enabled                  Boolean  @default(true)
-  retentionDays            Int      @default(7)
-  maxMessageLength        Int      @default(1000)
-  maxMessagesPerMinute    Int      @default(20)
-  maxMessagesPerDay       Int      @default(500)
-  typingEnabled           Boolean  @default(true)
-  readReceiptsEnabled     Boolean  @default(true)
-  pushNotificationsEnabled Boolean  @default(true)
-  friendChatOnly          Boolean  @default(true)
-  allowLinks              Boolean  @default(false)
-  maintenanceMessage      String?  @db.VarChar(300)
-  lastCleanupAt           DateTime?
-  lastCleanupDeleted      Int      @default(0)
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                       String    @id @default(uuid()) @db.Uuid
+  key                      String    @unique @default("default") @db.VarChar(40)
+  enabled                  Boolean   @default(true)
+  retentionDays            Int       @default(7)
+  maxMessageLength         Int       @default(1000)
+  maxMessagesPerMinute     Int       @default(20)
+  maxMessagesPerDay        Int       @default(500)
+  typingEnabled            Boolean   @default(true)
+  readReceiptsEnabled      Boolean   @default(true)
+  pushNotificationsEnabled Boolean   @default(true)
+  includeMessagePreview    Boolean   @default(false)
+  friendChatOnly           Boolean   @default(true)
+  allowLinks               Boolean   @default(false)
+  maintenanceMessage       String?   @db.VarChar(300)
+  lastCleanupAt            DateTime?
+  lastCleanupDeleted       Int       @default(0)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 }
 
 model ChatConversation {
-  id            String                 @id @default(uuid()) @db.Uuid
-  pairKey       String                 @unique @db.VarChar(80)
-  type          ChatConversationType   @default(DIRECT_FRIEND)
+  id            String               @id @default(uuid()) @db.Uuid
+  pairKey       String               @unique @db.VarChar(80)
+  type          ChatConversationType @default(DIRECT_FRIEND)
   lastMessageAt DateTime?
-  lastMessageId String?                @db.Uuid
+  lastMessageId String?              @db.Uuid
   archivedAt    DateTime?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
   participants  ChatParticipant[]
   messages      ChatMessage[]
+  reports       ChatReport[]
 
   @@index([lastMessageAt])
 }
@@ -789,21 +810,22 @@ model ChatParticipant {
 }
 
 model ChatMessage {
-  id               String           @id @default(uuid()) @db.Uuid
-  conversationId   String           @db.Uuid
-  senderId         String           @db.Uuid
-  sequence         Int
-  clientMessageId  String           @db.VarChar(120)
-  body             String           @db.Text
-  createdAt        DateTime         @default(now())
-  expiresAt        DateTime
-  editedAt         DateTime?
-  deletedAt        DateTime?
-  deletedBy        String?          @db.Uuid
-  moderationState  ChatMessageState  @default(VISIBLE)
-  metadata         Json?
-  conversation     ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender           User             @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  id              String           @id @default(uuid()) @db.Uuid
+  conversationId  String           @db.Uuid
+  senderId        String           @db.Uuid
+  sequence        Int
+  clientMessageId String           @db.VarChar(120)
+  body            String           @db.Text
+  createdAt       DateTime         @default(now())
+  expiresAt       DateTime
+  editedAt        DateTime?
+  deletedAt       DateTime?
+  deletedBy       String?          @db.Uuid
+  moderationState ChatMessageState @default(VISIBLE)
+  metadata        Json?
+  conversation    ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          User             @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  reports         ChatReport[]
 
   @@unique([conversationId, sequence])
   @@unique([senderId, clientMessageId])
@@ -811,6 +833,68 @@ model ChatMessage {
   @@index([expiresAt])
   @@index([senderId, createdAt])
   @@index([moderationState, createdAt])
+}
+
+/// A server-owned restriction. Rows are retained as moderation history; an
+/// active row has no revokedAt and either no expiry or an expiry in the future.
+model ChatRestriction {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @db.Uuid
+  reason          String    @db.VarChar(500)
+  restrictedUntil DateTime?
+  createdBy       String    @db.Uuid
+  revokedAt       DateTime?
+  revokedBy       String?   @db.Uuid
+  createdAt       DateTime  @default(now())
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, restrictedUntil])
+  @@index([createdAt])
+}
+
+/// Player-submitted reports are immutable submissions. Staff resolution is
+/// tracked on the same row without deleting the original report.
+model ChatReport {
+  id             String             @id @default(uuid()) @db.Uuid
+  dedupeKey      String             @unique @db.VarChar(255)
+  reporterId     String             @db.Uuid
+  conversationId String             @db.Uuid
+  messageId      String?            @db.Uuid
+  category       ChatReportCategory
+  reason         String?            @db.VarChar(500)
+  status         ChatReportStatus   @default(OPEN)
+  reviewedBy     String?            @db.Uuid
+  reviewedAt     DateTime?
+  resolutionNote String?            @db.VarChar(500)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  reporter       User               @relation("ChatReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  conversation   ChatConversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message        ChatMessage?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([messageId, createdAt])
+}
+
+/// Explicitly preserved moderation evidence. It is a snapshot so retention
+/// cleanup can remove the live message without destroying a case record.
+model ChatEvidence {
+  id               String    @id @default(uuid()) @db.Uuid
+  messageId        String    @db.Uuid
+  conversationId   String    @db.Uuid
+  senderId         String    @db.Uuid
+  body             String    @db.Text
+  messageCreatedAt DateTime
+  caseReference    String?   @db.VarChar(120)
+  reason           String    @db.VarChar(500)
+  preservedBy      String    @db.Uuid
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([messageId])
+  @@index([expiresAt])
 }
 
 /// One server-generated, shareable invitation code per player.
@@ -1140,20 +1224,20 @@ model CatalogItem {
 /// Player-to-player social gifts are intentionally independent from Commerce.
 /// A gift is a simple GLD transfer/burn definition, not a store entitlement.
 model SocialGiftDefinition {
-  id                    String       @id @default(uuid()) @db.Uuid
-  key                   String       @unique @db.VarChar(80)
-  name                  String       @db.VarChar(120)
-  icon                  String?      @db.VarChar(16)
-  description           String?      @db.Text
-  imageUrl              String?      @db.Text
-  priceGld              BigInt
-  priceGldDecimal       Decimal      @default(0) @db.Decimal(30, 6)
-  recipientRewardBps    Int          @default(5000)
-  active                Boolean      @default(true)
-  sortOrder             Int          @default(0)
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
-  gifts                 PlayerGift[]
+  id                 String       @id @default(uuid()) @db.Uuid
+  key                String       @unique @db.VarChar(80)
+  name               String       @db.VarChar(120)
+  icon               String?      @db.VarChar(16)
+  description        String?      @db.Text
+  imageUrl           String?      @db.Text
+  priceGld           BigInt
+  priceGldDecimal    Decimal      @default(0) @db.Decimal(30, 6)
+  recipientRewardBps Int          @default(5000)
+  active             Boolean      @default(true)
+  sortOrder          Int          @default(0)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  gifts              PlayerGift[]
 
   @@index([active, sortOrder])
 }
@@ -1394,28 +1478,28 @@ model IdempotencyKey {
 }
 
 model PlayerGift {
-  id               String         @id @default(uuid()) @db.Uuid
-  senderUserId     String         @db.Uuid
-  recipientUserId  String         @db.Uuid
-  catalogItemId    String?        @db.Uuid
-  socialGiftDefinitionId String?   @db.Uuid
-  gldPrice         BigInt
-  gldPriceDecimal  Decimal        @default(0) @db.Decimal(30, 6)
-  giftFeeAmount    BigInt         @default(0)
-  chargedAmount    BigInt         @default(0)
-  burnedAmount     BigInt
-  retainedAmount   BigInt
-  burnedAmountDecimal Decimal     @default(0) @db.Decimal(30, 6)
-  retainedAmountDecimal Decimal   @default(0) @db.Decimal(30, 6)
-  recipientAmount  Decimal        @default(0) @db.Decimal(30, 6)
-  recipientRewardBps Int           @default(0)
-  idempotencyKeyId String         @unique @db.Uuid
-  createdAt        DateTime       @default(now())
-  sender           User           @relation("SentGifts", fields: [senderUserId], references: [id])
-  recipient        User           @relation("ReceivedGifts", fields: [recipientUserId], references: [id])
-  catalogItem      CatalogItem?   @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
-  socialGiftDefinition SocialGiftDefinition? @relation(fields: [socialGiftDefinitionId], references: [id], onDelete: Restrict)
-  idempotencyKey   IdempotencyKey @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
+  id                     String                @id @default(uuid()) @db.Uuid
+  senderUserId           String                @db.Uuid
+  recipientUserId        String                @db.Uuid
+  catalogItemId          String?               @db.Uuid
+  socialGiftDefinitionId String?               @db.Uuid
+  gldPrice               BigInt
+  gldPriceDecimal        Decimal               @default(0) @db.Decimal(30, 6)
+  giftFeeAmount          BigInt                @default(0)
+  chargedAmount          BigInt                @default(0)
+  burnedAmount           BigInt
+  retainedAmount         BigInt
+  burnedAmountDecimal    Decimal               @default(0) @db.Decimal(30, 6)
+  retainedAmountDecimal  Decimal               @default(0) @db.Decimal(30, 6)
+  recipientAmount        Decimal               @default(0) @db.Decimal(30, 6)
+  recipientRewardBps     Int                   @default(0)
+  idempotencyKeyId       String                @unique @db.Uuid
+  createdAt              DateTime              @default(now())
+  sender                 User                  @relation("SentGifts", fields: [senderUserId], references: [id])
+  recipient              User                  @relation("ReceivedGifts", fields: [recipientUserId], references: [id])
+  catalogItem            CatalogItem?          @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  socialGiftDefinition   SocialGiftDefinition? @relation(fields: [socialGiftDefinitionId], references: [id], onDelete: Restrict)
+  idempotencyKey         IdempotencyKey        @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
 
   @@index([senderUserId, createdAt])
   @@index([recipientUserId, createdAt])
@@ -2179,43 +2263,43 @@ model FraudProfile {
 /// Admin-tunable deterministic detection rule. Rules are data so thresholds
 /// and score weights can be adjusted without shipping the mobile app.
 model FraudRule {
-  id             String        @id @default(uuid()) @db.Uuid
-  key            String        @unique @db.VarChar(80)
-  name           String        @db.VarChar(120)
-  description    String        @db.VarChar(500)
-  enabled        Boolean       @default(true)
-  scoreDelta     Int           @default(10)
-  threshold      Int?
-  windowSeconds  Int?
-  decayDays      Int           @default(30)
-  autoOpenScore  Int?
-  metadata       Json?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  signals        FraudSignal[]
+  id            String        @id @default(uuid()) @db.Uuid
+  key           String        @unique @db.VarChar(80)
+  name          String        @db.VarChar(120)
+  description   String        @db.VarChar(500)
+  enabled       Boolean       @default(true)
+  scoreDelta    Int           @default(10)
+  threshold     Int?
+  windowSeconds Int?
+  decayDays     Int           @default(30)
+  autoOpenScore Int?
+  metadata      Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  signals       FraudSignal[]
 
   @@index([enabled, key])
 }
 
 /// One explainable observation emitted by an authoritative backend event.
 model FraudSignal {
-  id          String             @id @default(uuid()) @db.Uuid
-  userId      String             @db.Uuid
-  ruleId      String?            @db.Uuid
-  type        String             @db.VarChar(80)
-  severity    FraudRiskLevel     @default(LOW)
-  scoreDelta  Int                @default(0)
-  sourceType  String             @db.VarChar(80)
-  sourceId    String?            @db.VarChar(255)
-  dedupeKey   String             @unique @db.VarChar(255)
-  metadata    Json?
-  status      FraudSignalStatus  @default(ACTIVE)
-  occurredAt  DateTime           @default(now())
-  expiresAt   DateTime?
-  resolvedAt  DateTime?
-  createdAt   DateTime           @default(now())
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rule        FraudRule?         @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  id         String            @id @default(uuid()) @db.Uuid
+  userId     String            @db.Uuid
+  ruleId     String?           @db.Uuid
+  type       String            @db.VarChar(80)
+  severity   FraudRiskLevel    @default(LOW)
+  scoreDelta Int               @default(0)
+  sourceType String            @db.VarChar(80)
+  sourceId   String?           @db.VarChar(255)
+  dedupeKey  String            @unique @db.VarChar(255)
+  metadata   Json?
+  status     FraudSignalStatus @default(ACTIVE)
+  occurredAt DateTime          @default(now())
+  expiresAt  DateTime?
+  resolvedAt DateTime?
+  createdAt  DateTime          @default(now())
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rule       FraudRule?        @relation(fields: [ruleId], references: [id], onDelete: SetNull)
 
   @@index([userId, status, occurredAt])
   @@index([type, occurredAt])
@@ -2223,21 +2307,21 @@ model FraudSignal {
 }
 
 model FraudCase {
-  id             String          @id @default(uuid()) @db.Uuid
-  userId         String          @db.Uuid
-  status         FraudCaseStatus  @default(OPEN)
-  scoreAtOpen    Int
-  reason         String          @db.VarChar(500)
+  id              String          @id @default(uuid()) @db.Uuid
+  userId          String          @db.Uuid
+  status          FraudCaseStatus @default(OPEN)
+  scoreAtOpen     Int
+  reason          String          @db.VarChar(500)
   assignedAdminId String?         @db.Uuid
-  openedAt       DateTime        @default(now())
-  closedAt       DateTime?
-  resolution     String?         @db.VarChar(500)
-  notes          String?         @db.Text
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  user           User            @relation("FraudCasesForUser", fields: [userId], references: [id], onDelete: Cascade)
-  assignedAdmin  User?           @relation("FraudCaseAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
-  actions        FraudAction[]
+  openedAt        DateTime        @default(now())
+  closedAt        DateTime?
+  resolution      String?         @db.VarChar(500)
+  notes           String?         @db.Text
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  user            User            @relation("FraudCasesForUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedAdmin   User?           @relation("FraudCaseAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  actions         FraudAction[]
 
   @@index([status, openedAt])
   @@index([userId, status])
@@ -2245,17 +2329,17 @@ model FraudCase {
 }
 
 model FraudAction {
-  id          String          @id @default(uuid()) @db.Uuid
-  caseId      String?         @db.Uuid
-  userId      String          @db.Uuid
-  actorId     String          @db.Uuid
-  action      FraudActionType
-  reason      String          @db.VarChar(500)
-  metadata    Json?
-  createdAt   DateTime        @default(now())
-  fraudCase   FraudCase?      @relation(fields: [caseId], references: [id], onDelete: SetNull)
-  user        User            @relation("FraudActionsForUser", fields: [userId], references: [id], onDelete: Cascade)
-  actor       User            @relation("FraudActionActor", fields: [actorId], references: [id], onDelete: Restrict)
+  id        String          @id @default(uuid()) @db.Uuid
+  caseId    String?         @db.Uuid
+  userId    String          @db.Uuid
+  actorId   String          @db.Uuid
+  action    FraudActionType
+  reason    String          @db.VarChar(500)
+  metadata  Json?
+  createdAt DateTime        @default(now())
+  fraudCase FraudCase?      @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  user      User            @relation("FraudActionsForUser", fields: [userId], references: [id], onDelete: Cascade)
+  actor     User            @relation("FraudActionActor", fields: [actorId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([caseId, createdAt])
@@ -2568,6 +2652,7 @@ model AdMobReportRow {
 
 model Notification {
   id                String                 @id @default(uuid()) @db.Uuid
+  dedupeKey         String?                @unique @db.VarChar(255)
   userId            String?                @db.Uuid
   outboxEventId     String?                @db.Uuid
   broadcastId       String?                @db.Uuid
