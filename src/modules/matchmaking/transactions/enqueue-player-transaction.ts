@@ -17,6 +17,9 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const dto = input.dto
     const mode = dto.mode as MatchmakingTicketMode
     if (mode !== MatchmakingTicketMode.CASUAL && mode !== MatchmakingTicketMode.RANKED) throw new BadRequestException("Only casual and ranked queue modes are supported")
+    const requestedGameKey = dto.gameKey.trim().toLowerCase()
+    const randomCasual = requestedGameKey === "random"
+    if (randomCasual && mode !== MatchmakingTicketMode.CASUAL) throw new BadRequestException("Random game selection is only available for casual matchmaking")
     const key = dto.idempotencyKey?.trim()
     const scope = `matchmaking:enqueue:${input.userId}`
     const requestHash = createHash("sha256").update(JSON.stringify({ gameKey: dto.gameKey.trim().toLowerCase(), mode, allowBotFallback: Boolean(dto.allowBotFallback), rankingConfigId: dto.rankingConfigId ?? null, clientVersion: dto.clientVersion?.trim() || null, constraints: dto.constraints ?? null })).digest("hex")
@@ -32,7 +35,17 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const now = new Date()
     const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { id: true, status: true, profile: { select: { level: true, elo: true, countryCode: true } } } })
     if (!user || user.status !== "ACTIVE") throw new BadRequestException("Player is not active")
-    const game = await transaction.gameDefinition.findUnique({ where: { key: dto.gameKey.trim().toLowerCase() }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
+    // MatchmakingTicket keeps a required game relation for legacy/reporting
+    // compatibility. Random casual tickets use a valid active game as a
+    // placeholder; the matcher replaces it with a server-selected game after
+    // two random tickets are paired.
+    const game = randomCasual
+      ? await transaction.gameDefinition.findFirst({
+          where: { active: true, configs: { some: { active: true } }, content: { some: { active: true } } },
+          orderBy: { key: "asc" },
+          include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
+        })
+      : await transaction.gameDefinition.findUnique({ where: { key: requestedGameKey }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     const config = game?.configs[0]
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
@@ -49,7 +62,10 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
       const feeMicros = rankingConfig.entryFeeGldMicros || rankingConfig.entryFeeGld * 1_000_000n
       if (rankingConfig.stakeAmountGld <= 0n || feeMicros < 0n || feeMicros >= rankingConfig.stakeAmountGld * 1_000_000n) throw new BadRequestException("Ranking entry tier is invalid")
     }
-    if (dto.constraints && (Object.keys(dto.constraints).length > 12 || JSON.stringify(dto.constraints).length > 2000)) throw new BadRequestException("Matchmaking constraints are too large")
+    const queueConstraints = randomCasual
+      ? { ...(dto.constraints ?? {}), randomGame: true }
+      : dto.constraints
+    if (queueConstraints && (Object.keys(queueConstraints).length > 12 || JSON.stringify(queueConstraints).length > 2000)) throw new BadRequestException("Matchmaking constraints are too large")
 
     // Serialize queue creation per player. Without this lock two quick taps
     // or two app retries can both observe no ticket and leave duplicate
@@ -102,7 +118,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
       levelSnapshot: user.profile?.level ?? 1,
       eloSnapshot: BigInt(user.profile?.elo ?? 1000),
       countryCodeSnapshot: user.profile?.countryCode?.trim().toUpperCase() || null,
-      constraints: dto.constraints as Prisma.InputJsonValue | undefined,
+      constraints: queueConstraints as Prisma.InputJsonValue | undefined,
       clientVersion: dto.clientVersion?.trim() || null,
       allowBotFallback: mode === MatchmakingTicketMode.CASUAL && Boolean(dto.allowBotFallback),
       rankingConfigId: rankingConfig?.id,

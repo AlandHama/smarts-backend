@@ -33,6 +33,10 @@ type TicketRow = {
   createdAt: Date;
 };
 
+function isRandomCasualTicket(ticket: Pick<TicketRow, "constraints" | "isRankingMatch">) {
+  return !ticket.isRankingMatch && Boolean(ticket.constraints && typeof ticket.constraints === "object" && !Array.isArray(ticket.constraints) && (ticket.constraints as Record<string, unknown>).randomGame === true);
+}
+
 @Injectable()
 export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
   void,
@@ -71,7 +75,10 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
               AND candidate."isRankingMatch" = ticket."isRankingMatch"
               AND (
                 ticket."isRankingMatch" = true
-                OR candidate."gameDefinitionId" = ticket."gameDefinitionId"
+                OR (
+                  (ticket."constraints"->>'randomGame' = 'true' AND candidate."constraints"->>'randomGame' = 'true')
+                  OR (COALESCE(ticket."constraints"->>'randomGame', 'false') <> 'true' AND COALESCE(candidate."constraints"->>'randomGame', 'false') <> 'true' AND candidate."gameDefinitionId" = ticket."gameDefinitionId")
+                )
               )
               AND (
                 ticket."isRankingMatch" = false
@@ -98,10 +105,15 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         AND "id" <> ${first.id}
         AND "userId" <> ${first.userId}
         -- Ranked matches can be entered from different client-selected game
-        -- cards. The first ticket's game is authoritative for the pair; the
-        -- matched ticket is normalized to it below before either client polls
-        -- the result.
-        AND (${first.isRankingMatch} = true OR "gameDefinitionId" = ${first.gameDefinitionId})
+        -- cards. Random casual tickets form their own server-wide pool; the
+        -- game is selected only after two random players are paired.
+        AND (
+          ${first.isRankingMatch} = true
+          OR (
+            (${isRandomCasualTicket(first)} AND "constraints"->>'randomGame' = 'true')
+            OR (${!isRandomCasualTicket(first)} AND COALESCE("constraints"->>'randomGame', 'false') <> 'true' AND "gameDefinitionId" = ${first.gameDefinitionId})
+          )
+        )
         AND "mode"::text = ${first.mode}
         AND "isRankingMatch" = ${first.isRankingMatch}
         AND (${first.isRankingMatch} = false OR "rankingConfigId" = ${first.rankingConfigId})
@@ -123,16 +135,18 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     )
       return null;
     const now = new Date();
-    const game = await transaction.gameDefinition.findUnique({
-      where: { id: first.gameDefinitionId },
-      include: {
-        configs: {
-          where: { active: true },
-          orderBy: { version: "desc" },
-          take: 1,
-        },
-      },
-    });
+    const gameCandidates = isRandomCasualTicket(first)
+      ? await transaction.gameDefinition.findMany({
+          where: { active: true, configs: { some: { active: true } }, content: { some: { active: true } } },
+          include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
+        })
+      : [await transaction.gameDefinition.findUnique({
+          where: { id: first.gameDefinitionId },
+          include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
+        })].filter((value): value is NonNullable<typeof value> => value !== null);
+    const game = gameCandidates.length
+      ? gameCandidates[Math.floor(Math.random() * gameCandidates.length)]
+      : null;
     const config = game?.configs[0];
     if (!game || !config) return null;
     // Provision the human assignments in the same transaction as the match.

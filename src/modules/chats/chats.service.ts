@@ -368,13 +368,27 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
       messageId: message.id,
       conversationId,
       senderName: message.sender?.profile?.displayName || message.sender?.username || "New message",
-      preview: (preview?.trim() || message.body).slice(0, 160),
+      preview: this.chatNotificationPreview(preview?.trim() || message.body),
       enabled: !this.chatPresence.isActive(recipientId, conversationId) && (() => {
         const mutedUntil = participantMutedUntil ?? message.conversation?.participants?.find((row: any) => row.userId === recipientId)?.mutedUntil
         return !mutedUntil || mutedUntil <= new Date()
       })(),
       pushEnabled: config.pushNotificationsEnabled,
     })
+  }
+
+  private chatNotificationPreview(body: string) {
+    const fallback = body.slice(0, 160)
+    if (!body.startsWith("smarts-event:")) return fallback
+    try {
+      const event = JSON.parse(body.slice("smarts-event:".length)) as Record<string, unknown>
+      const targetName = String(event.targetName || "a player")
+      if (event.type === "gld_transfer") return `Sent ${String(event.amount || "")} GLD to ${targetName}`.slice(0, 160)
+      if (event.type === "game_invite") return `Invited ${targetName} to play ${String(event.gameName || "a game")}`.slice(0, 160)
+    } catch (_) {
+      // Keep a safe preview if an older client sent malformed event data.
+    }
+    return fallback
   }
 
   async reportMessage(userId: string, conversationId: string, messageId: string, dto: ReportChatMessageDto) {
