@@ -93,6 +93,15 @@ enum MissionStatus {
   CLAIMED
 }
 
+enum ChatConversationType {
+  DIRECT_FRIEND
+}
+
+enum ChatMessageState {
+  VISIBLE
+  REMOVED
+}
+
 enum RewardGrantStatus {
   GRANTED
   PENDING
@@ -526,6 +535,8 @@ model User {
   fraudProfilesReviewed      FraudProfile[]       @relation("FraudProfileReviewer")
   fraudActions               FraudAction[]        @relation("FraudActionActor")
   fraudActionsForUser        FraudAction[]        @relation("FraudActionsForUser")
+  chatParticipants           ChatParticipant[]
+  chatMessagesSent           ChatMessage[]        @relation("ChatMessageSender")
 }
 
 /// A provider identity is linked to a local account after the provider token
@@ -726,6 +737,80 @@ model FriendBlock {
 
   @@unique([blockerId, blockedId])
   @@index([blockedId])
+}
+
+model ChatConfiguration {
+  id                       String   @id @default(uuid()) @db.Uuid
+  key                      String   @unique @default("default") @db.VarChar(40)
+  enabled                  Boolean  @default(true)
+  retentionDays            Int      @default(7)
+  maxMessageLength        Int      @default(1000)
+  maxMessagesPerMinute    Int      @default(20)
+  maxMessagesPerDay       Int      @default(500)
+  typingEnabled           Boolean  @default(true)
+  readReceiptsEnabled     Boolean  @default(true)
+  pushNotificationsEnabled Boolean  @default(true)
+  friendChatOnly          Boolean  @default(true)
+  allowLinks              Boolean  @default(false)
+  maintenanceMessage      String?  @db.VarChar(300)
+  lastCleanupAt           DateTime?
+  lastCleanupDeleted      Int      @default(0)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model ChatConversation {
+  id            String                 @id @default(uuid()) @db.Uuid
+  pairKey       String                 @unique @db.VarChar(80)
+  type          ChatConversationType   @default(DIRECT_FRIEND)
+  lastMessageAt DateTime?
+  lastMessageId String?                @db.Uuid
+  archivedAt    DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  participants  ChatParticipant[]
+  messages      ChatMessage[]
+
+  @@index([lastMessageAt])
+}
+
+model ChatParticipant {
+  id               String           @id @default(uuid()) @db.Uuid
+  conversationId   String           @db.Uuid
+  userId           String           @db.Uuid
+  lastReadSequence Int              @default(0)
+  mutedUntil       DateTime?
+  joinedAt         DateTime         @default(now())
+  conversation     ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId, joinedAt])
+}
+
+model ChatMessage {
+  id               String           @id @default(uuid()) @db.Uuid
+  conversationId   String           @db.Uuid
+  senderId         String           @db.Uuid
+  sequence         Int
+  clientMessageId  String           @db.VarChar(120)
+  body             String           @db.Text
+  createdAt        DateTime         @default(now())
+  expiresAt        DateTime
+  editedAt         DateTime?
+  deletedAt        DateTime?
+  deletedBy        String?          @db.Uuid
+  moderationState  ChatMessageState  @default(VISIBLE)
+  metadata         Json?
+  conversation     ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender           User             @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, sequence])
+  @@unique([senderId, clientMessageId])
+  @@index([conversationId, createdAt])
+  @@index([expiresAt])
+  @@index([senderId, createdAt])
+  @@index([moderationState, createdAt])
 }
 
 /// One server-generated, shareable invitation code per player.

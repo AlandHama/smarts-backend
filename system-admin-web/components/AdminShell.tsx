@@ -48,6 +48,7 @@ export type AdminView =
   | "player360"
   | "sessions"
   | "friends"
+  | "chats"
   | "player-audits"
   | "matches"
   | "match360"
@@ -90,6 +91,11 @@ const navigation = [
     key: "friends" as const,
     label: "Friends & presence",
     icon: <PeopleAltRoundedIcon />,
+  },
+  {
+    key: "chats" as const,
+    label: "Friend chats",
+    icon: <ForumRoundedIcon />,
   },
   {
     key: "player-audits" as const,

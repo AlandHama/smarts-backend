@@ -46,6 +46,7 @@ import { NotificationsView } from "../components/NotificationsView";
 import { MissionsAchievementsView } from "../components/MissionsAchievementsView";
 import { FraudView } from "../components/FraudView";
 import { StreaksView } from "../components/StreaksView";
+import { ChatsView } from "../components/ChatsView";
 import { api, clearSession, hasSession, login } from "../lib/api";
 import { adminTheme } from "../lib/theme";
 
@@ -58,6 +59,7 @@ const viewPaths: Record<
   players: "/players/",
   sessions: "/sessions/",
   friends: "/friends/",
+  chats: "/chats/",
   "player-audits": "/player-audits/",
   matches: "/matches/",
   progressions: "/progressions/",
@@ -187,6 +189,7 @@ export default function AdminPage() {
           )}
           {view === "sessions" && <SessionsView />}
           {view === "friends" && <FriendsView />}
+          {view === "chats" && <ChatsView />}
           {view === "player-audits" && (
             <PlayerAuditsView onOpenPlayer360={openPlayer360} />
           )}
