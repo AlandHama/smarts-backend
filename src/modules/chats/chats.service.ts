@@ -240,7 +240,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     const existing = await this.prisma.chatMessage.findUnique({ where: { senderId_clientMessageId: { senderId: userId, clientMessageId } }, include: { sender: { select: publicUserSelect }, conversation: { include: { participants: true } } } })
     if (existing) {
       const recipient = existing.conversation.participants.find((row) => row.userId !== userId)
-      if (recipient) void this.notifyMessage(config, existing, recipient.userId, existing.conversationId, config.includeMessagePreview ? existing.body : undefined).catch((error) => this.logger.warn(`Chat notification failed: ${String(error)}`))
+      if (recipient) void this.notifyMessage(config, existing, recipient.userId, existing.conversationId, existing.body).catch((error) => this.logger.warn(`Chat notification failed: ${String(error)}`))
       return this.serializeMessage(existing)
     }
 
@@ -272,7 +272,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
       return created
     })
     if (recipient) {
-      void this.notifyMessage(config, message, recipient.userId, conversationId, config.includeMessagePreview ? cleanBody : undefined, recipient.mutedUntil).catch((error) => this.logger.warn(`Chat notification failed: ${String(error)}`))
+      void this.notifyMessage(config, message, recipient.userId, conversationId, cleanBody, recipient.mutedUntil).catch((error) => this.logger.warn(`Chat notification failed: ${String(error)}`))
     }
     return this.serializeMessage(message)
   }
@@ -283,7 +283,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
       messageId: message.id,
       conversationId,
       senderName: message.sender?.profile?.displayName || message.sender?.username || "New message",
-      preview: (preview ?? "You have a new message. Tap to open the chat.").slice(0, 160),
+      preview: (preview?.trim() || message.body).slice(0, 160),
       enabled: !this.chatPresence.isActive(recipientId, conversationId) && (() => {
         const mutedUntil = participantMutedUntil ?? message.conversation?.participants?.find((row: any) => row.userId === recipientId)?.mutedUntil
         return !mutedUntil || mutedUntil <= new Date()
