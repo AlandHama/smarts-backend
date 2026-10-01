@@ -23,6 +23,8 @@ export type PushDeliveryResult = {
 @Injectable()
 export class FirebaseMessagingService {
   private readonly logger = new Logger(FirebaseMessagingService.name);
+  private static readonly generalChannelId = "smarts_notifications_v2";
+  private static readonly chatChannelId = "smarts_chat_messages_v1";
   private app?: App;
 
   constructor(private readonly prisma: PrismaService) {}
@@ -88,13 +90,16 @@ export class FirebaseMessagingService {
 
     for (let offset = 0; offset < devices.length; offset += 500) {
       const batch = devices.slice(offset, offset + 500);
+      const channelId = message.notificationType === "chat.message.received"
+        ? FirebaseMessagingService.chatChannelId
+        : FirebaseMessagingService.generalChannelId;
       const payload: MulticastMessage = {
         tokens: batch.map((device) => device.token),
         notification: { title: message.title, body: message.body },
         android: {
           priority: "high",
           notification: {
-            channelId: "smarts_notifications_v2",
+            channelId,
             icon: "ic_notification_small",
             sound: "default",
           },
