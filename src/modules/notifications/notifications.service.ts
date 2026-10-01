@@ -145,7 +145,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   /** Durable inbox + push notification for the independent support center. */
   async createSupportNotification(input: {
     recipientId: string;
-    ticketId: string;
+    ticketId?: string;
+    route?: string;
+    extraData?: Record<string, string>;
     notificationType: string;
     title: string;
     body: string;
@@ -153,7 +155,14 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     pushEnabled: boolean;
   }) {
     if (!input.enabled) return null;
-    const dedupeKey = `support:${input.notificationType}:${input.ticketId}:${input.recipientId}:${Date.now()}`;
+    const resourceId = input.ticketId ?? input.extraData?.sessionId ?? "support";
+    const route = input.route ?? `/support/tickets/${resourceId}`;
+    const data = {
+      route,
+      ...(input.ticketId ? { ticketId: input.ticketId } : {}),
+      ...(input.extraData ?? {}),
+    };
+    const dedupeKey = `support:${input.notificationType}:${resourceId}:${input.recipientId}:${Date.now()}`;
     const notification = await this.prisma.notification.create({
       data: {
         dedupeKey,
@@ -162,8 +171,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         title: input.title,
         body: input.body.slice(0, 500),
         data: {
-          route: `/support/tickets/${input.ticketId}`,
-          ticketId: input.ticketId,
+          ...data,
         } as Prisma.InputJsonValue,
         status: NotificationStatus.DISPATCHED,
         pushStatus: input.pushEnabled ? NotificationPushStatus.PENDING : NotificationPushStatus.SKIPPED,
@@ -177,7 +185,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         notificationType: input.notificationType,
         title: input.title,
         body: input.body.slice(0, 500),
-        data: { route: `/support/tickets/${input.ticketId}`, ticketId: input.ticketId },
+        data,
       }, { throwOnTransientFailure: false });
       await this.prisma.notification.update({ where: { id: notification.id }, data: { pushStatus: !push.configured ? NotificationPushStatus.SKIPPED : push.failureCount ? NotificationPushStatus.FAILED : NotificationPushStatus.SENT, pushAttemptedAt: new Date(), pushFailureReason: push.failureCount ? `${push.failureCount} device deliveries failed` : null } });
     } catch (error) {

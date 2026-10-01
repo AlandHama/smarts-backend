@@ -44,7 +44,7 @@ export class SupportService implements OnModuleInit {
       this.unreadCount(userId),
       this.prisma.supportAgent.findUnique({ where: { userId }, select: { id: true, level: true, status: true, revokedAt: true } }),
     ])
-    return { enabled: config.enabled, maintenanceMessage: config.maintenanceMessage, categories, openTicketCount: openCount, unreadTicketCount: unreadCount, canWorkTickets: Boolean(agent && !agent.revokedAt && agent.status !== SupportAgentStatus.SUSPENDED), agent: agent && !agent.revokedAt ? { id: agent.id, level: agent.level, status: agent.status } : null }
+    return { enabled: config.enabled, liveChatEnabled: config.liveChatEnabled, liveChatPriceGld: config.liveChatPriceGld.toString(), liveChatCurrencyCode: config.liveChatCurrencyCode, maintenanceMessage: config.maintenanceMessage, categories, openTicketCount: openCount, unreadTicketCount: unreadCount, canWorkTickets: Boolean(agent && !agent.revokedAt && agent.status !== SupportAgentStatus.SUSPENDED), canWorkLiveChats: Boolean(agent && !agent.revokedAt && agent.status !== SupportAgentStatus.SUSPENDED), agent: agent && !agent.revokedAt ? { id: agent.id, level: agent.level, status: agent.status } : null }
   }
 
   async listCategories(includeInactive = false) {
@@ -199,7 +199,7 @@ export class SupportService implements OnModuleInit {
     await this.requireSystemAdmin(adminId)
     const user = await this.prisma.user.findUnique({ where: { id: dto.userId }, select: { id: true, status: true } })
     if (!user || user.status !== "ACTIVE") throw new BadRequestException("Active player not found")
-    return this.prisma.supportAgent.upsert({ where: { userId: dto.userId }, create: { userId: dto.userId, level: (dto.level as SupportAgentLevel) ?? SupportAgentLevel.AGENT, maxConcurrentTickets: dto.maxConcurrentTickets ?? 10, grantedById: adminId }, update: { level: (dto.level as SupportAgentLevel) ?? undefined, maxConcurrentTickets: dto.maxConcurrentTickets ?? undefined, revokedAt: null, revokedById: null, status: SupportAgentStatus.OFFLINE, grantedById: adminId, grantedAt: new Date() }, include: { user: { select: { id: true, username: true, firstName: true, lastName: true } } } })
+    return this.prisma.supportAgent.upsert({ where: { userId: dto.userId }, create: { userId: dto.userId, level: (dto.level as SupportAgentLevel) ?? SupportAgentLevel.AGENT, maxConcurrentTickets: dto.maxConcurrentTickets ?? 10, maxConcurrentLiveChats: dto.maxConcurrentLiveChats ?? 2, grantedById: adminId }, update: { level: (dto.level as SupportAgentLevel) ?? undefined, maxConcurrentTickets: dto.maxConcurrentTickets ?? undefined, maxConcurrentLiveChats: dto.maxConcurrentLiveChats ?? undefined, revokedAt: null, revokedById: null, status: SupportAgentStatus.OFFLINE, grantedById: adminId, grantedAt: new Date() }, include: { user: { select: { id: true, username: true, firstName: true, lastName: true } } } })
   }
 
   async updateAgent(adminId: string, agentId: string, dto: UpdateSupportAgentDto) {

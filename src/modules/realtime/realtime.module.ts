@@ -5,10 +5,11 @@ import { DatabaseModule } from "../../database/database.module"
 import { MatchesModule } from "../matches/matches.module"
 import { MatchmakingModule } from "../matchmaking/matchmaking.module"
 import { ChatsModule } from "../chats/chats.module"
+import { SupportModule } from "../support/support.module"
 import { RealtimeGateway } from "./realtime.gateway"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, MatchesModule, MatchmakingModule, ChatsModule],
+  imports: [DatabaseModule, AuthModule, MatchesModule, MatchmakingModule, ChatsModule, SupportModule],
   providers: [RealtimeGateway],
 })
 export class RealtimeModule {}

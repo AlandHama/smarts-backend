@@ -4,15 +4,16 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger"
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { SystemAdminGuard } from "../system-admin/system-admin.guard"
-import { CreateSupportCategoryDto, GrantSupportAgentDto, SupportListQueryDto, SupportTicketMessageDto, SupportTicketStatusUpdateDto, UpdateSupportAgentDto, UpdateSupportCategoryDto, UpdateSupportConfigurationDto } from "./dtos"
+import { CreateSupportCategoryDto, GrantSupportAgentDto, LiveChatListQueryDto, LiveChatRefundDto, SupportListQueryDto, SupportTicketMessageDto, SupportTicketStatusUpdateDto, UpdateSupportAgentDto, UpdateSupportCategoryDto, UpdateSupportConfigurationDto } from "./dtos"
 import { SupportService } from "./support.service"
+import { SupportLiveChatService } from "./support-live-chat.service"
 
 @ApiTags("System admin support center")
 @ApiBearerAuth("access-token")
 @UseGuards(SystemAdminGuard)
 @Controller("system-admin/api/support")
 export class SupportAdminController {
-  constructor(private readonly support: SupportService) {}
+  constructor(private readonly support: SupportService, private readonly liveChat: SupportLiveChatService) {}
 
   @Get("configuration") configuration() { return this.support.getConfiguration() }
   @Patch("configuration") updateConfiguration(@CurrentUser() admin: UserResponseDto, @Body() dto: UpdateSupportConfigurationDto) { return this.support.updateConfiguration(admin.id, dto) }
@@ -30,4 +31,8 @@ export class SupportAdminController {
   @Post("tickets/:ticketId/assign") assign(@CurrentUser() admin: UserResponseDto, @Param("ticketId", ParseUUIDPipe) ticketId: string, @Body() dto: { agentId: string; reason?: string }) { return this.support.assign(admin.id, ticketId, dto.agentId, dto.reason) }
   @Patch("tickets/:ticketId/status") status(@CurrentUser() admin: UserResponseDto, @Param("ticketId", ParseUUIDPipe) ticketId: string, @Body() dto: SupportTicketStatusUpdateDto) { return this.support.updateTicketStatus(admin.id, ticketId, dto, true) }
   @Post("retention/run") retention(@CurrentUser() admin: UserResponseDto) { return this.support.runRetentionCleanup(admin.id) }
+  @Get("live-chats") liveChats(@Query() query: LiveChatListQueryDto) { return this.liveChat.adminList(query) }
+  @Get("live-chats/:sessionId") liveChatDetail(@CurrentUser() admin: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string) { return this.liveChat.get(admin.id, sessionId, true) }
+  @Post("live-chats/:sessionId/refund") refund(@CurrentUser() admin: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string, @Body() dto: LiveChatRefundDto) { return this.liveChat.adminRefund(admin.id, sessionId, dto) }
+  @Post("live-chats/refund-sweep") refundSweep(@CurrentUser() admin: UserResponseDto) { return this.liveChat.runNoAgentRefunds(admin.id) }
 }

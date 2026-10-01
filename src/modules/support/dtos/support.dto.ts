@@ -5,6 +5,7 @@ export enum SupportPriorityDto { LOW = "LOW", NORMAL = "NORMAL", HIGH = "HIGH", 
 export enum SupportStatusDto { OPEN = "OPEN", TRIAGED = "TRIAGED", ASSIGNED = "ASSIGNED", WAITING_FOR_PLAYER = "WAITING_FOR_PLAYER", WAITING_FOR_SUPPORT = "WAITING_FOR_SUPPORT", ESCALATED = "ESCALATED", RESOLVED = "RESOLVED", CLOSED = "CLOSED", REOPENED = "REOPENED" }
 export enum SupportAgentLevelDto { AGENT = "AGENT", SENIOR = "SENIOR", SUPERVISOR = "SUPERVISOR" }
 export enum SupportAgentStatusDto { OFFLINE = "OFFLINE", AVAILABLE = "AVAILABLE", BUSY = "BUSY", SUSPENDED = "SUSPENDED" }
+export enum SupportLiveChatStatusDto { PAYMENT_PENDING = "PAYMENT_PENDING", QUEUED = "QUEUED", ASSIGNED = "ASSIGNED", ACTIVE = "ACTIVE", PAUSED = "PAUSED", WAITING_FOR_PLAYER = "WAITING_FOR_PLAYER", ENDED = "ENDED", REFUND_PENDING = "REFUND_PENDING", REFUNDED = "REFUNDED", EXPIRED = "EXPIRED" }
 
 export class CreateSupportTicketDto {
   @IsUUID() categoryId!: string
@@ -40,6 +41,26 @@ export class SupportTicketStatusUpdateDto {
   @IsOptional() @IsString() @MaxLength(1000) note?: string
 }
 
+export class StartLiveChatDto {
+  @IsUUID() quoteId!: string
+  @IsString() @MinLength(8) @MaxLength(120) idempotencyKey!: string
+}
+
+export class LiveChatMessageDto {
+  @IsString() @MinLength(1) @MaxLength(4000) body!: string
+  @IsString() @MinLength(1) @MaxLength(120) clientMessageId!: string
+}
+
+export class LiveChatStatusUpdateDto {
+  @IsEnum(SupportLiveChatStatusDto) status!: SupportLiveChatStatusDto
+}
+
+export class LiveChatListQueryDto {
+  @IsOptional() @IsEnum(SupportLiveChatStatusDto) status?: SupportLiveChatStatusDto
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 50
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) offset = 0
+}
+
 export class SupportAssignDto {
   @IsUUID() agentId!: string
   @IsOptional() @IsString() @MaxLength(500) reason?: string
@@ -58,6 +79,15 @@ export class UpdateSupportConfigurationDto {
   @IsOptional() @IsBoolean() pushNotificationsEnabled?: boolean
   @IsOptional() @IsBoolean() liveChatEnabled?: boolean
   @IsOptional() @IsString() @MaxLength(40) liveChatPriceGld?: string
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(240) liveChatSessionMinutes?: number
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(120) liveChatGraceMinutes?: number
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(10000) maxLiveChatQueueSize?: number
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(1440) autoCloseInactiveMinutes?: number
+  @IsOptional() @IsBoolean() refundOnNoAgentConnection?: boolean
+  @IsOptional() @IsBoolean() refundOnSystemFailure?: boolean
+  @IsOptional() @IsBoolean() refundOnAgentCancellation?: boolean
+  @IsOptional() @IsBoolean() requirePlayerRating?: boolean
+  @IsOptional() @IsString() @MaxLength(16) liveChatCurrencyCode?: string
 }
 
 export class CreateSupportCategoryDto {
@@ -76,6 +106,7 @@ export class GrantSupportAgentDto {
   @IsUUID() userId!: string
   @IsOptional() @IsEnum(SupportAgentLevelDto) level?: SupportAgentLevelDto
   @IsOptional() @IsInt() @Min(1) @Max(1000) @Type(() => Number) maxConcurrentTickets?: number
+  @IsOptional() @IsInt() @Min(1) @Max(100) @Type(() => Number) maxConcurrentLiveChats?: number
 }
 
 export class UpdateSupportAgentDto {
@@ -83,4 +114,9 @@ export class UpdateSupportAgentDto {
   @IsOptional() @IsEnum(SupportAgentStatusDto) status?: SupportAgentStatusDto
   @IsOptional() @IsInt() @Min(1) @Max(1000) @Type(() => Number) maxConcurrentTickets?: number
   @IsOptional() @IsString() @MaxLength(500) suspensionReason?: string | null
+  @IsOptional() @IsInt() @Min(1) @Max(100) @Type(() => Number) maxConcurrentLiveChats?: number
+}
+
+export class LiveChatRefundDto {
+  @IsString() @MinLength(1) @MaxLength(500) reason!: string
 }

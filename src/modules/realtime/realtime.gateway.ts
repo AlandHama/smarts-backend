@@ -9,6 +9,7 @@ import { PrismaService } from "../../prisma.service"
 import { getAuthConfig } from "../auth/auth.config"
 import { ChatsService } from "../chats/chats.service"
 import { ChatPresenceRegistry } from "../chats/chat-presence.registry"
+import { SupportLiveChatService } from "../support/support-live-chat.service"
 import type { JwtPayload } from "../auth/dtos/jwt-payload.dto"
 import type { WebSocket } from "ws"
 
@@ -18,6 +19,8 @@ type ClientState = {
   playerIds: Set<string>
   queueSubscribed: boolean
   chatConversationIds: Set<string>
+  supportSessionIds: Set<string>
+  supportQueueSubscribed: boolean
   lastSnapshots: Map<string, string>
 }
 
@@ -45,6 +48,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly matchmaking: MatchmakingService,
     private readonly chats: ChatsService,
     private readonly chatPresence: ChatPresenceRegistry,
+    private readonly supportLiveChat: SupportLiveChatService,
   ) {
     this.timer = setInterval(() => void this.publishChanges(), 1000)
     this.timer.unref()
@@ -60,6 +64,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     if (state) {
       this.chatPresence.clearUser(state.userId, state.chatConversationIds)
       void this.clearTypingForClient(state)
+      if (!this.isOnline(state.userId)) void this.supportLiveChat.updateAgentStatus(state.userId, "OFFLINE" as any).catch(() => undefined)
     }
     if (state && !this.isOnline(state.userId)) this.broadcastPresence(state.userId, false)
   }
@@ -83,7 +88,7 @@ export class RealtimeGateway implements OnModuleDestroy {
       const user = await this.prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true, status: true } })
       if (!session || !user || user.status !== "ACTIVE") throw new Error("Session is no longer active")
 
-      const state: ClientState = { userId: user.id, matchIds: new Set(), playerIds: new Set([user.id]), queueSubscribed: false, chatConversationIds: new Set(), lastSnapshots: new Map() }
+      const state: ClientState = { userId: user.id, matchIds: new Set(), playerIds: new Set([user.id]), queueSubscribed: false, chatConversationIds: new Set(), supportSessionIds: new Set(), supportQueueSubscribed: false, lastSnapshots: new Map() }
       this.clients.set(client, state)
       client.on("message", (message) => void this.handleMessage(client, state, message.toString()))
       client.on("close", () => this.handleDisconnect(client))
@@ -160,6 +165,14 @@ export class RealtimeGateway implements OnModuleDestroy {
       if (typeof data.userId === "string") state.playerIds.delete(data.userId.trim())
       return
     }
+    if (event === "support.subscribe") { await this.subscribeSupport(client, state, data); return }
+    if (event === "support.unsubscribe") { if (typeof data.sessionId === "string") state.supportSessionIds.delete(data.sessionId); return }
+    if (event === "support.typing.start" || event === "support.typing.stop") { await this.supportTyping(client, state, data, event === "support.typing.start"); return }
+    if (event === "support.read") { await this.supportRead(client, state, data); return }
+    if (event === "support.message.send") { await this.supportMessage(client, state, data); return }
+    if (event === "support.agent.subscribe-queue") { const agent = await this.supportLiveChat.agentMe(state.userId); if (agent) { state.supportQueueSubscribed = true; this.send(client, "support.queue.ready", agent) } return }
+    if (event === "support.agent.unsubscribe-queue") { state.supportQueueSubscribed = false; return }
+    if (event === "support.agent.presence") { const status = typeof data.status === "string" ? data.status : "OFFLINE"; if (!["AVAILABLE", "BUSY", "OFFLINE"].includes(status)) return this.send(client, "support.error", { code: "INVALID_PRESENCE", message: "Use AVAILABLE, BUSY, or OFFLINE" }); await this.supportLiveChat.updateAgentStatus(state.userId, status as any); this.broadcastSupportQueue("support.queue.agent-availability-changed", { userId: state.userId, status }); return }
     this.send(client, "error", { message: "Unknown event" })
   }
 
@@ -240,6 +253,46 @@ export class RealtimeGateway implements OnModuleDestroy {
     } catch (error) { this.chatError(client, this.chatErrorCode(error), this.errorMessage(error)) }
   }
 
+  private async subscribeSupport(client: WebSocket, state: ClientState, data: Record<string, unknown>) {
+    const sessionId = this.string(data.sessionId)
+    if (!sessionId) return this.send(client, "support.error", { code: "INVALID_SESSION", message: "Support session is required" })
+    try {
+      await this.supportLiveChat.authorizeSocket(state.userId, sessionId)
+      state.supportSessionIds.add(sessionId)
+      this.send(client, "support.ready", { sessionId })
+    } catch (error) { this.send(client, "support.error", { code: "NOT_AUTHORIZED", message: this.errorMessage(error) }) }
+  }
+
+  private async supportTyping(client: WebSocket, state: ClientState, data: Record<string, unknown>, typing: boolean) {
+    const sessionId = this.string(data.sessionId)
+    if (!sessionId || !state.supportSessionIds.has(sessionId)) return this.send(client, "support.error", { code: "NOT_SUBSCRIBED", message: "Subscribe to the support session first" })
+    try { await this.supportLiveChat.socketTypingAllowed(state.userId, sessionId); await this.broadcastSupportSession(sessionId, "support.typing.changed", { sessionId, userId: state.userId, typing }, client) }
+    catch (error) { this.send(client, "support.error", { code: "NOT_AUTHORIZED", message: this.errorMessage(error) }) }
+  }
+
+  private async supportRead(client: WebSocket, state: ClientState, data: Record<string, unknown>) {
+    const sessionId = this.string(data.sessionId)
+    const sequence = Number(data.sequence)
+    if (!sessionId || !Number.isFinite(sequence)) return this.send(client, "support.error", { code: "INVALID_READ", message: "A valid session and sequence are required" })
+    try { await this.supportLiveChat.markRead(state.userId, sessionId, Math.max(0, Math.floor(sequence))); await this.broadcastSupportSession(sessionId, "support.read.changed", { sessionId, userId: state.userId, sequence: Math.floor(sequence) }) }
+    catch (error) { this.send(client, "support.error", { code: "NOT_AUTHORIZED", message: this.errorMessage(error) }) }
+  }
+
+  private async supportMessage(client: WebSocket, state: ClientState, data: Record<string, unknown>) {
+    const sessionId = this.string(data.sessionId)
+    const clientMessageId = this.string(data.clientMessageId)
+    const body = typeof data.body === "string" ? data.body : ""
+    if (!sessionId || !clientMessageId) return this.send(client, "support.error", { code: "INVALID_MESSAGE", message: "Session and client message id are required", clientMessageId })
+    try {
+      const session = await this.supportLiveChat.authorizeSocket(state.userId, sessionId)
+      const isAgent = session.playerId !== state.userId
+      const message = isAgent ? await this.supportLiveChat.sendAgentMessage(state.userId, sessionId, { clientMessageId, body }) : await this.supportLiveChat.sendPlayerMessage(state.userId, sessionId, { clientMessageId, body })
+      const created = (message as any).messages?.slice(-1)[0] ?? message
+      this.send(client, "support.message.accepted", { sessionId, message: created })
+      await this.broadcastSupportSession(sessionId, "support.message.created", { sessionId, message: created }, client)
+    } catch (error) { this.send(client, "support.error", { code: "MESSAGE_REJECTED", message: this.errorMessage(error), clientMessageId }) }
+  }
+
   private async broadcastToConversation(conversationId: string, event: string, data: unknown, exclude?: WebSocket) {
     const participantIds = await this.chats.participantIds(conversationId)
     for (const [client, state] of this.clients) {
@@ -247,6 +300,12 @@ export class RealtimeGateway implements OnModuleDestroy {
       this.send(client, event, data)
     }
   }
+
+  private async broadcastSupportSession(sessionId: string, event: string, data: unknown, exclude?: WebSocket) {
+    for (const [client, state] of this.clients) { if (client === exclude || !state.supportSessionIds.has(sessionId)) continue; this.send(client, event, data) }
+  }
+
+  private broadcastSupportQueue(event: string, data: unknown) { for (const [client, state] of this.clients) if (state.supportQueueSubscribed) this.send(client, event, data) }
 
   private async clearTypingForClient(state: ClientState) {
     for (const conversationId of state.chatConversationIds) {
@@ -289,6 +348,8 @@ export class RealtimeGateway implements OnModuleDestroy {
       if (client.readyState !== 1) { this.clients.delete(client); continue }
       if (state.queueSubscribed) await this.sendQueueSnapshot(client, state, false)
       for (const matchId of state.matchIds) await this.sendMatchSnapshot(client, state, matchId, false)
+      if (state.supportQueueSubscribed) await this.sendSupportQueueSnapshot(client, state)
+      for (const sessionId of state.supportSessionIds) await this.sendSupportSessionSnapshot(client, state, sessionId)
     }
   }
 
@@ -300,6 +361,27 @@ export class RealtimeGateway implements OnModuleDestroy {
       state.lastSnapshots.set("queue", key)
       this.send(client, "queue.snapshot", snapshot)
     } catch { /* HTTP fallback remains available after a transient tick failure. */ }
+  }
+
+  private async sendSupportQueueSnapshot(client: WebSocket, state: ClientState) {
+    try {
+      const snapshot = await this.supportLiveChat.agentQueue(state.userId, { limit: 100, offset: 0 })
+      const key = `support-queue:${JSON.stringify(snapshot)}`
+      if (state.lastSnapshots.get("support-queue") === key) return
+      state.lastSnapshots.set("support-queue", key)
+      this.send(client, "support.queue.snapshot", snapshot)
+    } catch { /* HTTP agent inbox remains available after transient errors. */ }
+  }
+
+  private async sendSupportSessionSnapshot(client: WebSocket, state: ClientState, sessionId: string) {
+    try {
+      const snapshot = await this.supportLiveChat.get(state.userId, sessionId, false)
+      const key = `support-session:${sessionId}:${JSON.stringify(snapshot)}`
+      if (state.lastSnapshots.get(`support-session:${sessionId}`) === key) return
+      const previous = state.lastSnapshots.get(`support-session:${sessionId}`)
+      state.lastSnapshots.set(`support-session:${sessionId}`, key)
+      if (previous) this.send(client, "support.live-chat.status-changed", { sessionId, session: snapshot })
+    } catch { /* Authorization or a deleted session is harmless on a later tick. */ }
   }
 
   private async sendMatchSnapshot(client: WebSocket, state: ClientState, matchId: string, force: boolean) {

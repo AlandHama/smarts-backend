@@ -3,14 +3,15 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { UserResponseDto } from "../auth/dtos/user-response.dto"
-import { CreateSupportTicketDto, SupportListQueryDto, SupportReadDto, SupportTicketMessageDto } from "./dtos"
+import { CreateSupportTicketDto, LiveChatListQueryDto, LiveChatMessageDto, StartLiveChatDto, SupportListQueryDto, SupportReadDto, SupportTicketMessageDto } from "./dtos"
 import { SupportService } from "./support.service"
+import { SupportLiveChatService } from "./support-live-chat.service"
 
 @ApiTags("Support center")
 @ApiBearerAuth("access-token")
 @Controller("support")
 export class SupportController {
-  constructor(private readonly support: SupportService) {}
+  constructor(private readonly support: SupportService, private readonly liveChat: SupportLiveChatService) {}
 
   @Get("configuration") configuration() { return this.support.getConfiguration() }
   @Get("summary") summary(@CurrentUser() user: UserResponseDto) { return this.support.getPublicSummary(user.id) }
@@ -21,4 +22,12 @@ export class SupportController {
   @Post("tickets/:ticketId/messages") message(@CurrentUser() user: UserResponseDto, @Param("ticketId", ParseUUIDPipe) ticketId: string, @Body() dto: SupportTicketMessageDto) { return this.support.addPlayerMessage(user.id, ticketId, dto) }
   @Patch("tickets/:ticketId/read") read(@CurrentUser() user: UserResponseDto, @Param("ticketId", ParseUUIDPipe) ticketId: string, @Body() dto: SupportReadDto) { return this.support.markRead(user.id, ticketId, dto.sequence) }
   @Post("tickets/:ticketId/reopen") reopen(@CurrentUser() user: UserResponseDto, @Param("ticketId", ParseUUIDPipe) ticketId: string) { return this.support.reopen(user.id, ticketId) }
+  @Post("live-chats/quote") liveQuote(@CurrentUser() user: UserResponseDto) { return this.liveChat.quote(user.id) }
+  @Post("live-chats") startLive(@CurrentUser() user: UserResponseDto, @Body() dto: StartLiveChatDto) { return this.liveChat.start(user.id, dto) }
+  @Get("live-chats") liveChats(@CurrentUser() user: UserResponseDto, @Query() query: LiveChatListQueryDto) { return this.liveChat.listPlayer(user.id, query) }
+  @Get("live-chats/:sessionId") liveChatDetail(@CurrentUser() user: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string) { return this.liveChat.get(user.id, sessionId) }
+  @Post("live-chats/:sessionId/messages") liveMessage(@CurrentUser() user: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string, @Body() dto: LiveChatMessageDto) { return this.liveChat.sendPlayerMessage(user.id, sessionId, dto) }
+  @Patch("live-chats/:sessionId/read") liveRead(@CurrentUser() user: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string, @Body() dto: SupportReadDto) { return this.liveChat.markRead(user.id, sessionId, dto.sequence) }
+  @Post("live-chats/:sessionId/cancel") liveCancel(@CurrentUser() user: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string) { return this.liveChat.cancel(user.id, sessionId) }
+  @Post("live-chats/:sessionId/end") liveEnd(@CurrentUser() user: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string) { return this.liveChat.end(user.id, sessionId) }
 }

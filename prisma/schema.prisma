@@ -163,6 +163,32 @@ enum SupportMessageSenderKind {
   SYSTEM
 }
 
+enum SupportLiveChatStatus {
+  PAYMENT_PENDING
+  QUEUED
+  ASSIGNED
+  ACTIVE
+  PAUSED
+  WAITING_FOR_PLAYER
+  ENDED
+  REFUND_PENDING
+  REFUNDED
+  EXPIRED
+}
+
+enum SupportLiveChatEventType {
+  CREATED
+  PAYMENT_CHARGED
+  ASSIGNED
+  STARTED
+  PAUSED
+  RESUMED
+  MESSAGE_ADDED
+  ENDED
+  REFUNDED
+  EXPIRED
+}
+
 enum RewardGrantStatus {
   GRANTED
   PENDING
@@ -610,6 +636,11 @@ model User {
   supportConfigurationUpdates  SupportConfiguration[]  @relation("SupportConfigurationUpdater")
   supportAgentsGranted        SupportAgent[]          @relation("SupportAgentGrantedBy")
   supportAgentsRevoked        SupportAgent[]          @relation("SupportAgentRevokedBy")
+  supportLiveChats            SupportLiveChatSession[] @relation("SupportLiveChatPlayer")
+  supportLiveChatMessages     SupportLiveChatMessage[] @relation("SupportLiveChatMessageSender")
+  supportLiveChatReads        SupportLiveChatRead[]
+  supportLiveChatQuotes       SupportLiveChatQuote[]
+  supportLiveChatEvents       SupportLiveChatEvent[] @relation("SupportLiveChatEventActor")
 }
 
 /// A provider identity is linked to a local account after the provider token
@@ -2785,6 +2816,15 @@ model SupportConfiguration {
   maxSubjectLength         Int      @default(160)
   firstResponseSlaMinutes  Int      @default(1440)
   playerReplyTimeoutHours  Int      @default(72)
+  liveChatSessionMinutes   Int      @default(30)
+  liveChatGraceMinutes     Int      @default(10)
+  maxLiveChatQueueSize     Int      @default(25)
+  autoCloseInactiveMinutes Int      @default(15)
+  refundOnNoAgentConnection Boolean  @default(true)
+  refundOnSystemFailure    Boolean  @default(true)
+  refundOnAgentCancellation Boolean @default(true)
+  requirePlayerRating      Boolean  @default(false)
+  liveChatCurrencyCode     String   @default("GLD") @db.VarChar(16)
   pushNotificationsEnabled Boolean  @default(true)
   liveChatEnabled          Boolean  @default(false)
   liveChatPriceGld         Decimal  @default(2) @db.Decimal(20, 6)
@@ -2818,6 +2858,7 @@ model SupportAgent {
   level                SupportAgentLevel  @default(AGENT)
   status               SupportAgentStatus @default(OFFLINE)
   maxConcurrentTickets Int                @default(10)
+  maxConcurrentLiveChats Int              @default(2)
   lastSeenAt           DateTime?
   grantedAt            DateTime           @default(now())
   grantedById          String?            @db.Uuid
@@ -2831,6 +2872,7 @@ model SupportAgent {
   revokedBy            User?              @relation("SupportAgentRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
   assignedTickets      SupportTicket[]    @relation("SupportTicketAssignee")
   assignments          SupportTicketAssignment[]
+  liveChatSessions     SupportLiveChatSession[] @relation("SupportLiveChatAssignee")
 
   @@index([status, level])
 }
@@ -2940,6 +2982,127 @@ model SupportAuditEvent {
   @@index([ticketId, createdAt])
   @@index([actorId, createdAt])
   @@index([action, createdAt])
+}
+
+model SupportLiveChatQuote {
+  id              String   @id @default(uuid()) @db.Uuid
+  playerId        String   @db.Uuid
+  priceGld        Decimal  @db.Decimal(20, 6)
+  currencyCode    String   @default("GLD") @db.VarChar(16)
+  availableAgents Int      @default(0)
+  estimatedWaitSeconds Int @default(0)
+  expiresAt       DateTime
+  usedAt          DateTime?
+  createdAt       DateTime @default(now())
+  player          User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  session         SupportLiveChatSession?
+
+  @@index([playerId, expiresAt])
+}
+
+model SupportLiveChatSession {
+  id                    String                @id @default(uuid()) @db.Uuid
+  sessionNumber         String                @unique @db.VarChar(30)
+  playerId              String                @db.Uuid
+  assignedAgentId       String?               @db.Uuid
+  quoteId               String                @unique @db.Uuid
+  purchaseIdempotencyKey String               @db.VarChar(120)
+  status                SupportLiveChatStatus @default(QUEUED)
+  quotedPriceGld        Decimal               @db.Decimal(20, 6)
+  chargedAmountGld      Decimal               @db.Decimal(20, 6)
+  lastSequence          Int                   @default(0)
+  currencyCode          String                @default("GLD") @db.VarChar(16)
+  walletLedgerId        String?               @db.Uuid
+  refundLedgerId        String?               @db.Uuid
+  configurationVersion  String?               @db.VarChar(80)
+  queueEnteredAt        DateTime              @default(now())
+  assignedAt            DateTime?
+  startedAt             DateTime?
+  endedAt               DateTime?
+  lastActivityAt        DateTime              @default(now())
+  disconnectUntil       DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  player                User                  @relation("SupportLiveChatPlayer", fields: [playerId], references: [id], onDelete: Cascade)
+  assignedAgent         SupportAgent?         @relation("SupportLiveChatAssignee", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  quote                 SupportLiveChatQuote   @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  messages              SupportLiveChatMessage[]
+  events                SupportLiveChatEvent[]
+  reads                 SupportLiveChatRead[]
+  charge                SupportLiveChatCharge?
+  refund                SupportLiveChatRefund?
+
+  @@unique([playerId, purchaseIdempotencyKey])
+  @@index([playerId, status, updatedAt])
+  @@index([status, queueEnteredAt])
+  @@index([assignedAgentId, status, updatedAt])
+}
+
+model SupportLiveChatCharge {
+  id             String                @id @default(uuid()) @db.Uuid
+  sessionId      String                @unique @db.Uuid
+  amountGld      Decimal               @db.Decimal(20, 6)
+  currencyCode   String                @db.VarChar(16)
+  ledgerId       String?               @db.Uuid
+  quoteId        String                @db.Uuid
+  createdAt      DateTime              @default(now())
+  session        SupportLiveChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+}
+
+model SupportLiveChatRefund {
+  id             String                @id @default(uuid()) @db.Uuid
+  sessionId      String                @unique @db.Uuid
+  amountGld      Decimal               @db.Decimal(20, 6)
+  currencyCode   String                @db.VarChar(16)
+  ledgerId       String?               @db.Uuid
+  reason         String                @db.VarChar(500)
+  createdAt      DateTime              @default(now())
+  session        SupportLiveChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model SupportLiveChatMessage {
+  id              String                  @id @default(uuid()) @db.Uuid
+  sessionId       String                  @db.Uuid
+  senderId        String?                 @db.Uuid
+  senderKind      SupportMessageSenderKind
+  sequence        Int
+  clientMessageId String                  @db.VarChar(120)
+  body            String                  @db.Text
+  internal        Boolean                 @default(false)
+  createdAt       DateTime                @default(now())
+  session         SupportLiveChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sender          User?                   @relation("SupportLiveChatMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, sequence])
+  @@unique([sessionId, clientMessageId])
+  @@index([sessionId, createdAt])
+}
+
+model SupportLiveChatRead {
+  id           String                @id @default(uuid()) @db.Uuid
+  sessionId    String                @db.Uuid
+  userId       String                @db.Uuid
+  lastSequence Int                   @default(0)
+  updatedAt    DateTime              @updatedAt
+  session      SupportLiveChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
+}
+
+model SupportLiveChatEvent {
+  id         String                  @id @default(uuid()) @db.Uuid
+  sessionId  String                  @db.Uuid
+  actorId    String?                 @db.Uuid
+  type       SupportLiveChatEventType
+  metadata   Json?
+  createdAt  DateTime                @default(now())
+  session    SupportLiveChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  actor      User?                   @relation("SupportLiveChatEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, createdAt])
 }
 
 /// Immutable record of a privileged operation performed from the system console.
