@@ -177,11 +177,46 @@ export function SupportCenterView() {
         "playerLiveChatRatePerDay",
         "agentReplyRatePerMinute",
       ];
-      const body = {
-        ...draft,
-        ...Object.fromEntries(numeric.map((key) => [key, Number(draft[key])])),
-        liveChatPriceGld: String(draft.liveChatPriceGld ?? "2"),
-      };
+      const editable = [
+        "enabled",
+        "maintenanceMessage",
+        "ticketRetentionDays",
+        "messageRetentionDays",
+        "maxOpenTicketsPerPlayer",
+        "maxMessageLength",
+        "maxSubjectLength",
+        "firstResponseSlaMinutes",
+        "playerReplyTimeoutHours",
+        "pushNotificationsEnabled",
+        "liveChatEnabled",
+        "liveChatPriceGld",
+        "liveChatSessionMinutes",
+        "liveChatGraceMinutes",
+        "maxLiveChatQueueSize",
+        "autoCloseInactiveMinutes",
+        "refundOnNoAgentConnection",
+        "refundOnSystemFailure",
+        "refundOnAgentCancellation",
+        "requirePlayerRating",
+        "liveChatCurrencyCode",
+        "playerCanReopenDays",
+        "attachmentRetentionDays",
+        "maxAttachmentsPerMessage",
+        "maxAttachmentSizeBytes",
+        "profanityPolicy",
+        "playerTicketRatePerHour",
+        "playerLiveChatRatePerDay",
+        "agentReplyRatePerMinute",
+        "allowRestrictedPlayers",
+        "slaWorkerEnabled",
+      ];
+      const body: Record<string, unknown> = Object.fromEntries(
+        editable
+          .filter((key) => draft[key] !== undefined)
+          .map((key) => [key, draft[key]]),
+      );
+      for (const key of numeric) body[key] = Number(draft[key]);
+      body.liveChatPriceGld = String(draft.liveChatPriceGld ?? "2");
       const value = await api<Config>("/support/configuration", {
         method: "PATCH",
         body: JSON.stringify(body),
