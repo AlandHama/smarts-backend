@@ -75,6 +75,9 @@ type Audit = {
   actor?: { username: string } | null;
   ticket?: { ticketNumber: string } | null;
 };
+type Article = { id: string; title: string; slug: string; summary: string; body: string; status: string; viewCount?: number; helpfulYes?: number; helpfulNo?: number; category?: { name: string } | null };
+type CannedReply = { id: string; key: string; title: string; body: string; active: boolean };
+type Report = { tickets: number; overdueTickets: number; liveChats: number; activeAgents: number; ratings: { average: number; count: number }; topArticles: Article[] };
 
 export function SupportCenterView() {
   const [tab, setTab] = useState("configuration");
@@ -85,6 +88,9 @@ export function SupportCenterView() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
   const [audit, setAudit] = useState<Audit[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [cannedReplies, setCannedReplies] = useState<CannedReply[]>([]);
+  const [report, setReport] = useState<Report | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [selectedLiveChat, setSelectedLiveChat] = useState<LiveChat | null>(
     null,
@@ -100,17 +106,24 @@ export function SupportCenterView() {
     name: "",
     description: "",
   });
+  const [articleDraft, setArticleDraft] = useState({ title: "", slug: "", summary: "", body: "", status: "DRAFT" });
+  const [replyDraft, setReplyDraft] = useState({ key: "", title: "", body: "" });
+  const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
   const load = async () => {
     setLoading(true);
     setError("");
     try {
-      const [c, cats, a, t, l, au] = await Promise.all([
+      const [c, cats, a, t, l, au, ar, cr, rp] = await Promise.all([
         api<Config>("/support/configuration"),
         api<Category[]>("/support/categories"),
         api<Agent[]>("/support/agents"),
         api<Ticket[]>("/support/tickets?limit=100"),
         api<LiveChat[]>("/support/live-chats?limit=100"),
         api<Audit[]>("/support/audit?limit=100"),
+        api<Article[]>("/support/articles?limit=100"),
+        api<CannedReply[]>("/support/canned-replies"),
+        api<Report>("/support/reports"),
       ]);
       setConfig(c);
       setDraft(c);
@@ -119,6 +132,9 @@ export function SupportCenterView() {
       setTickets(t);
       setLiveChats(l);
       setAudit(au);
+      setArticles(ar);
+      setCannedReplies(cr);
+      setReport(rp);
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Unable to load support center",
@@ -153,6 +169,13 @@ export function SupportCenterView() {
         "liveChatGraceMinutes",
         "maxLiveChatQueueSize",
         "autoCloseInactiveMinutes",
+        "playerCanReopenDays",
+        "attachmentRetentionDays",
+        "maxAttachmentsPerMessage",
+        "maxAttachmentSizeBytes",
+        "playerTicketRatePerHour",
+        "playerLiveChatRatePerDay",
+        "agentReplyRatePerMinute",
       ];
       const body = {
         ...draft,
@@ -307,6 +330,13 @@ export function SupportCenterView() {
       setError(e instanceof Error ? e.message : "Unable to update category");
     }
   };
+  const createArticle = async () => {
+    if (!articleDraft.title || !articleDraft.slug || !articleDraft.body) return;
+    try { await api(editingArticleId ? `/support/articles/${editingArticleId}` : "/support/articles", { method: editingArticleId ? "PATCH" : "POST", body: JSON.stringify(articleDraft) }); setArticleDraft({ title: "", slug: "", summary: "", body: "", status: "DRAFT" }); setEditingArticleId(null); setMessage("Article saved"); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to save article"); }
+  };
+  const archiveArticle = async (id: string) => { try { await api(`/support/articles/${id}/archive`, { method: "POST", body: "{}" }); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to archive article"); } };
+  const createReply = async () => { if (!replyDraft.key || !replyDraft.title || !replyDraft.body) return; try { await api(editingReplyId ? `/support/canned-replies/${editingReplyId}` : "/support/canned-replies", { method: editingReplyId ? "PATCH" : "POST", body: JSON.stringify(replyDraft) }); setReplyDraft({ key: "", title: "", body: "" }); setEditingReplyId(null); setMessage("Canned reply saved"); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to save canned reply"); } };
+  const exportReport = async () => { try { const value = await api<{ content: string }>("/support/reports/export"); const blob = new Blob([value.content], { type: "text/csv" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "support-report.csv"; link.click(); URL.revokeObjectURL(url); } catch (e) { setError(e instanceof Error ? e.message : "Unable to export report"); } };
   if (loading)
     return (
       <Stack alignItems="center" sx={{ py: 10 }}>
@@ -342,6 +372,9 @@ export function SupportCenterView() {
         <Tab value="live-chats" label={`Live chats (${liveChats.length})`} />
         <Tab value="agents" label={`Agents (${agents.length})`} />
         <Tab value="categories" label={`Categories (${categories.length})`} />
+        <Tab value="articles" label={`Help articles (${articles.length})`} />
+        <Tab value="replies" label={`Canned replies (${cannedReplies.length})`} />
+        <Tab value="reports" label="Reports" />
         <Tab value="audit" label="Audit" />
       </Tabs>
       {tab === "configuration" && (
@@ -399,6 +432,20 @@ export function SupportCenterView() {
               onChange={set("maintenanceMessage")}
               fullWidth
             />
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField fullWidth label="First response SLA (minutes)" type="number" value={draft.firstResponseSlaMinutes ?? 1440} onChange={set("firstResponseSlaMinutes")} />
+              <TextField fullWidth label="Player reopen window (days)" type="number" value={draft.playerCanReopenDays ?? 7} onChange={set("playerCanReopenDays")} />
+              <TextField fullWidth label="Ticket rate/hour" type="number" value={draft.playerTicketRatePerHour ?? 5} onChange={set("playerTicketRatePerHour")} />
+            </Stack>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField fullWidth label="Attachment retention (days)" type="number" value={draft.attachmentRetentionDays ?? 30} onChange={set("attachmentRetentionDays")} />
+              <TextField fullWidth label="Max attachments" type="number" value={draft.maxAttachmentsPerMessage ?? 3} onChange={set("maxAttachmentsPerMessage")} />
+              <TextField fullWidth label="Max attachment bytes" type="number" value={draft.maxAttachmentSizeBytes ?? 10485760} onChange={set("maxAttachmentSizeBytes")} />
+            </Stack>
+            <Stack direction={{ xs: "column", md: "row" }}>
+              <FormControlLabel control={<Switch checked={Boolean(draft.slaWorkerEnabled)} onChange={set("slaWorkerEnabled")} />} label="Automatic SLA worker" />
+              <FormControlLabel control={<Switch checked={Boolean(draft.allowRestrictedPlayers)} onChange={set("allowRestrictedPlayers")} />} label="Allow restricted players" />
+            </Stack>
             <Divider />
             <Typography variant="h6" fontWeight={800}>
               Live-chat billing and queue
@@ -801,6 +848,16 @@ export function SupportCenterView() {
           ))}
         </Stack>
       )}
+      {tab === "articles" && (
+        <Stack spacing={1.5}>
+          <Card sx={{ p: 2.5 }}><Typography variant="h6">{editingArticleId ? "Edit help article" : "Create help article"}</Typography><Stack spacing={1.5} sx={{ mt: 2 }}><Stack direction={{ xs: "column", md: "row" }} spacing={1}><TextField fullWidth label="Title" value={articleDraft.title} onChange={(e) => setArticleDraft({ ...articleDraft, title: e.target.value })} /><TextField fullWidth label="Slug" value={articleDraft.slug} onChange={(e) => setArticleDraft({ ...articleDraft, slug: e.target.value })} /><Select value={articleDraft.status} onChange={(e) => setArticleDraft({ ...articleDraft, status: String(e.target.value) })}><MenuItem value="DRAFT">Draft</MenuItem><MenuItem value="PUBLISHED">Published</MenuItem></Select></Stack><TextField fullWidth label="Summary" value={articleDraft.summary} onChange={(e) => setArticleDraft({ ...articleDraft, summary: e.target.value })} /><TextField fullWidth multiline minRows={5} label="Article body" value={articleDraft.body} onChange={(e) => setArticleDraft({ ...articleDraft, body: e.target.value })} /><Button variant="contained" onClick={() => void createArticle()}>Save article</Button></Stack></Card>
+          {articles.map((article) => <Card key={article.id} sx={{ p: 2.5 }}><Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between"><Box onClick={() => { setEditingArticleId(article.id); setArticleDraft({ title: article.title, slug: article.slug, summary: article.summary, body: article.body, status: article.status }); }} sx={{ cursor: "pointer" }}><Typography fontWeight={800}>{article.title} <Chip size="small" label={article.status} /></Typography><Typography color="text.secondary">{article.summary}</Typography><Typography variant="caption">{article.viewCount ?? 0} views · {article.helpfulYes ?? 0} helpful</Typography></Box><Button color="error" onClick={() => void archiveArticle(article.id)} disabled={article.status === "ARCHIVED"}>Archive</Button></Stack></Card>)}
+        </Stack>
+      )}
+      {tab === "replies" && (
+        <Stack spacing={1.5}><Card sx={{ p: 2.5 }}><Typography variant="h6">{editingReplyId ? "Edit canned reply" : "Canned reply"}</Typography><Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ mt: 2 }}><TextField label="Key" value={replyDraft.key} onChange={(e) => setReplyDraft({ ...replyDraft, key: e.target.value })} /><TextField label="Title" value={replyDraft.title} onChange={(e) => setReplyDraft({ ...replyDraft, title: e.target.value })} /><TextField fullWidth label="Reply text" value={replyDraft.body} onChange={(e) => setReplyDraft({ ...replyDraft, body: e.target.value })} /><Button variant="contained" onClick={() => void createReply()}>Save</Button></Stack></Card>{cannedReplies.map((reply) => <Card key={reply.id} sx={{ p: 2.5 }}><Box onClick={() => { setEditingReplyId(reply.id); setReplyDraft({ key: reply.key, title: reply.title, body: reply.body }); }} sx={{ cursor: "pointer" }}><Typography fontWeight={800}>{reply.title} <Chip size="small" label={reply.active ? "Active" : "Inactive"} /></Typography><Typography color="text.secondary">{reply.body}</Typography></Box></Card>)}</Stack>
+      )}
+      {tab === "reports" && report && (<Stack spacing={2}><Stack direction={{ xs: "column", md: "row" }} spacing={2}>{[["Tickets", report.tickets], ["Overdue", report.overdueTickets], ["Live chats", report.liveChats], ["Agents", report.activeAgents], ["Rating", `${report.ratings.average.toFixed(1)} / 5`]].map(([label, value]) => <Card key={String(label)} sx={{ p: 2.5, flex: 1 }}><Typography color="text.secondary">{label}</Typography><Typography variant="h4" fontWeight={850}>{value}</Typography></Card>)}</Stack><Button variant="outlined" onClick={() => void exportReport()}>Export CSV</Button></Stack>)}
     </Stack>
   );
 }

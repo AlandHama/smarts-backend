@@ -3,7 +3,7 @@ import { Prisma, SupportAgentLevel, SupportAgentStatus, SupportMessageSenderKind
 
 import { PrismaService } from "../../prisma.service"
 import { NotificationsService } from "../notifications/notifications.service"
-import { CreateSupportCategoryDto, CreateSupportTicketDto, GrantSupportAgentDto, SupportAgentStatusDtoClass, SupportListQueryDto, SupportPriorityDto, SupportStatusDto, SupportTicketMessageDto, SupportTicketStatusUpdateDto, UpdateSupportAgentDto, UpdateSupportCategoryDto, UpdateSupportConfigurationDto } from "./dtos"
+import { CreateSupportArticleDto, CreateSupportCategoryDto, CreateSupportCannedReplyDto, CreateSupportTicketDto, GrantSupportAgentDto, SupportAgentStatusDtoClass, SupportArticleListQueryDto, SupportAttachmentPresignDto, SupportEscalateDto, SupportListQueryDto, SupportPriorityDto, SupportRatingDto, SupportStatusDto, SupportTicketMessageDto, SupportTicketStatusUpdateDto, UpdateSupportAgentDto, UpdateSupportCategoryDto, UpdateSupportConfigurationDto } from "./dtos"
 
 const PLAYER_VISIBLE_STATUSES = [SupportTicketStatus.OPEN, SupportTicketStatus.TRIAGED, SupportTicketStatus.ASSIGNED, SupportTicketStatus.WAITING_FOR_PLAYER, SupportTicketStatus.WAITING_FOR_SUPPORT, SupportTicketStatus.ESCALATED, SupportTicketStatus.RESOLVED, SupportTicketStatus.CLOSED, SupportTicketStatus.REOPENED]
 const ACTIVE_AGENT_TICKET_STATUSES = [SupportTicketStatus.ASSIGNED, SupportTicketStatus.WAITING_FOR_SUPPORT, SupportTicketStatus.REOPENED, SupportTicketStatus.ESCALATED]
@@ -58,11 +58,14 @@ export class SupportService implements OnModuleInit {
     if (!category) throw new BadRequestException("Choose an active support category")
     const openCount = await this.prisma.supportTicket.count({ where: { playerId: userId, status: { notIn: [SupportTicketStatus.CLOSED, SupportTicketStatus.RESOLVED] } } })
     if (openCount >= config.maxOpenTicketsPerPlayer) throw new ConflictException(`You can have up to ${config.maxOpenTicketsPerPlayer} open support tickets`)
+    const recentTickets = await this.prisma.supportTicket.count({ where: { playerId: userId, createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) } } })
+    if (recentTickets >= config.playerTicketRatePerHour) throw new ConflictException("Support ticket rate limit reached; try again later")
     const subject = dto.subject.trim().slice(0, config.maxSubjectLength)
     const body = dto.body.trim().slice(0, config.maxMessageLength)
     if (!subject || !body) throw new BadRequestException("Subject and message are required")
     const ticket = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.supportTicket.create({ data: { ticketNumber: this.ticketNumber(), playerId: userId, categoryId: category.id, subject, priority: category.defaultPriority, lastSequence: 1 } })
+      const createdAt = new Date()
+      const created = await tx.supportTicket.create({ data: { ticketNumber: this.ticketNumber(), playerId: userId, categoryId: category.id, subject, customData: dto.customData as Prisma.InputJsonValue | undefined, priority: category.defaultPriority, lastSequence: 1, firstResponseDueAt: new Date(createdAt.getTime() + config.firstResponseSlaMinutes * 60000), resolutionDueAt: new Date(createdAt.getTime() + (config.firstResponseSlaMinutes + config.playerReplyTimeoutHours * 60) * 60000) } })
       await tx.supportTicketMessage.create({ data: { ticketId: created.id, senderId: userId, senderKind: SupportMessageSenderKind.PLAYER, sequence: 1, clientMessageId: dto.clientMessageId, body } })
       await tx.supportTicketEvent.create({ data: { ticketId: created.id, actorId: userId, action: "CREATED", toStatus: SupportTicketStatus.OPEN } })
       await tx.supportAuditEvent.create({ data: { actorId: userId, ticketId: created.id, action: "TICKET_CREATED", metadata: { category: category.key } } })
@@ -80,7 +83,7 @@ export class SupportService implements OnModuleInit {
   }
 
   async getTicket(userId: string, ticketId: string, internal = false) {
-    const ticket = await this.prisma.supportTicket.findUnique({ where: { id: ticketId }, include: { category: true, player: { select: { id: true, username: true, firstName: true, lastName: true } }, assignedAgent: { include: { user: { select: { id: true, username: true, firstName: true, lastName: true } } } }, messages: { where: internal ? undefined : { internal: false }, orderBy: { sequence: "asc" } }, events: { orderBy: { createdAt: "asc" }, select: { id: true, action: true, fromStatus: true, toStatus: true, note: true, createdAt: true } } } })
+    const ticket = await this.prisma.supportTicket.findUnique({ where: { id: ticketId }, include: { category: true, player: { select: { id: true, username: true, firstName: true, lastName: true } }, assignedAgent: { include: { user: { select: { id: true, username: true, firstName: true, lastName: true } } } }, messages: { where: internal ? undefined : { internal: false }, orderBy: { sequence: "asc" } }, attachments: { where: { scanStatus: { not: "REJECTED" as any } }, orderBy: { createdAt: "asc" } }, events: { orderBy: { createdAt: "asc" }, select: { id: true, action: true, fromStatus: true, toStatus: true, note: true, createdAt: true } } } })
     if (!ticket) throw new NotFoundException("Support ticket not found")
     const isOwner = ticket.playerId === userId
     const isAgent = await this.isActiveAgent(userId)
@@ -99,6 +102,8 @@ export class SupportService implements OnModuleInit {
   async reopen(userId: string, ticketId: string) {
     const ticket = await this.assertTicketOwner(userId, ticketId)
     if (ticket.status !== SupportTicketStatus.RESOLVED && ticket.status !== SupportTicketStatus.CLOSED) return this.getTicket(userId, ticketId)
+    const config = await this.prisma.supportConfiguration.findUniqueOrThrow({ where: { key: "default" } })
+    if (ticket.updatedAt.getTime() < Date.now() - config.playerCanReopenDays * 86400000) throw new ConflictException("This ticket can no longer be reopened")
     await this.changeStatus(ticket, SupportTicketStatus.REOPENED, userId, "Player reopened ticket")
     return this.getTicket(userId, ticketId)
   }
@@ -216,14 +221,143 @@ export class SupportService implements OnModuleInit {
     return this.prisma.supportAuditEvent.findMany({ take: Math.min(Math.max(limit, 1), 200), orderBy: { createdAt: "desc" }, include: { actor: { select: { username: true } }, ticket: { select: { ticketNumber: true, subject: true } } } })
   }
 
-  async createCategory(adminId: string, dto: CreateSupportCategoryDto) { await this.requireSystemAdmin(adminId); return this.prisma.supportCategory.create({ data: { ...dto, key: dto.key.trim().toUpperCase(), defaultPriority: dto.defaultPriority as SupportTicketPriority | undefined } }) }
-  async updateCategory(adminId: string, id: string, dto: UpdateSupportCategoryDto) { await this.requireSystemAdmin(adminId); return this.prisma.supportCategory.update({ where: { id }, data: { ...dto, key: dto.key?.trim().toUpperCase(), defaultPriority: dto.defaultPriority as SupportTicketPriority | undefined } }) }
+  async createCategory(adminId: string, dto: CreateSupportCategoryDto) { await this.requireSystemAdmin(adminId); return this.prisma.supportCategory.create({ data: { ...dto, key: dto.key.trim().toUpperCase(), defaultPriority: dto.defaultPriority as SupportTicketPriority | undefined, formSchema: dto.formSchema as Prisma.InputJsonValue | undefined } }) }
+  async updateCategory(adminId: string, id: string, dto: UpdateSupportCategoryDto) { await this.requireSystemAdmin(adminId); return this.prisma.supportCategory.update({ where: { id }, data: { ...dto, key: dto.key?.trim().toUpperCase(), defaultPriority: dto.defaultPriority as SupportTicketPriority | undefined, formSchema: dto.formSchema as Prisma.InputJsonValue | undefined } }) }
+
+  async listArticles(query: SupportArticleListQueryDto, includeDrafts = false) {
+    const status = query.status ? query.status as any : includeDrafts ? undefined : "PUBLISHED"
+    const term = query.query?.trim().toLowerCase()
+    const rows = await this.prisma.supportHelpArticle.findMany({
+      where: { ...(status ? { status } : {}), ...(query.categoryId ? { categoryId: query.categoryId } : {}), ...(term ? { searchText: { contains: term, mode: "insensitive" } } : {}) },
+      include: { category: true }, orderBy: [{ sortOrder: "asc" }, { publishedAt: "desc" }, { updatedAt: "desc" }], take: query.limit, skip: query.offset,
+    })
+    return rows.map((article) => this.serializeArticle(article, includeDrafts))
+  }
+
+  async getArticle(articleId: string, includeDrafts = false) {
+    const article = await this.prisma.supportHelpArticle.findUnique({ where: { id: articleId }, include: { category: true } })
+    if (!article || (!includeDrafts && article.status !== "PUBLISHED")) throw new NotFoundException("Support article not found")
+    if (!includeDrafts) await this.prisma.supportHelpArticle.update({ where: { id: article.id }, data: { viewCount: { increment: 1 } } })
+    return this.serializeArticle(article, includeDrafts)
+  }
+
+  async articleFeedback(articleId: string, helpful: boolean) {
+    const article = await this.prisma.supportHelpArticle.findUnique({ where: { id: articleId }, select: { id: true, status: true } })
+    if (!article || article.status !== "PUBLISHED") throw new NotFoundException("Support article not found")
+    await this.prisma.supportHelpArticle.update({ where: { id: articleId }, data: helpful ? { helpfulYes: { increment: 1 } } : { helpfulNo: { increment: 1 } } })
+    return { recorded: true }
+  }
+
+  async adminArticles(query: SupportArticleListQueryDto) { return this.listArticles(query, true) }
+
+  async createArticle(adminId: string, dto: CreateSupportArticleDto) {
+    await this.requireSystemAdmin(adminId)
+    const status = (dto.status ?? "DRAFT") as any
+    const now = status === "PUBLISHED" ? new Date() : null
+    return this.prisma.supportHelpArticle.create({ data: { slug: dto.slug.trim().toLowerCase(), title: dto.title.trim(), summary: dto.summary.trim(), body: dto.body.trim(), searchText: `${dto.title} ${dto.summary} ${dto.body} ${dto.tags ?? ""}`.toLowerCase(), tags: dto.tags ? dto.tags.split(",").map((tag) => tag.trim()).filter(Boolean) : undefined, categoryId: dto.categoryId ?? null, status, sortOrder: dto.sortOrder ?? 0, publishedAt: now, createdById: adminId, updatedById: adminId }, include: { category: true } }).then((row) => this.serializeArticle(row, true))
+  }
+
+  async updateArticle(adminId: string, articleId: string, dto: CreateSupportArticleDto) {
+    await this.requireSystemAdmin(adminId)
+    const existing = await this.prisma.supportHelpArticle.findUnique({ where: { id: articleId } })
+    if (!existing) throw new NotFoundException("Support article not found")
+    const status = (dto.status ?? existing.status) as any
+    return this.prisma.supportHelpArticle.update({ where: { id: articleId }, data: { slug: dto.slug.trim().toLowerCase(), title: dto.title.trim(), summary: dto.summary.trim(), body: dto.body.trim(), searchText: `${dto.title} ${dto.summary} ${dto.body} ${dto.tags ?? ""}`.toLowerCase(), tags: dto.tags ? dto.tags.split(",").map((tag) => tag.trim()).filter(Boolean) : undefined, categoryId: dto.categoryId ?? null, status, sortOrder: dto.sortOrder ?? existing.sortOrder, publishedAt: status === "PUBLISHED" ? existing.publishedAt ?? new Date() : null, updatedById: adminId }, include: { category: true } }).then((row) => this.serializeArticle(row, true))
+  }
+
+  async archiveArticle(adminId: string, articleId: string) { await this.requireSystemAdmin(adminId); return this.prisma.supportHelpArticle.update({ where: { id: articleId }, data: { status: "ARCHIVED" as any, updatedById: adminId } }) }
+
+  async listCannedReplies(categoryId?: string, includeInactive = false) { return this.prisma.supportCannedReply.findMany({ where: { ...(includeInactive ? {} : { active: true }), ...(categoryId ? { OR: [{ categoryId }, { categoryId: null }] } : {}) }, include: { category: true }, orderBy: { title: "asc" } }) }
+  async adminCannedReplies() { return this.listCannedReplies(undefined, true) }
+  async createCannedReply(adminId: string, dto: CreateSupportCannedReplyDto) { await this.requireSystemAdmin(adminId); return this.prisma.supportCannedReply.create({ data: { key: dto.key.trim().toLowerCase(), title: dto.title.trim(), body: dto.body.trim(), categoryId: dto.categoryId ?? null, active: dto.active ?? true, createdById: adminId, updatedById: adminId }, include: { category: true } }) }
+  async updateCannedReply(adminId: string, id: string, dto: CreateSupportCannedReplyDto) { await this.requireSystemAdmin(adminId); return this.prisma.supportCannedReply.update({ where: { id }, data: { key: dto.key.trim().toLowerCase(), title: dto.title.trim(), body: dto.body.trim(), categoryId: dto.categoryId ?? null, active: dto.active ?? true, updatedById: adminId }, include: { category: true } }) }
+
+  async rateTicket(userId: string, ticketId: string, dto: SupportRatingDto) {
+    const ticket = await this.assertTicketOwner(userId, ticketId)
+    if (ticket.status !== SupportTicketStatus.RESOLVED && ticket.status !== SupportTicketStatus.CLOSED) throw new ConflictException("Rate a ticket after it is resolved")
+    return this.prisma.supportTicketRating.upsert({ where: { ticketId_playerId: { ticketId, playerId: userId } }, create: { ticketId, playerId: userId, rating: dto.rating, comment: dto.comment?.trim() || null }, update: { rating: dto.rating, comment: dto.comment?.trim() || null } })
+  }
+
+  async escalateTicket(userId: string, ticketId: string, dto: SupportEscalateDto) {
+    const ticket = await this.getTicketRaw(ticketId)
+    const allowed = ticket.playerId === userId || await this.isActiveAgent(userId) || await this.isSystemAdmin(userId)
+    if (!allowed) throw new ForbiddenException("You cannot escalate this ticket")
+    if (ticket.status === SupportTicketStatus.CLOSED) throw new ConflictException("Closed tickets cannot be escalated")
+    await this.prisma.$transaction(async (tx) => {
+      await tx.supportTicket.update({ where: { id: ticketId }, data: { status: SupportTicketStatus.ESCALATED, priority: SupportTicketPriority.HIGH } })
+      await tx.supportTicketEscalation.create({ data: { ticketId, actorId: userId, reason: dto.reason.trim(), fromStatus: ticket.status } })
+      await tx.supportTicketEvent.create({ data: { ticketId, actorId: userId, action: "ESCALATED", fromStatus: ticket.status, toStatus: SupportTicketStatus.ESCALATED, note: dto.reason.trim() } })
+      await tx.supportAuditEvent.create({ data: { actorId: userId, ticketId, action: "TICKET_ESCALATED", metadata: { reason: dto.reason.trim() } } })
+    })
+    await this.notifyAgents(ticketId, "Ticket escalated", `${ticket.subject} needs supervisor attention.`, "support.ticket.escalated", true)
+    return this.getTicket(userId, ticketId)
+  }
+
+  async presignAttachment(userId: string, dto: SupportAttachmentPresignDto) {
+    const ticket = await this.assertTicketOwner(userId, dto.ticketId)
+    if (ticket.status === SupportTicketStatus.CLOSED) throw new ConflictException("Closed tickets cannot receive attachments")
+    const config = await this.prisma.supportConfiguration.findUniqueOrThrow({ where: { key: "default" } })
+    if (dto.sizeBytes > config.maxAttachmentSizeBytes) throw new BadRequestException("Attachment is larger than the configured limit")
+    const ext = dto.fileName.split(".").pop()?.toLowerCase() ?? ""
+    const blocked = Array.isArray(config.blockedAttachmentExtensions) && config.blockedAttachmentExtensions.map(String).includes(ext)
+    if (blocked) throw new BadRequestException("This file type is not allowed")
+    if (Array.isArray(config.allowedAttachmentMimes) && config.allowedAttachmentMimes.length && !config.allowedAttachmentMimes.map(String).includes(dto.mimeType.toLowerCase())) throw new BadRequestException("This file type is not allowed")
+    const count = await this.prisma.supportAttachment.count({ where: { ticketId: dto.ticketId, createdById: userId, scanStatus: { not: "EXPIRED" as any } } })
+    if (count >= config.maxAttachmentsPerMessage) throw new ConflictException("Attachment limit reached")
+    const storageKey = `support/${ticket.id}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${ext}`
+    const row = await this.prisma.supportAttachment.create({ data: { ticketId: ticket.id, createdById: userId, fileName: dto.fileName.trim(), mimeType: dto.mimeType.toLowerCase(), sizeBytes: dto.sizeBytes, storageKey, expiresAt: new Date(Date.now() + config.attachmentRetentionDays * 86400000) } })
+    return { attachmentId: row.id, storageKey: row.storageKey, uploadRequired: true, uploadEndpoint: `/support/tickets/${ticket.id}/attachments/${row.id}/upload`, scanStatus: row.scanStatus, expiresAt: row.expiresAt }
+  }
+
+  async completeAttachment(userId: string, ticketId: string, attachmentId: string, storageFileId: string) {
+    const attachment = await this.prisma.supportAttachment.findUnique({ where: { id: attachmentId } })
+    if (!attachment || attachment.ticketId !== ticketId || attachment.createdById !== userId) throw new NotFoundException("Support attachment not found")
+    const file = await this.prisma.storedFile.findFirst({ where: { id: storageFileId, userId, status: "ACTIVE" as any } })
+    if (!file) throw new BadRequestException("Uploaded support file was not found")
+    return this.prisma.supportAttachment.update({ where: { id: attachment.id }, data: { storageKey: `stored:${file.id}`, scanStatus: "CLEAN" as any, scanReason: "Validated by the private image upload pipeline" } })
+  }
+
+  async attachmentFileId(userId: string, ticketId: string, attachmentId: string) {
+    const ticket = await this.assertTicketOwner(userId, ticketId)
+    const attachment = await this.prisma.supportAttachment.findFirst({ where: { id: attachmentId, ticketId: ticket.id, scanStatus: "CLEAN" as any } })
+    const fileId = attachment?.storageKey.startsWith("stored:") ? attachment.storageKey.slice("stored:".length) : null
+    if (!fileId) throw new NotFoundException("Support attachment is not available")
+    return fileId
+  }
+
+  async supportReports(adminId: string, from?: string, to?: string) {
+    await this.requireSystemAdmin(adminId)
+    const start = from ? new Date(from) : new Date(Date.now() - 30 * 86400000)
+    const end = to ? new Date(to) : new Date()
+    const where = { createdAt: { gte: start, lte: end } }
+    const [tickets, statuses, priorities, ratings, articles, chats, agents, overdue] = await Promise.all([
+      this.prisma.supportTicket.count({ where }),
+      this.prisma.supportTicket.groupBy({ by: ["status"], where, _count: { _all: true } }),
+      this.prisma.supportTicket.groupBy({ by: ["priority"], where, _count: { _all: true } }),
+      this.prisma.supportTicketRating.aggregate({ where: { createdAt: { gte: start, lte: end } }, _avg: { rating: true }, _count: { _all: true } }),
+      this.prisma.supportHelpArticle.findMany({ orderBy: { viewCount: "desc" }, take: 10, select: { id: true, title: true, viewCount: true, helpfulYes: true, helpfulNo: true } }),
+      this.prisma.supportLiveChatSession.count({ where: { createdAt: { gte: start, lte: end } } }),
+      this.prisma.supportAgent.count({ where: { revokedAt: null } }),
+      this.prisma.supportTicket.count({ where: { slaOverdue: true, status: { notIn: [SupportTicketStatus.CLOSED, SupportTicketStatus.RESOLVED] } } }),
+    ])
+    return { range: { from: start, to: end }, tickets, statuses, priorities, ratings: { average: ratings._avg.rating ?? 0, count: ratings._count._all }, liveChats: chats, activeAgents: agents, overdueTickets: overdue, topArticles: articles }
+  }
+
+  async exportSupportReport(adminId: string, from?: string, to?: string) {
+    const report = await this.supportReports(adminId, from, to)
+    const rows = ["metric,value", `tickets,${report.tickets}`, `overdue_tickets,${report.overdueTickets}`, `live_chats,${report.liveChats}`, `active_agents,${report.activeAgents}`, `average_rating,${report.ratings.average}`, `rating_count,${report.ratings.count}`]
+    return { fileName: `support-report-${new Date().toISOString().slice(0, 10)}.csv`, contentType: "text/csv", content: rows.join("\n") }
+  }
 
   private async addMessage(ticket: { id: string; playerId: string; assignedAgentId: string | null; status: SupportTicketStatus }, senderId: string, senderKind: SupportMessageSenderKind, dto: SupportTicketMessageDto, internal: boolean) {
     const existing = await this.prisma.supportTicketMessage.findFirst({ where: { ticketId: ticket.id, clientMessageId: dto.clientMessageId } })
     if (existing) return this.getTicket(senderId, ticket.id, senderKind === SupportMessageSenderKind.AGENT)
-    const body = dto.body.trim()
     const config = await this.getConfiguration()
+    const recent = await this.prisma.supportTicketMessage.count({ where: { ticketId: ticket.id, senderId, createdAt: { gte: new Date(Date.now() - 60_000) } } })
+    if (senderKind === SupportMessageSenderKind.AGENT && recent >= config.agentReplyRatePerMinute) throw new ConflictException("Reply rate limit reached")
+    let body = dto.body.trim()
+    if (config.profanityPolicy === "BLOCK" && this.hasBlockedWords(body)) throw new BadRequestException("Please remove abusive language before sending")
+    if (config.profanityPolicy === "REDACT") body = this.redact(body)
     if (!body || body.length > config.maxMessageLength) throw new BadRequestException(`Message must be between 1 and ${config.maxMessageLength} characters`)
     const updated = await this.prisma.$transaction(async (tx) => {
       const next = await tx.supportTicket.update({ where: { id: ticket.id }, data: { lastSequence: { increment: 1 }, ...(senderKind === SupportMessageSenderKind.PLAYER ? { lastPlayerActivity: new Date(), status: ticket.status === SupportTicketStatus.RESOLVED ? SupportTicketStatus.REOPENED : SupportTicketStatus.WAITING_FOR_SUPPORT } : { lastAgentActivity: new Date(), firstResponseAt: { set: new Date() }, status: internal ? ticket.status : SupportTicketStatus.WAITING_FOR_PLAYER }) } })
@@ -261,8 +395,11 @@ export class SupportService implements OnModuleInit {
   private async audit(actorId: string, action: string, metadata: Prisma.InputJsonValue) { await this.prisma.supportAuditEvent.create({ data: { actorId, action, metadata } }) }
   private async unreadCount(userId: string) { const tickets = await this.prisma.supportTicket.findMany({ where: { playerId: userId, status: { not: SupportTicketStatus.CLOSED } }, select: { id: true, lastSequence: true } }); const reads = await this.prisma.supportTicketRead.findMany({ where: { userId, ticketId: { in: tickets.map((ticket) => ticket.id) } }, select: { ticketId: true, lastSequence: true } }); const map = new Map(reads.map((read) => [read.ticketId, read.lastSequence])); return tickets.filter((ticket) => ticket.lastSequence > (map.get(ticket.id) ?? 0)).length }
   private serializeConfig(config: any) { return { ...config, liveChatPriceGld: config.liveChatPriceGld?.toString() ?? "2" } }
-  private serializeTicket(row: any, readSequence: number, includeInternal = false) { return { id: row.id, ticketNumber: row.ticketNumber, subject: row.subject, status: row.status, priority: row.priority, createdAt: row.createdAt, updatedAt: row.updatedAt, firstResponseAt: row.firstResponseAt, resolvedAt: row.resolvedAt, category: row.category, player: row.player ? { id: row.player.id, username: row.player.username, name: [row.player.firstName, row.player.lastName].filter(Boolean).join(" ") || row.player.username } : undefined, assignedAgent: row.assignedAgent ? { id: row.assignedAgent.id, username: row.assignedAgent.user?.username } : null, unread: (row.lastSequence ?? 0) > readSequence, lastMessage: row.messages?.[0] ? { id: row.messages[0].id, body: row.messages[0].body, senderKind: row.messages[0].senderKind, sequence: row.messages[0].sequence, createdAt: row.messages[0].createdAt } : null, messages: row.messages?.filter((message: any) => includeInternal || !message.internal).map((message: any) => ({ id: message.id, sequence: message.sequence, body: message.body, senderKind: message.senderKind, sender: message.sender ? { id: message.sender.id, username: message.sender.username, name: [message.sender.firstName, message.sender.lastName].filter(Boolean).join(" ") || message.sender.username } : null, internal: includeInternal ? message.internal : undefined, createdAt: message.createdAt })) ?? [], events: row.events ?? [] } }
+  private serializeArticle(article: any, includeDrafts: boolean) { return { id: article.id, slug: article.slug, title: article.title, summary: article.summary, body: article.body, status: includeDrafts ? article.status : undefined, category: article.category, tags: article.tags ?? [], sortOrder: includeDrafts ? article.sortOrder : undefined, viewCount: includeDrafts ? article.viewCount : undefined, helpfulYes: includeDrafts ? article.helpfulYes : undefined, helpfulNo: includeDrafts ? article.helpfulNo : undefined, publishedAt: article.publishedAt, updatedAt: article.updatedAt } }
+  private serializeTicket(row: any, readSequence: number, includeInternal = false) { return { id: row.id, ticketNumber: row.ticketNumber, subject: row.subject, status: row.status, priority: row.priority, createdAt: row.createdAt, updatedAt: row.updatedAt, firstResponseAt: row.firstResponseAt, resolvedAt: row.resolvedAt, slaOverdue: row.slaOverdue ?? false, category: row.category, player: row.player ? { id: row.player.id, username: row.player.username, name: [row.player.firstName, row.player.lastName].filter(Boolean).join(" ") || row.player.username } : undefined, assignedAgent: row.assignedAgent ? { id: row.assignedAgent.id, username: row.assignedAgent.user?.username } : null, unread: (row.lastSequence ?? 0) > readSequence, lastMessage: row.messages?.[0] ? { id: row.messages[0].id, body: row.messages[0].body, senderKind: row.messages[0].senderKind, sequence: row.messages[0].sequence, createdAt: row.messages[0].createdAt } : null, messages: row.messages?.filter((message: any) => includeInternal || !message.internal).map((message: any) => ({ id: message.id, sequence: message.sequence, body: message.body, senderKind: message.senderKind, sender: message.sender ? { id: message.sender.id, username: message.sender.username, name: [message.sender.firstName, message.sender.lastName].filter(Boolean).join(" ") || message.sender.username } : null, internal: includeInternal ? message.internal : undefined, createdAt: message.createdAt })) ?? [], attachments: row.attachments?.map((attachment: any) => ({ id: attachment.id, fileName: attachment.fileName, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes, scanStatus: attachment.scanStatus, expiresAt: attachment.expiresAt })) ?? [], events: row.events ?? [] } }
   private ticketNumber() { return `SUP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}` }
+  private hasBlockedWords(value: string) { return /\b(fuck|shit|bitch|cunt|nigger|whore)\b/i.test(value) }
+  private redact(value: string) { return value.replace(/\b(fuck|shit|bitch|cunt|nigger|whore)\b/gi, "•••") }
 
   async runRetentionCleanup(adminId: string) {
     await this.requireSystemAdmin(adminId)

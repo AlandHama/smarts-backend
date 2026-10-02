@@ -171,14 +171,14 @@ ALTER TABLE "SupportAuditEvent" ADD CONSTRAINT "SupportAuditEvent_actorId_fkey" 
 ALTER TABLE "SupportAuditEvent" ADD CONSTRAINT "SupportAuditEvent_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES "SupportTicket"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 INSERT INTO "SupportConfiguration" ("updatedAt") VALUES (CURRENT_TIMESTAMP) ON CONFLICT ("key") DO NOTHING;
-INSERT INTO "SupportCategory" ("key", "name", "description", "sortOrder") VALUES
- ('ACCOUNT_LOGIN', 'Account & login', 'Sign-in, sessions, and account access.', 10),
- ('MATCHMAKING_GAMEPLAY', 'Matchmaking & gameplay', 'Matches, game rules, and gameplay issues.', 20),
- ('RESULT_REWARD', 'Results & rewards', 'Match results, XP, and rewards.', 30),
- ('GLD', 'GLD wallet', 'Wallet balance and GLD transactions.', 40),
- ('SOCIAL', 'Friends & social', 'Friends, gifts, and chat notifications.', 50),
- ('STORE', 'Store & purchases', 'Purchases, inventory, and store items.', 60),
- ('BUG', 'Report a bug', 'Something is not working as expected.', 70),
- ('SAFETY', 'Safety & harassment', 'Safety, abuse, and player reports.', 80),
- ('OTHER', 'Other', 'Anything else about SMARTS.', 90)
+INSERT INTO "SupportCategory" ("key", "name", "description", "sortOrder", "updatedAt") VALUES
+ ('ACCOUNT_LOGIN', 'Account & login', 'Sign-in, sessions, and account access.', 10, CURRENT_TIMESTAMP),
+ ('MATCHMAKING_GAMEPLAY', 'Matchmaking & gameplay', 'Matches, game rules, and gameplay issues.', 20, CURRENT_TIMESTAMP),
+ ('RESULT_REWARD', 'Results & rewards', 'Match results, XP, and rewards.', 30, CURRENT_TIMESTAMP),
+ ('GLD', 'GLD wallet', 'Wallet balance and GLD transactions.', 40, CURRENT_TIMESTAMP),
+ ('SOCIAL', 'Friends & social', 'Friends, gifts, and chat notifications.', 50, CURRENT_TIMESTAMP),
+ ('STORE', 'Store & purchases', 'Purchases, inventory, and store items.', 60, CURRENT_TIMESTAMP),
+ ('BUG', 'Report a bug', 'Something is not working as expected.', 70, CURRENT_TIMESTAMP),
+ ('SAFETY', 'Safety & harassment', 'Safety, abuse, and player reports.', 80, CURRENT_TIMESTAMP),
+ ('OTHER', 'Other', 'Anything else about SMARTS.', 90, CURRENT_TIMESTAMP)
 ON CONFLICT ("key") DO NOTHING;
