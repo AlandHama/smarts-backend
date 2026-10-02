@@ -4,7 +4,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger"
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { ChatsService } from "./chats.service"
-import { AddChatGroupMembersDto, ChatConversationsQueryDto, ChatMessagesQueryDto, ChatWallpaperDto, CreateChatConversationDto, CreateChatGroupDto, MarkChatReadDto, MuteChatDto, ReportChatMessageDto, SendChatMessageDto, UpdateChatGroupDto } from "./dtos"
+import { AddChatGroupMembersDto, ChatConversationsQueryDto, ChatMessagesQueryDto, ChatWallpaperDto, CreateChatConversationDto, CreateChatGroupDto, MarkChatReadDto, MuteChatDto, PresignChatVoiceDto, ReportChatMessageDto, SendChatMessageDto, SendChatVoiceDto, UpdateChatGroupDto } from "./dtos"
 
 @ApiTags("Friend chats")
 @ApiBearerAuth("access-token")
@@ -31,6 +31,12 @@ export class ChatsController {
   @Get("conversations/:conversationId/messages") messages(@CurrentUser() user: UserResponseDto, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Query() query: ChatMessagesQueryDto) { return this.chats.listMessages(user.id, conversationId, query.limit, query.before) }
 
   @Post("conversations/:conversationId/messages") send(@CurrentUser() user: UserResponseDto, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() dto: SendChatMessageDto) { return this.chats.sendMessage(user.id, conversationId, dto.clientMessageId, dto.body) }
+
+  @Post("conversations/:conversationId/voice/presign") presignVoice(@CurrentUser() user: UserResponseDto, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() dto: PresignChatVoiceDto) { return this.chats.presignVoiceMessage(user.id, conversationId, dto) }
+
+  @Post("conversations/:conversationId/messages/voice") sendVoice(@CurrentUser() user: UserResponseDto, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() dto: SendChatVoiceDto) { return this.chats.sendVoiceMessage(user.id, conversationId, dto) }
+
+  @Get("messages/:messageId/voice-url") voiceUrl(@CurrentUser() user: UserResponseDto, @Param("messageId", ParseUUIDPipe) messageId: string) { return this.chats.getVoiceUrl(user.id, messageId).then((url) => ({ url })) }
 
   @Patch("conversations/:conversationId/read") read(@CurrentUser() user: UserResponseDto, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() dto: MarkChatReadDto) { return this.chats.markRead(user.id, conversationId, dto.sequence) }
 

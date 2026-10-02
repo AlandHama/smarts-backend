@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common"
-import { PutObjectCommand, S3Client, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3"
+import { PutObjectCommand, S3Client, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { FeedbackEntity, PlayerAuditActorType, PlayerStorageValueType, PlayerStorageVisibility, Prisma, StoredFileStatus, StoredFileVisibility } from "@prisma/client"
 import { createHash, randomUUID } from "node:crypto"
@@ -80,6 +80,30 @@ export class StorageService {
     if (!file) throw new NotFoundException("File not found")
     if (!allowAdmin && file.userId !== userId) throw new NotFoundException("File not found")
     return getSignedUrl(this.clientForStorage(), new GetObjectCommand({ Bucket: this.required("S3_BUCKET"), Key: file.objectKey }), { expiresIn: 900 })
+  }
+
+  async presignPrivateUpload(input: { objectKey: string; contentType: string; expiresIn?: number }) {
+    const expiresIn = input.expiresIn ?? 600
+    const url = await getSignedUrl(this.clientForStorage(), new PutObjectCommand({
+      Bucket: this.required("S3_BUCKET"),
+      Key: input.objectKey,
+      ContentType: input.contentType,
+      CacheControl: "private, no-cache",
+    }), { expiresIn })
+    return { url, expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString() }
+  }
+
+  async inspectObject(objectKey: string) {
+    const object = await this.clientForStorage().send(new HeadObjectCommand({ Bucket: this.required("S3_BUCKET"), Key: objectKey }))
+    return { byteSize: Number(object.ContentLength ?? 0), contentType: object.ContentType?.toLowerCase() ?? "" }
+  }
+
+  async signedObjectUrl(objectKey: string, expiresIn = 900) {
+    return getSignedUrl(this.clientForStorage(), new GetObjectCommand({ Bucket: this.required("S3_BUCKET"), Key: objectKey }), { expiresIn })
+  }
+
+  async deleteObjectByKey(objectKey: string) {
+    await this.deleteObject(objectKey)
   }
 
   async publicDownloadUrl(fileId: string) {

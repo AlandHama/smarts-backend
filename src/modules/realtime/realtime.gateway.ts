@@ -149,6 +149,10 @@ export class RealtimeGateway implements OnModuleDestroy {
       await this.sendChatMessage(client, state, data)
       return
     }
+    if (event === "chat.voice.send") {
+      await this.sendChatVoiceMessage(client, state, data)
+      return
+    }
     if (event === "chat.typing.start" || event === "chat.typing.stop") {
       await this.changeTyping(client, state, data, event === "chat.typing.start")
       return
@@ -201,6 +205,23 @@ export class RealtimeGateway implements OnModuleDestroy {
       for (const [otherClient, otherState] of this.clients) {
         if (otherClient === client) continue
         if (!participantIds.includes(otherState.userId)) continue
+        this.send(otherClient, "chat.message.created", { message })
+      }
+    } catch (error) { this.chatError(client, this.chatErrorCode(error), this.errorMessage(error), clientMessageId) }
+  }
+
+  private async sendChatVoiceMessage(client: WebSocket, state: ClientState, data: Record<string, unknown>) {
+    const conversationId = this.string(data.conversationId)
+    const clientMessageId = this.string(data.clientMessageId)
+    const messageId = this.string(data.messageId)
+    const objectKey = this.string(data.objectKey)
+    if (!conversationId || !clientMessageId || !messageId || !objectKey) return this.chatError(client, "INVALID_MESSAGE", "Voice message data is incomplete", clientMessageId)
+    try {
+      const message = await this.chats.sendVoiceMessage(state.userId, conversationId, { clientMessageId, messageId, objectKey, durationMs: Number(data.durationMs), byteSize: Number(data.byteSize), mimeType: this.string(data.mimeType) })
+      const participantIds = await this.chats.participantIds(conversationId)
+      this.send(client, "chat.message.accepted", { message })
+      for (const [otherClient, otherState] of this.clients) {
+        if (otherClient === client || !participantIds.includes(otherState.userId)) continue
         this.send(otherClient, "chat.message.created", { message })
       }
     } catch (error) { this.chatError(client, this.chatErrorCode(error), this.errorMessage(error), clientMessageId) }

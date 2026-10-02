@@ -73,6 +73,42 @@ export class SendChatMessageDto {
   body!: string
 }
 
+export class PresignChatVoiceDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  clientMessageId!: string
+}
+
+export class SendChatVoiceDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  clientMessageId!: string
+
+  @IsUUID()
+  messageId!: string
+
+  @IsString()
+  @MaxLength(512)
+  objectKey!: string
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(500)
+  @Max(60000)
+  durationMs!: number
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(524288)
+  byteSize!: number
+
+  @IsIn(["audio/ogg", "audio/opus"])
+  mimeType!: string
+}
+
 export class MarkChatReadDto {
   @Type(() => Number)
   @IsInt()

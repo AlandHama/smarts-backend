@@ -27,6 +27,12 @@ import {
   ReportChatMessageDto,
   UpdateChatConfigurationDto,
 } from "./dtos"
+import { StorageService } from "../storage/storage.service"
+import { randomUUID } from "node:crypto"
+
+const MAX_VOICE_DURATION_MS = 60_000
+const MAX_VOICE_BYTES = 512 * 1024
+const VOICE_MIME_TYPES = new Set(["audio/ogg", "audio/opus"])
 
 const DEFAULT_CONFIG = {
   key: "default",
@@ -66,6 +72,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly chatPresence: ChatPresenceRegistry,
+    private readonly storage: StorageService,
   ) {}
 
   onModuleInit() {
@@ -362,6 +369,66 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     return this.serializeMessage(message)
   }
 
+  async presignVoiceMessage(userId: string, conversationId: string, dto: { clientMessageId: string }) {
+    const config = await this.ensureConfiguration()
+    this.assertEnabled(config)
+    await this.getAuthorizedParticipant(userId, conversationId)
+    await this.assertCanSend(userId)
+    const messageId = randomUUID()
+    const objectKey = `chat-voice/${conversationId}/${messageId}.ogg`
+    const signed = await this.storage.presignPrivateUpload({ objectKey, contentType: "audio/ogg" })
+    return { messageId, objectKey, uploadUrl: signed.url, expiresAt: signed.expiresAt, maxDurationMs: MAX_VOICE_DURATION_MS, maxBytes: MAX_VOICE_BYTES, mimeType: "audio/ogg", clientMessageId: dto.clientMessageId }
+  }
+
+  async sendVoiceMessage(userId: string, conversationId: string, dto: { clientMessageId: string; messageId: string; objectKey: string; durationMs: number; byteSize: number; mimeType: string }) {
+    const config = await this.ensureConfiguration()
+    this.assertEnabled(config)
+    const participant = await this.getAuthorizedParticipant(userId, conversationId)
+    await this.assertCanSend(userId)
+    if (!VOICE_MIME_TYPES.has(dto.mimeType) || dto.durationMs < 500 || dto.durationMs > MAX_VOICE_DURATION_MS || dto.byteSize < 1 || dto.byteSize > MAX_VOICE_BYTES) throw new ForbiddenException("Invalid voice message")
+    const expectedKey = `chat-voice/${conversationId}/${dto.messageId}.ogg`
+    if (dto.objectKey !== expectedKey) throw new ForbiddenException("Invalid voice upload")
+    const recipients = participant.conversation.participants.filter((row) => row.userId !== userId)
+    if (participant.conversation.type === ChatConversationType.DIRECT_FRIEND && recipients[0]) await this.assertCanReceive(recipients[0].userId)
+    const existing = await this.prisma.chatMessage.findUnique({ where: { senderId_clientMessageId: { senderId: userId, clientMessageId: dto.clientMessageId } }, include: { sender: { select: publicUserSelect }, conversation: { include: { participants: true } } } })
+    if (existing) return this.serializeMessage(existing)
+    const object = await this.storage.inspectObject(dto.objectKey).catch(() => { throw new ForbiddenException("Voice upload was not found") })
+    if (object.byteSize !== dto.byteSize || object.byteSize > MAX_VOICE_BYTES || !VOICE_MIME_TYPES.has(object.contentType || dto.mimeType)) throw new ForbiddenException("Voice upload validation failed")
+    let message: any
+    try {
+      message = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`chat:${userId}`}))`
+        const retry = await tx.chatMessage.findUnique({ where: { senderId_clientMessageId: { senderId: userId, clientMessageId: dto.clientMessageId } }, include: { sender: { select: publicUserSelect } } })
+        if (retry) return retry
+        const now = new Date()
+        const minuteCount = await tx.chatMessage.count({ where: { senderId: userId, createdAt: { gte: new Date(now.getTime() - 60_000) } } })
+        const dayCount = await tx.chatMessage.count({ where: { senderId: userId, createdAt: { gte: new Date(now.getTime() - 86_400_000) } } })
+        if (minuteCount >= config.maxMessagesPerMinute || dayCount >= config.maxMessagesPerDay) throw new HttpException("Chat message rate limit exceeded", HttpStatus.TOO_MANY_REQUESTS)
+        await tx.$executeRaw`SELECT id FROM "ChatConversation" WHERE id = ${conversationId}::uuid FOR UPDATE`
+        const latest = await tx.chatMessage.aggregate({ where: { conversationId }, _max: { sequence: true } })
+        const sequence = (latest._max.sequence ?? 0) + 1
+        const file = await tx.storedFile.create({ data: { userId, objectKey: dto.objectKey, originalName: `${dto.messageId}.ogg`, contentType: dto.mimeType, byteSize: BigInt(dto.byteSize), purpose: "chat-voice", visibility: "PRIVATE", metadata: { conversationId, messageId: dto.messageId } } })
+        const created = await tx.chatMessage.create({ data: { id: dto.messageId, conversationId, senderId: userId, sequence, clientMessageId: dto.clientMessageId, body: "Voice message", expiresAt: new Date(now.getTime() + config.retentionDays * 86_400_000), metadata: { type: "VOICE", fileId: file.id, objectKey: dto.objectKey, durationMs: dto.durationMs, byteSize: dto.byteSize, mimeType: dto.mimeType } as Prisma.InputJsonValue }, include: { sender: { select: publicUserSelect } } })
+        await tx.chatConversation.update({ where: { id: conversationId }, data: { lastMessageAt: created.createdAt, lastMessageId: created.id } })
+        return created
+      })
+    } catch (error) {
+      await this.storage.deleteObjectByKey(dto.objectKey).catch(() => undefined)
+      throw error
+    }
+    for (const recipient of recipients) void this.notifyMessage(config, message, recipient.userId, conversationId, "Sent a voice message", recipient.mutedUntil).catch((error) => this.logger.warn(`Chat notification failed: ${String(error)}`))
+    return this.serializeMessage(message)
+  }
+
+  async getVoiceUrl(userId: string, messageId: string) {
+    const message = await this.prisma.chatMessage.findUnique({ where: { id: messageId }, select: { conversationId: true, expiresAt: true, moderationState: true, metadata: true } })
+    if (!message || message.expiresAt <= new Date() || message.moderationState !== ChatMessageState.VISIBLE) throw new NotFoundException("Voice message not found")
+    await this.getAuthorizedParticipant(userId, message.conversationId)
+    const metadata = this.voiceMetadata(message.metadata)
+    if (!metadata?.objectKey) throw new NotFoundException("Voice message not found")
+    return this.storage.signedObjectUrl(metadata.objectKey)
+  }
+
   private notifyMessage(config: Config, message: any, recipientId: string, conversationId: string, preview?: string, participantMutedUntil?: Date | null) {
     return this.notifications.createChatMessageNotification({
       recipientId,
@@ -380,6 +447,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
   private chatNotificationPreview(body: string) {
     const fallback = body.slice(0, 160)
     if (body.startsWith("smarts-image:")) return "Sent an image"
+    if (body === "Voice message") return "Sent a voice message"
     if (!body.startsWith("smarts-event:")) return fallback
     try {
       const event = JSON.parse(body.slice("smarts-event:".length)) as Record<string, unknown>
@@ -644,16 +712,27 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private serializeMessage(message: any) {
-    return { id: message.id, conversationId: message.conversationId, senderId: message.senderId, sender: this.serializeUser(message.sender), sequence: message.sequence, clientMessageId: message.clientMessageId, body: message.moderationState === ChatMessageState.REMOVED ? "Message removed by moderation" : message.body, createdAt: message.createdAt.toISOString(), expiresAt: message.expiresAt.toISOString(), state: message.moderationState }
+    const voice = message.moderationState === ChatMessageState.VISIBLE ? this.voiceMetadata(message.metadata) : null
+    return { id: message.id, conversationId: message.conversationId, senderId: message.senderId, sender: this.serializeUser(message.sender), sequence: message.sequence, clientMessageId: message.clientMessageId, body: message.moderationState === ChatMessageState.REMOVED ? "Message removed by moderation" : message.body, type: voice ? "VOICE" : "TEXT", voice: voice ? { fileId: voice.fileId, durationMs: voice.durationMs, byteSize: voice.byteSize, mimeType: voice.mimeType, expiresAt: message.expiresAt.toISOString() } : null, createdAt: message.createdAt.toISOString(), expiresAt: message.expiresAt.toISOString(), state: message.moderationState }
+  }
+
+  private voiceMetadata(value: unknown): { type?: string; fileId?: string; objectKey?: string; durationMs?: number; byteSize?: number; mimeType?: string } | null {
+    if (!value || typeof value !== "object" || (value as any).type !== "VOICE") return null
+    return value as any
   }
 
   private async cleanupExpiredMessages() {
     try {
       let deleted = 0
       while (true) {
-        const rows = await this.prisma.chatMessage.findMany({ where: { expiresAt: { lt: new Date() } }, select: { id: true }, take: 500 })
+        const rows = await this.prisma.chatMessage.findMany({ where: { expiresAt: { lt: new Date() } }, select: { id: true, metadata: true }, take: 500 })
         if (!rows.length) break
+        for (const row of rows) {
+          const voice = this.voiceMetadata(row.metadata)
+          if (voice?.objectKey) await this.storage.deleteObjectByKey(voice.objectKey).catch((error) => this.logger.warn(`Voice cleanup failed: ${String(error)}`))
+        }
         const result = await this.prisma.chatMessage.deleteMany({ where: { id: { in: rows.map((row) => row.id) } } })
+        await this.prisma.storedFile.updateMany({ where: { objectKey: { in: rows.map((row) => this.voiceMetadata(row.metadata)?.objectKey).filter((key): key is string => Boolean(key)) } }, data: { status: "DELETED", deletedAt: new Date() } })
         deleted += result.count
         if (rows.length < 500) break
       }
