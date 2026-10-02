@@ -10,8 +10,14 @@ import express from "express"
 import { AppModule } from "./app.module"
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule)
+  // Keep the default JSON limit for the API, but allow the system-admin
+  // question importer to receive a reasonably sized questions file. The
+  // importer sends the parsed JSON array in one request, so the limit must be
+  // applied before Nest's route handlers run.
+  const app = await NestFactory.create(AppModule, { bodyParser: false })
   app.useWebSocketAdapter(new WsAdapter(app))
+  app.use("/system-admin/api/game-content/import", express.json({ limit: "2mb" }))
+  app.use(express.json())
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("Smarts NestJs Backend API")
