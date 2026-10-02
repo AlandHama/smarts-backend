@@ -35,6 +35,48 @@ while :; do
     continue
   fi
 
+  # Phase 1 support center was previously able to create its PostgreSQL
+  # objects before failing while seeding SupportCategory.updatedAt. If that
+  # partially-applied migration is encountered, complete its seed data and
+  # record it as applied so later support migrations can proceed. The guards
+  # below make this recovery safe: it only runs for the known enum collision
+  # and refuses to mark the migration applied if the core tables are absent.
+  if printf '%s' "$output" | grep -q '20261002100000_support_center_phase1' \
+    && printf '%s' "$output" | grep -q '42710'; then
+    echo "recovering the partially-applied support center Phase 1 migration" >&2
+    npx prisma db execute --stdin <<'SQL'
+DO $$
+BEGIN
+  IF to_regclass('public."SupportConfiguration"') IS NULL
+     OR to_regclass('public."SupportCategory"') IS NULL
+     OR to_regclass('public."SupportTicket"') IS NULL
+     OR to_regclass('public."SupportTicketMessage"') IS NULL THEN
+    RAISE EXCEPTION 'Phase 1 support tables are incomplete';
+  END IF;
+END
+$$;
+
+INSERT INTO "SupportConfiguration" ("updatedAt")
+VALUES (CURRENT_TIMESTAMP)
+ON CONFLICT ("key") DO NOTHING;
+
+INSERT INTO "SupportCategory" ("key", "name", "description", "sortOrder", "updatedAt") VALUES
+ ('ACCOUNT_LOGIN', 'Account & login', 'Sign-in, sessions, and account access.', 10, CURRENT_TIMESTAMP),
+ ('MATCHMAKING_GAMEPLAY', 'Matchmaking & gameplay', 'Matches, game rules, and gameplay issues.', 20, CURRENT_TIMESTAMP),
+ ('RESULT_REWARD', 'Results & rewards', 'Match results, XP, and rewards.', 30, CURRENT_TIMESTAMP),
+ ('GLD', 'GLD wallet', 'Wallet balance and GLD transactions.', 40, CURRENT_TIMESTAMP),
+ ('SOCIAL', 'Friends & social', 'Friends, gifts, and chat notifications.', 50, CURRENT_TIMESTAMP),
+ ('STORE', 'Store & purchases', 'Purchases, inventory, and store items.', 60, CURRENT_TIMESTAMP),
+ ('BUG', 'Report a bug', 'Something is not working as expected.', 70, CURRENT_TIMESTAMP),
+ ('SAFETY', 'Safety & harassment', 'Safety, abuse, and player reports.', 80, CURRENT_TIMESTAMP),
+ ('OTHER', 'Other', 'Anything else about SMARTS.', 90, CURRENT_TIMESTAMP)
+ON CONFLICT ("key") DO NOTHING;
+SQL
+    npx prisma migrate resolve --applied 20261002100000_support_center_phase1
+    attempt=$((attempt + 1))
+    continue
+  fi
+
   if ! printf '%s' "$output" | grep -q 'P1001'; then
     exit 1
   fi
