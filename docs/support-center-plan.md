@@ -733,6 +733,7 @@ Store absolute due timestamps. A background worker should:
 
 ### Outages
 
+
 If live chat is unavailable, hide or disable the paid action and explain why. Never charge GLD when session creation cannot be confirmed. Tickets should remain available during live-chat outages unless support is globally disabled.
 
 ## 16. Analytics and reporting
