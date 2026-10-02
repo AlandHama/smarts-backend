@@ -42,7 +42,7 @@ while :; do
   # below make this recovery safe: it only runs for the known enum collision
   # and refuses to mark the migration applied if the core tables are absent.
   if printf '%s' "$output" | grep -q '20261002100000_support_center_phase1' \
-    && printf '%s' "$output" | grep -q '42710'; then
+    && (printf '%s' "$output" | grep -q '42710' || printf '%s' "$output" | grep -q 'P3009'); then
     echo "recovering the partially-applied support center Phase 1 migration" >&2
     npx prisma db execute --stdin <<'SQL'
 DO $$
