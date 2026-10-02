@@ -12,6 +12,7 @@ import {
 } from "../components/EconomyView";
 import { LoginView } from "../components/LoginView";
 import { OverviewView } from "../components/OverviewView";
+import { AnalyticsReportsView } from "../components/AnalyticsReportsView";
 import {
   ProgressionTopPlayersPanel,
   ProgressionsView,
@@ -56,6 +57,7 @@ const viewPaths: Record<
   string
 > = {
   overview: "/",
+  analytics: "/analytics/",
   operations: "/operations/",
   players: "/players/",
   sessions: "/sessions/",
@@ -176,6 +178,7 @@ export default function AdminPage() {
           adminName={admin.username || admin.email || "Administrator"}
         >
           {view === "overview" && <OverviewView />}
+          {view === "analytics" && <AnalyticsReportsView />}
           {view === "operations" && <OperationsView />}
           {view === "players" && <UsersView onOpenPlayer360={openPlayer360} />}
           {view === "player360" && player360Id && (

@@ -44,6 +44,7 @@ import Typography from "@mui/material/Typography";
 
 export type AdminView =
   | "overview"
+  | "analytics"
   | "operations"
   | "players"
   | "player360"
@@ -81,6 +82,11 @@ const navigation = [
     key: "overview" as const,
     label: "Overview",
     icon: <DashboardRoundedIcon />,
+  },
+  {
+    key: "analytics" as const,
+    label: "Analytics & reports",
+    icon: <InsightsRoundedIcon />,
   },
   {
     key: "operations" as const,

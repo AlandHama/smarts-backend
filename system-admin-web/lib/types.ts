@@ -347,7 +347,52 @@ export interface AdMobAnalytics {
 }
 
 export interface SystemAdminAnalytics {
-  period: { from: string; to: string; days: number; timezone: string };
+  period: {
+    from: string;
+    to: string;
+    days: number;
+    timezone: string;
+    resolution?: "day" | "week" | "month" | string;
+  };
+  filters?: {
+    country?: string;
+    platform?: string;
+    appVersion?: string;
+    gameKey?: string;
+    mode?: string;
+    audience?: "all" | "new" | "returning" | string;
+    accountStatus?: string;
+  };
+  comparison: {
+    period: { from: string; to: string };
+    kpis: {
+      averageDau: number;
+      periodActiveUsers: number;
+      newPlayers: number;
+      matchesSettled: number;
+      completionRate: number;
+      accuracy: number;
+      xpAwarded: number;
+      purchaseValue: number;
+      totalPlayHours: number;
+      averageSessionMinutes: number;
+    };
+  } | null;
+  freshness: {
+    status: "fresh" | "stale" | "partial" | "failed" | string;
+    source: string;
+    dataThrough: string | null;
+    lastRefresh: string | null;
+    rowCount: number;
+    warnings: string[];
+  };
+  warnings: string[];
+  metricDefinitions: Array<{
+    key: string;
+    label: string;
+    definition: string;
+    freshnessTargetMinutes: number;
+  }>;
   kpis: {
     dau: number;
     averageDau: number;

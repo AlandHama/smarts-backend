@@ -27,6 +27,10 @@ import { GldModule } from "../gld/gld.module"
 import { ReferralsModule } from "../referrals/referrals.module"
 import { NotificationsModule } from "../notifications/notifications.module"
 import { StreaksModule } from "../streaks/streaks.module"
+import { AnalyticsEventService } from "./analytics-event.service"
+import { AnalyticsAggregationWorkerService } from "./analytics-aggregation-worker.service"
+import { AnalyticsReportingService } from "./analytics-reporting.service"
+import { AnalyticsReportingWorkerService } from "./analytics-reporting-worker.service"
 
 @Module({
   imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule],
@@ -41,6 +45,11 @@ import { StreaksModule } from "../streaks/streaks.module"
     UpdateUserStatusTransaction,
     TerminateAdminSessionTransaction,
     SystemAdminAnalyticsService,
+    AnalyticsEventService,
+    AnalyticsAggregationWorkerService,
+    AnalyticsReportingService,
+    AnalyticsReportingWorkerService,
   ],
+  exports: [AnalyticsEventService],
 })
 export class SystemAdminModule {}

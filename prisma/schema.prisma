@@ -557,110 +557,111 @@ enum FraudActionType {
 }
 
 model User {
-  id                         String                  @id @default(uuid()) @db.Uuid
-  username                   String                  @unique @db.VarChar(50)
-  passwordHash               String                  @db.VarChar(255)
-  firstName                  String?                 @db.VarChar(100)
-  lastName                   String?                 @db.VarChar(100)
-  email                      String?                 @unique @db.VarChar(255)
-  status                     UserStatus              @default(ACTIVE)
-  accountOrigin              AccountOrigin           @default(WHITELABEL)
-  isSystemAdmin              Boolean                 @default(false)
-  lastOnline                 DateTime?
-  createdAt                  DateTime                @default(now())
-  updatedAt                  DateTime                @updatedAt
-  sessions                   Session[]
-  externalIdentities         ExternalIdentity[]
-  profile                    PlayerProfile?
-  stats                      PlayerStats?
-  wallet                     Wallet?
-  progressions               PlayerProgression[]
-  idempotencyKeys            IdempotencyKey[]
-  progressionEvents          ProgressionEvent[]
-  rewardGrants               RewardGrant[]
-  leaderboardEntries         LeaderboardEntry[]
-  leaderboardScoreEvents     LeaderboardScoreEvent[] @relation("LeaderboardScoreEventPlayer")
-  createdMatches             Match[]                 @relation("MatchCreatedBy")
-  matchParticipants          MatchParticipant[]
-  gameStats                  PlayerGameStats[]
-  cognitiveStats             PlayerCognitiveStats?
-  inventoryItems             InventoryItem[]
-  purchases                  Purchase[]
-  entitlements               Entitlement[]
-  storageItems               PlayerStorageItem[]
-  files                      StoredFile[]
-  feedback                   PlayerFeedback[]
-  friendRequestsSent         FriendRequest[]         @relation("FriendRequestRequester")
-  friendRequestsReceived     FriendRequest[]         @relation("FriendRequestAddressee")
-  friendships                Friendship[]            @relation("FriendshipUser")
-  friendsOf                  Friendship[]            @relation("FriendshipFriend")
-  blocksCreated              FriendBlock[]           @relation("FriendBlocker")
-  blockedBy                  FriendBlock[]           @relation("FriendBlocked")
-  presence                   Presence?
-  matchmakingTickets         MatchmakingTicket[]
-  matchmakingInvitesSent     MatchmakingInvite[]     @relation("MatchmakingInviteInviter")
-  matchmakingInvitesReceived MatchmakingInvite[]     @relation("MatchmakingInviteInvitee")
-  adRewardClaims             AdRewardClaim[]
-  notifications              Notification[]
-  pushDevices                PushDevice[]
-  notificationBroadcasts     NotificationBroadcast[] @relation("NotificationBroadcastCreator")
-  adminAuditEvents           AdminAuditEvent[]
-  playerAuditEvents          PlayerAuditEvent[]
-  paidRewardRequests         PaidRewardRequest[]
-  paidRewardDecisions        PaidRewardRequest[]     @relation("PaidRewardRequestDecider")
-  gldControlUpdates          GldAdminControl[]       @relation("GldControlUpdater")
-  gldManualBackings          GldManualBacking[]      @relation("GldManualBackingCreator")
-  assignedRedeemCodes        AssetRedeemCode[]       @relation("RedeemCodeAssignedUser")
-  gldBurnEvents              GldBurnEvent[]
-  gldDailyAdStates           GldPlayerDailyAdState[]
-  sentGifts                  PlayerGift[]            @relation("SentGifts")
-  receivedGifts              PlayerGift[]            @relation("ReceivedGifts")
-  referralCode               ReferralCode?
-  referralsAsReferrer        Referral[]              @relation("ReferralReferrer")
-  referralAsReferred         Referral?               @relation("ReferralReferred")
-  referralRewardsAsReferrer  ReferralReward[]        @relation("ReferralRewardReferrer")
-  referralRewardsAsReferred  ReferralReward[]        @relation("ReferralRewardReferred")
-  referralConfigUpdates      ReferralConfig[]        @relation("ReferralConfigUpdater")
-  referralPolicyOverride     ReferralPlayerOverride?
-  rankingWins                RankingMatch[]          @relation("RankingMatchWinner")
-  missionRows                PlayerMission[]
-  achievementRows            PlayerAchievement[]
-  engagementEvents           EngagementEvent[]
-  dailyStreak                PlayerDailyStreak?
-  streakActivities           StreakActivity[]
-  fraudProfile               FraudProfile?
-  fraudSignals               FraudSignal[]
-  fraudCases                 FraudCase[]             @relation("FraudCasesForUser")
-  fraudCasesAssigned         FraudCase[]             @relation("FraudCaseAssignee")
-  fraudProfilesReviewed      FraudProfile[]          @relation("FraudProfileReviewer")
-  fraudActions               FraudAction[]           @relation("FraudActionActor")
-  fraudActionsForUser        FraudAction[]           @relation("FraudActionsForUser")
-  chatParticipants           ChatParticipant[]
-  chatMessagesSent           ChatMessage[]           @relation("ChatMessageSender")
-  createdChatConversations   ChatConversation[]      @relation("ChatConversationCreator")
-  chatRestrictions           ChatRestriction[]
-  chatReportsFiled           ChatReport[]            @relation("ChatReportReporter")
-  supportAgentProfile        SupportAgent?
-  supportTickets              SupportTicket[]         @relation("SupportTicketPlayer")
-  supportMessages             SupportTicketMessage[]  @relation("SupportMessageSender")
-  supportTicketEvents         SupportTicketEvent[]    @relation("SupportTicketEventActor")
-  supportAuditEvents          SupportAuditEvent[]     @relation("SupportAuditActor")
+  id                          String                    @id @default(uuid()) @db.Uuid
+  username                    String                    @unique @db.VarChar(50)
+  passwordHash                String                    @db.VarChar(255)
+  firstName                   String?                   @db.VarChar(100)
+  lastName                    String?                   @db.VarChar(100)
+  email                       String?                   @unique @db.VarChar(255)
+  status                      UserStatus                @default(ACTIVE)
+  accountOrigin               AccountOrigin             @default(WHITELABEL)
+  isSystemAdmin               Boolean                   @default(false)
+  lastOnline                  DateTime?
+  createdAt                   DateTime                  @default(now())
+  updatedAt                   DateTime                  @updatedAt
+  sessions                    Session[]
+  externalIdentities          ExternalIdentity[]
+  profile                     PlayerProfile?
+  stats                       PlayerStats?
+  wallet                      Wallet?
+  progressions                PlayerProgression[]
+  idempotencyKeys             IdempotencyKey[]
+  progressionEvents           ProgressionEvent[]
+  rewardGrants                RewardGrant[]
+  leaderboardEntries          LeaderboardEntry[]
+  leaderboardScoreEvents      LeaderboardScoreEvent[]   @relation("LeaderboardScoreEventPlayer")
+  createdMatches              Match[]                   @relation("MatchCreatedBy")
+  matchParticipants           MatchParticipant[]
+  gameStats                   PlayerGameStats[]
+  cognitiveStats              PlayerCognitiveStats?
+  inventoryItems              InventoryItem[]
+  purchases                   Purchase[]
+  entitlements                Entitlement[]
+  storageItems                PlayerStorageItem[]
+  files                       StoredFile[]
+  feedback                    PlayerFeedback[]
+  friendRequestsSent          FriendRequest[]           @relation("FriendRequestRequester")
+  friendRequestsReceived      FriendRequest[]           @relation("FriendRequestAddressee")
+  friendships                 Friendship[]              @relation("FriendshipUser")
+  friendsOf                   Friendship[]              @relation("FriendshipFriend")
+  blocksCreated               FriendBlock[]             @relation("FriendBlocker")
+  blockedBy                   FriendBlock[]             @relation("FriendBlocked")
+  presence                    Presence?
+  matchmakingTickets          MatchmakingTicket[]
+  matchmakingInvitesSent      MatchmakingInvite[]       @relation("MatchmakingInviteInviter")
+  matchmakingInvitesReceived  MatchmakingInvite[]       @relation("MatchmakingInviteInvitee")
+  adRewardClaims              AdRewardClaim[]
+  notifications               Notification[]
+  pushDevices                 PushDevice[]
+  notificationBroadcasts      NotificationBroadcast[]   @relation("NotificationBroadcastCreator")
+  adminAuditEvents            AdminAuditEvent[]
+  playerAuditEvents           PlayerAuditEvent[]
+  paidRewardRequests          PaidRewardRequest[]
+  paidRewardDecisions         PaidRewardRequest[]       @relation("PaidRewardRequestDecider")
+  gldControlUpdates           GldAdminControl[]         @relation("GldControlUpdater")
+  gldManualBackings           GldManualBacking[]        @relation("GldManualBackingCreator")
+  assignedRedeemCodes         AssetRedeemCode[]         @relation("RedeemCodeAssignedUser")
+  gldBurnEvents               GldBurnEvent[]
+  gldDailyAdStates            GldPlayerDailyAdState[]
+  sentGifts                   PlayerGift[]              @relation("SentGifts")
+  receivedGifts               PlayerGift[]              @relation("ReceivedGifts")
+  referralCode                ReferralCode?
+  referralsAsReferrer         Referral[]                @relation("ReferralReferrer")
+  referralAsReferred          Referral?                 @relation("ReferralReferred")
+  referralRewardsAsReferrer   ReferralReward[]          @relation("ReferralRewardReferrer")
+  referralRewardsAsReferred   ReferralReward[]          @relation("ReferralRewardReferred")
+  referralConfigUpdates       ReferralConfig[]          @relation("ReferralConfigUpdater")
+  referralPolicyOverride      ReferralPlayerOverride?
+  rankingWins                 RankingMatch[]            @relation("RankingMatchWinner")
+  missionRows                 PlayerMission[]
+  achievementRows             PlayerAchievement[]
+  engagementEvents            EngagementEvent[]
+  dailyStreak                 PlayerDailyStreak?
+  streakActivities            StreakActivity[]
+  fraudProfile                FraudProfile?
+  fraudSignals                FraudSignal[]
+  fraudCases                  FraudCase[]               @relation("FraudCasesForUser")
+  fraudCasesAssigned          FraudCase[]               @relation("FraudCaseAssignee")
+  fraudProfilesReviewed       FraudProfile[]            @relation("FraudProfileReviewer")
+  fraudActions                FraudAction[]             @relation("FraudActionActor")
+  fraudActionsForUser         FraudAction[]             @relation("FraudActionsForUser")
+  chatParticipants            ChatParticipant[]
+  chatMessagesSent            ChatMessage[]             @relation("ChatMessageSender")
+  createdChatConversations    ChatConversation[]        @relation("ChatConversationCreator")
+  chatRestrictions            ChatRestriction[]
+  chatReportsFiled            ChatReport[]              @relation("ChatReportReporter")
+  supportAgentProfile         SupportAgent?
+  supportTickets              SupportTicket[]           @relation("SupportTicketPlayer")
+  supportMessages             SupportTicketMessage[]    @relation("SupportMessageSender")
+  supportTicketEvents         SupportTicketEvent[]      @relation("SupportTicketEventActor")
+  supportAuditEvents          SupportAuditEvent[]       @relation("SupportAuditActor")
   supportTicketReads          SupportTicketRead[]
-  supportConfigurationUpdates  SupportConfiguration[]  @relation("SupportConfigurationUpdater")
-  supportAgentsGranted        SupportAgent[]          @relation("SupportAgentGrantedBy")
-  supportAgentsRevoked        SupportAgent[]          @relation("SupportAgentRevokedBy")
-  supportLiveChats            SupportLiveChatSession[] @relation("SupportLiveChatPlayer")
-  supportLiveChatMessages     SupportLiveChatMessage[] @relation("SupportLiveChatMessageSender")
+  supportConfigurationUpdates SupportConfiguration[]    @relation("SupportConfigurationUpdater")
+  supportAgentsGranted        SupportAgent[]            @relation("SupportAgentGrantedBy")
+  supportAgentsRevoked        SupportAgent[]            @relation("SupportAgentRevokedBy")
+  supportLiveChats            SupportLiveChatSession[]  @relation("SupportLiveChatPlayer")
+  supportLiveChatMessages     SupportLiveChatMessage[]  @relation("SupportLiveChatMessageSender")
   supportLiveChatReads        SupportLiveChatRead[]
   supportLiveChatQuotes       SupportLiveChatQuote[]
-  supportLiveChatEvents       SupportLiveChatEvent[] @relation("SupportLiveChatEventActor")
-  supportArticlesCreated      SupportHelpArticle[]    @relation("SupportArticleCreator")
-  supportArticlesUpdated      SupportHelpArticle[]    @relation("SupportArticleUpdater")
-  supportCannedRepliesCreated SupportCannedReply[]    @relation("SupportCannedReplyCreator")
-  supportCannedRepliesUpdated SupportCannedReply[]    @relation("SupportCannedReplyUpdater")
+  supportLiveChatEvents       SupportLiveChatEvent[]    @relation("SupportLiveChatEventActor")
+  supportArticlesCreated      SupportHelpArticle[]      @relation("SupportArticleCreator")
+  supportArticlesUpdated      SupportHelpArticle[]      @relation("SupportArticleUpdater")
+  supportCannedRepliesCreated SupportCannedReply[]      @relation("SupportCannedReplyCreator")
+  supportCannedRepliesUpdated SupportCannedReply[]      @relation("SupportCannedReplyUpdater")
   supportTicketRatings        SupportTicketRating[]
   supportTicketEscalations    SupportTicketEscalation[] @relation("SupportEscalationActor")
   supportAttachments          SupportAttachment[]
+  analyticsEvents             AnalyticsEvent[]
 }
 
 /// A provider identity is linked to a local account after the provider token
@@ -905,16 +906,16 @@ model ChatConversation {
 }
 
 model ChatParticipant {
-  id               String           @id @default(uuid()) @db.Uuid
-  conversationId   String           @db.Uuid
-  userId           String           @db.Uuid
+  id               String              @id @default(uuid()) @db.Uuid
+  conversationId   String              @db.Uuid
+  userId           String              @db.Uuid
   role             ChatParticipantRole @default(MEMBER)
-  wallpaperKey     String?          @db.VarChar(80)
-  lastReadSequence Int              @default(0)
+  wallpaperKey     String?             @db.VarChar(80)
+  lastReadSequence Int                 @default(0)
   mutedUntil       DateTime?
-  joinedAt         DateTime         @default(now())
-  conversation     ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt         DateTime            @default(now())
+  conversation     ChatConversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
   @@index([userId, joinedAt])
@@ -1729,6 +1730,216 @@ model EngagementEvent {
 
   @@unique([userId, eventType, sourceId])
   @@index([userId, eventType, createdAt])
+}
+
+/// Append-only, server-owned analytics envelope. Player clients never write
+/// this table directly; producers use the AnalyticsEventService.
+model AnalyticsEvent {
+  id           String   @id @default(uuid()) @db.Uuid
+  eventName    String   @db.VarChar(120)
+  eventVersion Int      @default(1)
+  occurredAt   DateTime
+  receivedAt   DateTime @default(now())
+  playerId     String?  @db.Uuid
+  sessionId    String?  @db.Uuid
+  matchId      String?  @db.Uuid
+  requestId    String?  @db.Uuid
+  platform     String?  @db.VarChar(32)
+  appVersion   String?  @db.VarChar(32)
+  countryCode  String?  @db.VarChar(8)
+  properties   Json?
+  privacyClass String   @default("OPERATIONAL") @db.VarChar(20)
+  createdAt    DateTime @default(now())
+  player       User?    @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@index([eventName, occurredAt])
+  @@index([playerId, occurredAt])
+  @@index([platform, appVersion, occurredAt])
+  @@index([countryCode, occurredAt])
+  @@index([receivedAt])
+}
+
+/// Recomputable daily metric buckets. The aggregate is intentionally generic
+/// so new server events can be reported without a schema migration per metric.
+model AnalyticsDailyAggregate {
+  id                String   @id @default(uuid()) @db.Uuid
+  day               DateTime @db.Date
+  metricKey         String   @db.VarChar(120)
+  dimensionKey      String   @default("all") @db.VarChar(255)
+  dimensions        Json?
+  value             Decimal  @db.Decimal(30, 6)
+  definitionVersion Int      @default(1)
+  refreshedAt       DateTime @default(now())
+
+  @@unique([day, metricKey, dimensionKey])
+  @@index([metricKey, day])
+  @@index([day])
+}
+
+/// Recomputable hourly metric buckets for operational dashboards and future
+/// near-real-time reports.
+model AnalyticsHourlyAggregate {
+  id                String   @id @default(uuid()) @db.Uuid
+  hour              DateTime
+  metricKey         String   @db.VarChar(120)
+  dimensionKey      String   @default("all") @db.VarChar(255)
+  dimensions        Json?
+  value             Decimal  @db.Decimal(30, 6)
+  definitionVersion Int      @default(1)
+  refreshedAt       DateTime @default(now())
+
+  @@unique([hour, metricKey, dimensionKey])
+  @@index([metricKey, hour])
+  @@index([hour])
+}
+
+/// Tracks the analytics worker and tells the UI whether aggregate-backed
+/// widgets are complete, partial, or stale.
+model AnalyticsRefreshState {
+  id                String    @id @default(uuid()) @db.Uuid
+  key               String    @unique @db.VarChar(80)
+  status            String    @default("PENDING") @db.VarChar(20)
+  definitionVersion Int       @default(1)
+  dataThrough       DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  rowCount          Int       @default(0)
+  error             String?   @db.Text
+  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime  @default(now())
+}
+
+/// Versioned report catalog and administrator-owned reporting operations.
+/// String states keep production policy changes migration-safe.
+model AnalyticsReportDefinition {
+  id                String   @id @default(uuid()) @db.Uuid
+  key               String   @unique @db.VarChar(80)
+  name              String   @db.VarChar(160)
+  category          String   @db.VarChar(40)
+  description       String   @db.VarChar(500)
+  definitionVersion Int      @default(1)
+  active            Boolean  @default(true)
+  defaultResolution String   @default("day") @db.VarChar(16)
+  permissions       Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([category, active])
+}
+
+model AnalyticsSavedReport {
+  id            String   @id @default(uuid()) @db.Uuid
+  ownerId       String   @db.Uuid
+  name          String   @db.VarChar(160)
+  reportKey     String   @db.VarChar(80)
+  visibility    String   @default("PRIVATE") @db.VarChar(20)
+  configuration Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([ownerId, updatedAt])
+  @@index([reportKey, visibility])
+}
+
+model AnalyticsScheduledReport {
+  id            String   @id @default(uuid()) @db.Uuid
+  savedReportId String   @db.Uuid
+  ownerId       String   @db.Uuid
+  frequency     String   @db.VarChar(16)
+  timezone      String   @default("UTC") @db.VarChar(80)
+  sendAt        String   @default("09:00") @db.VarChar(5)
+  recipients    Json
+  formats       Json
+  enabled       Boolean  @default(true)
+  nextRunAt     DateTime?
+  lastRunAt     DateTime?
+  lastStatus    String?  @db.VarChar(20)
+  lastError     String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([enabled, nextRunAt])
+  @@index([ownerId, updatedAt])
+}
+
+model AnalyticsAlertRule {
+  id                String   @id @default(uuid()) @db.Uuid
+  key               String   @unique @db.VarChar(100)
+  name              String   @db.VarChar(160)
+  metricKey         String   @db.VarChar(120)
+  condition         String   @db.VarChar(16)
+  threshold         Decimal  @db.Decimal(30, 6)
+  baselineWindow    Int      @default(7)
+  evaluationMinutes Int      @default(15)
+  minimumSample     Int      @default(1)
+  severity          String   @default("WARNING") @db.VarChar(16)
+  cooldownMinutes   Int      @default(60)
+  recipients        Json
+  activeFrom        DateTime?
+  activeUntil       DateTime?
+  enabled           Boolean  @default(true)
+  lastEvaluatedAt   DateTime?
+  lastTriggeredAt   DateTime?
+  createdById       String   @db.Uuid
+  updatedById       String?  @db.Uuid
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([enabled, lastEvaluatedAt])
+  @@index([metricKey, enabled])
+}
+
+model AnalyticsAlertEvent {
+  id               String   @id @default(uuid()) @db.Uuid
+  ruleId           String   @db.Uuid
+  status           String   @default("OPEN") @db.VarChar(20)
+  observedValue    Decimal  @db.Decimal(30, 6)
+  threshold        Decimal  @db.Decimal(30, 6)
+  message          String   @db.VarChar(500)
+  metadata         Json?
+  triggeredAt      DateTime @default(now())
+  acknowledgedAt   DateTime?
+  acknowledgedById String?  @db.Uuid
+  resolvedAt       DateTime?
+
+  @@index([ruleId, triggeredAt])
+  @@index([status, triggeredAt])
+}
+
+model AnalyticsDataQualityCheck {
+  id           String   @id @default(uuid()) @db.Uuid
+  key          String   @unique @db.VarChar(100)
+  name         String   @db.VarChar(160)
+  feature      String   @db.VarChar(40)
+  status       String   @default("PASS") @db.VarChar(16)
+  severity     String   @default("INFO") @db.VarChar(16)
+  message      String   @db.VarChar(500)
+  affectedFrom DateTime?
+  affectedTo   DateTime?
+  checkedAt    DateTime @default(now())
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, checkedAt])
+  @@index([feature, checkedAt])
+}
+
+model AnalyticsExportJob {
+  id          String   @id @default(uuid()) @db.Uuid
+  ownerId     String   @db.Uuid
+  reportKey   String   @db.VarChar(80)
+  format      String   @db.VarChar(16)
+  status      String   @default("PENDING") @db.VarChar(20)
+  query       Json
+  result      Json?
+  error       String?  @db.Text
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+
+  @@index([ownerId, createdAt])
+  @@index([status, createdAt])
 }
 
 model MissionDefinition {
@@ -2825,61 +3036,61 @@ model NotificationBroadcast {
 /// Independent, free player support configuration. Live chat pricing is stored
 /// here for the next phase, but is not charged by the Phase 1 ticket APIs.
 model SupportConfiguration {
-  id                       String   @id @default(uuid()) @db.Uuid
-  key                      String   @unique @default("default") @db.VarChar(40)
-  enabled                  Boolean  @default(true)
-  maintenanceMessage      String?  @db.VarChar(300)
-  ticketRetentionDays      Int      @default(30)
-  messageRetentionDays     Int      @default(30)
-  maxOpenTicketsPerPlayer  Int      @default(3)
-  maxMessageLength         Int      @default(4000)
-  maxSubjectLength         Int      @default(160)
-  firstResponseSlaMinutes  Int      @default(1440)
-  playerReplyTimeoutHours  Int      @default(72)
-  liveChatSessionMinutes   Int      @default(30)
-  liveChatGraceMinutes     Int      @default(10)
-  maxLiveChatQueueSize     Int      @default(25)
-  autoCloseInactiveMinutes Int      @default(15)
-  refundOnNoAgentConnection Boolean  @default(true)
-  refundOnSystemFailure    Boolean  @default(true)
-  refundOnAgentCancellation Boolean @default(true)
-  requirePlayerRating      Boolean  @default(false)
-  liveChatCurrencyCode     String   @default("GLD") @db.VarChar(16)
-  playerCanReopenDays      Int      @default(7)
-  attachmentRetentionDays  Int      @default(30)
-  maxAttachmentsPerMessage Int      @default(3)
-  maxAttachmentSizeBytes   Int      @default(10485760)
-  allowedAttachmentMimes   Json?
+  id                          String   @id @default(uuid()) @db.Uuid
+  key                         String   @unique @default("default") @db.VarChar(40)
+  enabled                     Boolean  @default(true)
+  maintenanceMessage          String?  @db.VarChar(300)
+  ticketRetentionDays         Int      @default(30)
+  messageRetentionDays        Int      @default(30)
+  maxOpenTicketsPerPlayer     Int      @default(3)
+  maxMessageLength            Int      @default(4000)
+  maxSubjectLength            Int      @default(160)
+  firstResponseSlaMinutes     Int      @default(1440)
+  playerReplyTimeoutHours     Int      @default(72)
+  liveChatSessionMinutes      Int      @default(30)
+  liveChatGraceMinutes        Int      @default(10)
+  maxLiveChatQueueSize        Int      @default(25)
+  autoCloseInactiveMinutes    Int      @default(15)
+  refundOnNoAgentConnection   Boolean  @default(true)
+  refundOnSystemFailure       Boolean  @default(true)
+  refundOnAgentCancellation   Boolean  @default(true)
+  requirePlayerRating         Boolean  @default(false)
+  liveChatCurrencyCode        String   @default("GLD") @db.VarChar(16)
+  playerCanReopenDays         Int      @default(7)
+  attachmentRetentionDays     Int      @default(30)
+  maxAttachmentsPerMessage    Int      @default(3)
+  maxAttachmentSizeBytes      Int      @default(10485760)
+  allowedAttachmentMimes      Json?
   blockedAttachmentExtensions Json?
-  playerTicketRatePerHour  Int      @default(5)
-  playerLiveChatRatePerDay Int      @default(3)
-  agentReplyRatePerMinute  Int      @default(20)
-  profanityPolicy          String   @default("REDACT") @db.VarChar(20)
-  allowRestrictedPlayers   Boolean  @default(false)
-  slaWorkerEnabled         Boolean  @default(true)
-  pushNotificationsEnabled Boolean  @default(true)
-  liveChatEnabled          Boolean  @default(false)
-  liveChatPriceGld         Decimal  @default(2) @db.Decimal(20, 6)
-  updatedById              String?  @db.Uuid
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
-  updatedBy                User?    @relation("SupportConfigurationUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  playerTicketRatePerHour     Int      @default(5)
+  playerLiveChatRatePerDay    Int      @default(3)
+  agentReplyRatePerMinute     Int      @default(20)
+  profanityPolicy             String   @default("REDACT") @db.VarChar(20)
+  allowRestrictedPlayers      Boolean  @default(false)
+  slaWorkerEnabled            Boolean  @default(true)
+  pushNotificationsEnabled    Boolean  @default(true)
+  liveChatEnabled             Boolean  @default(false)
+  liveChatPriceGld            Decimal  @default(2) @db.Decimal(20, 6)
+  updatedById                 String?  @db.Uuid
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  updatedBy                   User?    @relation("SupportConfigurationUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([enabled])
 }
 
 model SupportCategory {
-  id              String                 @id @default(uuid()) @db.Uuid
-  key             String                 @unique @db.VarChar(60)
-  name            String                 @db.VarChar(100)
-  description     String?                @db.VarChar(300)
-  queueKey        String?                @db.VarChar(60)
-  defaultPriority SupportTicketPriority  @default(NORMAL)
-  sortOrder       Int                    @default(0)
-  active          Boolean                @default(true)
+  id              String                @id @default(uuid()) @db.Uuid
+  key             String                @unique @db.VarChar(60)
+  name            String                @db.VarChar(100)
+  description     String?               @db.VarChar(300)
+  queueKey        String?               @db.VarChar(60)
+  defaultPriority SupportTicketPriority @default(NORMAL)
+  sortOrder       Int                   @default(0)
+  active          Boolean               @default(true)
   formSchema      Json?
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
   tickets         SupportTicket[]
   articles        SupportHelpArticle[]
   cannedReplies   SupportCannedReply[]
@@ -2888,51 +3099,51 @@ model SupportCategory {
 }
 
 model SupportAgent {
-  id                   String             @id @default(uuid()) @db.Uuid
-  userId               String             @unique @db.Uuid
-  level                SupportAgentLevel  @default(AGENT)
-  status               SupportAgentStatus @default(OFFLINE)
-  maxConcurrentTickets Int                @default(10)
-  maxConcurrentLiveChats Int              @default(2)
-  lastSeenAt           DateTime?
-  grantedAt            DateTime           @default(now())
-  grantedById          String?            @db.Uuid
-  revokedAt            DateTime?
-  revokedById          String?            @db.Uuid
-  suspensionReason     String?            @db.VarChar(500)
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  grantedBy            User?              @relation("SupportAgentGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
-  revokedBy            User?              @relation("SupportAgentRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
-  assignedTickets      SupportTicket[]    @relation("SupportTicketAssignee")
-  assignments          SupportTicketAssignment[]
-  liveChatSessions     SupportLiveChatSession[] @relation("SupportLiveChatAssignee")
+  id                     String                    @id @default(uuid()) @db.Uuid
+  userId                 String                    @unique @db.Uuid
+  level                  SupportAgentLevel         @default(AGENT)
+  status                 SupportAgentStatus        @default(OFFLINE)
+  maxConcurrentTickets   Int                       @default(10)
+  maxConcurrentLiveChats Int                       @default(2)
+  lastSeenAt             DateTime?
+  grantedAt              DateTime                  @default(now())
+  grantedById            String?                   @db.Uuid
+  revokedAt              DateTime?
+  revokedById            String?                   @db.Uuid
+  suspensionReason       String?                   @db.VarChar(500)
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  user                   User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy              User?                     @relation("SupportAgentGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  revokedBy              User?                     @relation("SupportAgentRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+  assignedTickets        SupportTicket[]           @relation("SupportTicketAssignee")
+  assignments            SupportTicketAssignment[]
+  liveChatSessions       SupportLiveChatSession[]  @relation("SupportLiveChatAssignee")
 
   @@index([status, level])
 }
 
 model SupportTicket {
-  id                 String                 @id @default(uuid()) @db.Uuid
-  ticketNumber       String                 @unique @db.VarChar(30)
-  playerId           String                 @db.Uuid
-  categoryId         String                 @db.Uuid
-  assignedAgentId    String?                @db.Uuid
-  subject            String                 @db.VarChar(160)
-  status             SupportTicketStatus    @default(OPEN)
-  priority           SupportTicketPriority  @default(NORMAL)
+  id                 String                    @id @default(uuid()) @db.Uuid
+  ticketNumber       String                    @unique @db.VarChar(30)
+  playerId           String                    @db.Uuid
+  categoryId         String                    @db.Uuid
+  assignedAgentId    String?                   @db.Uuid
+  subject            String                    @db.VarChar(160)
+  status             SupportTicketStatus       @default(OPEN)
+  priority           SupportTicketPriority     @default(NORMAL)
   customData         Json?
-  lastSequence       Int                    @default(0)
+  lastSequence       Int                       @default(0)
   firstResponseAt    DateTime?
   resolvedAt         DateTime?
   closedAt           DateTime?
-  lastPlayerActivity DateTime              @default(now())
+  lastPlayerActivity DateTime                  @default(now())
   lastAgentActivity  DateTime?
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  player             User                   @relation("SupportTicketPlayer", fields: [playerId], references: [id], onDelete: Cascade)
-  category           SupportCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  assignedAgent      SupportAgent?          @relation("SupportTicketAssignee", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  player             User                      @relation("SupportTicketPlayer", fields: [playerId], references: [id], onDelete: Cascade)
+  category           SupportCategory           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  assignedAgent      SupportAgent?             @relation("SupportTicketAssignee", fields: [assignedAgentId], references: [id], onDelete: SetNull)
   messages           SupportTicketMessage[]
   events             SupportTicketEvent[]
   assignments        SupportTicketAssignment[]
@@ -2943,7 +3154,7 @@ model SupportTicket {
   attachments        SupportAttachment[]
   firstResponseDueAt DateTime?
   resolutionDueAt    DateTime?
-  slaOverdue         Boolean               @default(false)
+  slaOverdue         Boolean                   @default(false)
   lastSlaNotifiedAt  DateTime?
 
   @@index([playerId, status, updatedAt])
@@ -2953,18 +3164,18 @@ model SupportTicket {
 }
 
 model SupportTicketMessage {
-  id             String                   @id @default(uuid()) @db.Uuid
-  ticketId       String                   @db.Uuid
-  senderId       String?                  @db.Uuid
-  senderKind     SupportMessageSenderKind
-  sequence       Int
-  clientMessageId String?                 @db.VarChar(120)
-  body           String                   @db.Text
-  internal       Boolean                  @default(false)
-  createdAt      DateTime                 @default(now())
-  ticket         SupportTicket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  sender         User?                    @relation("SupportMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
-  attachments    SupportAttachment[]
+  id              String                   @id @default(uuid()) @db.Uuid
+  ticketId        String                   @db.Uuid
+  senderId        String?                  @db.Uuid
+  senderKind      SupportMessageSenderKind
+  sequence        Int
+  clientMessageId String?                  @db.VarChar(120)
+  body            String                   @db.Text
+  internal        Boolean                  @default(false)
+  createdAt       DateTime                 @default(now())
+  ticket          SupportTicket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender          User?                    @relation("SupportMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  attachments     SupportAttachment[]
 
   @@unique([ticketId, sequence])
   @@unique([ticketId, clientMessageId])
@@ -2972,31 +3183,31 @@ model SupportTicketMessage {
 }
 
 model SupportTicketAssignment {
-  id         String       @id @default(uuid()) @db.Uuid
-  ticketId   String       @db.Uuid
-  agentId    String       @db.Uuid
-  assignedById String?    @db.Uuid
-  assignedAt DateTime     @default(now())
+  id           String        @id @default(uuid()) @db.Uuid
+  ticketId     String        @db.Uuid
+  agentId      String        @db.Uuid
+  assignedById String?       @db.Uuid
+  assignedAt   DateTime      @default(now())
   unassignedAt DateTime?
-  reason     String?      @db.VarChar(500)
-  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  agent      SupportAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  reason       String?       @db.VarChar(500)
+  ticket       SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  agent        SupportAgent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@index([agentId, unassignedAt, assignedAt])
   @@index([ticketId, assignedAt])
 }
 
 model SupportTicketEvent {
-  id         String              @id @default(uuid()) @db.Uuid
-  ticketId   String              @db.Uuid
-  actorId    String?             @db.Uuid
+  id         String               @id @default(uuid()) @db.Uuid
+  ticketId   String               @db.Uuid
+  actorId    String?              @db.Uuid
   fromStatus SupportTicketStatus?
   toStatus   SupportTicketStatus?
-  action     String              @db.VarChar(80)
-  note       String?             @db.VarChar(1000)
-  createdAt  DateTime            @default(now())
-  ticket     SupportTicket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  actor      User?               @relation("SupportTicketEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action     String               @db.VarChar(80)
+  note       String?              @db.VarChar(1000)
+  createdAt  DateTime             @default(now())
+  ticket     SupportTicket        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor      User?                @relation("SupportTicketEventActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([ticketId, createdAt])
 }
@@ -3014,14 +3225,14 @@ model SupportTicketRead {
 }
 
 model SupportAuditEvent {
-  id         String        @id @default(uuid()) @db.Uuid
-  actorId    String?       @db.Uuid
-  ticketId   String?       @db.Uuid
-  action     String        @db.VarChar(100)
-  metadata   Json?
-  createdAt  DateTime      @default(now())
-  actor      User?         @relation("SupportAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
-  ticket     SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  id        String         @id @default(uuid()) @db.Uuid
+  actorId   String?        @db.Uuid
+  ticketId  String?        @db.Uuid
+  action    String         @db.VarChar(100)
+  metadata  Json?
+  createdAt DateTime       @default(now())
+  actor     User?          @relation("SupportAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  ticket    SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([ticketId, createdAt])
   @@index([actorId, createdAt])
@@ -3089,89 +3300,89 @@ model SupportTicketRating {
 }
 
 model SupportTicketEscalation {
-  id          String        @id @default(uuid()) @db.Uuid
-  ticketId    String        @db.Uuid
-  actorId     String        @db.Uuid
-  reason      String        @db.VarChar(1000)
-  fromStatus  SupportTicketStatus?
-  toStatus    SupportTicketStatus @default(ESCALATED)
-  createdAt   DateTime      @default(now())
-  resolvedAt  DateTime?
-  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  actor       User          @relation("SupportEscalationActor", fields: [actorId], references: [id], onDelete: Restrict)
+  id         String               @id @default(uuid()) @db.Uuid
+  ticketId   String               @db.Uuid
+  actorId    String               @db.Uuid
+  reason     String               @db.VarChar(1000)
+  fromStatus SupportTicketStatus?
+  toStatus   SupportTicketStatus  @default(ESCALATED)
+  createdAt  DateTime             @default(now())
+  resolvedAt DateTime?
+  ticket     SupportTicket        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor      User                 @relation("SupportEscalationActor", fields: [actorId], references: [id], onDelete: Restrict)
 
   @@index([ticketId, createdAt])
   @@index([resolvedAt, createdAt])
 }
 
 model SupportAttachment {
-  id          String                       @id @default(uuid()) @db.Uuid
-  ticketId    String                       @db.Uuid
-  messageId   String?                      @db.Uuid
-  createdById String                       @db.Uuid
-  fileName    String                       @db.VarChar(255)
-  mimeType    String                       @db.VarChar(120)
+  id          String                      @id @default(uuid()) @db.Uuid
+  ticketId    String                      @db.Uuid
+  messageId   String?                     @db.Uuid
+  createdById String                      @db.Uuid
+  fileName    String                      @db.VarChar(255)
+  mimeType    String                      @db.VarChar(120)
   sizeBytes   Int
-  storageKey  String                       @db.VarChar(500)
-  scanStatus  SupportAttachmentScanStatus  @default(PENDING)
-  scanReason  String?                      @db.VarChar(500)
+  storageKey  String                      @db.VarChar(500)
+  scanStatus  SupportAttachmentScanStatus @default(PENDING)
+  scanReason  String?                     @db.VarChar(500)
   expiresAt   DateTime?
-  createdAt   DateTime                     @default(now())
-  ticket      SupportTicket                @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  message     SupportTicketMessage?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  createdBy   User                         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime                    @default(now())
+  ticket      SupportTicket               @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  message     SupportTicketMessage?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  createdBy   User                        @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
   @@index([ticketId, createdAt])
   @@index([scanStatus, expiresAt])
 }
 
 model SupportLiveChatQuote {
-  id              String   @id @default(uuid()) @db.Uuid
-  playerId        String   @db.Uuid
-  priceGld        Decimal  @db.Decimal(20, 6)
-  currencyCode    String   @default("GLD") @db.VarChar(16)
-  availableAgents Int      @default(0)
-  estimatedWaitSeconds Int @default(0)
-  expiresAt       DateTime
-  usedAt          DateTime?
-  createdAt       DateTime @default(now())
-  player          User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  session         SupportLiveChatSession?
+  id                   String                  @id @default(uuid()) @db.Uuid
+  playerId             String                  @db.Uuid
+  priceGld             Decimal                 @db.Decimal(20, 6)
+  currencyCode         String                  @default("GLD") @db.VarChar(16)
+  availableAgents      Int                     @default(0)
+  estimatedWaitSeconds Int                     @default(0)
+  expiresAt            DateTime
+  usedAt               DateTime?
+  createdAt            DateTime                @default(now())
+  player               User                    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  session              SupportLiveChatSession?
 
   @@index([playerId, expiresAt])
 }
 
 model SupportLiveChatSession {
-  id                    String                @id @default(uuid()) @db.Uuid
-  sessionNumber         String                @unique @db.VarChar(30)
-  playerId              String                @db.Uuid
-  assignedAgentId       String?               @db.Uuid
-  quoteId               String                @unique @db.Uuid
-  purchaseIdempotencyKey String               @db.VarChar(120)
-  status                SupportLiveChatStatus @default(QUEUED)
-  quotedPriceGld        Decimal               @db.Decimal(20, 6)
-  chargedAmountGld      Decimal               @db.Decimal(20, 6)
-  lastSequence          Int                   @default(0)
-  currencyCode          String                @default("GLD") @db.VarChar(16)
-  walletLedgerId        String?               @db.Uuid
-  refundLedgerId        String?               @db.Uuid
-  configurationVersion  String?               @db.VarChar(80)
-  queueEnteredAt        DateTime              @default(now())
-  assignedAt            DateTime?
-  startedAt             DateTime?
-  endedAt               DateTime?
-  lastActivityAt        DateTime              @default(now())
-  disconnectUntil       DateTime?
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  player                User                  @relation("SupportLiveChatPlayer", fields: [playerId], references: [id], onDelete: Cascade)
-  assignedAgent         SupportAgent?         @relation("SupportLiveChatAssignee", fields: [assignedAgentId], references: [id], onDelete: SetNull)
-  quote                 SupportLiveChatQuote   @relation(fields: [quoteId], references: [id], onDelete: Restrict)
-  messages              SupportLiveChatMessage[]
-  events                SupportLiveChatEvent[]
-  reads                 SupportLiveChatRead[]
-  charge                SupportLiveChatCharge?
-  refund                SupportLiveChatRefund?
+  id                     String                   @id @default(uuid()) @db.Uuid
+  sessionNumber          String                   @unique @db.VarChar(30)
+  playerId               String                   @db.Uuid
+  assignedAgentId        String?                  @db.Uuid
+  quoteId                String                   @unique @db.Uuid
+  purchaseIdempotencyKey String                   @db.VarChar(120)
+  status                 SupportLiveChatStatus    @default(QUEUED)
+  quotedPriceGld         Decimal                  @db.Decimal(20, 6)
+  chargedAmountGld       Decimal                  @db.Decimal(20, 6)
+  lastSequence           Int                      @default(0)
+  currencyCode           String                   @default("GLD") @db.VarChar(16)
+  walletLedgerId         String?                  @db.Uuid
+  refundLedgerId         String?                  @db.Uuid
+  configurationVersion   String?                  @db.VarChar(80)
+  queueEnteredAt         DateTime                 @default(now())
+  assignedAt             DateTime?
+  startedAt              DateTime?
+  endedAt                DateTime?
+  lastActivityAt         DateTime                 @default(now())
+  disconnectUntil        DateTime?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  player                 User                     @relation("SupportLiveChatPlayer", fields: [playerId], references: [id], onDelete: Cascade)
+  assignedAgent          SupportAgent?            @relation("SupportLiveChatAssignee", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  quote                  SupportLiveChatQuote     @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  messages               SupportLiveChatMessage[]
+  events                 SupportLiveChatEvent[]
+  reads                  SupportLiveChatRead[]
+  charge                 SupportLiveChatCharge?
+  refund                 SupportLiveChatRefund?
 
   @@unique([playerId, purchaseIdempotencyKey])
   @@index([playerId, status, updatedAt])
@@ -3180,41 +3391,41 @@ model SupportLiveChatSession {
 }
 
 model SupportLiveChatCharge {
-  id             String                @id @default(uuid()) @db.Uuid
-  sessionId      String                @unique @db.Uuid
-  amountGld      Decimal               @db.Decimal(20, 6)
-  currencyCode   String                @db.VarChar(16)
-  ledgerId       String?               @db.Uuid
-  quoteId        String                @db.Uuid
-  createdAt      DateTime              @default(now())
-  session        SupportLiveChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id           String                 @id @default(uuid()) @db.Uuid
+  sessionId    String                 @unique @db.Uuid
+  amountGld    Decimal                @db.Decimal(20, 6)
+  currencyCode String                 @db.VarChar(16)
+  ledgerId     String?                @db.Uuid
+  quoteId      String                 @db.Uuid
+  createdAt    DateTime               @default(now())
+  session      SupportLiveChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([createdAt])
 }
 
 model SupportLiveChatRefund {
-  id             String                @id @default(uuid()) @db.Uuid
-  sessionId      String                @unique @db.Uuid
-  amountGld      Decimal               @db.Decimal(20, 6)
-  currencyCode   String                @db.VarChar(16)
-  ledgerId       String?               @db.Uuid
-  reason         String                @db.VarChar(500)
-  createdAt      DateTime              @default(now())
-  session        SupportLiveChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id           String                 @id @default(uuid()) @db.Uuid
+  sessionId    String                 @unique @db.Uuid
+  amountGld    Decimal                @db.Decimal(20, 6)
+  currencyCode String                 @db.VarChar(16)
+  ledgerId     String?                @db.Uuid
+  reason       String                 @db.VarChar(500)
+  createdAt    DateTime               @default(now())
+  session      SupportLiveChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model SupportLiveChatMessage {
-  id              String                  @id @default(uuid()) @db.Uuid
-  sessionId       String                  @db.Uuid
-  senderId        String?                 @db.Uuid
+  id              String                   @id @default(uuid()) @db.Uuid
+  sessionId       String                   @db.Uuid
+  senderId        String?                  @db.Uuid
   senderKind      SupportMessageSenderKind
   sequence        Int
-  clientMessageId String                  @db.VarChar(120)
-  body            String                  @db.Text
-  internal        Boolean                 @default(false)
-  createdAt       DateTime                @default(now())
-  session         SupportLiveChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  sender          User?                   @relation("SupportLiveChatMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  clientMessageId String                   @db.VarChar(120)
+  body            String                   @db.Text
+  internal        Boolean                  @default(false)
+  createdAt       DateTime                 @default(now())
+  session         SupportLiveChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sender          User?                    @relation("SupportLiveChatMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
 
   @@unique([sessionId, sequence])
   @@unique([sessionId, clientMessageId])
@@ -3222,26 +3433,26 @@ model SupportLiveChatMessage {
 }
 
 model SupportLiveChatRead {
-  id           String                @id @default(uuid()) @db.Uuid
-  sessionId    String                @db.Uuid
-  userId       String                @db.Uuid
-  lastSequence Int                   @default(0)
-  updatedAt    DateTime              @updatedAt
+  id           String                 @id @default(uuid()) @db.Uuid
+  sessionId    String                 @db.Uuid
+  userId       String                 @db.Uuid
+  lastSequence Int                    @default(0)
+  updatedAt    DateTime               @updatedAt
   session      SupportLiveChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, userId])
 }
 
 model SupportLiveChatEvent {
-  id         String                  @id @default(uuid()) @db.Uuid
-  sessionId  String                  @db.Uuid
-  actorId    String?                 @db.Uuid
-  type       SupportLiveChatEventType
-  metadata   Json?
-  createdAt  DateTime                @default(now())
-  session    SupportLiveChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  actor      User?                   @relation("SupportLiveChatEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  id        String                   @id @default(uuid()) @db.Uuid
+  sessionId String                   @db.Uuid
+  actorId   String?                  @db.Uuid
+  type      SupportLiveChatEventType
+  metadata  Json?
+  createdAt DateTime                 @default(now())
+  session   SupportLiveChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  actor     User?                    @relation("SupportLiveChatEventActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([sessionId, createdAt])
 }

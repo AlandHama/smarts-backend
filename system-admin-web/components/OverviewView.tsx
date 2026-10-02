@@ -6,12 +6,15 @@ import type { ReactNode } from "react";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import AutoGraphRoundedIcon from "@mui/icons-material/AutoGraphRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
 import MonetizationOnRoundedIcon from "@mui/icons-material/MonetizationOnRounded";
 import PlayCircleRoundedIcon from "@mui/icons-material/PlayCircleRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import Button from "@mui/material/Button";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -23,9 +26,10 @@ import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { api } from "../lib/api";
+import { api, downloadFile } from "../lib/api";
 import type { GameAnalyticsRow, SystemAdminAnalytics } from "../lib/types";
 
 const number = new Intl.NumberFormat("en-US");
@@ -64,16 +68,40 @@ const playTimeSeries: Series[] = [
 ];
 
 export function OverviewView() {
-  const [days, setDays] = useState(30);
+  const [rangePreset, setRangePreset] = useState("30");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [comparison, setComparison] = useState("previous");
+  const [country, setCountry] = useState("");
+  const [platform, setPlatform] = useState("");
+  const [appVersion, setAppVersion] = useState("");
+  const [gameKey, setGameKey] = useState("");
+  const [mode, setMode] = useState("");
+  const [audience, setAudience] = useState("all");
   const [data, setData] = useState<SystemAdminAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const days = rangePreset === "custom" ? (data?.period.days || 30) : Number(rangePreset);
+  const query = new URLSearchParams({ comparison });
+  if (rangePreset === "custom") {
+    if (from) query.set("from", from);
+    if (to) query.set("to", to);
+  } else query.set("days", String(days));
+  if (country) query.set("country", country);
+  if (platform) query.set("platform", platform);
+  if (appVersion) query.set("appVersion", appVersion);
+  if (gameKey) query.set("gameKey", gameKey);
+  if (mode) query.set("mode", mode);
+  if (audience !== "all") query.set("audience", audience);
+  const queryString = query.toString();
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setError("");
-    api<SystemAdminAnalytics>(`/analytics?days=${days}`)
+    api<SystemAdminAnalytics>(`/analytics?${queryString}`)
       .then((result) => {
         if (alive) setData(result);
       })
@@ -89,7 +117,7 @@ export function OverviewView() {
         if (alive) setLoading(false);
       });
     const timer = window.setInterval(() => {
-      void api<SystemAdminAnalytics>(`/analytics?days=${days}`)
+      void api<SystemAdminAnalytics>(`/analytics?${queryString}`)
         .then((result) => {
           if (alive) setData(result);
         })
@@ -99,7 +127,7 @@ export function OverviewView() {
       alive = false;
       window.clearInterval(timer);
     };
-  }, [days]);
+  }, [queryString]);
 
   const kpis = data?.kpis;
   const trends = data?.trends ?? [];
@@ -141,24 +169,92 @@ export function OverviewView() {
             truth.
           </Typography>
         </Box>
-        <Select
-          size="small"
-          value={days}
-          onChange={(event) => setDays(Number(event.target.value))}
-          sx={{ minWidth: 150, alignSelf: { xs: "flex-start", md: "auto" } }}
-        >
-          <MenuItem value={7}>Last 7 days</MenuItem>
-          <MenuItem value={30}>Last 30 days</MenuItem>
-          <MenuItem value={90}>Last 90 days</MenuItem>
-          <MenuItem value={365}>Last 12 months</MenuItem>
-        </Select>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Select
+            size="small"
+            value={rangePreset}
+            onChange={(event) => setRangePreset(String(event.target.value))}
+            sx={{ minWidth: 155, alignSelf: { xs: "flex-start", md: "auto" } }}
+          >
+            <MenuItem value="7">Last 7 days</MenuItem>
+            <MenuItem value="30">Last 30 days</MenuItem>
+            <MenuItem value="90">Last 90 days</MenuItem>
+            <MenuItem value="365">Last 12 months</MenuItem>
+            <MenuItem value="custom">Custom range</MenuItem>
+          </Select>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<DownloadRoundedIcon />}
+            disabled={exporting}
+            onClick={() => {
+              setExporting(true);
+              void downloadFile(`/analytics/export.csv?${queryString}`)
+                .catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to export report"))
+                .finally(() => setExporting(false));
+            }}
+          >
+            {exporting ? "Preparing…" : "Export CSV"}
+          </Button>
+        </Stack>
       </Stack>
+
+      <AnalyticsFilters
+        rangePreset={rangePreset}
+        from={from}
+        to={to}
+        comparison={comparison}
+        country={country}
+        platform={platform}
+        appVersion={appVersion}
+        gameKey={gameKey}
+        mode={mode}
+        audience={audience}
+        countries={data?.countries.map((row) => row.countryCode) ?? []}
+        games={data?.games.map((row) => ({ key: row.key, name: row.name })) ?? []}
+        onFromChange={setFrom}
+        onToChange={setTo}
+        onComparisonChange={setComparison}
+        onCountryChange={setCountry}
+        onPlatformChange={setPlatform}
+        onAppVersionChange={setAppVersion}
+        onGameKeyChange={setGameKey}
+        onModeChange={setMode}
+        onAudienceChange={setAudience}
+      />
+
+      {data?.freshness && (
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
+          <Chip
+            size="small"
+            icon={data.freshness.status === "fresh" ? <CheckCircleRoundedIcon /> : <WarningAmberRoundedIcon />}
+            color={data.freshness.status === "fresh" ? "success" : data.freshness.status === "failed" ? "error" : "warning"}
+            label={`${data.freshness.status.toUpperCase()} · data through ${data.freshness.dataThrough ? new Date(data.freshness.dataThrough).toLocaleString() : "not available"}`}
+          />
+          <Typography variant="caption" color="text.secondary">
+            Source: {data.freshness.source} · refreshed {data.freshness.lastRefresh ? new Date(data.freshness.lastRefresh).toLocaleString() : "not yet"}
+          </Typography>
+        </Stack>
+      )}
 
       {error && (
         <Card sx={{ p: 2, borderColor: "error.main" }}>
           <Typography color="error.main">{error}</Typography>
         </Card>
       )}
+
+      {data?.warnings?.length ? (
+        <Card sx={{ p: 1.5, borderColor: "warning.main", bgcolor: "rgba(245,158,11,.08)" }}>
+          <Stack direction="row" spacing={1} alignItems="flex-start">
+            <WarningAmberRoundedIcon color="warning" fontSize="small" />
+            <Box>
+              {data.warnings.map((warning) => <Typography key={warning} variant="body2" color="warning.light">{warning}</Typography>)}
+            </Box>
+          </Stack>
+        </Card>
+      ) : null}
+
+      {data?.comparison && <ComparisonSummary data={data} />}
 
       <Grid container spacing={1.5}>
         {[
@@ -332,6 +428,136 @@ export function OverviewView() {
         </Grid>
       </Grid>
     </Stack>
+  );
+}
+
+function ComparisonSummary({ data }: { data: SystemAdminAnalytics }) {
+  const comparison = data.comparison;
+  if (!comparison) return null;
+  const rows = [
+    ["Average DAU", data.kpis.averageDau, comparison.kpis.averageDau],
+    ["Active players", data.kpis.periodActiveUsers, comparison.kpis.periodActiveUsers],
+    ["Settled matches", data.kpis.matchesSettled, comparison.kpis.matchesSettled],
+    ["Answer accuracy", data.kpis.accuracy, comparison.kpis.accuracy],
+    ["Purchase value", data.kpis.purchaseValue, comparison.kpis.purchaseValue],
+  ] as const;
+  return (
+    <Card sx={{ p: 2 }}>
+      <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5}>
+        <Box>
+          <Typography fontWeight={800}>Period comparison</Typography>
+          <Typography variant="caption" color="text.secondary">
+            Compared with {new Date(comparison.period.from).toLocaleDateString()} – {new Date(comparison.period.to).toLocaleDateString()}
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          {rows.map(([label, current, previous]) => {
+            const delta = Number(previous) ? ((Number(current) - Number(previous)) / Math.abs(Number(previous))) * 100 : Number(current) ? 100 : 0;
+            return <Chip key={label} size="small" variant="outlined" color={delta >= 0 ? "success" : "error"} label={`${label}: ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`} />;
+          })}
+        </Stack>
+      </Stack>
+    </Card>
+  );
+}
+
+function AnalyticsFilters({
+  rangePreset,
+  from,
+  to,
+  comparison,
+  country,
+  platform,
+  appVersion,
+  gameKey,
+  mode,
+  audience,
+  countries,
+  games,
+  onFromChange,
+  onToChange,
+  onComparisonChange,
+  onCountryChange,
+  onPlatformChange,
+  onAppVersionChange,
+  onGameKeyChange,
+  onModeChange,
+  onAudienceChange,
+}: {
+  rangePreset: string;
+  from: string;
+  to: string;
+  comparison: string;
+  country: string;
+  platform: string;
+  appVersion: string;
+  gameKey: string;
+  mode: string;
+  audience: string;
+  countries: string[];
+  games: Array<{ key: string; name: string }>;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+  onComparisonChange: (value: string) => void;
+  onCountryChange: (value: string) => void;
+  onPlatformChange: (value: string) => void;
+  onAppVersionChange: (value: string) => void;
+  onGameKeyChange: (value: string) => void;
+  onModeChange: (value: string) => void;
+  onAudienceChange: (value: string) => void;
+}) {
+  return (
+    <Card sx={{ p: 2 }}>
+      <Stack spacing={1.5}>
+        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
+          <Box>
+            <Typography fontWeight={800}>Report controls</Typography>
+            <Typography variant="caption" color="text.secondary">All filters use server-owned UTC data and are inherited by the charts below.</Typography>
+          </Box>
+          <Select size="small" value={comparison} onChange={(event) => onComparisonChange(String(event.target.value))} sx={{ minWidth: 180 }}>
+            <MenuItem value="previous">Compare previous period</MenuItem>
+            <MenuItem value="none">No comparison</MenuItem>
+          </Select>
+        </Stack>
+        <Grid container spacing={1.2}>
+          {rangePreset === "custom" && (
+            <>
+              <Grid size={{ xs: 12, sm: 6, md: 2 }}><TextField fullWidth size="small" type="date" label="From" value={from} onChange={(event) => onFromChange(event.target.value)} InputLabelProps={{ shrink: true }} /></Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 2 }}><TextField fullWidth size="small" type="date" label="To" value={to} onChange={(event) => onToChange(event.target.value)} InputLabelProps={{ shrink: true }} /></Grid>
+            </>
+          )}
+          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+            <Select fullWidth size="small" displayEmpty value={country} onChange={(event) => onCountryChange(String(event.target.value))}>
+              <MenuItem value="">All countries</MenuItem>
+              {countries.filter(Boolean).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
+            </Select>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+            <Select fullWidth size="small" displayEmpty value={platform} onChange={(event) => onPlatformChange(String(event.target.value))}>
+              <MenuItem value="">All platforms</MenuItem>
+              <MenuItem value="android">Android</MenuItem>
+              <MenuItem value="ios">iOS</MenuItem>
+              <MenuItem value="web">Web</MenuItem>
+            </Select>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 2 }}><TextField fullWidth size="small" label="App version" placeholder="e.g. 1.0.0" value={appVersion} onChange={(event) => onAppVersionChange(event.target.value)} /></Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+            <Select fullWidth size="small" displayEmpty value={gameKey} onChange={(event) => onGameKeyChange(String(event.target.value))}>
+              <MenuItem value="">All games</MenuItem>
+              {games.map((game) => <MenuItem key={game.key} value={game.key}>{game.name}</MenuItem>)}
+            </Select>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 2 }}><TextField fullWidth size="small" label="Match mode" placeholder="CASUAL / RANKED" value={mode} onChange={(event) => onModeChange(event.target.value.toUpperCase())} /></Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+            <Select fullWidth size="small" value={audience} onChange={(event) => onAudienceChange(String(event.target.value))}>
+              <MenuItem value="all">All players</MenuItem>
+              <MenuItem value="new">New players</MenuItem>
+              <MenuItem value="returning">Returning players</MenuItem>
+            </Select>
+          </Grid>
+        </Grid>
+      </Stack>
+    </Card>
   );
 }
 

@@ -81,3 +81,28 @@ export async function uploadFile<T>(path: string, file: File, purpose: string, v
   form.append('visibility', visibility);
   return api<T>(path, { method: 'POST', body: form });
 }
+
+export async function downloadFile(path: string, retried = false): Promise<void> {
+  if (!retried && accessTokenNeedsRefresh(localStorage.getItem(ACCESS_KEY))) await refresh();
+  const headers = new Headers();
+  const accessToken = localStorage.getItem(ACCESS_KEY);
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  const response = await fetch(`/system-admin/api${path}`, { headers });
+  if (response.status === 401 && !retried) {
+    await refresh();
+    return downloadFile(path, true);
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.message || 'Download failed');
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = response.headers.get('content-disposition')?.match(/filename="?([^";]+)"?/i)?.[1] || 'smarts-report.csv';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}

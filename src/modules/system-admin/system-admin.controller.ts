@@ -112,6 +112,8 @@ import { GoogleAuthService } from "../auth/services/google-auth.service";
 import { PlayerAuditActorType } from "@prisma/client";
 import { NotificationsService } from "../notifications/notifications.service";
 import { SendGlobalNotificationDto } from "../notifications/dtos";
+import { AnalyticsReportingService } from "./analytics-reporting.service";
+import { AnalyticsAlertRuleDto, AnalyticsPlayerExplorerQueryDto, AnalyticsSavedReportDto, AnalyticsScheduledReportDto } from "./dtos/analytics-report.dto";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -126,6 +128,7 @@ export class SystemAdminController {
     private readonly googleAuthService: GoogleAuthService,
     private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService,
+    private readonly analyticsReportingService: AnalyticsReportingService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -324,9 +327,114 @@ export class SystemAdminController {
     summary:
       "Get server-owned SMARTS engagement, retention, gameplay, progression, economy, and reliability analytics",
   })
-  analytics(@Query() query: SystemAdminAnalyticsQueryDto) {
-    return this.systemAdminService.analytics(query.days);
+  analytics(@Query() query: SystemAdminAnalyticsQueryDto, @CurrentUser() admin: UserResponseDto) {
+    return this.systemAdminService.analytics(query, admin.id);
   }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics/export.csv")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Export the filtered analytics overview as CSV" })
+  async analyticsCsv(@Query() query: SystemAdminAnalyticsQueryDto, @CurrentUser() admin: UserResponseDto, @Res() response: any) {
+    const csv = await this.systemAdminService.analyticsCsv(query, admin.id);
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader("Content-Disposition", `attachment; filename="smarts-analytics-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return response.send(csv);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics/reports/:key")
+  @ApiBearerAuth("access-token")
+  featureAnalytics(@Param("key") key: string, @Query() query: SystemAdminAnalyticsQueryDto, @CurrentUser() admin: UserResponseDto) {
+    return this.analyticsReportingService.report(key, query, admin.id)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics/player-explorer")
+  @ApiBearerAuth("access-token")
+  playerExplorer(@Query() query: AnalyticsPlayerExplorerQueryDto, @CurrentUser() admin: UserResponseDto) {
+    return this.analyticsReportingService.playerExplorer(query, admin.id)
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics/data-quality")
+  @ApiBearerAuth("access-token")
+  dataQuality() { return this.analyticsReportingService.quality() }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics/definitions")
+  @ApiBearerAuth("access-token")
+  analyticsDefinitions() { return this.analyticsReportingService.definitions() }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics/saved-reports")
+  @ApiBearerAuth("access-token")
+  savedReports(@CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.saved(admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/analytics/saved-reports")
+  @ApiBearerAuth("access-token")
+  createSavedReport(@Body() dto: AnalyticsSavedReportDto, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.save(dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/analytics/saved-reports/:id")
+  @ApiBearerAuth("access-token")
+  updateSavedReport(@Param("id", ParseUUIDPipe) id: string, @Body() dto: AnalyticsSavedReportDto, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.save(dto, admin.id, id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/analytics/saved-reports/:id")
+  @ApiBearerAuth("access-token")
+  deleteSavedReport(@Param("id", ParseUUIDPipe) id: string, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.removeSaved(id, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics/scheduled-reports")
+  @ApiBearerAuth("access-token")
+  scheduledReports(@CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.schedules(admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/analytics/scheduled-reports")
+  @ApiBearerAuth("access-token")
+  createScheduledReport(@Body() dto: AnalyticsScheduledReportDto, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.schedule(dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/analytics/scheduled-reports/:id")
+  @ApiBearerAuth("access-token")
+  deleteScheduledReport(@Param("id", ParseUUIDPipe) id: string, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.removeSchedule(id, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/analytics/scheduled-reports/:id")
+  @ApiBearerAuth("access-token")
+  updateScheduledReport(@Param("id", ParseUUIDPipe) id: string, @Body() dto: AnalyticsScheduledReportDto, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.updateSchedule(id, dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics/alerts")
+  @ApiBearerAuth("access-token")
+  analyticsAlerts() { return this.analyticsReportingService.alerts() }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/analytics/alerts")
+  @ApiBearerAuth("access-token")
+  createAnalyticsAlert(@Body() dto: AnalyticsAlertRuleDto, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.saveAlert(dto, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/analytics/alerts/:id")
+  @ApiBearerAuth("access-token")
+  updateAnalyticsAlert(@Param("id", ParseUUIDPipe) id: string, @Body() dto: AnalyticsAlertRuleDto, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.saveAlert(dto, admin.id, id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/analytics/alerts/events/:id/acknowledge")
+  @ApiBearerAuth("access-token")
+  acknowledgeAnalyticsAlert(@Param("id", ParseUUIDPipe) id: string, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.acknowledgeAlert(id, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/analytics/exports")
+  @ApiBearerAuth("access-token")
+  createAnalyticsExport(@Body() body: { reportKey?: string; format?: string; query?: SystemAdminAnalyticsQueryDto }, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.createExport(body, admin.id) }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/analytics/exports/:id")
+  @ApiBearerAuth("access-token")
+  getAnalyticsExport(@Param("id", ParseUUIDPipe) id: string, @CurrentUser() admin: UserResponseDto) { return this.analyticsReportingService.exportJob(id, admin.id) }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/app-config")

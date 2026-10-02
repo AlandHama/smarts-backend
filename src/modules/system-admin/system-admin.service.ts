@@ -19,6 +19,7 @@ import {
   RegisterAdminDto,
   ResetUserPasswordDto,
   SystemAdminLoginDto,
+  SystemAdminAnalyticsQueryDto,
   SystemAdminMatchesQueryDto,
   SystemAdminSessionsQueryDto,
   SystemAdminUsersQueryDto,
@@ -347,8 +348,12 @@ export class SystemAdminService implements OnModuleInit {
     };
   }
 
-  analytics(days = 30) {
-    return this.analyticsService.overview(days);
+  analytics(query: SystemAdminAnalyticsQueryDto, actorId?: string) {
+    return this.analyticsService.overview(query, actorId);
+  }
+
+  analyticsCsv(query: SystemAdminAnalyticsQueryDto, actorId?: string) {
+    return this.analyticsService.exportCsv(query, actorId);
   }
 
   /** Operational counters intentionally come from server-owned records, not mobile telemetry. */
