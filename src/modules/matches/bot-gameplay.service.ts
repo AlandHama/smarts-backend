@@ -34,8 +34,19 @@ export class BotGameplayService {
    * during play, even for legacy game screens that do not submit ANSWER events
    * for every local challenge yet. */
   async progressActiveMatches() {
+    await this.progressMatches({ cooperativeMatch: null })
+  }
+
+  /** Cooperative matches have a dedicated tick so bot progression is not
+   * dependent on the legacy matchmaking worker being enabled on a replica. */
+  async progressCooperativeMatches() {
+    await this.progressMatches({ cooperativeMatch: { isNot: null } })
+  }
+
+  private async progressMatches(relation: Prisma.MatchWhereInput) {
     const matches = await this.prisma.match.findMany({
       where: {
+        ...relation,
         mode: "BOT",
         status: "STARTED",
         participants: {
@@ -102,7 +113,9 @@ export class BotGameplayService {
       (assignment) => assignment.participantId === player.id,
     )
     if (!playerAssignments.length) {
-      if (input.finalize) {
+      // Do not turn a short startup race into a false zero-score bot result.
+      // The cooperative worker will retry after human assignments exist.
+      if (input.finalize && !match.cooperativeMatch) {
         await transaction.matchParticipant.update({
           where: { id: bot.id },
           data: { result: "COMPLETED", finalScore: 0, answeredCount: 0, submittedAt: now },
@@ -152,10 +165,9 @@ export class BotGameplayService {
       0,
       now.getTime() - (match.startedAt ?? match.createdAt).getTime(),
     )
-    const targetAnswers = Math.min(
-      botAssignments.length,
-      Math.floor(elapsedMs / paceMs),
-    )
+    const targetAnswers = input.finalize
+      ? botAssignments.length
+      : Math.min(botAssignments.length, Math.floor(elapsedMs / paceMs))
     let score = bot.finalScore ?? 0
     let simulatedCount = bot.answeredCount ?? 0
     const correctPointsConfig = (match.gameConfig.correctAnswerPoints ?? {}) as Record<string, unknown>

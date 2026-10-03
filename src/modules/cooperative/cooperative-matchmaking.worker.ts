@@ -4,6 +4,7 @@ import { NotificationsService } from "../notifications/notifications.service"
 import { AnalyticsEventService } from "../system-admin/analytics-event.service"
 import { CooperativeMatchService } from "./cooperative-match.service"
 import { SettleMatchTransaction } from "../matches/transactions/settle-match-transaction"
+import { BotGameplayService } from "../matches/bot-gameplay.service"
 
 @Injectable()
 export class CooperativeMatchmakingWorker implements OnModuleInit, OnModuleDestroy {
@@ -12,7 +13,7 @@ export class CooperativeMatchmakingWorker implements OnModuleInit, OnModuleDestr
   private running = false
   private ticks = 0
 
-  constructor(private readonly matches: CooperativeMatchService, private readonly notifications: NotificationsService, private readonly analytics: AnalyticsEventService, private readonly settleMatch: SettleMatchTransaction) {}
+  constructor(private readonly matches: CooperativeMatchService, private readonly notifications: NotificationsService, private readonly analytics: AnalyticsEventService, private readonly settleMatch: SettleMatchTransaction, private readonly botGameplay: BotGameplayService) {}
 
   onModuleInit() {
     void this.tick()
@@ -32,6 +33,7 @@ export class CooperativeMatchmakingWorker implements OnModuleInit, OnModuleDestr
         await this.matches.expireConfirmations()
         await this.matches.enforceDisconnectGrace()
       }
+      await this.botGameplay.progressCooperativeMatches()
       // One claim per tick keeps the transaction short and lets the advisory
       // lock coordinate safely across multiple Railway API replicas.
       const result = await this.matches.claimNext()

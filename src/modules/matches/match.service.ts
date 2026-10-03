@@ -161,7 +161,7 @@ export class MatchService {
       // Keep the authoritative game key explicit for mobile clients. Ranked
       // players can enter with different locally-random game choices, but a
       // match has exactly one server-selected game and one shared assignment
-      // set.
+      // set.s 
       gameKey: match.gameDefinition.key,
       // Seed-based legacy game screens still need a deterministic seed. The
       // server only stores the commitment hash, so expose a bounded numeric
