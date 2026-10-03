@@ -186,6 +186,14 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     if (cooperative) {
       await Promise.all(cooperative.teams.map((team) => transaction.cooperativeTeam.update({ where: { id: team.id }, data: { result: draw ? "DRAW" : team.id === winnerTeamId ? "WIN" : "LOSS" } })))
       await transaction.cooperativeMatch.update({ where: { id: cooperative.id }, data: { status: "SETTLED", endedAt: lockedMatch.endedAt ?? new Date(), settledAt: new Date() } })
+      const metadata = lockedMatch.metadata && typeof lockedMatch.metadata === "object" && !Array.isArray(lockedMatch.metadata) ? lockedMatch.metadata as Record<string, unknown> : {}
+      const partyIds = Array.isArray(metadata.partyIds) ? metadata.partyIds.filter((id): id is string => typeof id === "string" && id.length > 0) : []
+      if (partyIds.length) {
+        await transaction.party.updateMany({
+          where: { id: { in: partyIds }, status: { in: ["MATCH_FOUND", "COMMITTED", "IN_MATCH", "RESULTS"] } },
+          data: { status: "READY", matchedAt: null, queuedAt: null, expiresAt: new Date(Date.now() + Number(cooperativePolicy?.partyIdleMinutes ?? 30) * 60_000) },
+        })
+      }
     }
     const settlementJson = { status: "SETTLED", matchId: lockedMatch.id, policyVersion, winnerPlayerId: winner?.participant.userId ?? null, draw, cooperative: cooperative ? { mode: cooperative.mode, winnerTeamId: winnerTeamId ?? null, entryFeeGld: cooperative.entryFeeGld, payoutAmountGld: cooperative.payoutAmountGld, teams: cooperative.teams.map((team) => ({ teamId: team.id, teamNumber: team.teamNumber, score: team.score, result: draw ? "DRAW" : team.id === winnerTeamId ? "WIN" : "LOSS" })) } : null, results }
     const settlement = await transaction.matchSettlement.create({ data: { matchId: lockedMatch.id, policyVersion, winnerParticipantId: winner?.participant.id, settlementJson: settlementJson as Prisma.InputJsonValue, idempotencyKeyId: idem.id } })

@@ -112,6 +112,25 @@ export class BotGameplayService {
     const playerAssignments = match.assignments.filter(
       (assignment) => assignment.participantId === player.id,
     )
+    const humanParticipants = match.participants.filter(
+      (participant) => participant.participantType === MatchParticipantType.PLAYER,
+    )
+    const humanAnsweredCounts = humanParticipants.map(
+      (participant) => match.assignments.filter(
+        (assignment) => assignment.participantId === participant.id && assignment.answeredAt,
+      ).length,
+    )
+    // A cooperative bot represents a real player, not an automatic solver.
+    // Mirror the answer count of a corresponding human teammate, with only
+    // one small answer of natural variance. This prevents two bots from each
+    // multiplying the whole human team's progress.
+    const botIndex = match.participants
+      .filter((participant) => participant.participantType === MatchParticipantType.BOT)
+      .findIndex((participant) => participant.id === bot.id)
+    const observedHumanAnswers = humanAnsweredCounts.length
+      ? humanAnsweredCounts[Math.max(0, botIndex) % humanAnsweredCounts.length]
+      : 0
+    const humanAnswerCeiling = Math.max(0, observedHumanAnswers ?? 0) + 1
     if (!playerAssignments.length) {
       // Do not turn a short startup race into a false zero-score bot result.
       // The cooperative worker will retry after human assignments exist.
@@ -165,9 +184,12 @@ export class BotGameplayService {
       0,
       now.getTime() - (match.startedAt ?? match.createdAt).getTime(),
     )
-    const targetAnswers = input.finalize
-      ? botAssignments.length
-      : Math.min(botAssignments.length, Math.floor(elapsedMs / paceMs))
+    const pacedAnswers = Math.floor(elapsedMs / paceMs)
+    const targetAnswers = Math.min(
+      botAssignments.length,
+      pacedAnswers,
+      humanAnswerCeiling,
+    )
     let score = bot.finalScore ?? 0
     let simulatedCount = bot.answeredCount ?? 0
     const correctPointsConfig = (match.gameConfig.correctAnswerPoints ?? {}) as Record<string, unknown>

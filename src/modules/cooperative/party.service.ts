@@ -22,6 +22,42 @@ export class PartyService {
     return membership ? this.serializeParty(membership.party, userId) : null
   }
 
+  async stats(userId: string) {
+    const rows = await this.prisma.cooperativeParticipant.findMany({
+      where: { userId, cooperativeMatch: { status: "SETTLED" } },
+      orderBy: { createdAt: "desc" },
+      select: {
+        finalScore: true,
+        team: { select: { result: true } },
+        cooperativeMatch: { select: { matchId: true, settledAt: true } },
+      },
+    })
+    const sourceIds = rows.map(({ cooperativeMatch }) => `${cooperativeMatch.matchId}:xp:${userId}`)
+    const xpEvents = sourceIds.length
+      ? await this.prisma.progressionEvent.findMany({
+          where: { userId, sourceType: "MATCH", sourceId: { in: sourceIds } },
+          select: { delta: true },
+        })
+      : []
+    const summary = rows.reduce(
+      (value, row) => {
+        value.score += row.finalScore
+        if (row.team.result === "WIN") value.wins += 1
+        else if (row.team.result === "LOSS") value.losses += 1
+        else if (row.team.result === "DRAW") value.draws += 1
+        return value
+      },
+      { wins: 0, losses: 0, draws: 0, score: 0 },
+    )
+    const xp = xpEvents.reduce((total, event) => total + event.delta, 0n)
+    return this.serialize({
+      ...summary,
+      matches: rows.length,
+      xp: xp < 0n ? 0n : xp,
+      lastPlayedAt: rows[0]?.cooperativeMatch.settledAt ?? null,
+    })
+  }
+
   async authorizeParty(userId: string, partyId: string) {
     const snapshot = await this.current(userId)
     if (!snapshot || snapshot.id !== partyId) throw new NotFoundException("Party is not available")
@@ -112,4 +148,5 @@ export class PartyService {
   private user(row: any) { return { id: row.id, username: row.username, name: row.profile?.displayName || row.username, avatarUrl: row.profile?.avatarUrl || null, level: row.profile?.level || 1, elo: row.profile?.elo || 0, countryCode: row.profile?.countryCode || null } }
   private serializeParty(party: any, userId: string) { return { id: party.id, hostUserId: party.hostUserId, status: party.status, mode: party.mode, maxMembers: party.maxMembers, expiresAt: party.expiresAt, queuedAt: party.queuedAt, conversationId: party.conversation?.id || null, members: (party.members || []).map((member: any) => ({ id: member.id, userId: member.userId, role: member.role, status: member.status, readyAt: member.readyAt, lastHeartbeatAt: member.lastHeartbeatAt, user: this.user(member.user), isSelf: member.userId === userId })), queue: party.queueEntries?.[0] ? this.serializeQueue(party.queueEntries[0]) : null } }
   private serializeQueue(entry: any) { return { id: entry.id, partyId: entry.partyId, mode: entry.mode, status: entry.status, matchId: entry.matchId || null, ratingSnapshot: entry.ratingSnapshot, levelSnapshot: entry.levelSnapshot, countrySnapshot: entry.countrySnapshot, queuedAt: entry.queuedAt, expiresAt: entry.expiresAt } }
+  private serialize<T>(value: T): T { return JSON.parse(JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item)) as T }
 }
