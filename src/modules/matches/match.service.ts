@@ -101,6 +101,12 @@ export class MatchService {
             status: true,
           },
         },
+        cooperativeMatch: {
+          include: {
+            teams: { orderBy: { teamNumber: "asc" } },
+            participants: { include: { user: { select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true, level: true, elo: true } } } } } },
+          },
+        },
         participants: {
           include: {
             user: {
@@ -149,7 +155,7 @@ export class MatchService {
       },
     });
     if (!match) throw new NotFoundException("Match not found");
-    const { rounds, gameConfig, rankingMatch, ...matchWithoutRounds } = match;
+    const { rounds, gameConfig, rankingMatch, cooperativeMatch, ...matchWithoutRounds } = match;
     return this.serializeMatch({
       ...matchWithoutRounds,
       // Keep the authoritative game key explicit for mobile clients. Ranked
@@ -180,6 +186,17 @@ export class MatchService {
             ),
           }
         : null,
+      cooperative: cooperativeMatch ? {
+        id: cooperativeMatch.id,
+        matchId: cooperativeMatch.matchId,
+        format: cooperativeMatch.format,
+        mode: cooperativeMatch.mode,
+        status: cooperativeMatch.status,
+        botFilled: cooperativeMatch.botFilled,
+        confirmationDeadline: cooperativeMatch.confirmationDeadline,
+        disconnectGraceSeconds: cooperativeMatch.disconnectGraceSeconds,
+        teams: cooperativeMatch.teams.map((team) => ({ id: team.id, teamNumber: team.teamNumber, name: team.name, score: team.score, correctAnswers: team.correctAnswers, answeredQuestions: team.answeredQuestions, result: team.result, participants: cooperativeMatch.participants.filter((participant) => participant.teamId === team.id).map((participant) => ({ id: participant.id, userId: participant.userId, participantType: participant.participantType, displayName: participant.displayName, avatarUrl: participant.avatarUrl, score: participant.finalScore, correctAnswers: participant.correctAnswers, answeredQuestions: participant.answeredQuestions, result: match.participants.find((item) => item.id === participant.matchParticipantId)?.result ?? "PENDING", isSelf: participant.userId === userId, user: participant.user })) }))
+      } : null,
     });
   }
 

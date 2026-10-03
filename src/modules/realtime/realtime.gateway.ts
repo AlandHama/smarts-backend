@@ -12,6 +12,7 @@ import { ChatPresenceRegistry } from "../chats/chat-presence.registry"
 import { SupportLiveChatService } from "../support/support-live-chat.service"
 import type { JwtPayload } from "../auth/dtos/jwt-payload.dto"
 import type { WebSocket } from "ws"
+import { PartyService } from "../cooperative/party.service"
 
 type ClientState = {
   userId: string
@@ -21,6 +22,7 @@ type ClientState = {
   chatConversationIds: Set<string>
   supportSessionIds: Set<string>
   supportQueueSubscribed: boolean
+  partyIds: Set<string>
   lastSnapshots: Map<string, string>
 }
 
@@ -49,6 +51,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly chats: ChatsService,
     private readonly chatPresence: ChatPresenceRegistry,
     private readonly supportLiveChat: SupportLiveChatService,
+    private readonly parties: PartyService,
   ) {
     this.timer = setInterval(() => void this.publishChanges(), 1000)
     this.timer.unref()
@@ -64,6 +67,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     if (state) {
       this.chatPresence.clearUser(state.userId, state.chatConversationIds)
       void this.clearTypingForClient(state)
+      void this.prisma.cooperativeParticipant.updateMany({ where: { userId: state.userId, cooperativeMatch: { match: { status: "STARTED" } } }, data: { disconnectedAt: new Date() } }).catch(() => undefined)
       if (!this.isOnline(state.userId)) void this.supportLiveChat.updateAgentStatus(state.userId, "OFFLINE" as any).catch(() => undefined)
     }
     if (state && !this.isOnline(state.userId)) this.broadcastPresence(state.userId, false)
@@ -88,7 +92,7 @@ export class RealtimeGateway implements OnModuleDestroy {
       const user = await this.prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true, status: true } })
       if (!session || !user || user.status !== "ACTIVE") throw new Error("Session is no longer active")
 
-      const state: ClientState = { userId: user.id, matchIds: new Set(), playerIds: new Set([user.id]), queueSubscribed: false, chatConversationIds: new Set(), supportSessionIds: new Set(), supportQueueSubscribed: false, lastSnapshots: new Map() }
+      const state: ClientState = { userId: user.id, matchIds: new Set(), playerIds: new Set([user.id]), queueSubscribed: false, chatConversationIds: new Set(), supportSessionIds: new Set(), supportQueueSubscribed: false, partyIds: new Set(), lastSnapshots: new Map() }
       this.clients.set(client, state)
       client.on("message", (message) => void this.handleMessage(client, state, message.toString()))
       client.on("close", () => this.handleDisconnect(client))
@@ -115,6 +119,7 @@ export class RealtimeGateway implements OnModuleDestroy {
       const authorized = matchId && await this.prisma.matchParticipant.findFirst({ where: { matchId, userId: state.userId }, select: { id: true } })
       if (!authorized) { this.send(client, "error", { code: "MATCH_NOT_FOUND", message: "Match is not available" }); return }
       state.matchIds.add(matchId)
+      await this.prisma.cooperativeParticipant.updateMany({ where: { userId: state.userId, cooperativeMatch: { matchId } }, data: { connectedAt: new Date(), disconnectedAt: null } })
       await this.sendMatchSnapshot(client, state, matchId, true)
       return
     }
@@ -169,6 +174,8 @@ export class RealtimeGateway implements OnModuleDestroy {
       if (typeof data.userId === "string") state.playerIds.delete(data.userId.trim())
       return
     }
+    if (event === "party.subscribe") { await this.subscribeParty(client, state, data); return }
+    if (event === "party.unsubscribe") { if (typeof data.partyId === "string") state.partyIds.delete(data.partyId); return }
     if (event === "support.subscribe") { await this.subscribeSupport(client, state, data); return }
     if (event === "support.unsubscribe") { if (typeof data.sessionId === "string") state.supportSessionIds.delete(data.sessionId); return }
     if (event === "support.typing.start" || event === "support.typing.stop") { await this.supportTyping(client, state, data, event === "support.typing.start"); return }
@@ -371,7 +378,25 @@ export class RealtimeGateway implements OnModuleDestroy {
       for (const matchId of state.matchIds) await this.sendMatchSnapshot(client, state, matchId, false)
       if (state.supportQueueSubscribed) await this.sendSupportQueueSnapshot(client, state)
       for (const sessionId of state.supportSessionIds) await this.sendSupportSessionSnapshot(client, state, sessionId)
+      for (const partyId of state.partyIds) await this.sendPartySnapshot(client, state, partyId)
     }
+  }
+
+  private async subscribeParty(client: WebSocket, state: ClientState, data: Record<string, unknown>) {
+    const partyId = this.string(data.partyId)
+    if (!partyId) return this.send(client, "party.error", { code: "INVALID_PARTY", message: "Party is required" })
+    try { state.partyIds.add(partyId); await this.sendPartySnapshot(client, state, partyId, true) }
+    catch (error) { this.send(client, "party.error", { code: "NOT_AUTHORIZED", message: this.errorMessage(error) }) }
+  }
+
+  private async sendPartySnapshot(client: WebSocket, state: ClientState, partyId: string, force = false) {
+    try {
+      const snapshot = await this.parties.authorizeParty(state.userId, partyId)
+      const key = `party:${partyId}:${JSON.stringify(snapshot)}`
+      if (!force && state.lastSnapshots.get(`party:${partyId}`) === key) return
+      state.lastSnapshots.set(`party:${partyId}`, key)
+      this.send(client, force ? "party.ready" : "party.snapshot", { party: snapshot })
+    } catch { state.partyIds.delete(partyId) }
   }
 
   private async sendQueueSnapshot(client: WebSocket, state: ClientState, force: boolean) {
@@ -413,7 +438,10 @@ export class RealtimeGateway implements OnModuleDestroy {
       const previousSnapshotKey = state.lastSnapshots.get(cacheKey)
       const snapshotChanged = force || previousSnapshotKey !== key
       state.lastSnapshots.set(cacheKey, key)
-      if (snapshotChanged) this.send(client, "match.snapshot", snapshot)
+      if (snapshotChanged) {
+        this.send(client, "match.snapshot", snapshot)
+        if (snapshot && typeof snapshot === "object" && "cooperative" in snapshot) this.send(client, "cooperative.match.snapshot", snapshot)
+      }
 
       // Match reactions such as EMOTE are persisted events and do not change
       // the match projection. Do not return when the snapshot is unchanged;

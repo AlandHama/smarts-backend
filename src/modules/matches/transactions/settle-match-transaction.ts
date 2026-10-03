@@ -26,11 +26,11 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
   ) { super(prisma) }
 
   protected async execute(input: SettleInput, transaction: Prisma.TransactionClient) {
-    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { gameDefinition: true, gameConfig: true, rankingMatch: true, participants: { include: { user: { include: { profile: true } } } } } })
+    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { gameDefinition: true, gameConfig: true, rankingMatch: true, cooperativeMatch: { include: { teams: true, participants: true } }, participants: { include: { user: { include: { profile: true } } } } } })
     if (!match) throw new NotFoundException("Match not found")
     if (!match.participants.some((item) => item.userId === input.userId)) throw new NotFoundException("Player is not a participant in this match")
     await transaction.$queryRaw`SELECT "id" FROM "Match" WHERE "id" = ${match.id} FOR UPDATE`
-    const lockedMatch = await transaction.match.findUniqueOrThrow({ where: { id: match.id }, include: { gameDefinition: true, gameConfig: true, rankingMatch: true, participants: { include: { user: { include: { profile: true } } } }, settlement: true } })
+    const lockedMatch = await transaction.match.findUniqueOrThrow({ where: { id: match.id }, include: { gameDefinition: true, gameConfig: true, rankingMatch: true, cooperativeMatch: { include: { teams: true, participants: true } }, participants: { include: { user: { include: { profile: true } } } }, settlement: true } })
     if (lockedMatch.settlement) return lockedMatch.settlement.settlementJson
     if (lockedMatch.status === "CANCELLED" || lockedMatch.status === "SETTLED") throw new ConflictException("The match cannot be settled")
 
@@ -46,6 +46,9 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     }
     const config = lockedMatch.gameConfig
     if (!config || !config.active) throw new BadRequestException("Game reward configuration is inactive")
+    const cooperative = lockedMatch.cooperativeMatch
+    const cooperativeRanked = cooperative?.mode === "RANKED"
+    const cooperativePolicy = cooperative ? await transaction.cooperativeConfiguration.upsert({ where: { key: "default" }, create: { key: "default" }, update: {} }) : null
     const requestHash = createHash("sha256").update(JSON.stringify({ matchId: lockedMatch.id, idempotencyKey: input.idempotencyKey.trim() })).digest("hex")
     const idemScope = `match-settlement:${lockedMatch.id}`
     const idem = await transaction.idempotencyKey.upsert({ where: { scope_key: { scope: idemScope, key: input.idempotencyKey.trim() } }, create: { userId: input.userId, scope: idemScope, key: input.idempotencyKey.trim(), requestHash, status: "PROCESSING" }, update: {} })
@@ -53,17 +56,23 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     if (idem.status === "COMPLETED" && idem.responseJson) return idem.responseJson
 
     const scores = lockedMatch.participants.map((item) => ({ participant: item, score: BigInt(item.finalScore ?? 0) }))
+    const teamScores = cooperative?.teams.map((team) => ({ teamId: team.id, score: team.score })) ?? []
+    const highestTeamScore = teamScores.reduce((max, current) => Math.max(max, current.score), -Infinity)
+    const topTeams = teamScores.filter((team) => team.score === highestTeamScore)
+    const cooperativeDraw = Boolean(cooperative && topTeams.length > 1)
+    const winnerTeamId = !cooperativeDraw ? topTeams[0]?.teamId : undefined
     const highest = scores.reduce((max, current) => current.score > max ? current.score : max, scores[0]?.score ?? 0n)
     const winners = scores.filter((item) => item.score === highest && item.participant.result !== "FORFEIT")
     const forfeited = scores.find((item) => item.participant.result === "FORFEIT")
-    const winner = forfeited ? scores.find((item) => item.participant.id !== forfeited.participant.id) : winners.length === 1 ? winners[0] : undefined
-    const draw = !winner && !forfeited && scores.length > 1 && winners.length === scores.length
+    const winner = cooperative ? undefined : forfeited ? scores.find((item) => item.participant.id !== forfeited.participant.id) : winners.length === 1 ? winners[0] : undefined
+    const draw = cooperative ? cooperativeDraw : !winner && !forfeited && scores.length > 1 && winners.length === scores.length
     const policyVersion = `${lockedMatch.gameDefinition.key}:v${config.version}`
     const results: any[] = []
 
     for (const item of scores) {
       const player = item.participant.user
-      const isWinner = winner?.participant.id === item.participant.id
+      const cooperativeParticipant = cooperative?.participants.find((entry) => entry.matchParticipantId === item.participant.id)
+      const isWinner = cooperative ? Boolean(winnerTeamId && cooperativeParticipant?.teamId === winnerTeamId && !draw) : winner?.participant.id === item.participant.id
       const isDraw = draw
       const result = isWinner ? "WIN" : isDraw ? "DRAW" : item.participant.result === "FORFEIT" ? "FORFEIT" : "LOSS"
       await transaction.matchParticipant.update({ where: { id: item.participant.id }, data: { result, submittedAt: item.participant.submittedAt ?? new Date() } })
@@ -87,7 +96,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         continue
       }
       const scoreDiff = winner && !isDraw ? item.score - (winner.participant.id === item.participant.id ? scores.find((candidate) => candidate.participant.id !== item.participant.id)?.score ?? 0n : winner.score) : 0n
-      const eloDelta = item.participant.result === "FORFEIT" ? 0n : lockedMatch.mode === "SINGLE_PLAYER" || lockedMatch.mode === "BOT"
+      const eloDelta = cooperativeRanked && cooperativePolicy?.cooperativeRewardsEnabled ? this.cooperativeEloDelta(cooperative, cooperativeParticipant, result, cooperativePolicy) : cooperative || item.participant.result === "FORFEIT" ? 0n : lockedMatch.mode === "SINGLE_PLAYER" || lockedMatch.mode === "BOT"
         ? this.multiply(BigInt(Math.min(config.soloEloMaxDelta, Number(item.score / BigInt(config.soloEloScoreDivisor)))), config.rankingEnabled ? config.rankingEloMultiplier.toString() : "1")
         : this.clamp(scoreDiff, -BigInt(config.maxEloDelta), BigInt(config.maxEloDelta))
       const xp = this.multiply(this.multiply(item.score, config.scoreMultiplierForXp.toString()), config.rankingEnabled ? config.rankingLevelMultiplier.toString() : "1")
@@ -97,7 +106,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         : isDraw ? 0n : this.min(isWinner ? config.winnerRewardBonusMax : config.loserRewardBonusMax, this.ratio(this.abs(scoreDiff), config.multiplayerRewardReference, isWinner ? config.winnerRewardBonusMax : config.loserRewardBonusMax))
       // Ranked entry matches distribute their explicitly configured pot. They
       // do not also mint the normal casual match reward.
-      const coinReward = lockedMatch.rankingMatch
+      const coinReward = lockedMatch.rankingMatch || cooperativeRanked
         ? 0n
         : this.multiply(rewardBase + rewardBonus, config.rankingEnabled ? config.rankingCoinMultiplier.toString() : "1")
 
@@ -116,13 +125,13 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:won`, payload: engagementPayload }, transaction)
       if (answerSummary.totalCorrect > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "CORRECT_ANSWER", sourceId: `${lockedMatch.id}:${player.id}:correct`, amount: answerSummary.totalCorrect, payload: engagementPayload }, transaction)
       if (answerSummary.totalQuestions > 0 && answerSummary.totalCorrect === answerSummary.totalQuestions) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "PERFECT_MATCH", sourceId: `${lockedMatch.id}:${player.id}:perfect`, payload: engagementPayload }, transaction)
-      if (lockedMatch.rankingMatch) {
+      if (lockedMatch.rankingMatch || cooperativeRanked) {
         await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:ranked-played`, payload: engagementPayload }, transaction)
         if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:ranked-won`, payload: engagementPayload }, transaction)
       }
       await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
       const cognitiveStats = await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
-      if (eloDelta > 0n && winner?.participant.id === item.participant.id) {
+      if (eloDelta > 0n && (winner?.participant.id === item.participant.id || (cooperativeRanked && isWinner))) {
         const leaderboardKeys = this.getLeaderboardKeys(config)
         for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
         const country = player.profile?.countryCode?.trim().toUpperCase()
@@ -154,12 +163,49 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       }
     }
 
-    const settlementJson = { status: "SETTLED", matchId: lockedMatch.id, policyVersion, winnerPlayerId: winner?.participant.userId ?? null, draw, results }
+    if (cooperativeRanked && cooperativePolicy?.cooperativeRewardsEnabled) {
+      const winningPlayers = humanParticipants.filter((item) => cooperative?.participants.find((entry) => entry.matchParticipantId === item.id)?.teamId === winnerTeamId && item.result !== "FORFEIT")
+      if (winnerTeamId && winningPlayers.length) {
+        const perWinner = new Prisma.Decimal(cooperative.payoutAmountGld).div(winningPlayers.length)
+        for (const item of winningPlayers) {
+          const sourceId = `${lockedMatch.id}:cooperative-payout:${item.userId}`
+          await this.creditWallet.runWithinTransaction({ userId: item.userId!, currencyCode: "GLD", amount: BigInt(perWinner.floor().toFixed(0)), amountDecimal: perWinner.toString(), sourceId, sourceType: WalletTransactionSourceType.RANKING_MATCH_PAYOUT, metadata: { matchId: lockedMatch.id, cooperative: true, mode: "RANKED", payoutAmountGld: perWinner.toString() } }, transaction)
+          const ledger = await transaction.walletTransaction.findFirst({ where: { sourceId, sourceType: WalletTransactionSourceType.RANKING_MATCH_PAYOUT }, orderBy: { createdAt: "desc" }, select: { id: true } })
+          await transaction.cooperativeLedgerOperation.upsert({ where: { idempotencyKey: sourceId }, create: { cooperativeMatchId: cooperative.id, userId: item.userId!, operationType: "PAYOUT", amount: perWinner, walletTransactionId: ledger?.id, idempotencyKey: sourceId, status: "CAPTURED", metadata: { teamId: winnerTeamId } as Prisma.InputJsonValue }, update: { status: "CAPTURED", walletTransactionId: ledger?.id } })
+        }
+      } else {
+        for (const item of humanParticipants) if (item.userId && new Prisma.Decimal(cooperative.entryFeeGld).gt(0)) {
+          const sourceId = `${lockedMatch.id}:cooperative-refund:${item.userId}`
+          await this.creditWallet.runWithinTransaction({ userId: item.userId, currencyCode: "GLD", amount: BigInt(new Prisma.Decimal(cooperative.entryFeeGld).floor().toFixed(0)), amountDecimal: cooperative.entryFeeGld.toString(), sourceId, sourceType: WalletTransactionSourceType.RANKING_MATCH_REFUND, metadata: { matchId: lockedMatch.id, cooperative: true, reason: "draw" } }, transaction)
+          const ledger = await transaction.walletTransaction.findFirst({ where: { sourceId, sourceType: WalletTransactionSourceType.RANKING_MATCH_REFUND }, orderBy: { createdAt: "desc" }, select: { id: true } })
+          await transaction.cooperativeLedgerOperation.upsert({ where: { idempotencyKey: sourceId }, create: { cooperativeMatchId: cooperative.id, userId: item.userId, operationType: "REFUND", amount: cooperative.entryFeeGld, walletTransactionId: ledger?.id, idempotencyKey: sourceId, status: "CAPTURED", metadata: { reason: "draw" } as Prisma.InputJsonValue }, update: { status: "CAPTURED", walletTransactionId: ledger?.id } })
+        }
+      }
+    }
+
+    if (cooperative) {
+      await Promise.all(cooperative.teams.map((team) => transaction.cooperativeTeam.update({ where: { id: team.id }, data: { result: draw ? "DRAW" : team.id === winnerTeamId ? "WIN" : "LOSS" } })))
+      await transaction.cooperativeMatch.update({ where: { id: cooperative.id }, data: { status: "SETTLED", endedAt: lockedMatch.endedAt ?? new Date(), settledAt: new Date() } })
+    }
+    const settlementJson = { status: "SETTLED", matchId: lockedMatch.id, policyVersion, winnerPlayerId: winner?.participant.userId ?? null, draw, cooperative: cooperative ? { mode: cooperative.mode, winnerTeamId: winnerTeamId ?? null, entryFeeGld: cooperative.entryFeeGld, payoutAmountGld: cooperative.payoutAmountGld, teams: cooperative.teams.map((team) => ({ teamId: team.id, teamNumber: team.teamNumber, score: team.score, result: draw ? "DRAW" : team.id === winnerTeamId ? "WIN" : "LOSS" })) } : null, results }
     const settlement = await transaction.matchSettlement.create({ data: { matchId: lockedMatch.id, policyVersion, winnerParticipantId: winner?.participant.id, settlementJson: settlementJson as Prisma.InputJsonValue, idempotencyKeyId: idem.id } })
     await transaction.outboxEvent.create({ data: { eventType: "MATCH_SETTLED", aggregateType: "Match", aggregateId: lockedMatch.id, payload: settlementJson as Prisma.InputJsonValue } })
     await transaction.match.update({ where: { id: lockedMatch.id }, data: { status: "SETTLED", endedAt: lockedMatch.endedAt ?? new Date(), settledAt: new Date() } })
     await transaction.idempotencyKey.update({ where: { id: idem.id }, data: { status: "COMPLETED", responseJson: settlementJson as Prisma.InputJsonValue, completedAt: new Date() } })
     return settlementJson
+  }
+
+  private cooperativeEloDelta(cooperative: any, participant: any, result: string, policy: any) {
+    if (!participant || result === "DRAW") return 0n
+    const ownTeam = cooperative.teams.find((team: any) => team.id === participant.teamId)
+    const opponentTeams = cooperative.teams.filter((team: any) => team.id !== participant.teamId)
+    const own = cooperative.participants.filter((item: any) => item.teamId === ownTeam?.id && item.userId).map((item: any) => item.eloSnapshot)
+    const opponent = cooperative.participants.filter((item: any) => opponentTeams.some((team: any) => team.id === item.teamId) && item.userId).map((item: any) => item.eloSnapshot)
+    const ownAverage = own.length ? own.reduce((sum: number, value: number) => sum + value, 0) / own.length : 0
+    const opponentAverage = opponent.length ? opponent.reduce((sum: number, value: number) => sum + value, 0) / opponent.length : ownAverage
+    const adjustment = Math.round(((opponentAverage - ownAverage) / 100) * (policy.rankedTeamRatingWeightPercent / 100))
+    const magnitude = Math.max(1, Math.min(policy.rankedEloMaxDelta, policy.rankedEloBaseDelta + adjustment))
+    return BigInt(result === "WIN" ? magnitude : -magnitude)
   }
 
   private async updateStats(transaction: Prisma.TransactionClient, match: any, participant: any, result: string, score: bigint, answers: { totalCorrect: number; totalQuestions: number; totalTimeMs: bigint }) {

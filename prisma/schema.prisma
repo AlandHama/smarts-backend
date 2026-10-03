@@ -557,18 +557,18 @@ enum FraudActionType {
 }
 
 model User {
-  id                          String                    @id @default(uuid()) @db.Uuid
-  username                    String                    @unique @db.VarChar(50)
-  passwordHash                String                    @db.VarChar(255)
-  firstName                   String?                   @db.VarChar(100)
-  lastName                    String?                   @db.VarChar(100)
-  email                       String?                   @unique @db.VarChar(255)
-  status                      UserStatus                @default(ACTIVE)
-  accountOrigin               AccountOrigin             @default(WHITELABEL)
-  isSystemAdmin               Boolean                   @default(false)
+  id                          String                       @id @default(uuid()) @db.Uuid
+  username                    String                       @unique @db.VarChar(50)
+  passwordHash                String                       @db.VarChar(255)
+  firstName                   String?                      @db.VarChar(100)
+  lastName                    String?                      @db.VarChar(100)
+  email                       String?                      @unique @db.VarChar(255)
+  status                      UserStatus                   @default(ACTIVE)
+  accountOrigin               AccountOrigin                @default(WHITELABEL)
+  isSystemAdmin               Boolean                      @default(false)
   lastOnline                  DateTime?
-  createdAt                   DateTime                  @default(now())
-  updatedAt                   DateTime                  @updatedAt
+  createdAt                   DateTime                     @default(now())
+  updatedAt                   DateTime                     @updatedAt
   sessions                    Session[]
   externalIdentities          ExternalIdentity[]
   profile                     PlayerProfile?
@@ -579,8 +579,8 @@ model User {
   progressionEvents           ProgressionEvent[]
   rewardGrants                RewardGrant[]
   leaderboardEntries          LeaderboardEntry[]
-  leaderboardScoreEvents      LeaderboardScoreEvent[]   @relation("LeaderboardScoreEventPlayer")
-  createdMatches              Match[]                   @relation("MatchCreatedBy")
+  leaderboardScoreEvents      LeaderboardScoreEvent[]      @relation("LeaderboardScoreEventPlayer")
+  createdMatches              Match[]                      @relation("MatchCreatedBy")
   matchParticipants           MatchParticipant[]
   gameStats                   PlayerGameStats[]
   cognitiveStats              PlayerCognitiveStats?
@@ -590,39 +590,39 @@ model User {
   storageItems                PlayerStorageItem[]
   files                       StoredFile[]
   feedback                    PlayerFeedback[]
-  friendRequestsSent          FriendRequest[]           @relation("FriendRequestRequester")
-  friendRequestsReceived      FriendRequest[]           @relation("FriendRequestAddressee")
-  friendships                 Friendship[]              @relation("FriendshipUser")
-  friendsOf                   Friendship[]              @relation("FriendshipFriend")
-  blocksCreated               FriendBlock[]             @relation("FriendBlocker")
-  blockedBy                   FriendBlock[]             @relation("FriendBlocked")
+  friendRequestsSent          FriendRequest[]              @relation("FriendRequestRequester")
+  friendRequestsReceived      FriendRequest[]              @relation("FriendRequestAddressee")
+  friendships                 Friendship[]                 @relation("FriendshipUser")
+  friendsOf                   Friendship[]                 @relation("FriendshipFriend")
+  blocksCreated               FriendBlock[]                @relation("FriendBlocker")
+  blockedBy                   FriendBlock[]                @relation("FriendBlocked")
   presence                    Presence?
   matchmakingTickets          MatchmakingTicket[]
-  matchmakingInvitesSent      MatchmakingInvite[]       @relation("MatchmakingInviteInviter")
-  matchmakingInvitesReceived  MatchmakingInvite[]       @relation("MatchmakingInviteInvitee")
+  matchmakingInvitesSent      MatchmakingInvite[]          @relation("MatchmakingInviteInviter")
+  matchmakingInvitesReceived  MatchmakingInvite[]          @relation("MatchmakingInviteInvitee")
   adRewardClaims              AdRewardClaim[]
   notifications               Notification[]
   pushDevices                 PushDevice[]
-  notificationBroadcasts      NotificationBroadcast[]   @relation("NotificationBroadcastCreator")
+  notificationBroadcasts      NotificationBroadcast[]      @relation("NotificationBroadcastCreator")
   adminAuditEvents            AdminAuditEvent[]
   playerAuditEvents           PlayerAuditEvent[]
   paidRewardRequests          PaidRewardRequest[]
-  paidRewardDecisions         PaidRewardRequest[]       @relation("PaidRewardRequestDecider")
-  gldControlUpdates           GldAdminControl[]         @relation("GldControlUpdater")
-  gldManualBackings           GldManualBacking[]        @relation("GldManualBackingCreator")
-  assignedRedeemCodes         AssetRedeemCode[]         @relation("RedeemCodeAssignedUser")
+  paidRewardDecisions         PaidRewardRequest[]          @relation("PaidRewardRequestDecider")
+  gldControlUpdates           GldAdminControl[]            @relation("GldControlUpdater")
+  gldManualBackings           GldManualBacking[]           @relation("GldManualBackingCreator")
+  assignedRedeemCodes         AssetRedeemCode[]            @relation("RedeemCodeAssignedUser")
   gldBurnEvents               GldBurnEvent[]
   gldDailyAdStates            GldPlayerDailyAdState[]
-  sentGifts                   PlayerGift[]              @relation("SentGifts")
-  receivedGifts               PlayerGift[]              @relation("ReceivedGifts")
+  sentGifts                   PlayerGift[]                 @relation("SentGifts")
+  receivedGifts               PlayerGift[]                 @relation("ReceivedGifts")
   referralCode                ReferralCode?
-  referralsAsReferrer         Referral[]                @relation("ReferralReferrer")
-  referralAsReferred          Referral?                 @relation("ReferralReferred")
-  referralRewardsAsReferrer   ReferralReward[]          @relation("ReferralRewardReferrer")
-  referralRewardsAsReferred   ReferralReward[]          @relation("ReferralRewardReferred")
-  referralConfigUpdates       ReferralConfig[]          @relation("ReferralConfigUpdater")
+  referralsAsReferrer         Referral[]                   @relation("ReferralReferrer")
+  referralAsReferred          Referral?                    @relation("ReferralReferred")
+  referralRewardsAsReferrer   ReferralReward[]             @relation("ReferralRewardReferrer")
+  referralRewardsAsReferred   ReferralReward[]             @relation("ReferralRewardReferred")
+  referralConfigUpdates       ReferralConfig[]             @relation("ReferralConfigUpdater")
   referralPolicyOverride      ReferralPlayerOverride?
-  rankingWins                 RankingMatch[]            @relation("RankingMatchWinner")
+  rankingWins                 RankingMatch[]               @relation("RankingMatchWinner")
   missionRows                 PlayerMission[]
   achievementRows             PlayerAchievement[]
   engagementEvents            EngagementEvent[]
@@ -630,38 +630,44 @@ model User {
   streakActivities            StreakActivity[]
   fraudProfile                FraudProfile?
   fraudSignals                FraudSignal[]
-  fraudCases                  FraudCase[]               @relation("FraudCasesForUser")
-  fraudCasesAssigned          FraudCase[]               @relation("FraudCaseAssignee")
-  fraudProfilesReviewed       FraudProfile[]            @relation("FraudProfileReviewer")
-  fraudActions                FraudAction[]             @relation("FraudActionActor")
-  fraudActionsForUser         FraudAction[]             @relation("FraudActionsForUser")
+  fraudCases                  FraudCase[]                  @relation("FraudCasesForUser")
+  fraudCasesAssigned          FraudCase[]                  @relation("FraudCaseAssignee")
+  fraudProfilesReviewed       FraudProfile[]               @relation("FraudProfileReviewer")
+  fraudActions                FraudAction[]                @relation("FraudActionActor")
+  fraudActionsForUser         FraudAction[]                @relation("FraudActionsForUser")
   chatParticipants            ChatParticipant[]
-  chatMessagesSent            ChatMessage[]             @relation("ChatMessageSender")
-  createdChatConversations    ChatConversation[]        @relation("ChatConversationCreator")
+  chatMessagesSent            ChatMessage[]                @relation("ChatMessageSender")
+  createdChatConversations    ChatConversation[]           @relation("ChatConversationCreator")
   chatRestrictions            ChatRestriction[]
-  chatReportsFiled            ChatReport[]              @relation("ChatReportReporter")
+  chatReportsFiled            ChatReport[]                 @relation("ChatReportReporter")
   supportAgentProfile         SupportAgent?
-  supportTickets              SupportTicket[]           @relation("SupportTicketPlayer")
-  supportMessages             SupportTicketMessage[]    @relation("SupportMessageSender")
-  supportTicketEvents         SupportTicketEvent[]      @relation("SupportTicketEventActor")
-  supportAuditEvents          SupportAuditEvent[]       @relation("SupportAuditActor")
+  supportTickets              SupportTicket[]              @relation("SupportTicketPlayer")
+  supportMessages             SupportTicketMessage[]       @relation("SupportMessageSender")
+  supportTicketEvents         SupportTicketEvent[]         @relation("SupportTicketEventActor")
+  supportAuditEvents          SupportAuditEvent[]          @relation("SupportAuditActor")
   supportTicketReads          SupportTicketRead[]
-  supportConfigurationUpdates SupportConfiguration[]    @relation("SupportConfigurationUpdater")
-  supportAgentsGranted        SupportAgent[]            @relation("SupportAgentGrantedBy")
-  supportAgentsRevoked        SupportAgent[]            @relation("SupportAgentRevokedBy")
-  supportLiveChats            SupportLiveChatSession[]  @relation("SupportLiveChatPlayer")
-  supportLiveChatMessages     SupportLiveChatMessage[]  @relation("SupportLiveChatMessageSender")
+  supportConfigurationUpdates SupportConfiguration[]       @relation("SupportConfigurationUpdater")
+  supportAgentsGranted        SupportAgent[]               @relation("SupportAgentGrantedBy")
+  supportAgentsRevoked        SupportAgent[]               @relation("SupportAgentRevokedBy")
+  supportLiveChats            SupportLiveChatSession[]     @relation("SupportLiveChatPlayer")
+  supportLiveChatMessages     SupportLiveChatMessage[]     @relation("SupportLiveChatMessageSender")
   supportLiveChatReads        SupportLiveChatRead[]
   supportLiveChatQuotes       SupportLiveChatQuote[]
-  supportLiveChatEvents       SupportLiveChatEvent[]    @relation("SupportLiveChatEventActor")
-  supportArticlesCreated      SupportHelpArticle[]      @relation("SupportArticleCreator")
-  supportArticlesUpdated      SupportHelpArticle[]      @relation("SupportArticleUpdater")
-  supportCannedRepliesCreated SupportCannedReply[]      @relation("SupportCannedReplyCreator")
-  supportCannedRepliesUpdated SupportCannedReply[]      @relation("SupportCannedReplyUpdater")
+  supportLiveChatEvents       SupportLiveChatEvent[]       @relation("SupportLiveChatEventActor")
+  supportArticlesCreated      SupportHelpArticle[]         @relation("SupportArticleCreator")
+  supportArticlesUpdated      SupportHelpArticle[]         @relation("SupportArticleUpdater")
+  supportCannedRepliesCreated SupportCannedReply[]         @relation("SupportCannedReplyCreator")
+  supportCannedRepliesUpdated SupportCannedReply[]         @relation("SupportCannedReplyUpdater")
   supportTicketRatings        SupportTicketRating[]
-  supportTicketEscalations    SupportTicketEscalation[] @relation("SupportEscalationActor")
+  supportTicketEscalations    SupportTicketEscalation[]    @relation("SupportEscalationActor")
   supportAttachments          SupportAttachment[]
   analyticsEvents             AnalyticsEvent[]
+  partyHosts                  Party[]                      @relation("PartyHost")
+  partyMemberships            PartyMember[]                @relation("PartyMemberUser")
+  partyInvitesSent            PartyInvite[]                @relation("PartyInviteInviter")
+  partyInvitesReceived        PartyInvite[]                @relation("PartyInviteInvitee")
+  cooperativeParticipants     CooperativeParticipant[]
+  cooperativeLedgerOperations CooperativeLedgerOperation[]
 }
 
 /// A provider identity is linked to a local account after the provider token
@@ -892,6 +898,7 @@ model ChatConversation {
   name          String?              @db.VarChar(80)
   imageUrl      String?              @db.Text
   createdById   String?              @db.Uuid
+  partyId       String?              @unique @db.Uuid
   lastMessageAt DateTime?
   lastMessageId String?              @db.Uuid
   archivedAt    DateTime?
@@ -901,6 +908,7 @@ model ChatConversation {
   participants  ChatParticipant[]
   messages      ChatMessage[]
   reports       ChatReport[]
+  party         Party?               @relation(fields: [partyId], references: [id], onDelete: SetNull)
 
   @@index([lastMessageAt])
 }
@@ -1842,64 +1850,64 @@ model AnalyticsSavedReport {
 }
 
 model AnalyticsScheduledReport {
-  id            String   @id @default(uuid()) @db.Uuid
-  savedReportId String   @db.Uuid
-  ownerId       String   @db.Uuid
-  frequency     String   @db.VarChar(16)
-  timezone      String   @default("UTC") @db.VarChar(80)
-  sendAt        String   @default("09:00") @db.VarChar(5)
+  id            String    @id @default(uuid()) @db.Uuid
+  savedReportId String    @db.Uuid
+  ownerId       String    @db.Uuid
+  frequency     String    @db.VarChar(16)
+  timezone      String    @default("UTC") @db.VarChar(80)
+  sendAt        String    @default("09:00") @db.VarChar(5)
   recipients    Json
   formats       Json
-  enabled       Boolean  @default(true)
+  enabled       Boolean   @default(true)
   nextRunAt     DateTime?
   lastRunAt     DateTime?
-  lastStatus    String?  @db.VarChar(20)
-  lastError     String?  @db.Text
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  lastStatus    String?   @db.VarChar(20)
+  lastError     String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([enabled, nextRunAt])
   @@index([ownerId, updatedAt])
 }
 
 model AnalyticsAlertRule {
-  id                String   @id @default(uuid()) @db.Uuid
-  key               String   @unique @db.VarChar(100)
-  name              String   @db.VarChar(160)
-  metricKey         String   @db.VarChar(120)
-  condition         String   @db.VarChar(16)
-  threshold         Decimal  @db.Decimal(30, 6)
-  baselineWindow    Int      @default(7)
-  evaluationMinutes Int      @default(15)
-  minimumSample     Int      @default(1)
-  severity          String   @default("WARNING") @db.VarChar(16)
-  cooldownMinutes   Int      @default(60)
+  id                String    @id @default(uuid()) @db.Uuid
+  key               String    @unique @db.VarChar(100)
+  name              String    @db.VarChar(160)
+  metricKey         String    @db.VarChar(120)
+  condition         String    @db.VarChar(16)
+  threshold         Decimal   @db.Decimal(30, 6)
+  baselineWindow    Int       @default(7)
+  evaluationMinutes Int       @default(15)
+  minimumSample     Int       @default(1)
+  severity          String    @default("WARNING") @db.VarChar(16)
+  cooldownMinutes   Int       @default(60)
   recipients        Json
   activeFrom        DateTime?
   activeUntil       DateTime?
-  enabled           Boolean  @default(true)
+  enabled           Boolean   @default(true)
   lastEvaluatedAt   DateTime?
   lastTriggeredAt   DateTime?
-  createdById       String   @db.Uuid
-  updatedById       String?  @db.Uuid
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdById       String    @db.Uuid
+  updatedById       String?   @db.Uuid
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([enabled, lastEvaluatedAt])
   @@index([metricKey, enabled])
 }
 
 model AnalyticsAlertEvent {
-  id               String   @id @default(uuid()) @db.Uuid
-  ruleId           String   @db.Uuid
-  status           String   @default("OPEN") @db.VarChar(20)
-  observedValue    Decimal  @db.Decimal(30, 6)
-  threshold        Decimal  @db.Decimal(30, 6)
-  message          String   @db.VarChar(500)
+  id               String    @id @default(uuid()) @db.Uuid
+  ruleId           String    @db.Uuid
+  status           String    @default("OPEN") @db.VarChar(20)
+  observedValue    Decimal   @db.Decimal(30, 6)
+  threshold        Decimal   @db.Decimal(30, 6)
+  message          String    @db.VarChar(500)
   metadata         Json?
-  triggeredAt      DateTime @default(now())
+  triggeredAt      DateTime  @default(now())
   acknowledgedAt   DateTime?
-  acknowledgedById String?  @db.Uuid
+  acknowledgedById String?   @db.Uuid
   resolvedAt       DateTime?
 
   @@index([ruleId, triggeredAt])
@@ -1907,39 +1915,169 @@ model AnalyticsAlertEvent {
 }
 
 model AnalyticsDataQualityCheck {
-  id           String   @id @default(uuid()) @db.Uuid
-  key          String   @unique @db.VarChar(100)
-  name         String   @db.VarChar(160)
-  feature      String   @db.VarChar(40)
-  status       String   @default("PASS") @db.VarChar(16)
-  severity     String   @default("INFO") @db.VarChar(16)
-  message      String   @db.VarChar(500)
+  id           String    @id @default(uuid()) @db.Uuid
+  key          String    @unique @db.VarChar(100)
+  name         String    @db.VarChar(160)
+  feature      String    @db.VarChar(40)
+  status       String    @default("PASS") @db.VarChar(16)
+  severity     String    @default("INFO") @db.VarChar(16)
+  message      String    @db.VarChar(500)
   affectedFrom DateTime?
   affectedTo   DateTime?
-  checkedAt    DateTime @default(now())
+  checkedAt    DateTime  @default(now())
   metadata     Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([status, checkedAt])
   @@index([feature, checkedAt])
 }
 
 model AnalyticsExportJob {
-  id          String   @id @default(uuid()) @db.Uuid
-  ownerId     String   @db.Uuid
-  reportKey   String   @db.VarChar(80)
-  format      String   @db.VarChar(16)
-  status      String   @default("PENDING") @db.VarChar(20)
+  id          String    @id @default(uuid()) @db.Uuid
+  ownerId     String    @db.Uuid
+  reportKey   String    @db.VarChar(80)
+  format      String    @db.VarChar(16)
+  status      String    @default("PENDING") @db.VarChar(20)
   query       Json
   result      Json?
-  error       String?  @db.Text
+  error       String?   @db.Text
   expiresAt   DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
   completedAt DateTime?
 
   @@index([ownerId, createdAt])
   @@index([status, createdAt])
+}
+
+/// Temporary two-player party used before a cooperative match is created.
+model Party {
+  id           String                  @id @default(uuid()) @db.Uuid
+  hostUserId   String                  @db.Uuid
+  status       String                  @default("CREATED") @db.VarChar(32)
+  mode         String                  @default("RANDOM") @db.VarChar(16)
+  maxMembers   Int                     @default(2)
+  expiresAt    DateTime
+  queuedAt     DateTime?
+  matchedAt    DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  host         User                    @relation("PartyHost", fields: [hostUserId], references: [id], onDelete: Cascade)
+  members      PartyMember[]
+  invites      PartyInvite[]
+  queueEntries CooperativeQueueEntry[]
+  conversation ChatConversation?
+
+  @@index([hostUserId, status])
+  @@index([status, mode, queuedAt])
+  @@index([expiresAt])
+}
+
+model PartyMember {
+  id              String    @id @default(uuid()) @db.Uuid
+  partyId         String    @db.Uuid
+  userId          String    @db.Uuid
+  role            String    @default("MEMBER") @db.VarChar(16)
+  status          String    @default("ACTIVE") @db.VarChar(24)
+  joinedAt        DateTime  @default(now())
+  leftAt          DateTime?
+  readyAt         DateTime?
+  lastHeartbeatAt DateTime  @default(now())
+  party           Party     @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  user            User      @relation("PartyMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partyId, userId])
+  @@index([userId, status, leftAt])
+  @@index([partyId, status])
+}
+
+model PartyInvite {
+  id          String    @id @default(uuid()) @db.Uuid
+  partyId     String    @db.Uuid
+  inviterId   String    @db.Uuid
+  inviteeId   String    @db.Uuid
+  status      String    @default("PENDING") @db.VarChar(24)
+  expiresAt   DateTime
+  respondedAt DateTime?
+  createdAt   DateTime  @default(now())
+  party       Party     @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  inviter     User      @relation("PartyInviteInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee     User      @relation("PartyInviteInvitee", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@unique([partyId, inviteeId, status])
+  @@index([inviteeId, status, createdAt])
+  @@index([partyId, status, expiresAt])
+}
+
+model CooperativeQueueEntry {
+  id              String   @id @default(uuid()) @db.Uuid
+  partyId         String   @db.Uuid
+  mode            String   @db.VarChar(16)
+  status          String   @default("SEARCHING") @db.VarChar(24)
+  ratingSnapshot  Int      @default(0)
+  levelSnapshot   Int      @default(1)
+  countrySnapshot String?  @db.Char(2)
+  clientVersion   String?  @db.VarChar(32)
+  queuedAt        DateTime @default(now())
+  lastHeartbeatAt DateTime @default(now())
+  expiresAt       DateTime
+  matchId         String?  @db.Uuid
+  party           Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@unique([partyId, mode, status])
+  @@index([status, mode, queuedAt])
+  @@index([expiresAt, lastHeartbeatAt])
+  @@index([partyId, status])
+}
+
+/// Cooperative lobby policy. Matchmaking and ranked values are configurable
+/// before the match engine is enabled in the later implementation phases.
+model CooperativeConfiguration {
+  id                            String   @id @default(uuid()) @db.Uuid
+  key                           String   @unique @default("default") @db.VarChar(40)
+  enabled                       Boolean  @default(true)
+  randomEnabled                 Boolean  @default(true)
+  rankedEnabled                 Boolean  @default(false)
+  cooperativePartyEnabled       Boolean  @default(true)
+  cooperativeRandomEnabled      Boolean  @default(true)
+  cooperativeBotFillEnabled     Boolean  @default(false)
+  cooperativeRankedEnabled      Boolean  @default(false)
+  cooperativeVoiceEnabled       Boolean  @default(true)
+  cooperativeRewardsEnabled     Boolean  @default(true)
+  allowSoloParty                Boolean  @default(false)
+  botFillEnabled                Boolean  @default(false)
+  partyIdleMinutes              Int      @default(30)
+  inviteExpiryMinutes           Int      @default(5)
+  queueTimeoutSeconds           Int      @default(120)
+  minLevel                      Int      @default(1)
+  minElo                        Int      @default(0)
+  minCompletedMatches           Int      @default(0)
+  rankedEntryFeeGld             Decimal  @default(2) @db.Decimal(20, 6)
+  rankedStakeAmountGld          Decimal  @default(2) @db.Decimal(20, 6)
+  rankedPayoutPercent           Int      @default(90)
+  rankedEloBaseDelta            Int      @default(25)
+  rankedEloMaxDelta             Int      @default(50)
+  rankedTeamRatingWeightPercent Int      @default(50)
+  rankedPartyRatingSpread       Int      @default(500)
+  rankedBotFillEnabled          Boolean  @default(false)
+  rewardsEnabled                Boolean  @default(true)
+  hardeningAlertsEnabled        Boolean  @default(true)
+  settlementRetryLimit          Int      @default(5)
+  botAccuracyPercent            Int      @default(65)
+  botPaceMultiplier             Decimal  @default(1) @db.Decimal(8, 4)
+  voiceEnabled                  Boolean  @default(true)
+  botFallbackDelaySeconds       Int      @default(20)
+  initialRatingWindow           Int      @default(250)
+  maxRatingWindow               Int      @default(1000)
+  ratingWidenIntervalSeconds    Int      @default(15)
+  confirmationTimeoutSeconds    Int      @default(15)
+  disconnectGraceSeconds        Int      @default(30)
+  updatedById                   String?  @db.Uuid
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+
+  @@index([enabled, randomEnabled, rankedEnabled])
 }
 
 model MissionDefinition {
@@ -2208,6 +2346,7 @@ model GameDefinition {
   matchmakingTickets MatchmakingTicket[]
   matchmakingInvites MatchmakingInvite[]
   rounds             MatchRound[]
+  cooperativeMatches CooperativeMatch[]
 }
 
 model GameConfig {
@@ -2275,6 +2414,7 @@ model Match {
   matchmakingInvite  MatchmakingInvite?
   rounds             MatchRound[]
   rankingMatch       RankingMatch?
+  cooperativeMatch   CooperativeMatch?
 
   @@index([status, createdAt])
   @@index([createdByUserId, status])
@@ -2399,26 +2539,150 @@ model MatchmakingInvite {
 }
 
 model MatchParticipant {
-  id               String                   @id @default(uuid()) @db.Uuid
-  matchId          String                   @db.Uuid
-  userId           String?                  @db.Uuid
-  participantType  MatchParticipantType
-  finalScore       Int?
-  answeredCount    Int                      @default(0)
-  result           MatchParticipantResult   @default(PENDING)
-  readyAt          DateTime?
-  submittedAt      DateTime?
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
-  match            Match                    @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  user             User?                    @relation(fields: [userId], references: [id], onDelete: Restrict)
-  events           MatchEvent[]
-  assignments      MatchContentAssignment[]
-  winnerSettlement MatchSettlement?         @relation("MatchSettlementWinner")
+  id                     String                   @id @default(uuid()) @db.Uuid
+  matchId                String                   @db.Uuid
+  userId                 String?                  @db.Uuid
+  participantType        MatchParticipantType
+  finalScore             Int?
+  answeredCount          Int                      @default(0)
+  result                 MatchParticipantResult   @default(PENDING)
+  readyAt                DateTime?
+  submittedAt            DateTime?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  match                  Match                    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user                   User?                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  events                 MatchEvent[]
+  assignments            MatchContentAssignment[]
+  winnerSettlement       MatchSettlement?         @relation("MatchSettlementWinner")
+  cooperativeParticipant CooperativeParticipant?
 
   @@unique([matchId, userId])
   @@index([matchId, result])
   @@index([userId, createdAt])
+}
+
+/// Server-owned projection for a four-player cooperative match. The regular
+/// Match remains the source of truth for challenge assignments and accepted
+/// answer events; these rows provide team membership and live scoreboard data.
+model CooperativeMatch {
+  id                     String                         @id @default(uuid()) @db.Uuid
+  matchId                String                         @unique @db.Uuid
+  gameDefinitionId       String                         @db.Uuid
+  format                 String                         @default("TWO_V_TWO") @db.VarChar(32)
+  mode                   String                         @default("RANDOM") @db.VarChar(16)
+  status                 String                         @default("FOUND") @db.VarChar(32)
+  botFilled              Boolean                        @default(false)
+  confirmationDeadline   DateTime?
+  disconnectGraceSeconds Int                            @default(30)
+  policyVersion          String                         @default("cooperative.v2") @db.VarChar(64)
+  rankingPolicyVersion   String?                        @db.VarChar(64)
+  entryFeeGld            Decimal                        @default(0) @db.Decimal(20, 6)
+  stakeAmountGld         Decimal                        @default(0) @db.Decimal(20, 6)
+  payoutAmountGld        Decimal                        @default(0) @db.Decimal(20, 6)
+  commitmentAt           DateTime?
+  settledAt              DateTime?
+  startedAt              DateTime?
+  endedAt                DateTime?
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
+  match                  Match                          @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  gameDefinition         GameDefinition                 @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  teams                  CooperativeTeam[]
+  participants           CooperativeParticipant[]
+  ledgerOperations       CooperativeLedgerOperation[]
+  settlementAttempts     CooperativeSettlementAttempt[]
+
+  @@index([status, createdAt])
+  @@index([gameDefinitionId, createdAt])
+}
+
+model CooperativeTeam {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  cooperativeMatchId String                   @db.Uuid
+  teamNumber         Int
+  name               String                   @default("Team") @db.VarChar(80)
+  score              Int                      @default(0)
+  correctAnswers     Int                      @default(0)
+  answeredQuestions  Int                      @default(0)
+  result             String                   @default("PENDING") @db.VarChar(16)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  cooperativeMatch   CooperativeMatch         @relation(fields: [cooperativeMatchId], references: [id], onDelete: Cascade)
+  participants       CooperativeParticipant[]
+
+  @@unique([cooperativeMatchId, teamNumber])
+  @@index([cooperativeMatchId, result])
+}
+
+model CooperativeParticipant {
+  id                        String               @id @default(uuid()) @db.Uuid
+  cooperativeMatchId        String               @db.Uuid
+  teamId                    String               @db.Uuid
+  matchParticipantId        String               @unique @db.Uuid
+  userId                    String?              @db.Uuid
+  participantType           MatchParticipantType
+  displayName               String               @db.VarChar(120)
+  avatarUrl                 String?              @db.Text
+  levelSnapshot             Int                  @default(1)
+  eloSnapshot               Int                  @default(0)
+  finalScore                Int                  @default(0)
+  correctAnswers            Int                  @default(0)
+  answeredQuestions         Int                  @default(0)
+  connectedAt               DateTime?
+  disconnectedAt            DateTime?
+  forfeitAt                 DateTime?
+  confirmedAt               DateTime?
+  abandonmentPenaltyApplied Boolean              @default(false)
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+  cooperativeMatch          CooperativeMatch     @relation(fields: [cooperativeMatchId], references: [id], onDelete: Cascade)
+  team                      CooperativeTeam      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  matchParticipant          MatchParticipant     @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
+  user                      User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([cooperativeMatchId, teamId])
+  @@index([userId, createdAt])
+}
+
+/// Idempotent server-owned GLD operations for ranked cooperative matches.
+/// The wallet transaction remains the financial source of truth; this table
+/// provides the cooperative reconciliation/audit projection.
+model CooperativeLedgerOperation {
+  id                  String           @id @default(uuid()) @db.Uuid
+  cooperativeMatchId  String           @db.Uuid
+  userId              String           @db.Uuid
+  operationType       String           @db.VarChar(32)
+  amount              Decimal          @db.Decimal(20, 6)
+  currencyCode        String           @default("GLD") @db.VarChar(16)
+  walletTransactionId String?          @db.Uuid
+  idempotencyKey      String           @unique @db.VarChar(180)
+  status              String           @default("PENDING") @db.VarChar(24)
+  metadata            Json?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  cooperativeMatch    CooperativeMatch @relation(fields: [cooperativeMatchId], references: [id], onDelete: Cascade)
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cooperativeMatchId, userId, operationType])
+  @@index([userId, createdAt])
+  @@index([cooperativeMatchId, status])
+}
+
+/// Retry journal used by settlement recovery and admin reconciliation.
+model CooperativeSettlementAttempt {
+  id                 String           @id @default(uuid()) @db.Uuid
+  cooperativeMatchId String           @db.Uuid
+  attempt            Int
+  status             String           @default("PENDING") @db.VarChar(24)
+  error              String?          @db.VarChar(1000)
+  nextAttemptAt      DateTime         @default(now())
+  createdAt          DateTime         @default(now())
+  completedAt        DateTime?
+  cooperativeMatch   CooperativeMatch @relation(fields: [cooperativeMatchId], references: [id], onDelete: Cascade)
+
+  @@unique([cooperativeMatchId, attempt])
+  @@index([status, nextAttemptAt])
 }
 
 model MatchEvent {

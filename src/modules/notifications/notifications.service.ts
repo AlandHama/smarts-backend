@@ -142,6 +142,46 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     return notification;
   }
 
+  /** Generic durable player notification for server-owned social workflows. */
+  async createPlayerNotification(input: {
+    recipientId: string;
+    notificationType: string;
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+    enabled?: boolean;
+    pushEnabled?: boolean;
+  }) {
+    if (input.enabled === false) return null;
+    const notification = await this.prisma.notification.create({
+      data: {
+        userId: input.recipientId,
+        notificationType: input.notificationType,
+        title: input.title.slice(0, 160),
+        body: input.body.slice(0, 500),
+        data: input.data as Prisma.InputJsonValue | undefined,
+        status: NotificationStatus.DISPATCHED,
+        pushStatus: input.pushEnabled === false ? NotificationPushStatus.SKIPPED : NotificationPushStatus.PENDING,
+        dispatchedAt: new Date(),
+      },
+    });
+    if (input.pushEnabled === false) return notification;
+    try {
+      const push = await this.firebaseMessaging.sendToUsers([input.recipientId], {
+        notificationId: notification.id,
+        notificationType: input.notificationType,
+        title: input.title.slice(0, 160),
+        body: input.body.slice(0, 500),
+        data: input.data,
+      }, { throwOnTransientFailure: false });
+      await this.prisma.notification.update({ where: { id: notification.id }, data: { pushStatus: !push.configured ? NotificationPushStatus.SKIPPED : push.failureCount ? NotificationPushStatus.FAILED : NotificationPushStatus.SENT, pushAttemptedAt: new Date() } });
+    } catch (error) {
+      this.logger.warn(`Player notification failed: ${String(error)}`);
+      await this.prisma.notification.update({ where: { id: notification.id }, data: { pushStatus: NotificationPushStatus.FAILED, pushAttemptedAt: new Date(), pushFailureReason: "Push delivery failed" } }).catch(() => undefined);
+    }
+    return notification;
+  }
+
   /** Durable inbox + push notification for the independent support center. */
   async createSupportNotification(input: {
     recipientId: string;

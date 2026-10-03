@@ -5,7 +5,7 @@ import { MatchParticipantType, Prisma } from "@prisma/client"
 import { PrismaService } from "../../prisma.service"
 import { createAssignmentToken } from "./utilities/server-content"
 
-type BotCompletionInput = { matchId: string; userId?: string; finalize?: boolean }
+type BotCompletionInput = { matchId: string; userId?: string; botId?: string; finalize?: boolean }
 
 type AnswerProfile = {
   answers: number
@@ -47,9 +47,10 @@ export class BotGameplayService {
       select: { id: true },
     })
     for (const match of matches) {
-      await this.prisma.$transaction((transaction) =>
-        this.progressWithinTransaction({ matchId: match.id, finalize: false }, transaction),
-      )
+      await this.prisma.$transaction(async (transaction) => {
+        const bots = await transaction.matchParticipant.findMany({ where: { matchId: match.id, participantType: MatchParticipantType.BOT, result: "PENDING" }, select: { id: true } })
+        for (const bot of bots) await this.progressWithinTransaction({ matchId: match.id, botId: bot.id, finalize: false }, transaction)
+      })
     }
   }
 
@@ -57,7 +58,9 @@ export class BotGameplayService {
     input: BotCompletionInput,
     transaction: Prisma.TransactionClient,
   ) {
-    return this.progressWithinTransaction({ ...input, finalize: true }, transaction)
+    const bots = await transaction.matchParticipant.findMany({ where: { matchId: input.matchId, participantType: MatchParticipantType.BOT, result: "PENDING" }, select: { id: true } })
+    for (const bot of bots) await this.progressWithinTransaction({ ...input, botId: bot.id, finalize: true }, transaction)
+    return undefined
   }
 
   private async progressWithinTransaction(
@@ -79,12 +82,13 @@ export class BotGameplayService {
           orderBy: { position: "asc" },
           include: { contentItem: true },
         },
+        cooperativeMatch: { select: { mode: true } },
       },
     })
     if (!match || match.mode !== "BOT") return
 
     const bot = match.participants.find(
-      (participant) => participant.participantType === MatchParticipantType.BOT,
+      (participant) => participant.participantType === MatchParticipantType.BOT && (!input.botId || participant.id === input.botId),
     )
     const player = match.participants.find((participant) =>
       participant.participantType === MatchParticipantType.PLAYER &&
@@ -142,7 +146,8 @@ export class BotGameplayService {
     botAssignments.sort((left, right) => left.position - right.position)
 
     const maxTimeMs = Math.max(1000, match.gameConfig.maxAnswerTimeSeconds * 1000)
-    const paceMs = this.botAnswerPace(learning, maxTimeMs, match.serverNonce)
+    const cooperativePolicy = match.cooperativeMatch ? await transaction.cooperativeConfiguration.findUnique({ where: { key: "default" }, select: { botAccuracyPercent: true, botPaceMultiplier: true } }) : null
+    const paceMs = Math.max(900, Math.round(this.botAnswerPace(learning, maxTimeMs, match.serverNonce) * Number(cooperativePolicy?.botPaceMultiplier ?? 1)))
     const elapsedMs = Math.max(
       0,
       now.getTime() - (match.startedAt ?? match.createdAt).getTime(),
@@ -159,7 +164,9 @@ export class BotGameplayService {
     for (const assignment of unanswered.slice(0, Math.max(0, targetAnswers - simulatedCount))) {
       const content = assignment.contentItem
       const profile = learning.byContent.get(content.id) ?? learning.global
-      const accuracy = this.targetAccuracy(profile, learning.playerAccuracy, learning.global)
+      const learnedAccuracy = this.targetAccuracy(profile, learning.playerAccuracy, learning.global)
+      const configuredAccuracy = Number(cooperativePolicy?.botAccuracyPercent ?? 0) / 100
+      const accuracy = cooperativePolicy && configuredAccuracy > 0 ? this.clamp(learnedAccuracy * 0.5 + configuredAccuracy * 0.5, 0.35, 0.95) : learnedAccuracy
       const random = this.randomFraction(`${match.serverNonce}:bot:${assignment.id}`)
       const options = Array.isArray(content.options) ? content.options : []
       if (!options.length) continue
@@ -224,6 +231,20 @@ export class BotGameplayService {
           : {}),
       },
     })
+    await this.updateCooperativeProjection(transaction, bot.id, score, simulatedCount)
+  }
+
+  private async updateCooperativeProjection(transaction: Prisma.TransactionClient, matchParticipantId: string, score: number, answeredQuestions: number) {
+    const projection = await transaction.cooperativeParticipant.findUnique({ where: { matchParticipantId }, select: { id: true, teamId: true, correctAnswers: true } })
+    if (!projection) return
+    const events = await transaction.matchEvent.findMany({ where: { participantId: matchParticipantId, eventType: "ANSWER", accepted: true }, select: { payload: true } })
+    const correctAnswers = events.reduce((count, event) => {
+      const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {}
+      return count + (payload.correct === true ? 1 : 0)
+    }, 0)
+    await transaction.cooperativeParticipant.update({ where: { id: projection.id }, data: { finalScore: score, answeredQuestions, correctAnswers } })
+    const teammates = await transaction.cooperativeParticipant.findMany({ where: { teamId: projection.teamId }, select: { finalScore: true, answeredQuestions: true, correctAnswers: true } })
+    await transaction.cooperativeTeam.update({ where: { id: projection.teamId }, data: { score: teammates.reduce((total, item) => total + (item.finalScore ?? 0), 0), answeredQuestions: teammates.reduce((total, item) => total + item.answeredQuestions, 0), correctAnswers: teammates.reduce((total, item) => total + item.correctAnswers, 0) } })
   }
 
   private botAnswerPace(learning: LearningProfile, maxTimeMs: number, seed: string) {

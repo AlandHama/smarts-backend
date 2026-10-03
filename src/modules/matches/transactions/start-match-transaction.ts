@@ -52,6 +52,8 @@ export class StartMatchTransaction extends PrismaTransaction<
     const round = match.rounds[0];
     if (!round) throw new ConflictException("The match has no active round");
     const now = new Date();
+    const cooperative = await transaction.cooperativeMatch.findUnique({ where: { matchId: match.id }, select: { status: true } });
+    if (cooperative && !["COMMITTED", "STARTED"].includes(cooperative.status)) throw new ConflictException("All cooperative players must confirm before the match starts");
     if (match.status === "CREATED") {
       // Starting is a readiness acknowledgement, not permission for the
       // first device to start the shared game. The row lock above makes this
@@ -204,7 +206,9 @@ export class StartMatchTransaction extends PrismaTransaction<
         where: { id: round.id },
         data: { status: "STARTED", startedAt: now },
       });
+      await transaction.cooperativeMatch.updateMany({ where: { matchId: match.id, status: "COMMITTED" }, data: { status: "STARTED", startedAt: now } });
     }
+    await transaction.cooperativeParticipant.updateMany({ where: { matchParticipantId: currentParticipant.id }, data: { connectedAt: now, disconnectedAt: null } });
     return {
       matchId: match.id,
       status: "STARTED",

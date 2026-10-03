@@ -131,6 +131,7 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, selectedAnswerIndex, correct, pointsEarned: points.toString(), timeTakenMs } } })
     await transaction.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: Number(after), answeredCount: { increment: 1 } } })
     await transaction.matchContentAssignment.update({ where: { id: assignment.id }, data: { answeredAt: now } })
+    await this.updateCooperativeScore(transaction, participant.id, correct)
     return event
   }
 
@@ -172,7 +173,18 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, correct: true, skipped: true, pointsEarned: correctPoints.toString(), timeTakenMs, gldPrice: price.toString() } } })
     await transaction.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: Number(after), answeredCount: { increment: 1 } } })
     await transaction.matchContentAssignment.update({ where: { id: assignment.id }, data: { answeredAt: now } })
+    await this.updateCooperativeScore(transaction, participant.id, true)
     return event
+  }
+
+  private async updateCooperativeScore(transaction: Prisma.TransactionClient, matchParticipantId: string, correct: boolean) {
+    const cooperative = await transaction.cooperativeParticipant.findUnique({ where: { matchParticipantId }, select: { id: true, teamId: true } })
+    if (!cooperative) return
+    const authoritative = await transaction.matchParticipant.findUniqueOrThrow({ where: { id: matchParticipantId }, select: { finalScore: true } })
+    await transaction.cooperativeParticipant.update({ where: { id: cooperative.id }, data: { finalScore: authoritative.finalScore ?? 0, answeredQuestions: { increment: 1 }, correctAnswers: correct ? { increment: 1 } : undefined } })
+    const teamParticipants = await transaction.cooperativeParticipant.findMany({ where: { teamId: cooperative.teamId }, select: { finalScore: true } })
+    const teamScore = teamParticipants.reduce((total, row) => total + (row.finalScore ?? 0), 0)
+    await transaction.cooperativeTeam.update({ where: { id: cooperative.teamId }, data: { score: teamScore, answeredQuestions: { increment: 1 }, correctAnswers: correct ? { increment: 1 } : undefined } })
   }
 
   private reject(transaction: Prisma.TransactionClient, base: any, reason: string) {
