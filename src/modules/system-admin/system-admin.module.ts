@@ -31,9 +31,10 @@ import { AnalyticsEventService } from "./analytics-event.service"
 import { AnalyticsAggregationWorkerService } from "./analytics-aggregation-worker.service"
 import { AnalyticsReportingService } from "./analytics-reporting.service"
 import { AnalyticsReportingWorkerService } from "./analytics-reporting-worker.service"
+import { WinStreaksModule } from "../win-streaks/win-streaks.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule],
   controllers: [SystemAdminController],
   providers: [
     SystemAdminService,

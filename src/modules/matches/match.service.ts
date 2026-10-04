@@ -104,7 +104,7 @@ export class MatchService {
         cooperativeMatch: {
           include: {
             teams: { orderBy: { teamNumber: "asc" } },
-            participants: { include: { user: { select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true, level: true, elo: true } } } } } },
+            participants: { include: { user: { select: { id: true, username: true, stats: { select: { currentWinStreak: true } }, profile: { select: { displayName: true, avatarUrl: true, level: true, elo: true } } } } } },
           },
         },
         participants: {
@@ -124,6 +124,7 @@ export class MatchService {
                     elo: true,
                   },
                 },
+                stats: { select: { currentWinStreak: true } },
               },
             },
           },
@@ -304,6 +305,17 @@ export class MatchService {
       (participant.participantType === "BOT"
         ? botDisplayName(matchId ?? participant.id, participant.id)
         : undefined);
+    const publicUser = participant.user
+      ? {
+          ...participant.user,
+          profile: participant.user.profile
+            ? {
+                ...participant.user.profile,
+                winStreak: participant.user.stats?.currentWinStreak ?? 0,
+              }
+            : participant.user.profile,
+        }
+      : undefined
     return {
       id: participant.id,
       userId: participant.userId,
@@ -316,7 +328,8 @@ export class MatchService {
       finalScore: participant.finalScore ?? 0,
       answeredCount: participant.answeredCount ?? 0,
       submittedAt: participant.submittedAt,
-      ...(participant.user ? { user: participant.user } : {}),
+      ...(publicUser ? { user: publicUser } : {}),
+      winStreak: participant.user?.stats?.currentWinStreak ?? 0,
     };
   }
 

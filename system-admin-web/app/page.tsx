@@ -47,6 +47,7 @@ import { NotificationsView } from "../components/NotificationsView";
 import { MissionsAchievementsView } from "../components/MissionsAchievementsView";
 import { FraudView } from "../components/FraudView";
 import { StreaksView } from "../components/StreaksView";
+import { WinStreaksView } from "../components/WinStreaksView";
 import { ChatsView } from "../components/ChatsView";
 import { SupportCenterView } from "../components/SupportCenterView";
 import { CooperativeMatchesView } from "../components/CooperativeMatchesView";
@@ -87,6 +88,7 @@ const viewPaths: Record<
   fraud: "/fraud/",
   "missions-achievements": "/missions-achievements/",
   streaks: "/streaks/",
+  "win-streaks": "/win-streaks/",
   support: "/support/",
   cooperative: "/cooperative/",
 };
@@ -208,6 +210,7 @@ export default function AdminPage() {
           )}
           {view === "missions-achievements" && <MissionsAchievementsView />}
           {view === "streaks" && <StreaksView />}
+          {view === "win-streaks" && <WinStreaksView />}
           {view === "support" && <SupportCenterView />}
           {view === "cooperative" && <CooperativeMatchesView />}
           {view === "economy" && (

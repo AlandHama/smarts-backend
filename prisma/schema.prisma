@@ -815,6 +815,36 @@ model StreakActivity {
   @@index([userId, activityDate])
 }
 
+/// Server-owned consecutive-win streak policy. Milestones are editable from
+/// System Admin and the active bonus is resolved from server-owned match stats.
+model WinStreakConfiguration {
+  id              String              @id @default(uuid()) @db.Uuid
+  key             String              @unique @default("default") @db.VarChar(40)
+  enabled         Boolean             @default(true)
+  resetOnNonWin   Boolean             @default(true)
+  maxBonusPercent Decimal             @default(35) @db.Decimal(20, 6)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  milestones      WinStreakMilestone[]
+}
+
+model WinStreakMilestone {
+  id              String                @id @default(uuid()) @db.Uuid
+  configurationId String                @db.Uuid
+  wins            Int
+  bonusPercent    Decimal               @db.Decimal(20, 6)
+  title           String?               @db.VarChar(120)
+  description     String?               @db.VarChar(300)
+  enabled         Boolean               @default(true)
+  sortOrder       Int                   @default(0)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  configuration   WinStreakConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+
+  @@unique([configurationId, wins])
+  @@index([configurationId, enabled, wins])
+}
+
 model Presence {
   id              String   @id @default(uuid()) @db.Uuid
   userId          String   @unique @db.Uuid

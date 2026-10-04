@@ -11,6 +11,7 @@ import { writePlayerAudit } from "../../../common/helpers/player-audit"
 import { botDisplayName } from "../utilities/bot-display-name"
 import { MissionsService } from "../../missions/missions.service"
 import { StreaksService } from "../../streaks/streaks.service"
+import { WinStreaksService } from "../../win-streaks/win-streaks.service"
 
 type SettleInput = { matchId: string; userId: string; idempotencyKey: string }
 
@@ -23,6 +24,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     private readonly applyLeaderboardScore: ApplyLeaderboardScoreTransaction,
     private readonly missions: MissionsService,
     private readonly streaks: StreaksService,
+    private readonly winStreaks: WinStreaksService,
   ) { super(prisma) }
 
   protected async execute(input: SettleInput, transaction: Prisma.TransactionClient) {
@@ -47,6 +49,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     const config = lockedMatch.gameConfig
     if (!config || !config.active) throw new BadRequestException("Game reward configuration is inactive")
     const cooperative = lockedMatch.cooperativeMatch
+    const resetWinStreakOnNonWin = await this.winStreaks.shouldResetOnNonWin(transaction)
     const cooperativeRanked = cooperative?.mode === "RANKED"
     const cooperativePolicy = cooperative ? await transaction.cooperativeConfiguration.upsert({ where: { key: "default" }, create: { key: "default" }, update: {} }) : null
     const requestHash = createHash("sha256").update(JSON.stringify({ matchId: lockedMatch.id, idempotencyKey: input.idempotencyKey.trim() })).digest("hex")
@@ -129,7 +132,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:ranked-played`, payload: engagementPayload }, transaction)
         if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:ranked-won`, payload: engagementPayload }, transaction)
       }
-      await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
+      const winStreak = await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary, resetWinStreakOnNonWin)
       const cognitiveStats = await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
       if (eloDelta > 0n && (winner?.participant.id === item.participant.id || (cooperativeRanked && isWinner))) {
         const leaderboardKeys = this.getLeaderboardKeys(config)
@@ -139,7 +142,14 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         if (country && country !== opponent) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       }
       await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, changes: { result: { old: "PENDING", new: result }, scoreEarned: { old: 0n, new: item.score }, eloDelta: { old: 0n, new: eloDelta }, xpAwarded: { old: 0n, new: xp }, currencyReward: { old: 0n, new: coinReward } }, metadata: { gameKey: lockedMatch.gameDefinition.key, policyVersion } })
-      results.push({ playerId: player.id, username: player.username, result, score: item.score.toString(), eloDelta: eloDelta.toString(), progression, eloProgression, wallet, cognitiveStats })
+      results.push({ playerId: player.id, username: player.username, result, score: item.score.toString(), eloDelta: eloDelta.toString(), progression, eloProgression, wallet, cognitiveStats, winStreakBefore: winStreak.before, winStreakAfter: winStreak.after })
+    }
+
+    const endedOpponentStreaks = results
+      .filter((entry) => entry.result === "LOSS" && Number(entry.winStreakBefore ?? 0) > 0)
+      .map((entry) => ({ username: entry.username ?? "Opponent", streak: Number(entry.winStreakBefore) }))
+    for (const entry of results) {
+      if (entry.result === "WIN" && endedOpponentStreaks.length) entry.endedOpponentStreaks = endedOpponentStreaks
     }
 
     if (lockedMatch.rankingMatch) {
@@ -224,16 +234,21 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     return BigInt(result === "WIN" ? magnitude : -magnitude)
   }
 
-  private async updateStats(transaction: Prisma.TransactionClient, match: any, participant: any, result: string, score: bigint, answers: { totalCorrect: number; totalQuestions: number; totalTimeMs: bigint }) {
-    if (!participant.userId) return
+  private async updateStats(transaction: Prisma.TransactionClient, match: any, participant: any, result: string, score: bigint, answers: { totalCorrect: number; totalQuestions: number; totalTimeMs: bigint }, resetOnNonWin: boolean) {
+    if (!participant.userId) return { before: 0, after: 0 }
     const stats = await transaction.playerStats.findUnique({ where: { userId: participant.userId } })
+    let before = stats?.currentWinStreak ?? 0
+    let after = before
     if (stats) {
       await transaction.$queryRaw`SELECT "id" FROM "PlayerStats" WHERE "id" = ${stats.id} FOR UPDATE`
-      const streak = result === "WIN" ? stats.currentWinStreak + 1 : 0
+      const streak = result === "WIN" ? stats.currentWinStreak + 1 : resetOnNonWin ? 0 : stats.currentWinStreak
+      before = stats.currentWinStreak
+      after = streak
       await transaction.playerStats.update({ where: { id: stats.id }, data: { gamesPlayed: { increment: 1 }, wins: result === "WIN" ? { increment: 1 } : undefined, losses: result === "LOSS" ? { increment: 1 } : undefined, draws: result === "DRAW" ? { increment: 1 } : undefined, currentWinStreak: streak, highestWinStreak: streak > stats.highestWinStreak ? streak : undefined, totalScore: { increment: score } } })
     }
     const gameStats = await transaction.playerGameStats.upsert({ where: { userId_gameDefinitionId: { userId: participant.userId, gameDefinitionId: match.gameDefinitionId } }, create: { userId: participant.userId, gameDefinitionId: match.gameDefinitionId, gamesPlayed: 1, wins: result === "WIN" ? 1 : 0, losses: result === "LOSS" ? 1 : 0, draws: result === "DRAW" ? 1 : 0, forfeits: result === "FORFEIT" ? 1 : 0, totalCorrect: answers.totalCorrect, totalQuestions: answers.totalQuestions, totalTimeMs: answers.totalTimeMs, totalScore: score, bestScore: score, lastPlayedAt: new Date() }, update: { gamesPlayed: { increment: 1 }, wins: result === "WIN" ? { increment: 1 } : undefined, losses: result === "LOSS" ? { increment: 1 } : undefined, draws: result === "DRAW" ? { increment: 1 } : undefined, forfeits: result === "FORFEIT" ? { increment: 1 } : undefined, totalCorrect: { increment: answers.totalCorrect }, totalQuestions: { increment: answers.totalQuestions }, totalTimeMs: { increment: answers.totalTimeMs }, totalScore: { increment: score }, lastPlayedAt: new Date() } })
     if (gameStats.bestScore < score) await transaction.playerGameStats.update({ where: { id: gameStats.id }, data: { bestScore: score } })
+    return { before, after }
   }
 
   /** Update server-owned cognitive skills from accepted answer evidence. */

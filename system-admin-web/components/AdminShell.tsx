@@ -29,6 +29,7 @@ import LocalFireDepartmentRoundedIcon from "@mui/icons-material/LocalFireDepartm
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import SupportAgentRoundedIcon from "@mui/icons-material/SupportAgentRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import WhatshotRoundedIcon from "@mui/icons-material/WhatshotRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
@@ -76,6 +77,7 @@ export type AdminView =
   | "fraud"
   | "missions-achievements"
   | "streaks"
+  | "win-streaks"
   | "support"
   | "cooperative";
 
@@ -128,6 +130,7 @@ const navigation = [
     icon: <AutoAwesomeRoundedIcon />,
   },
   { key: "streaks" as const, label: "Daily streaks", icon: <LocalFireDepartmentRoundedIcon /> },
+  { key: "win-streaks" as const, label: "Win streaks", icon: <WhatshotRoundedIcon /> },
   { key: "support" as const, label: "Support center", icon: <SupportAgentRoundedIcon /> },
   { key: "cooperative" as const, label: "Cooperative matches", icon: <GroupsRoundedIcon /> },
   {

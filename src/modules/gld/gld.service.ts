@@ -17,6 +17,7 @@ import { GldManualBackingDto } from "./dtos/gld-manual-backing.dto";
 import { UpsertGldAdRewardPolicyDto } from "./dtos/gld-ad-reward-policy.dto";
 import { writeAdminAudit } from "../../common/helpers/admin-audit";
 import { StreaksService } from "../streaks/streaks.service";
+import { WinStreaksService } from "../win-streaks/win-streaks.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -30,6 +31,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly revenue: GldRevenueService,
     private readonly streaks: StreaksService,
+    private readonly winStreaks: WinStreaksService,
   ) {}
 
   onModuleInit() {
@@ -427,7 +429,9 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
       : null;
     const rewardAmountDecimal = policy.rewardAmountDecimal ?? new Prisma.Decimal(policy.rewardAmount.toString());
     const progressionBonusPercent = new Prisma.Decimal(String(reachedTier?.adRewardBonusPercent ?? 0));
-    const streakBonusPercent = await this.streaks.getBonusPercent(userId);
+    const dailyStreakBonusPercent = await this.streaks.getBonusPercent(userId);
+    const winStreakBonusPercent = await this.winStreaks.getBonusPercent(userId);
+    const streakBonusPercent = dailyStreakBonusPercent.add(winStreakBonusPercent);
     const adRewardBonusPercent = progressionBonusPercent.add(streakBonusPercent);
     const effectiveRewardAmountDecimal = rewardAmountDecimal.mul(new Prisma.Decimal(100).add(adRewardBonusPercent)).div(100);
     return {
@@ -440,6 +444,10 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
       adRewardBonusPercent: adRewardBonusPercent.toString(),
       progressionBonusPercent: progressionBonusPercent.toString(),
       streakBonusPercent: streakBonusPercent.toString(),
+      dailyStreakBonusPercent: dailyStreakBonusPercent.toString(),
+      winStreakBonusPercent: winStreakBonusPercent.toString(),
+      currentStreakDays: (await this.streaks.getStatus(userId)).currentStreakDays,
+      currentWinStreak: (await this.winStreaks.getStatus(userId)).currentWinStreak,
       effectiveRewardAmountDecimal: effectiveRewardAmountDecimal.toString(),
     };
   }
