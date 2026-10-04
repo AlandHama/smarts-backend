@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch } from "@nestjs/common"
+import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query } from "@nestjs/common"
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
@@ -23,6 +23,19 @@ export class PlayersController {
   @ApiOperation({ summary: "Get server-derived per-game statistics for the authenticated player" })
   gameStats(@CurrentUser() user: UserResponseDto) {
     return this.playersService.gameStats(user.id)
+  }
+
+  @Get("me/game-insight/:gameKey")
+  @ApiOperation({ summary: "Get the authenticated player's server-derived per-game skill percentile" })
+  gameInsight(@CurrentUser() user: UserResponseDto, @Param("gameKey") gameKey: string, @Query("score") score?: string) {
+    if (score !== undefined) {
+      const parsedScore = Number(score)
+      if (!Number.isFinite(parsedScore) || !Number.isInteger(parsedScore) || parsedScore < 0) {
+        throw new BadRequestException("score must be a non-negative integer")
+      }
+      return this.playersService.gameInsight(user.id, gameKey, parsedScore)
+    }
+    return this.playersService.gameInsight(user.id, gameKey)
   }
 
   @Get("me/cognitive-stats")

@@ -87,6 +87,17 @@ export class PlayersService {
         gameDefinition: { select: { key: true, name: true } },
       },
     })
+    const cohorts = await this.prisma.playerGameStats.findMany({
+      where: { gamesPlayed: { gt: 0 }, user: { status: "ACTIVE" } },
+      select: { userId: true, totalScore: true, gamesPlayed: true, gameDefinition: { select: { key: true } } },
+    })
+    const cohortByGame = new Map<string, Array<{ userId: string; value: number }>>()
+    for (const cohort of cohorts) {
+      const values = cohortByGame.get(cohort.gameDefinition.key) ?? []
+      values.push({ userId: cohort.userId, value: Number(cohort.totalScore) / cohort.gamesPlayed })
+      cohortByGame.set(cohort.gameDefinition.key, values)
+    }
+
     return stats.map((stat) => ({
       gameKey: stat.gameDefinition.key,
       gameName: stat.gameDefinition.name,
@@ -101,7 +112,52 @@ export class PlayersService {
       totalScore: stat.totalScore.toString(),
       bestScore: stat.bestScore.toString(),
       lastPlayedAt: stat.lastPlayedAt,
+      percentile: this.percentile(
+        Number(stat.totalScore) / Math.max(1, stat.gamesPlayed),
+        (cohortByGame.get(stat.gameDefinition.key) ?? [])
+          .filter((item) => item.userId !== userId)
+          .map((item) => item.value),
+      ),
     }))
+  }
+
+  async gameInsight(userId: string, gameKey: string, score?: number) {
+    const game = await this.prisma.gameDefinition.findUnique({
+      where: { key: gameKey.trim().toLowerCase() },
+      select: { id: true, key: true, name: true },
+    })
+    if (!game) throw new NotFoundException("Game not found")
+
+    const stats = await this.prisma.playerGameStats.findMany({
+      where: {
+        gameDefinitionId: game.id,
+        gamesPlayed: { gt: 0 },
+        user: { status: "ACTIVE" },
+      },
+      select: { userId: true, totalScore: true, gamesPlayed: true },
+    })
+    const comparison = stats
+      .filter((stat) => stat.userId !== userId)
+      .map((stat) => Number(stat.totalScore) / Math.max(1, stat.gamesPlayed))
+    const current = stats.find((stat) => stat.userId === userId)
+    const currentAverage = current
+      ? Number(current.totalScore) / Math.max(1, current.gamesPlayed)
+      : null
+
+    return {
+      gameKey: game.key,
+      gameName: game.name,
+      percentile: currentAverage === null ? null : this.percentile(currentAverage, comparison),
+      matchPercentile: score === undefined ? null : this.percentile(score, comparison),
+      comparisonPlayers: comparison.length,
+      score: score ?? null,
+    }
+  }
+
+  private percentile(value: number, comparison: number[]): number | null {
+    if (!comparison.length || !Number.isFinite(value)) return null
+    const beaten = comparison.reduce((count, item) => count + (value > item ? 1 : 0), 0)
+    return Math.floor((beaten / comparison.length) * 100)
   }
 
   async cognitiveStats(userId: string) {
