@@ -357,6 +357,14 @@ enum MatchmakingInviteStatus {
   EXPIRED
 }
 
+enum RematchRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELED
+  EXPIRED
+}
+
 enum MatchStatus {
   CREATED
   STARTED
@@ -364,6 +372,19 @@ enum MatchStatus {
   REVIEW
   CANCELLED
   SETTLED
+}
+
+enum DailyChallengeStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum DailyChallengeAttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  EXPIRED
+  DISQUALIFIED
 }
 
 enum MatchRoundStatus {
@@ -668,6 +689,9 @@ model User {
   partyInvitesReceived        PartyInvite[]                @relation("PartyInviteInvitee")
   cooperativeParticipants     CooperativeParticipant[]
   cooperativeLedgerOperations CooperativeLedgerOperation[]
+  dailyChallengeAttempts       DailyChallengeAttempt[]
+  rematchRequestsSent         RematchRequest[]             @relation("RematchRequester")
+  rematchRequestsReceived     RematchRequest[]             @relation("RematchRecipient")
 }
 
 /// A provider identity is linked to a local account after the provider token
@@ -832,13 +856,13 @@ model WinStreakMilestone {
   id              String                @id @default(uuid()) @db.Uuid
   configurationId String                @db.Uuid
   wins            Int
-  bonusPercent    Decimal               @db.Decimal(20, 6)
-  title           String?               @db.VarChar(120)
-  description     String?               @db.VarChar(300)
-  enabled         Boolean               @default(true)
-  sortOrder       Int                   @default(0)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  bonusPercent    Decimal                @db.Decimal(20, 6)
+  title           String?                @db.VarChar(120)
+  description     String?                @db.VarChar(300)
+  enabled         Boolean                @default(true)
+  sortOrder       Int                    @default(0)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
   configuration   WinStreakConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
 
   @@unique([configurationId, wins])
@@ -2375,8 +2399,10 @@ model GameDefinition {
   gameStats          PlayerGameStats[]
   matchmakingTickets MatchmakingTicket[]
   matchmakingInvites MatchmakingInvite[]
+  rematchRequests    RematchRequest[]
   rounds             MatchRound[]
   cooperativeMatches CooperativeMatch[]
+  dailyChallenges    DailyChallenge[]
 }
 
 model GameConfig {
@@ -2445,6 +2471,8 @@ model Match {
   rounds             MatchRound[]
   rankingMatch       RankingMatch?
   cooperativeMatch   CooperativeMatch?
+  rematchRequests    RematchRequest[]         @relation("RematchOriginalMatch")
+  rematchCreatedFrom RematchRequest?          @relation("RematchNewMatch")
 
   @@index([status, createdAt])
   @@index([createdByUserId, status])
@@ -2565,6 +2593,33 @@ model MatchmakingInvite {
 
   @@index([inviteeId, status, createdAt])
   @@index([inviterId, status, createdAt])
+  @@index([expiresAt, status])
+}
+
+/// A short-lived, server-authoritative offer to replay the same casual game
+/// with the same opponent. Only one pending offer can exist for a match pair.
+model RematchRequest {
+  id               String               @id @default(uuid()) @db.Uuid
+  originalMatchId  String               @db.Uuid
+  requesterId      String               @db.Uuid
+  recipientId      String               @db.Uuid
+  gameDefinitionId String               @db.Uuid
+  status           RematchRequestStatus @default(PENDING)
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  respondedAt      DateTime?
+  newMatchId       String?              @unique @db.Uuid
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  originalMatch    Match                @relation("RematchOriginalMatch", fields: [originalMatchId], references: [id], onDelete: Cascade)
+  requester        User                 @relation("RematchRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  recipient        User                 @relation("RematchRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  gameDefinition   GameDefinition       @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  newMatch         Match?               @relation("RematchNewMatch", fields: [newMatchId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, status, createdAt])
+  @@index([requesterId, status, createdAt])
+  @@index([originalMatchId, status])
   @@index([expiresAt, status])
 }
 
@@ -2769,8 +2824,96 @@ model GameContentItem {
   updatedAt        DateTime                 @updatedAt
   gameDefinition   GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
   assignments      MatchContentAssignment[]
+  dailyChallengeQuestions DailyChallengeQuestion[]
 
   @@index([gameDefinitionId, active, version])
+}
+
+/// Singleton policy for the server-owned daily challenge. The mobile client
+/// only reads this policy through the public daily-challenge endpoints.
+model DailyChallengeConfiguration {
+  id              String   @id @default(uuid()) @db.Uuid
+  key             String   @unique @default("default") @db.VarChar(40)
+  enabled         Boolean  @default(true)
+  gameKey         String   @default("trivia") @db.VarChar(64)
+  timezone        String   @default("UTC") @db.VarChar(64)
+  questionsPerDay Int      @default(10)
+  durationSeconds Int      @default(60)
+  maxAttempts     Int      @default(1)
+  pointsPerCorrect Int     @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model DailyChallenge {
+  id              String               @id @default(uuid()) @db.Uuid
+  dateKey         String               @unique @db.VarChar(10)
+  gameDefinitionId String              @db.Uuid
+  status          DailyChallengeStatus @default(DRAFT)
+  title           String               @default("Today's SMARTS Challenge") @db.VarChar(160)
+  subtitle        String               @default("One global challenge. One attempt.") @db.VarChar(300)
+  questionCount   Int
+  durationSeconds Int
+  pointsPerCorrect Int               @default(1)
+  publishedAt     DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  gameDefinition  GameDefinition       @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  questions       DailyChallengeQuestion[]
+  attempts        DailyChallengeAttempt[]
+
+  @@index([status, dateKey])
+}
+
+model DailyChallengeQuestion {
+  id            String           @id @default(uuid()) @db.Uuid
+  challengeId   String           @db.Uuid
+  contentItemId String           @db.Uuid
+  position      Int
+  createdAt     DateTime         @default(now())
+  challenge     DailyChallenge   @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  contentItem   GameContentItem  @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
+
+  @@unique([challengeId, position])
+  @@unique([challengeId, contentItemId])
+  @@index([contentItemId])
+}
+
+model DailyChallengeAttempt {
+  id              String                     @id @default(uuid()) @db.Uuid
+  challengeId     String                     @db.Uuid
+  userId          String                     @db.Uuid
+  status          DailyChallengeAttemptStatus @default(IN_PROGRESS)
+  startedAt       DateTime                   @default(now())
+  submittedAt     DateTime?
+  expiresAt       DateTime
+  score           Int                        @default(0)
+  correctAnswers  Int                        @default(0)
+  answeredQuestions Int                      @default(0)
+  elapsedMs       Int?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  challenge       DailyChallenge             @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user            User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers         DailyChallengeAnswer[]
+
+  @@unique([challengeId, userId])
+  @@index([challengeId, status, score, elapsedMs])
+  @@index([userId, createdAt])
+}
+
+model DailyChallengeAnswer {
+  id          String                 @id @default(uuid()) @db.Uuid
+  attemptId   String                 @db.Uuid
+  position    Int
+  selectedIndex Int
+  isCorrect   Boolean
+  timeTakenMs Int?
+  answeredAt  DateTime               @default(now())
+  attempt     DailyChallengeAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, position])
+  @@index([attemptId, answeredAt])
 }
 
 model MatchContentAssignment {

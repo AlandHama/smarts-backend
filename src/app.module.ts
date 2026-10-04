@@ -31,9 +31,10 @@ import { ChatsModule } from "./modules/chats/chats.module"
 import { SupportModule } from "./modules/support/support.module"
 import { CooperativeModule } from "./modules/cooperative/cooperative.module"
 import { WinStreaksModule } from "./modules/win-streaks/win-streaks.module"
+import { DailyChallengesModule } from "./modules/daily-challenges/daily-challenges.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, CooperativeModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, CooperativeModule, DailyChallengesModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

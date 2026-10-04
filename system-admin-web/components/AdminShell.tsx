@@ -30,6 +30,7 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import SupportAgentRoundedIcon from "@mui/icons-material/SupportAgentRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import WhatshotRoundedIcon from "@mui/icons-material/WhatshotRounded";
+import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
@@ -78,6 +79,7 @@ export type AdminView =
   | "missions-achievements"
   | "streaks"
   | "win-streaks"
+  | "daily-challenge"
   | "support"
   | "cooperative";
 
@@ -131,6 +133,7 @@ const navigation = [
   },
   { key: "streaks" as const, label: "Daily streaks", icon: <LocalFireDepartmentRoundedIcon /> },
   { key: "win-streaks" as const, label: "Win streaks", icon: <WhatshotRoundedIcon /> },
+  { key: "daily-challenge" as const, label: "Daily challenge", icon: <PsychologyRoundedIcon /> },
   { key: "support" as const, label: "Support center", icon: <SupportAgentRoundedIcon /> },
   { key: "cooperative" as const, label: "Cooperative matches", icon: <GroupsRoundedIcon /> },
   {

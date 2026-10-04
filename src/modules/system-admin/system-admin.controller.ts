@@ -114,6 +114,8 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { SendGlobalNotificationDto } from "../notifications/dtos";
 import { AnalyticsReportingService } from "./analytics-reporting.service";
 import { AnalyticsAlertRuleDto, AnalyticsPlayerExplorerQueryDto, AnalyticsSavedReportDto, AnalyticsScheduledReportDto } from "./dtos/analytics-report.dto";
+import { DailyChallengeService } from "../daily-challenges/daily-challenge.service";
+import { GenerateDailyChallengeDto, UpdateDailyChallengeConfigurationDto } from "../daily-challenges/dtos";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -129,6 +131,7 @@ export class SystemAdminController {
     private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService,
     private readonly analyticsReportingService: AnalyticsReportingService,
+    private readonly dailyChallengeService: DailyChallengeService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -330,6 +333,36 @@ export class SystemAdminController {
   analytics(@Query() query: SystemAdminAnalyticsQueryDto, @CurrentUser() admin: UserResponseDto) {
     return this.systemAdminService.analytics(query, admin.id);
   }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/daily-challenge/configuration")
+  @ApiBearerAuth("access-token")
+  dailyChallengeConfiguration() { return this.dailyChallengeService.configuration(); }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/daily-challenge/configuration")
+  @ApiBearerAuth("access-token")
+  updateDailyChallengeConfiguration(@Body() dto: UpdateDailyChallengeConfigurationDto) { return this.dailyChallengeService.updateConfiguration(dto); }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/daily-challenge/challenges")
+  @ApiBearerAuth("access-token")
+  dailyChallengeList(@Query("limit") limit?: string) { return this.dailyChallengeService.adminList(Number(limit) || 30); }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/daily-challenge/challenges/generate")
+  @ApiBearerAuth("access-token")
+  generateDailyChallenge(@Body() dto: GenerateDailyChallengeDto) { return this.dailyChallengeService.adminGenerate(dto); }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/daily-challenge/challenges/:dateKey")
+  @ApiBearerAuth("access-token")
+  dailyChallenge(@Param("dateKey") dateKey: string) { return this.dailyChallengeService.adminGet(dateKey); }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/daily-challenge/challenges/:dateKey/publish")
+  @ApiBearerAuth("access-token")
+  publishDailyChallenge(@Param("dateKey") dateKey: string) { return this.dailyChallengeService.adminPublish(dateKey); }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/analytics/export.csv")
