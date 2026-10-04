@@ -189,6 +189,14 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       const metadata = lockedMatch.metadata && typeof lockedMatch.metadata === "object" && !Array.isArray(lockedMatch.metadata) ? lockedMatch.metadata as Record<string, unknown> : {}
       const partyIds = Array.isArray(metadata.partyIds) ? metadata.partyIds.filter((id): id is string => typeof id === "string" && id.length > 0) : []
       if (partyIds.length) {
+        // A matched cooperative queue entry is no longer searchable after the
+        // match settles. Leaving it as MATCHED makes PartyService return the
+        // old match as soon as the player returns to the lobby, which keeps
+        // the mobile UI in an endless "opening game" state.
+        await transaction.cooperativeQueueEntry.updateMany({
+          where: { partyId: { in: partyIds }, matchId: lockedMatch.id, status: "MATCHED" },
+          data: { status: "SETTLED" },
+        })
         await transaction.party.updateMany({
           where: { id: { in: partyIds }, status: { in: ["MATCH_FOUND", "COMMITTED", "IN_MATCH", "RESULTS"] } },
           data: { status: "READY", matchedAt: null, queuedAt: null, expiresAt: new Date(Date.now() + Number(cooperativePolicy?.partyIdleMinutes ?? 30) * 60_000) },

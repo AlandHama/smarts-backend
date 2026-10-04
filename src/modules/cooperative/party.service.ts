@@ -18,6 +18,19 @@ export class PartyService {
 
   async current(userId: string) {
     await this.prisma.party.updateMany({ where: { status: { in: ACTIVE_PARTY_STATUSES }, expiresAt: { lt: new Date() } }, data: { status: "EXPIRED", closedAt: new Date() } })
+    // Older settlements could leave their queue entry as MATCHED. Normalize
+    // those terminal entries before resolving the current party so returning
+    // players cannot be sent back into the finished match.
+    const terminalMatches = await this.prisma.cooperativeMatch.findMany({
+      where: { status: { in: ["CANCELLED", "SETTLED"] }, participants: { some: { userId } } },
+      select: { matchId: true },
+    })
+    if (terminalMatches.length) {
+      await this.prisma.cooperativeQueueEntry.updateMany({
+        where: { matchId: { in: terminalMatches.map((row) => row.matchId) }, status: "MATCHED" },
+        data: { status: "SETTLED" },
+      })
+    }
     const membership = await this.prisma.partyMember.findFirst({ where: { userId, leftAt: null, party: { status: { in: ACTIVE_PARTY_STATUSES } } }, include: { party: { include: { members: { where: { leftAt: null }, include: { user: { select: publicUser } }, orderBy: { joinedAt: "asc" } }, conversation: { select: { id: true } }, queueEntries: { where: { status: { in: ["SEARCHING", "MATCHED"] } }, orderBy: { queuedAt: "desc" }, take: 1 } } } }, orderBy: { joinedAt: "desc" } })
     return membership ? this.serializeParty(membership.party, userId) : null
   }
