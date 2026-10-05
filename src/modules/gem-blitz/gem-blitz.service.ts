@@ -22,7 +22,11 @@ export class GemBlitzService {
       let state = this.readState(match.metadata)
       if (state?.status === "ACTIVE") {
         state = await this.advanceBots(tx, match, state, Date.now())
-        if (Date.now() >= Date.parse(state.endsAt)) state = await this.finish(tx, match, state, participant.id)
+        // Reaching the clock is a normal match completion, not a player
+        // forfeiture. Passing the participant id here used to mark the player
+        // as FORFEIT and, more importantly, could leave the client looking at
+        // 00s while the settlement transaction was being retried.
+        if (Date.now() >= Date.parse(state.endsAt)) state = await this.finish(tx, match, state, null)
       }
       return this.project(match, participant.id, state)
     })
@@ -58,7 +62,7 @@ export class GemBlitzService {
       if (state.status === "FINISHED" || match.status === "FINISHED") return { ...this.project(match, participant.id, state), duplicate: true }
       if (Date.now() >= Date.parse(state.endsAt)) {
         state = await this.advanceBots(tx, match, state, Date.now())
-        return this.project(match, participant.id, await this.finish(tx, match, state, participant.id))
+        return this.project({ ...match, metadata: this.withState(match.metadata, state) }, participant.id, await this.finish(tx, match, state, null))
       }
       const current = state.players[participant.id]
       if (!current) throw new ConflictException("Player state is unavailable")
@@ -68,13 +72,13 @@ export class GemBlitzService {
       if (!result.accepted) throw new BadRequestException(result.reason ?? "That move is not valid")
       const next = { ...result.board.stateSnapshot, sequence: dto.sequence }
       state = { ...state, players: { ...state.players, [participant.id]: next }, replay: [...state.replay, { sequence: dto.sequence, participantId: participant.id, fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS) }
-      await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: `gem-blitz:${participant.id}:${dto.sequence}`, payload: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, score: next.score } as Prisma.InputJsonValue, accepted: true, clientOccurredAt: dto.clientTimestamp ? new Date(dto.clientTimestamp) : undefined } })
+      await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: `gem-blitz:${participant.id}:${dto.sequence}`, payload: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, animation: result.animation, score: next.score } as unknown as Prisma.InputJsonValue, accepted: true, clientOccurredAt: dto.clientTimestamp ? new Date(dto.clientTimestamp) : undefined } })
       await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_MOVE_ACCEPTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, fever: result.fever, reshuffled: result.reshuffled } as Prisma.InputJsonValue } })
       const metadata = this.withState(match.metadata, state)
       await tx.match.update({ where: { id: matchId }, data: { metadata } })
       state = await this.advanceBots(tx, { ...match, metadata }, state, Date.now())
       if (state !== this.readState(metadata)) await tx.match.update({ where: { id: matchId }, data: { metadata: this.withState(metadata, state) } })
-      return { ...this.project({ ...match, metadata }, participant.id, state), move: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, reshuffled: result.reshuffled } }
+      return { ...this.project({ ...match, metadata }, participant.id, state), move: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, animation: result.animation, reshuffled: result.reshuffled } }
     })
   }
 
@@ -136,28 +140,71 @@ export class GemBlitzService {
     const simulationLimit = Math.min(nowMs, Date.parse(state.endsAt))
     const bots = (match.participants as any[]).filter((item) => item.participantType === "BOT")
     for (const bot of bots) {
+      // Matches created by an older server version (or a start race) may have
+      // a BOT participant but no per-player state yet. Seed it lazily so the
+      // bot can never remain at a permanent zero score.
       let player: any = nextState.players[bot.id]
+      if (!player || !Array.isArray(player.cells) || player.cells.length !== state.boardSize * state.boardSize) {
+        const botSeed = (Number(player?.seed) || state.seed) + Math.abs(Number.parseInt(bot.id.replace(/[^0-9a-f]/gi, "").slice(0, 6) || "1", 16))
+        const fresh = GemBlitzEngine.newGame(botSeed, state.boardSize, policy)
+        player = { ...fresh.stateSnapshot, sequence: 0, nextBotAt: Math.min(simulationLimit, Date.parse(state.startedAt) + Number(policy.bot.reactionDelayMs ?? 1200)) }
+        nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
+      }
+      const firstScheduledAt = Number.isFinite(Number(player.nextBotAt)) ? Number(player.nextBotAt) : simulationLimit
+      player = { ...player, nextBotAt: firstScheduledAt }
       let moves = 0
-      while ((player.nextBotAt ?? simulationLimit) <= simulationLimit && moves < Number(policy.bot.maxMoves ?? 55)) {
-        const engine = GemBlitzEngine.fromState(player, policy)
-        const legal = engine.legalMoves
-        if (!legal.length) break
+      const maxMoves = Math.max(1, Number(policy.bot.maxMoves ?? 55) || 55)
+      while ((player.nextBotAt ?? simulationLimit) <= simulationLimit && moves < maxMoves) {
+        let engine = GemBlitzEngine.fromState(player, policy)
+        let legal = engine.legalMoves
+        // A board can become dead after a legacy/corrupt snapshot. Rebuild
+        // only the board (never the score) and let the normal move path score
+        // the next action, matching the engine's normal refill behaviour.
+        if (!legal.length) {
+          const reshuffled = GemBlitzEngine.newGame(player.seed + player.sequence + moves + 1, state.boardSize, policy)
+          player = { ...reshuffled.stateSnapshot, score: player.score ?? 0, moves: player.moves ?? 0, fever: player.fever ?? false, sequence: player.sequence ?? 0, nextBotAt: player.nextBotAt }
+          nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
+          engine = GemBlitzEngine.fromState(player, policy)
+          legal = engine.legalMoves
+        }
+        if (!legal.length) {
+          player = { ...player, nextBotAt: player.nextBotAt + Number(policy.bot.reactionDelayMs ?? 1200) }
+          nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
+          moves += 1
+          continue
+        }
         const skill = Math.max(0, Math.min(1, Number(policy.bot.skill ?? 0.62)))
         const hesitationRoll = ((player.sequence * 29 + Number.parseInt(match.serverNonce.slice(6, 10), 16)) % 100) / 100
-        if (hesitationRoll > skill) {
+        // Always make the first action, then apply the configured human-like
+        // hesitation. This prevents a low-skill bot from looking disconnected
+        // in short matches while preserving misses later in the match.
+        if (player.sequence > 0 && hesitationRoll > skill) {
           player = { ...player, nextBotAt: player.nextBotAt + Number(policy.bot.reactionDelayMs ?? 1200) + Number(policy.bot.jitterMs ?? 900) }
           nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
           moves += 1
           continue
         }
         const choiceIndex = Math.floor((Number.parseInt(match.serverNonce.slice(0, 6), 16) + player.sequence * 17 + Math.floor((1 - skill) * 11)) % legal.length)
-        const move = legal[choiceIndex]
-        const result = engine.swap({ ...move, timestamp: player.nextBotAt })
-        if (!result.accepted) break
+        // Prefer the deterministic skill choice, but fall back through the
+        // legal list if a malformed historical board makes that candidate
+        // invalid. A bot turn should never silently terminate its simulation.
+        const orderedMoves = [legal[choiceIndex], ...legal.filter((_, index) => index !== choiceIndex)]
+        let move = orderedMoves[0]
+        let result = engine.swap({ ...move, timestamp: player.nextBotAt })
+        for (let index = 1; !result.accepted && index < orderedMoves.length; index += 1) {
+          move = orderedMoves[index]
+          result = engine.swap({ ...move, timestamp: player.nextBotAt })
+        }
+        if (!result.accepted) {
+          player = { ...player, nextBotAt: player.nextBotAt + Number(policy.bot.reactionDelayMs ?? 1200) }
+          nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
+          moves += 1
+          continue
+        }
         const sequence = player.sequence + 1
         player = { ...result.board.stateSnapshot, sequence, nextBotAt: player.nextBotAt + Number(policy.bot.reactionDelayMs ?? 1200) + ((sequence * 37) % Math.max(1, Number(policy.bot.jitterMs ?? 900))) }
         nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player }, replay: [...nextState.replay, { sequence, participantId: bot.id, ...move, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, bot: true, acceptedAt: new Date(player.nextBotAt).toISOString() }].slice(-MAX_REPLAY_EVENTS) }
-        await tx.matchEvent.create({ data: { matchId: match.id, participantId: bot.id, eventType: "SCORE_UPDATE", sequence, clientEventId: `gem-blitz:${bot.id}:${sequence}`, payload: { ...move, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, reshuffled: result.reshuffled, score: player.score, bot: true } as Prisma.InputJsonValue, accepted: true } })
+        await tx.matchEvent.create({ data: { matchId: match.id, participantId: bot.id, eventType: "SCORE_UPDATE", sequence, clientEventId: `gem-blitz:${bot.id}:${sequence}`, payload: { ...move, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, animation: result.animation, reshuffled: result.reshuffled, score: player.score, bot: true } as unknown as Prisma.InputJsonValue, accepted: true } })
         moves += 1
       }
     }

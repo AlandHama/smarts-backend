@@ -40,8 +40,16 @@ export interface GemBlitzMoveResult {
   fever: boolean
   specialCreated?: GemSpecial
   events: string[]
+  animation: GemBlitzAnimationStep[]
   reason?: string
   reshuffled: boolean
+}
+
+export interface GemBlitzAnimationStep {
+  cascade: number
+  before: GemTile[]
+  cleared: number[]
+  after: GemTile[]
 }
 
 interface GemGroup {
@@ -228,6 +236,7 @@ export class GemBlitzEngine {
     let totalCascades = 0
     let specialCreated: GemSpecial | undefined
     const events: string[] = []
+    const animation: GemBlitzAnimationStep[] = []
     let pendingSpecialSwap = specialSwap
 
     while (true) {
@@ -283,6 +292,9 @@ export class GemBlitzEngine {
         }
       }
 
+      const before = this.animationBoard(working)
+      const cleared = Array.from(clear)
+
       totalCleared += clear.size
       const gained = Math.round(
         (basePoints + clear.size * 20) *
@@ -304,6 +316,7 @@ export class GemBlitzEngine {
         }
       })
       this.collapseAndFill(working)
+      animation.push({ cascade: totalCascades, before, cleared, after: this.animationBoard(working) })
       preferredSpecialIndex = -1
     }
 
@@ -337,8 +350,13 @@ export class GemBlitzEngine {
       fever: finalBoard.fever,
       specialCreated,
       events,
+      animation,
       reshuffled,
     }
+  }
+
+  private animationBoard(cells: Array<GemTile | null>): GemTile[] {
+    return cells.map((cell) => cell ? { ...cell } : { type: GemType.Aqua, special: GemSpecial.None })
   }
 
   private rejected(reason: string): GemBlitzMoveResult {
@@ -351,6 +369,7 @@ export class GemBlitzEngine {
       speedCombo: this.speedCombo,
       fever: this.fever,
       events: [],
+      animation: [],
       reason,
       reshuffled: false,
     }
