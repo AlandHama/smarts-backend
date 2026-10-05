@@ -484,9 +484,11 @@ export class RealtimeGateway implements OnModuleDestroy {
   }
 
   private async broadcastGemBlitz(matchId: string) {
+    const latest = await this.prisma.matchEvent.findFirst({ where: { matchId, eventType: "SCORE_UPDATE", accepted: true }, orderBy: { serverReceivedAt: "desc" }, select: { payload: true, participantId: true } })
+    const move = latest?.payload && typeof latest.payload === "object" && !Array.isArray(latest.payload) ? { ...(latest.payload as Record<string, unknown>), participantId: latest.participantId } : undefined
     for (const [client, state] of this.clients) {
       if (!state.matchIds.has(matchId)) continue
-      try { this.send(client, "gem_blitz.snapshot", await this.gemBlitz.snapshot(state.userId, matchId)) } catch { /* HTTP reconciliation handles a disconnected match. */ }
+      try { const snapshot = await this.gemBlitz.snapshot(state.userId, matchId); this.send(client, "gem_blitz.snapshot", move ? { ...snapshot, move } : snapshot) } catch { /* HTTP reconciliation handles a disconnected match. */ }
     }
   }
 

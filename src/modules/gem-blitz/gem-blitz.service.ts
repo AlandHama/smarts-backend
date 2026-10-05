@@ -68,13 +68,13 @@ export class GemBlitzService {
       if (!result.accepted) throw new BadRequestException(result.reason ?? "That move is not valid")
       const next = { ...result.board.stateSnapshot, sequence: dto.sequence }
       state = { ...state, players: { ...state.players, [participant.id]: next }, replay: [...state.replay, { sequence: dto.sequence, participantId: participant.id, fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS) }
-      await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: `gem-blitz:${participant.id}:${dto.sequence}`, payload: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, score: next.score } as Prisma.InputJsonValue, accepted: true, clientOccurredAt: dto.clientTimestamp ? new Date(dto.clientTimestamp) : undefined } })
+      await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: `gem-blitz:${participant.id}:${dto.sequence}`, payload: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, score: next.score } as Prisma.InputJsonValue, accepted: true, clientOccurredAt: dto.clientTimestamp ? new Date(dto.clientTimestamp) : undefined } })
       await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_MOVE_ACCEPTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, fever: result.fever, reshuffled: result.reshuffled } as Prisma.InputJsonValue } })
       const metadata = this.withState(match.metadata, state)
       await tx.match.update({ where: { id: matchId }, data: { metadata } })
       state = await this.advanceBots(tx, { ...match, metadata }, state, Date.now())
       if (state !== this.readState(metadata)) await tx.match.update({ where: { id: matchId }, data: { metadata: this.withState(metadata, state) } })
-      return { ...this.project({ ...match, metadata }, participant.id, state), move: { scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, events: result.events, reshuffled: result.reshuffled } }
+      return { ...this.project({ ...match, metadata }, participant.id, state), move: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, reshuffled: result.reshuffled } }
     })
   }
 
@@ -157,7 +157,7 @@ export class GemBlitzService {
         const sequence = player.sequence + 1
         player = { ...result.board.stateSnapshot, sequence, nextBotAt: player.nextBotAt + Number(policy.bot.reactionDelayMs ?? 1200) + ((sequence * 37) % Math.max(1, Number(policy.bot.jitterMs ?? 900))) }
         nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player }, replay: [...nextState.replay, { sequence, participantId: bot.id, ...move, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, bot: true, acceptedAt: new Date(player.nextBotAt).toISOString() }].slice(-MAX_REPLAY_EVENTS) }
-        await tx.matchEvent.create({ data: { matchId: match.id, participantId: bot.id, eventType: "SCORE_UPDATE", sequence, clientEventId: `gem-blitz:${bot.id}:${sequence}`, payload: { ...move, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, score: player.score, bot: true } as Prisma.InputJsonValue, accepted: true } })
+        await tx.matchEvent.create({ data: { matchId: match.id, participantId: bot.id, eventType: "SCORE_UPDATE", sequence, clientEventId: `gem-blitz:${bot.id}:${sequence}`, payload: { ...move, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, reshuffled: result.reshuffled, score: player.score, bot: true } as Prisma.InputJsonValue, accepted: true } })
         moves += 1
       }
     }
