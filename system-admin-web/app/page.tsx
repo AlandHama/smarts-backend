@@ -52,6 +52,7 @@ import { DailyChallengeView } from "../components/DailyChallengeView";
 import { ChatsView } from "../components/ChatsView";
 import { SupportCenterView } from "../components/SupportCenterView";
 import { CooperativeMatchesView } from "../components/CooperativeMatchesView";
+import { GemBlitzView } from "../components/GemBlitzView";
 import { api, clearSession, hasSession, login } from "../lib/api";
 import { adminTheme } from "../lib/theme";
 
@@ -93,6 +94,7 @@ const viewPaths: Record<
   "daily-challenge": "/daily-challenge/",
   support: "/support/",
   cooperative: "/cooperative/",
+  "gem-blitz": "/gem-blitz/",
 };
 
 function routeState() {
@@ -216,6 +218,7 @@ export default function AdminPage() {
           {view === "daily-challenge" && <DailyChallengeView />}
           {view === "support" && <SupportCenterView />}
           {view === "cooperative" && <CooperativeMatchesView />}
+          {view === "gem-blitz" && <GemBlitzView />}
           {view === "economy" && (
             <>
               <EconomyView />

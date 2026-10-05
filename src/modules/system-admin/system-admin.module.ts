@@ -33,10 +33,12 @@ import { AnalyticsReportingService } from "./analytics-reporting.service"
 import { AnalyticsReportingWorkerService } from "./analytics-reporting-worker.service"
 import { WinStreaksModule } from "../win-streaks/win-streaks.module"
 import { DailyChallengesModule } from "../daily-challenges/daily-challenges.module"
+import { GemBlitzModule } from "../gem-blitz/gem-blitz.module"
+import { GemBlitzAdminController } from "../gem-blitz/gem-blitz-admin.controller"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule],
-  controllers: [SystemAdminController],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule],
+  controllers: [SystemAdminController, GemBlitzAdminController],
   providers: [
     SystemAdminService,
     SystemAdminGuard,

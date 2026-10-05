@@ -24,18 +24,20 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
       const opponent = await transaction.user.findUnique({ where: { id: input.dto.opponentUserId }, select: { id: true, status: true } })
       if (!opponent || opponent.status !== "ACTIVE") throw new NotFoundException("Opponent not found or inactive")
     }
-    const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
+    const isGemBlitz = game.key === "gem_blitz"
+    const activeContentCount = isGemBlitz ? 1 : await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
     if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
 
     const now = new Date()
-    const match = await transaction.match.create({ data: { gameDefinitionId: game.id, gameConfigId: config.id, mode: input.dto.mode, status: "STARTED", serverNonce: randomBytes(32).toString("base64url"), startedAt: now, createdByUserId: input.userId, metadata: input.dto.metadata as Prisma.InputJsonValue | undefined } })
-    const round = await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: game.id, status: "STARTED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex"), startedAt: now } })
+    const match = await transaction.match.create({ data: { gameDefinitionId: game.id, gameConfigId: config.id, mode: input.dto.mode, status: isGemBlitz ? "CREATED" : "STARTED", serverNonce: randomBytes(32).toString("base64url"), startedAt: isGemBlitz ? undefined : now, createdByUserId: input.userId, metadata: input.dto.metadata as Prisma.InputJsonValue | undefined } })
+    const round = await transaction.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: game.id, status: isGemBlitz ? "CREATED" : "STARTED", challengeSeedHash: createHash("sha256").update(`${match.serverNonce}:1`).digest("hex"), startedAt: isGemBlitz ? undefined : now } })
     const participants = [
       await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.userId, participantType: MatchParticipantType.PLAYER } }),
     ]
     if (input.dto.mode === GameMode.BOT) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: MatchParticipantType.BOT, result: "PENDING" } }))
     else if (input.dto.opponentUserId) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.dto.opponentUserId, participantType: MatchParticipantType.PLAYER } }))
 
+    if (isGemBlitz) return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments: [] }
     const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } })
     const selectedItems = selectServerContent(items, config.maxQuestions, match.serverNonce, input.dto.gameKey.trim().toLowerCase())
     if (!selectedItems.length) throw new ConflictException("No active server content is configured for this game")

@@ -45,7 +45,7 @@ export class RematchService {
       if (previous?.status === RematchRequestStatus.PENDING) await tx.rematchRequest.update({ where: { id: previous.id }, data: { status: RematchRequestStatus.EXPIRED, respondedAt: new Date() } });
 
       created = true;
-      return tx.rematchRequest.create({
+      const createdRequest = await tx.rematchRequest.create({
         data: {
           originalMatchId,
           requesterId: userId,
@@ -55,6 +55,8 @@ export class RematchService {
         },
         include: requestInclude,
       });
+      if (context.gameDefinition.key === "gem_blitz") await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_REMATCH_REQUESTED", occurredAt: new Date(), matchId: originalMatchId, playerId: userId, properties: { requestId: createdRequest.id, gameKey: context.gameDefinition.key } as Prisma.InputJsonValue } })
+      return createdRequest
     });
 
     if (created) await this.notifyRequested(record);
@@ -110,6 +112,7 @@ export class RematchService {
         },
       }, tx);
       acceptedNow = true;
+      if (context.gameDefinition.key === "gem_blitz") await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_REMATCH_ACCEPTED", occurredAt: new Date(), matchId: newMatch.match.id, playerId: userId, properties: { originalMatchId: request.originalMatchId, requestId: request.id } as Prisma.InputJsonValue } })
       return tx.rematchRequest.update({
         where: { id: request.id },
         data: { status: RematchRequestStatus.ACCEPTED, acceptedAt: new Date(), respondedAt: new Date(), newMatchId: newMatch.match.id },

@@ -41,13 +41,18 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     // A paid instant skip is a server-verified correct answer. Count it with
     // normal answers so a match made entirely from skips can still settle and
     // its accuracy/progression stats remain truthful.
-    const acceptedAnswers = await transaction.matchEvent.count({ where: { matchId: lockedMatch.id, eventType: { in: ["ANSWER", "SKIP"] }, accepted: true } })
+    const acceptedAnswers = lockedMatch.gameDefinition.key === "gem_blitz"
+      ? await transaction.matchEvent.count({ where: { matchId: lockedMatch.id, eventType: "SCORE_UPDATE", accepted: true } })
+      : await transaction.matchEvent.count({ where: { matchId: lockedMatch.id, eventType: { in: ["ANSWER", "SKIP"] }, accepted: true } })
     if (!acceptedAnswers) {
       await transaction.match.update({ where: { id: lockedMatch.id }, data: { status: "REVIEW", endedAt: new Date() } })
       return { status: "REVIEW", matchId: lockedMatch.id, message: "No server-verified answers were recorded; competitive rewards were withheld" }
     }
     const config = lockedMatch.gameConfig
-    if (!config || !config.active) throw new BadRequestException("Game reward configuration is inactive")
+    // Versioned Gem Blitz matches intentionally retain their captured policy
+    // after an administrator activates a newer version. They must still settle
+    // against that frozen configuration; other games keep the legacy guard.
+    if (!config || (!config.active && lockedMatch.gameDefinition.key !== "gem_blitz")) throw new BadRequestException("Game reward configuration is inactive")
     const cooperative = lockedMatch.cooperativeMatch
     const resetWinStreakOnNonWin = await this.winStreaks.shouldResetOnNonWin(transaction)
     const cooperativeRanked = cooperative?.mode === "RANKED"
@@ -116,18 +121,25 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       const progression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.mainProgressionKey, amount: xp, sourceId: `${lockedMatch.id}:xp:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       const eloProgression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.eloProgressionKey, amount: eloDelta, sourceId: `${lockedMatch.id}:elo:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       const wallet = await this.creditWallet.runWithinTransaction({ userId: player.id, currencyCode: config.rewardCurrencyCode, amount: coinReward, sourceId: `${lockedMatch.id}:currency:${player.id}`, sourceType: WalletTransactionSourceType.MATCH, metadata: { matchId: lockedMatch.id, result, policyVersion } }, transaction)
-      const answerEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: { in: ["ANSWER", "SKIP"] }, accepted: true }, select: { payload: true } })
+      const answerEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: lockedMatch.gameDefinition.key === "gem_blitz" ? "SCORE_UPDATE" : { in: ["ANSWER", "SKIP"] }, accepted: true }, select: { payload: true } })
       const answerSummary = answerEvents.reduce((summary, event) => {
         const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {}
         const timeTakenMs = typeof payload.timeTakenMs === "number" && Number.isSafeInteger(payload.timeTakenMs) && payload.timeTakenMs >= 0 ? payload.timeTakenMs : 0
-        return { totalQuestions: summary.totalQuestions + 1, totalCorrect: summary.totalCorrect + (payload.correct === true ? 1 : 0), totalTimeMs: summary.totalTimeMs + BigInt(timeTakenMs) }
+        return { totalQuestions: summary.totalQuestions + 1, totalCorrect: summary.totalCorrect + (lockedMatch.gameDefinition.key === "gem_blitz" ? 1 : payload.correct === true ? 1 : 0), totalTimeMs: summary.totalTimeMs + BigInt(timeTakenMs) }
       }, { totalQuestions: 0, totalCorrect: 0, totalTimeMs: 0n })
       const engagementPayload = { matchId: lockedMatch.id, gameKey: lockedMatch.gameDefinition.key, mode: lockedMatch.mode, ranking: Boolean(lockedMatch.rankingMatch) }
       await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:played`, payload: engagementPayload }, transaction)
       await this.streaks.recordWithinTransaction({ userId: player.id, sourceId: lockedMatch.id, activityType: "MATCH_COMPLETED" }, transaction)
       if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:won`, payload: engagementPayload }, transaction)
-      if (answerSummary.totalCorrect > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "CORRECT_ANSWER", sourceId: `${lockedMatch.id}:${player.id}:correct`, amount: answerSummary.totalCorrect, payload: engagementPayload }, transaction)
-      if (answerSummary.totalQuestions > 0 && answerSummary.totalCorrect === answerSummary.totalQuestions) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "PERFECT_MATCH", sourceId: `${lockedMatch.id}:${player.id}:perfect`, payload: engagementPayload }, transaction)
+      if (lockedMatch.gameDefinition.key !== "gem_blitz" && answerSummary.totalCorrect > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "CORRECT_ANSWER", sourceId: `${lockedMatch.id}:${player.id}:correct`, amount: answerSummary.totalCorrect, payload: engagementPayload }, transaction)
+      if (lockedMatch.gameDefinition.key !== "gem_blitz" && answerSummary.totalQuestions > 0 && answerSummary.totalCorrect === answerSummary.totalQuestions) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "PERFECT_MATCH", sourceId: `${lockedMatch.id}:${player.id}:perfect`, payload: engagementPayload }, transaction)
+      if (lockedMatch.gameDefinition.key === "gem_blitz") {
+        const gemEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: "SCORE_UPDATE", accepted: true }, select: { payload: true } })
+        const specialEvents = gemEvents.filter((event) => { const payload = event.payload as any; return typeof payload?.specialCreated === "string" && payload.specialCreated.length > 0 })
+        const comboEvents = gemEvents.filter((event) => { const payload = event.payload as any; return Number(payload?.cascades ?? 0) > 1 || Number(payload?.speedCombo ?? 0) > 1 })
+        if (specialEvents.length) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "GEM_BLITZ_SPECIAL", sourceId: `${lockedMatch.id}:${player.id}:specials`, amount: specialEvents.length, payload: { ...engagementPayload, count: specialEvents.length } }, transaction)
+        if (comboEvents.length) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "GEM_BLITZ_COMBO", sourceId: `${lockedMatch.id}:${player.id}:combos`, amount: comboEvents.length, payload: { ...engagementPayload, count: comboEvents.length } }, transaction)
+      }
       if (lockedMatch.rankingMatch || cooperativeRanked) {
         await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:ranked-played`, payload: engagementPayload }, transaction)
         if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:ranked-won`, payload: engagementPayload }, transaction)

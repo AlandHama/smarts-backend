@@ -298,9 +298,9 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         }),
       );
     else
-      await transaction.matchParticipant.create({
+      participants.push(await transaction.matchParticipant.create({
         data: { matchId: match.id, participantType: "BOT", result: "PENDING" },
-      });
+      }));
 
     const expiresAt = new Date(
       now.getTime() + config.maxMatchDurationSeconds * 1000,

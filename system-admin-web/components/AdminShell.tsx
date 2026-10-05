@@ -81,7 +81,8 @@ export type AdminView =
   | "win-streaks"
   | "daily-challenge"
   | "support"
-  | "cooperative";
+  | "cooperative"
+  | "gem-blitz";
 
 const navigation = [
   {
@@ -136,6 +137,7 @@ const navigation = [
   { key: "daily-challenge" as const, label: "Daily challenge", icon: <PsychologyRoundedIcon /> },
   { key: "support" as const, label: "Support center", icon: <SupportAgentRoundedIcon /> },
   { key: "cooperative" as const, label: "Cooperative matches", icon: <GroupsRoundedIcon /> },
+  { key: "gem-blitz" as const, label: "Gem Blitz", icon: <AutoAwesomeRoundedIcon /> },
   {
     key: "economy" as const,
     label: "Economy",

@@ -28,6 +28,8 @@ export interface GemBlitzMove {
   timestamp?: number
 }
 
+export type GemBlitzRulesPolicy = { scoring?: { scoreCap?: number; feverThreshold?: number; feverMultiplier?: number; fastMoveWindowMs?: number; cascadeMultipliers?: number[] } }
+
 export interface GemBlitzMoveResult {
   accepted: boolean
   board: GemBlitzEngine
@@ -80,9 +82,10 @@ export class GemBlitzEngine {
     readonly speedCombo = 0,
     readonly fever = false,
     readonly lastMoveTimestamp = 0,
+    private readonly rulesPolicy: GemBlitzRulesPolicy = {},
   ) {}
 
-  static newGame(seed = 18421, requestedSize = 7): GemBlitzEngine {
+  static newGame(seed = 18421, requestedSize = 7, rulesPolicy: GemBlitzRulesPolicy = {}): GemBlitzEngine {
     const size = Math.max(5, Math.min(9, Math.trunc(requestedSize)))
 
     for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -99,7 +102,7 @@ export class GemBlitzEngine {
         size,
         size,
         cells,
-        new SeededRandom(seed ^ 0x45d9f3b),
+        new SeededRandom(seed ^ 0x45d9f3b), 0, 0, 0, false, 0, rulesPolicy,
       )
       if (engine.hasLegalMove) return engine
     }
@@ -113,7 +116,7 @@ export class GemBlitzEngine {
       size,
       size,
       fallback,
-      new SeededRandom(seed ^ 0x45d9f3b),
+      new SeededRandom(seed ^ 0x45d9f3b), 0, 0, 0, false, 0, rulesPolicy,
     )
   }
 
@@ -140,9 +143,9 @@ export class GemBlitzEngine {
     fever?: boolean
     lastMoveTimestamp?: number
     randomState?: number
-  }): GemBlitzEngine {
+  }, rulesPolicy: GemBlitzRulesPolicy = {}): GemBlitzEngine {
     if (state.cells.length !== state.size * state.size) throw new Error("Gem Blitz board must contain size × size cells")
-    return new GemBlitzEngine(state.seed, state.size, state.size, state.cells.map((cell) => ({ ...cell })), new SeededRandom(state.seed ^ 0x45d9f3b, state.randomState), state.score ?? 0, state.moves ?? 0, state.speedCombo ?? 0, state.fever ?? false, state.lastMoveTimestamp ?? 0)
+    return new GemBlitzEngine(state.seed, state.size, state.size, state.cells.map((cell) => ({ ...cell })), new SeededRandom(state.seed ^ 0x45d9f3b, state.randomState), state.score ?? 0, state.moves ?? 0, state.speedCombo ?? 0, state.fever ?? false, state.lastMoveTimestamp ?? 0, rulesPolicy)
   }
 
   get stateSnapshot() {
@@ -161,6 +164,18 @@ export class GemBlitzEngine {
       }
     }
     return false
+  }
+
+  /** Candidate swaps used by the authoritative casual bot and admin replay tools. */
+  get legalMoves(): GemBlitzMove[] {
+    const moves: GemBlitzMove[] = []
+    for (let row = 0; row < this.rows; row += 1) {
+      for (let column = 0; column < this.columns; column += 1) {
+        if (column + 1 < this.columns && this.wouldCreateMatch(row, column, row, column + 1)) moves.push({ fromRow: row, fromColumn: column, toRow: row, toColumn: column + 1 })
+        if (row + 1 < this.rows && this.wouldCreateMatch(row, column, row + 1, column)) moves.push({ fromRow: row, fromColumn: column, toRow: row + 1, toColumn: column })
+      }
+    }
+    return moves
   }
 
   swap(move: GemBlitzMove): GemBlitzMoveResult {
@@ -195,8 +210,9 @@ export class GemBlitzEngine {
       this.score,
       this.moves + 1,
       speedCombo,
-      this.fever || speedCombo >= 5,
+      this.fever || speedCombo >= Number(this.rulesPolicy.scoring?.feverThreshold ?? 5),
       timestamp,
+      this.rulesPolicy,
     )
     return updated.resolve(
       specialSwap,
@@ -272,7 +288,7 @@ export class GemBlitzEngine {
         (basePoints + clear.size * 20) *
           this.cascadeMultiplier(totalCascades) *
           (1 + Math.min(Math.max(this.speedCombo - 1, 0) * 0.05, 0.25)) *
-          (this.fever ? 1.25 : 1),
+          (this.fever ? Number(this.rulesPolicy.scoring?.feverMultiplier ?? 1.25) : 1),
       )
       totalScore += gained
       if (totalCascades > 1) events.push(`CASCADE x${totalCascades}`)
@@ -297,11 +313,12 @@ export class GemBlitzEngine {
       this.columns,
       working,
       this.random,
-      this.score + totalScore,
+      Math.min(Number(this.rulesPolicy.scoring?.scoreCap ?? Number.MAX_SAFE_INTEGER), this.score + totalScore),
       this.moves,
       this.speedCombo,
       this.fever,
       this.lastMoveTimestamp,
+      this.rulesPolicy,
     )
     let reshuffled = false
     if (!finalBoard.hasLegalMove) {
@@ -313,11 +330,11 @@ export class GemBlitzEngine {
     return {
       accepted: true,
       board: finalBoard,
-      scoreDelta: totalScore,
+      scoreDelta: finalBoard.score - this.score,
       cleared: totalCleared,
       cascades: totalCascades,
-      speedCombo: this.speedCombo,
-      fever: this.fever,
+      speedCombo: finalBoard.speedCombo,
+      fever: finalBoard.fever,
       specialCreated,
       events,
       reshuffled,
@@ -341,7 +358,7 @@ export class GemBlitzEngine {
 
   private nextSpeedCombo(timestamp: number): number {
     if (timestamp <= 0 || this.lastMoveTimestamp <= 0) return 1
-    return timestamp - this.lastMoveTimestamp <= 2500 ? this.speedCombo + 1 : 1
+    return timestamp - this.lastMoveTimestamp <= Number(this.rulesPolicy.scoring?.fastMoveWindowMs ?? 2500) ? this.speedCombo + 1 : 1
   }
 
   private reshuffled(): GemBlitzEngine {
@@ -352,7 +369,7 @@ export class GemBlitzEngine {
         ;[values[index], values[other]] = [values[other], values[index]]
       }
       const candidate = values.map((type) => ({ type, special: GemSpecial.None }))
-      const engine = new GemBlitzEngine(this.seed, this.rows, this.columns, candidate, this.random, this.score, this.moves, this.speedCombo, this.fever, this.lastMoveTimestamp)
+      const engine = new GemBlitzEngine(this.seed, this.rows, this.columns, candidate, this.random, this.score, this.moves, this.speedCombo, this.fever, this.lastMoveTimestamp, this.rulesPolicy)
       if (engine.findMatches(candidate).length === 0 && engine.hasLegalMove) return engine
     }
     return this
@@ -473,6 +490,8 @@ export class GemBlitzEngine {
   }
 
   private cascadeMultiplier(cascade: number): number {
+    const configured = this.rulesPolicy.scoring?.cascadeMultipliers
+    if (Array.isArray(configured) && configured.length) return Number(configured[Math.min(cascade - 1, configured.length - 1)]) || 1
     if (cascade <= 1) return 1
     if (cascade === 2) return 1.2
     if (cascade === 3) return 1.5

@@ -29,6 +29,8 @@ const defaultAchievements = [
   { key: "friends-added", title: "People person", description: "Grow your SMARTS circle.", icon: "group", category: "social", eventType: "FRIEND_ADDED", sortOrder: 50, tiers: [[1, "New connection", 1, "1", 50n], [2, "Social", 10, "5", 250n], [3, "Community", 25, "10", 600n]] },
   { key: "gifts-sent", title: "Generous spirit", description: "Send social gifts to other players.", icon: "card_giftcard", category: "social", eventType: "GIFT_SENT", sortOrder: 60, tiers: [[1, "Thoughtful", 1, "1", 25n], [2, "Generous", 10, "5", 150n], [3, "Big heart", 50, "10", 500n]] },
   { key: "ranked-matches", title: "Ranked journey", description: "Take on the ranked arenas.", icon: "military_tech", category: "ranked", eventType: "RANKED_MATCH_PLAYED", sortOrder: 70, tiers: [[1, "Enter the arena", 1, "2", 75n], [2, "Regular contender", 10, "8", 300n], [3, "Arena regular", 50, "15", 900n]] },
+  { key: "gem-specialist", title: "Gem hunter", description: "Create special gems in Gem Blitz.", icon: "auto_awesome", category: "gem-blitz", eventType: "GEM_BLITZ_SPECIAL", sortOrder: 80, tiers: [[1, "First sparkle", 1, "1", 30n], [2, "Power player", 25, "5", 180n], [3, "Gem master", 100, "15", 500n]] },
+  { key: "gem-combo", title: "Unstoppable", description: "Trigger Gem Blitz combos.", icon: "bolt", category: "gem-blitz", eventType: "GEM_BLITZ_COMBO", sortOrder: 90, tiers: [[1, "Warm streak", 5, "1", 50n], [2, "Rush master", 25, "5", 250n], [3, "Blitz legend", 100, "15", 800n]] },
 ]
 
 @Injectable()
