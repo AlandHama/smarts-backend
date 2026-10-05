@@ -32,6 +32,40 @@ export class GemBlitzService {
     })
   }
 
+  /**
+   * Worker recovery for clients that disconnect exactly at the end of a
+   * match. The normal realtime snapshot calls the same path, so settlement is
+   * idempotent whether the player, socket heartbeat, or worker reaches it.
+   */
+  async finalizeExpiredMatches() {
+    const active = await this.prisma.match.findMany({
+      where: { gameDefinition: { key: "gem_blitz" }, status: "STARTED" },
+      select: {
+        id: true,
+        participants: {
+          where: { participantType: "PLAYER", userId: { not: null } },
+          select: { userId: true },
+          take: 1,
+        },
+      },
+      orderBy: { startedAt: "asc" },
+      take: 100,
+    })
+    let finalized = 0
+    for (const match of active) {
+      const userId = match.participants[0]?.userId
+      if (!userId) continue
+      try {
+        const snapshot = await this.snapshot(userId, match.id)
+        if (snapshot.status === "FINISHED") finalized += 1
+      } catch {
+        // A concurrent player/socket request owns the match lock. It will
+        // finish or retry settlement on the next worker tick.
+      }
+    }
+    return { finalized }
+  }
+
   async start(userId: string, matchId: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.lockMatch(tx, matchId)

@@ -4,6 +4,7 @@ import { ClaimMatchmakingPairTransaction } from "./transactions/claim-matchmakin
 import { ExpireMatchmakingTicketsTransaction } from "./transactions/expire-matchmaking-tickets-transaction"
 import { ExpireMatchTransaction } from "../matches/transactions/expire-match-transaction"
 import { BotGameplayService } from "../matches/bot-gameplay.service"
+import { GemBlitzService } from "../gem-blitz/gem-blitz.service"
 import { matchmakerBatchSize } from "./utilities/matchmaking-policy"
 
 @Injectable()
@@ -12,7 +13,7 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>
   private running = false
 
-  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction, private readonly botGameplay: BotGameplayService) {}
+  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction, private readonly botGameplay: BotGameplayService, private readonly gemBlitz: GemBlitzService) {}
 
   onModuleInit() {
     void this.tick()
@@ -29,6 +30,7 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
       // bot match or one expired-match race is isolated to that phase so
       // healthy queue tickets are still claimed on the same tick.
       await this.runStep("expire matchmaking tickets", () => this.expireTickets.run())
+      await this.runStep("finalize expired Gem Blitz matches", () => this.gemBlitz.finalizeExpiredMatches())
       await this.runStep("expire matches", () => this.expireMatches.run())
       await this.runStep("advance bot matches", () => this.botGameplay.progressActiveMatches())
       for (let index = 0; index < matchmakerBatchSize(); index += 1) {

@@ -11,9 +11,13 @@ export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: n
 
   protected async execute(_: void, transaction: Prisma.TransactionClient) {
     const now = new Date()
-    const matches = await transaction.match.findMany({ where: { status: { in: ["CREATED", "STARTED"] }, OR: [{ createdAt: { lte: now } }] }, include: { gameConfig: { select: { maxMatchDurationSeconds: true } }, rankingMatch: true, participants: { select: { userId: true, participantType: true, result: true } } }, take: 100 })
+    const matches = await transaction.match.findMany({ where: { status: { in: ["CREATED", "STARTED"] }, OR: [{ createdAt: { lte: now } }] }, include: { gameDefinition: { select: { key: true } }, gameConfig: { select: { maxMatchDurationSeconds: true } }, rankingMatch: true, participants: { select: { userId: true, participantType: true, result: true } } }, take: 100 })
     let expired = 0
     for (const match of matches) {
+      // Gem Blitz has its own authoritative clock, bot simulation, and
+      // settlement path. Let GemBlitzService finalize it; the generic expiry
+      // worker cannot see its board state and would incorrectly cancel it.
+      if (match.gameDefinition.key === "gem_blitz") continue
       // Flutter submits FINISH when its synchronized match clock reaches the
       // limit. Give that request a small server-side network grace window so
       // the expiry worker cannot cancel a legitimate completion at the exact

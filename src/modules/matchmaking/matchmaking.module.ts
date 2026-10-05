@@ -14,9 +14,10 @@ import { RespondFriendInviteTransaction } from "./transactions/respond-friend-in
 import { MatchmakingController } from "./matchmaking.controller"
 import { MatchmakingService } from "./matchmaking.service"
 import { MatchmakingWorkerService } from "./matchmaking-worker.service"
+import { GemBlitzModule } from "../gem-blitz/gem-blitz.module"
 
 @Module({
-  imports: [DatabaseModule, MatchesModule, EconomyModule],
+  imports: [DatabaseModule, MatchesModule, EconomyModule, GemBlitzModule],
   controllers: [MatchmakingController],
   providers: [MatchmakingService, MatchmakingWorkerService, EnqueuePlayerTransaction, HeartbeatTicketTransaction, CancelTicketTransaction, ExpireMatchmakingTicketsTransaction, ClaimMatchmakingPairTransaction, CreateFriendInviteTransaction, AcceptFriendInviteTransaction, RespondFriendInviteTransaction],
   exports: [MatchmakingService],
