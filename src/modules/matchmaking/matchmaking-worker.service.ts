@@ -31,6 +31,7 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
       // healthy queue tickets are still claimed on the same tick.
       await this.runStep("expire matchmaking tickets", () => this.expireTickets.run())
       await this.runStep("finalize expired Gem Blitz matches", () => this.gemBlitz.finalizeExpiredMatches())
+      await this.runStep("retry Gem Blitz settlements", () => this.gemBlitz.retryPendingSettlements())
       await this.runStep("expire matches", () => this.expireMatches.run())
       await this.runStep("advance bot matches", () => this.botGameplay.progressActiveMatches())
       for (let index = 0; index < matchmakerBatchSize(); index += 1) {

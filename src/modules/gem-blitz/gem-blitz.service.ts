@@ -5,7 +5,7 @@ import { GemBlitzEngine, GemBlitzMove } from "./engine/gem-blitz-engine"
 import { GemBlitzMoveDto } from "./dtos/gem-blitz.dto"
 import { SettleMatchTransaction } from "../matches/transactions/settle-match-transaction"
 
-const DEFAULT_POLICY = { enabled: true, boardSize: 7, durationSeconds: 75, rulesVersion: "gem-blitz.v1", bot: { enabled: true, reactionDelayMs: 1200, jitterMs: 900, skill: 0.62, maxMoves: 55 }, scoring: { scoreCap: 250000 } }
+const DEFAULT_POLICY = { enabled: true, boardSize: 7, durationSeconds: 75, rulesVersion: "gem-blitz.v1", bot: { enabled: true, reactionDelayMs: 4000, jitterMs: 2000, skill: 0.32, maxMoves: 14 }, scoring: { scoreCap: 250000 } }
 const MAX_REPLAY_EVENTS = 100
 type PlayerState = GemBlitzEngine["stateSnapshot"] & { sequence: number }
 type GemState = { rulesVersion: string; seed: number; boardSize: number; durationSeconds: number; startedAt: string; endsAt: string; status: "ACTIVE" | "FINISHED"; players: Record<string, PlayerState>; replay: Array<Record<string, unknown>>; winnerParticipantId?: string | null; policy?: Record<string, any>; settlement?: any }
@@ -14,22 +14,34 @@ type GemState = { rulesVersion: string; seed: number; boardSize: number; duratio
 export class GemBlitzService {
   constructor(private readonly prisma: PrismaService, private readonly settleMatch: SettleMatchTransaction) {}
 
-  async snapshot(userId: string, matchId: string) {
-    return this.prisma.$transaction(async (tx) => {
+  async snapshot(userId: string, matchId: string): Promise<any> {
+    const result = await this.prisma.$transaction(async (tx) => {
       await this.lockMatch(tx, matchId)
       const match = await this.loadMatch(tx, matchId)
       const participant = this.authorize(match, userId)
       let state = this.readState(match.metadata)
+      let finalized = false
       if (state?.status === "ACTIVE") {
         state = await this.advanceBots(tx, match, state, Date.now())
         // Reaching the clock is a normal match completion, not a player
         // forfeiture. Passing the participant id here used to mark the player
         // as FORFEIT and, more importantly, could leave the client looking at
         // 00s while the settlement transaction was being retried.
-        if (Date.now() >= Date.parse(state.endsAt)) state = await this.finish(tx, match, state, null)
+        if (Date.now() >= Date.parse(state.endsAt)) {
+          state = await this.finish(tx, match, state, null)
+          finalized = true
+        }
       }
-      return this.project(match, participant.id, state)
+      return { projection: this.project(match, participant.id, state), finalized }
     })
+    if (result.finalized) {
+      // Settlement is deliberately a second transaction. If a reward,
+      // progression, or analytics side effect fails, the finished match must
+      // remain FINISHED/REVIEW instead of rolling all the way back to STARTED.
+      await this.settleFinishedMatch(matchId)
+      return this.snapshot(userId, matchId)
+    }
+    return result.projection
   }
 
   /**
@@ -66,6 +78,33 @@ export class GemBlitzService {
     return { finalized }
   }
 
+  async retryPendingSettlements() {
+    const pending = await this.prisma.match.findMany({
+      where: {
+        gameDefinition: { key: "gem_blitz" },
+        status: { in: ["FINISHED", "REVIEW"] },
+        settlement: null,
+      },
+      select: {
+        id: true,
+        participants: {
+          where: { participantType: "PLAYER", userId: { not: null } },
+          select: { userId: true },
+          take: 1,
+        },
+      },
+      orderBy: { endedAt: "asc" },
+      take: 100,
+    })
+    let settled = 0
+    for (const match of pending) {
+      if (!match.participants[0]?.userId) continue
+      const state = await this.settleFinishedMatch(match.id)
+      if (state?.settlement?.status === "SETTLED") settled += 1
+    }
+    return { settled }
+  }
+
   async start(userId: string, matchId: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.lockMatch(tx, matchId)
@@ -87,7 +126,7 @@ export class GemBlitzService {
   }
 
   async move(userId: string, matchId: string, dto: GemBlitzMoveDto) {
-    return this.prisma.$transaction(async (tx) => {
+    const response = await this.prisma.$transaction(async (tx) => {
       await this.lockMatch(tx, matchId)
       const match = await this.loadMatch(tx, matchId)
       const participant = this.authorize(match, userId)
@@ -96,7 +135,8 @@ export class GemBlitzService {
       if (state.status === "FINISHED" || match.status === "FINISHED") return { ...this.project(match, participant.id, state), duplicate: true }
       if (Date.now() >= Date.parse(state.endsAt)) {
         state = await this.advanceBots(tx, match, state, Date.now())
-        return this.project({ ...match, metadata: this.withState(match.metadata, state) }, participant.id, await this.finish(tx, match, state, null))
+        const finished = await this.finish(tx, match, state, null)
+        return { ...this.project({ ...match, metadata: this.withState(match.metadata, state) }, participant.id, finished), expired: true }
       }
       const current = state.players[participant.id]
       if (!current) throw new ConflictException("Player state is unavailable")
@@ -114,18 +154,28 @@ export class GemBlitzService {
       if (state !== this.readState(metadata)) await tx.match.update({ where: { id: matchId }, data: { metadata: this.withState(metadata, state) } })
       return { ...this.project({ ...match, metadata }, participant.id, state), move: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, animation: result.animation, reshuffled: result.reshuffled } }
     })
+    if (response && (response as any).expired) {
+      await this.settleFinishedMatch(matchId)
+      return this.snapshot(userId, matchId)
+    }
+    return response
   }
 
   async forfeit(userId: string, matchId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const response = await this.prisma.$transaction(async (tx) => {
       await this.lockMatch(tx, matchId)
       const match = await this.loadMatch(tx, matchId)
       const participant = this.authorize(match, userId)
     const state = this.readState(match.metadata)
       if (!state || state.status === "FINISHED") return this.project(match, participant.id, state)
       const finished = await this.finish(tx, match, state, participant.id)
-      return this.project({ ...match, metadata: this.withState(match.metadata, finished) }, participant.id, finished)
+      return { ...this.project({ ...match, metadata: this.withState(match.metadata, finished) }, participant.id, finished), expired: true }
     })
+    if (response && (response as any).expired) {
+      await this.settleFinishedMatch(matchId)
+      return this.snapshot(userId, matchId)
+    }
+    return response
   }
 
   private async finish(tx: Prisma.TransactionClient, match: any, state: GemState, forfeitingParticipantId: string | null) {
@@ -141,21 +191,36 @@ export class GemBlitzService {
       const result: MatchParticipantResult = forfeitingParticipantId === item.id ? "FORFEIT" : tied ? "DRAW" : item.id === winner ? "WIN" : "LOSS"
       await tx.matchParticipant.update({ where: { id: item.id }, data: { finalScore: state.players[item.id]?.score ?? 0, result, submittedAt: endedAt } })
     }
-    const human = participants.find((item) => item.participantType === "PLAYER")
-    if (human) {
-      const settlement = await this.settleMatch.runWithinTransaction({ matchId: match.id, userId: (match.participants as any[]).find((item) => item.id === human.id)?.userId ?? human.id, idempotencyKey: `gem-blitz-settle:${match.id}` }, tx)
-      const settled = { ...finished, settlement }
-      await tx.match.update({ where: { id: match.id }, data: { metadata: this.withState(match.metadata, settled) } })
-      await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_MATCH_SETTLED", occurredAt: endedAt, matchId: match.id, playerId: (match.participants as any[]).find((item) => item.id === human.id)?.userId ?? undefined, properties: { winnerParticipantId: settled.winnerParticipantId, settlementStatus: settlement?.status ?? "UNKNOWN", policyVersion: settled.rulesVersion } as Prisma.InputJsonValue } })
-      return settled
-    }
     return finished
+  }
+
+  private async settleFinishedMatch(matchId: string): Promise<GemState | null> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockMatch(tx, matchId)
+        const match = await this.loadMatch(tx, matchId)
+        const state = this.readState(match.metadata)
+        if (!state || state.status !== "FINISHED" || match.settlement) return state
+        const human = match.participants.find((item: any) => item.participantType === "PLAYER" && item.userId)
+        if (!human?.userId) return state
+        const settlement = await this.settleMatch.runWithinTransaction({ matchId, userId: human.userId, idempotencyKey: `gem-blitz-settle:${matchId}` }, tx)
+        const settled = { ...state, settlement }
+        await tx.match.update({ where: { id: matchId }, data: { metadata: this.withState(match.metadata, settled) } })
+        await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_MATCH_SETTLED", occurredAt: new Date(), matchId, playerId: human.userId, properties: { winnerParticipantId: settled.winnerParticipantId, settlementStatus: settlement?.status ?? "UNKNOWN", policyVersion: settled.rulesVersion } as Prisma.InputJsonValue } })
+        return settled
+      })
+    } catch {
+      // The match is already durably finished. A later worker tick retries
+      // only the settlement transaction without reopening gameplay.
+      return null
+    }
   }
 
   private newState(match: any, participantIds: string[], now: Date): GemState {
     const policy = this.policyFor(match)
+    const botPolicy = this.humanBotPolicy(policy, match)
     const seed = Math.abs(Number.parseInt(match.serverNonce.slice(0, 8), 16)) || 18421
-    const players = Object.fromEntries(participantIds.map((id) => [id, { ...GemBlitzEngine.newGame(seed, policy.boardSize, policy).stateSnapshot, sequence: 0, nextBotAt: now.getTime() + policy.bot.reactionDelayMs }]))
+    const players = Object.fromEntries(participantIds.map((id) => [id, { ...GemBlitzEngine.newGame(seed, policy.boardSize, policy).stateSnapshot, sequence: 0, nextBotAt: now.getTime() + botPolicy.bot.reactionDelayMs }]))
     return { rulesVersion: policy.rulesVersion, seed, boardSize: policy.boardSize, durationSeconds: policy.durationSeconds, startedAt: now.toISOString(), endsAt: new Date(now.getTime() + policy.durationSeconds * 1000).toISOString(), status: "ACTIVE", players, replay: [], policy }
   }
 
@@ -170,6 +235,7 @@ export class GemBlitzService {
   private async advanceBots(tx: Prisma.TransactionClient, match: any, state: GemState, nowMs: number): Promise<GemState> {
     const policy = state.policy ?? this.policyFor(match)
     if (!policy.bot?.enabled || state.status !== "ACTIVE") return state
+    const botPolicy = this.humanBotPolicy(policy, match)
     let nextState = state
     const simulationLimit = Math.min(nowMs, Date.parse(state.endsAt))
     const bots = (match.participants as any[]).filter((item) => item.participantType === "BOT")
@@ -180,40 +246,41 @@ export class GemBlitzService {
       let player: any = nextState.players[bot.id]
       if (!player || !Array.isArray(player.cells) || player.cells.length !== state.boardSize * state.boardSize) {
         const botSeed = (Number(player?.seed) || state.seed) + Math.abs(Number.parseInt(bot.id.replace(/[^0-9a-f]/gi, "").slice(0, 6) || "1", 16))
-        const fresh = GemBlitzEngine.newGame(botSeed, state.boardSize, policy)
-        player = { ...fresh.stateSnapshot, sequence: 0, nextBotAt: Math.min(simulationLimit, Date.parse(state.startedAt) + Number(policy.bot.reactionDelayMs ?? 1200)) }
+        const fresh = GemBlitzEngine.newGame(botSeed, state.boardSize, botPolicy)
+        player = { ...fresh.stateSnapshot, sequence: 0, nextBotAt: Math.min(simulationLimit, Date.parse(state.startedAt) + Number(botPolicy.bot.reactionDelayMs ?? 4000)) }
         nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
       }
       const firstScheduledAt = Number.isFinite(Number(player.nextBotAt)) ? Number(player.nextBotAt) : simulationLimit
-      player = { ...player, nextBotAt: firstScheduledAt }
+      const botScoreCap = Number(botPolicy.scoring?.scoreCap ?? 80000)
+      player = { ...player, score: Math.min(Number(player.score ?? 0), botScoreCap), nextBotAt: firstScheduledAt }
       let moves = 0
-      const maxMoves = Math.max(1, Number(policy.bot.maxMoves ?? 55) || 55)
+      const maxMoves = Math.max(1, Number(botPolicy.bot.maxMoves ?? 14) || 14)
       while ((player.nextBotAt ?? simulationLimit) <= simulationLimit && moves < maxMoves) {
-        let engine = GemBlitzEngine.fromState(player, policy)
+        let engine = GemBlitzEngine.fromState(player, botPolicy)
         let legal = engine.legalMoves
         // A board can become dead after a legacy/corrupt snapshot. Rebuild
         // only the board (never the score) and let the normal move path score
         // the next action, matching the engine's normal refill behaviour.
         if (!legal.length) {
-          const reshuffled = GemBlitzEngine.newGame(player.seed + player.sequence + moves + 1, state.boardSize, policy)
+          const reshuffled = GemBlitzEngine.newGame(player.seed + player.sequence + moves + 1, state.boardSize, botPolicy)
           player = { ...reshuffled.stateSnapshot, score: player.score ?? 0, moves: player.moves ?? 0, fever: player.fever ?? false, sequence: player.sequence ?? 0, nextBotAt: player.nextBotAt }
           nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
-          engine = GemBlitzEngine.fromState(player, policy)
+          engine = GemBlitzEngine.fromState(player, botPolicy)
           legal = engine.legalMoves
         }
         if (!legal.length) {
-          player = { ...player, nextBotAt: player.nextBotAt + Number(policy.bot.reactionDelayMs ?? 1200) }
+          player = { ...player, nextBotAt: player.nextBotAt + Number(botPolicy.bot.reactionDelayMs ?? 4000) }
           nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
           moves += 1
           continue
         }
-        const skill = Math.max(0, Math.min(1, Number(policy.bot.skill ?? 0.62)))
+        const skill = Math.max(0, Math.min(1, Number(botPolicy.bot.skill ?? 0.32)))
         const hesitationRoll = ((player.sequence * 29 + Number.parseInt(match.serverNonce.slice(6, 10), 16)) % 100) / 100
         // Always make the first action, then apply the configured human-like
         // hesitation. This prevents a low-skill bot from looking disconnected
         // in short matches while preserving misses later in the match.
         if (player.sequence > 0 && hesitationRoll > skill) {
-          player = { ...player, nextBotAt: player.nextBotAt + Number(policy.bot.reactionDelayMs ?? 1200) + Number(policy.bot.jitterMs ?? 900) }
+          player = { ...player, nextBotAt: player.nextBotAt + Number(botPolicy.bot.reactionDelayMs ?? 4000) + Number(botPolicy.bot.jitterMs ?? 2000) }
           nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
           moves += 1
           continue
@@ -230,13 +297,13 @@ export class GemBlitzService {
           result = engine.swap({ ...move, timestamp: player.nextBotAt })
         }
         if (!result.accepted) {
-          player = { ...player, nextBotAt: player.nextBotAt + Number(policy.bot.reactionDelayMs ?? 1200) }
+          player = { ...player, nextBotAt: player.nextBotAt + Number(botPolicy.bot.reactionDelayMs ?? 4000) }
           nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player } }
           moves += 1
           continue
         }
         const sequence = player.sequence + 1
-        player = { ...result.board.stateSnapshot, sequence, nextBotAt: player.nextBotAt + Number(policy.bot.reactionDelayMs ?? 1200) + ((sequence * 37) % Math.max(1, Number(policy.bot.jitterMs ?? 900))) }
+        player = { ...result.board.stateSnapshot, sequence, nextBotAt: player.nextBotAt + Number(botPolicy.bot.reactionDelayMs ?? 4000) + ((sequence * 37) % Math.max(1, Number(botPolicy.bot.jitterMs ?? 2000))) }
         nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player }, replay: [...nextState.replay, { sequence, participantId: bot.id, ...move, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, bot: true, acceptedAt: new Date(player.nextBotAt).toISOString() }].slice(-MAX_REPLAY_EVENTS) }
         await tx.matchEvent.create({ data: { matchId: match.id, participantId: bot.id, eventType: "SCORE_UPDATE", sequence, clientEventId: `gem-blitz:${bot.id}:${sequence}`, payload: { ...move, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, animation: result.animation, reshuffled: result.reshuffled, score: player.score, bot: true } as unknown as Prisma.InputJsonValue, accepted: true } })
         moves += 1
@@ -244,6 +311,30 @@ export class GemBlitzService {
     }
     if (nextState !== state) await tx.match.update({ where: { id: match.id }, data: { metadata: this.withState(match.metadata, nextState) } })
     return nextState
+  }
+
+  private humanBotPolicy(policy: any, match: any): any {
+    const profiles = [
+      { reactionDelayMs: 4200, jitterMs: 2200, skill: 0.28, maxMoves: 10, scoreCap: 30000 },
+      { reactionDelayMs: 3800, jitterMs: 2000, skill: 0.34, maxMoves: 12, scoreCap: 42000 },
+      { reactionDelayMs: 3400, jitterMs: 1800, skill: 0.40, maxMoves: 14, scoreCap: 50000 },
+    ]
+    const nonce = Number.parseInt(String(match.serverNonce ?? "").slice(0, 6), 16) || 0
+    const profile = profiles[nonce % profiles.length]
+    return {
+      ...policy,
+      bot: {
+        ...policy.bot,
+        reactionDelayMs: Math.max(profile.reactionDelayMs, Number(policy.bot?.reactionDelayMs ?? profile.reactionDelayMs)),
+        jitterMs: Math.max(profile.jitterMs, Number(policy.bot?.jitterMs ?? profile.jitterMs)),
+        skill: Math.min(profile.skill, Number(policy.bot?.skill ?? profile.skill)),
+        maxMoves: Math.min(profile.maxMoves, Math.max(1, Number(policy.bot?.maxMoves ?? profile.maxMoves))),
+      },
+      scoring: {
+        ...policy.scoring,
+        scoreCap: Math.min(profile.scoreCap, Number(policy.scoring?.scoreCap ?? profile.scoreCap)),
+      },
+    }
   }
 
   private readState(metadata: Prisma.JsonValue | Prisma.InputJsonValue | null | undefined): GemState | null { if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null; const state = (metadata as Record<string, unknown>).gemBlitz; return state && typeof state === "object" ? state as GemState : null }
