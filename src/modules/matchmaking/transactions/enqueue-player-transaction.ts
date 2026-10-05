@@ -49,7 +49,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const config = game?.configs[0]
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
-    if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
+    if (!activeContentCount && game.key !== "gem_blitz") throw new ConflictException("No active server content is configured for this game")
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
     let rankingConfig: { id: string; name: string; stakeAmountGld: bigint; entryFeeGld: bigint; entryFeeGldMicros: bigint } | null = null
     if (mode === MatchmakingTicketMode.RANKED) {

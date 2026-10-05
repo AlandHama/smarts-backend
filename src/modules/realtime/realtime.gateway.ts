@@ -13,6 +13,7 @@ import { SupportLiveChatService } from "../support/support-live-chat.service"
 import type { JwtPayload } from "../auth/dtos/jwt-payload.dto"
 import type { WebSocket } from "ws"
 import { PartyService } from "../cooperative/party.service"
+import { GemBlitzService } from "../gem-blitz/gem-blitz.service"
 
 type ClientState = {
   userId: string
@@ -52,6 +53,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly chatPresence: ChatPresenceRegistry,
     private readonly supportLiveChat: SupportLiveChatService,
     private readonly parties: PartyService,
+    private readonly gemBlitz: GemBlitzService,
   ) {
     this.timer = setInterval(() => void this.publishChanges(), 1000)
     this.timer.unref()
@@ -125,6 +127,16 @@ export class RealtimeGateway implements OnModuleDestroy {
     }
     if (event === "unsubscribe_match") {
       if (typeof data.matchId === "string") state.matchIds.delete(data.matchId)
+      return
+    }
+    if (event === "gem_blitz.move") {
+      const matchId = this.string(data.matchId)
+      if (!matchId || !state.matchIds.has(matchId)) return this.send(client, "gem_blitz.error", { code: "NOT_SUBSCRIBED", message: "Subscribe to the match first" })
+      try {
+        const snapshot = await this.gemBlitz.move(state.userId, matchId, { sequence: Number(data.sequence), fromRow: Number(data.fromRow), fromColumn: Number(data.fromColumn), toRow: Number(data.toRow), toColumn: Number(data.toColumn), clientTimestamp: typeof data.clientTimestamp === "string" ? data.clientTimestamp : undefined })
+        this.send(client, "gem_blitz.move.accepted", snapshot)
+        await this.broadcastGemBlitz(matchId)
+      } catch (error) { this.send(client, "gem_blitz.error", { code: "MOVE_REJECTED", message: this.errorMessage(error) }) }
       return
     }
     if (event === "subscribe_player") {
@@ -432,6 +444,16 @@ export class RealtimeGateway implements OnModuleDestroy {
 
   private async sendMatchSnapshot(client: WebSocket, state: ClientState, matchId: string, force: boolean) {
     try {
+      const game = await this.prisma.match.findUnique({ where: { id: matchId }, select: { gameDefinition: { select: { key: true } } } })
+      if (game?.gameDefinition.key === "gem_blitz") {
+        const snapshot = await this.gemBlitz.snapshot(state.userId, matchId)
+        const key = JSON.stringify(snapshot)
+        if (force || state.lastSnapshots.get(`gem-blitz:${matchId}`) !== key) {
+          state.lastSnapshots.set(`gem-blitz:${matchId}`, key)
+          this.send(client, "gem_blitz.snapshot", snapshot)
+        }
+        return
+      }
       const snapshot = await this.matches.get(matchId, state.userId)
       const key = JSON.stringify(snapshot)
       const cacheKey = `match:${matchId}`
@@ -459,6 +481,13 @@ export class RealtimeGateway implements OnModuleDestroy {
       const status = typeof (snapshot as { status?: unknown }).status === "string" ? (snapshot as { status: string }).status : ""
       if (status === "FINISHED" || status === "REVIEW" || status === "SETTLED") this.send(client, "match.settled", { matchId, status })
     } catch { /* An unauthorized/deleted match is harmless on a later tick. */ }
+  }
+
+  private async broadcastGemBlitz(matchId: string) {
+    for (const [client, state] of this.clients) {
+      if (!state.matchIds.has(matchId)) continue
+      try { this.send(client, "gem_blitz.snapshot", await this.gemBlitz.snapshot(state.userId, matchId)) } catch { /* HTTP reconciliation handles a disconnected match. */ }
+    }
   }
 
   private readToken(request: IncomingMessage) {

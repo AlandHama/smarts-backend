@@ -149,6 +149,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       : null;
     const config = game?.configs[0];
     if (!game || !config) return null;
+    const isGemBlitz = game.key === "gem_blitz";
     // Provision the human assignments in the same transaction as the match.
     // Previously a newly-created bot match had zero assignments until a
     // client won the start race and called /start, which allowed legacy game
@@ -173,7 +174,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       serverNonce,
       game.key,
     );
-    if (!selectedItems.length) return null;
+    if (!selectedItems.length && !isGemBlitz) return null;
 
     const matchMode = second
       ? first.mode === MatchmakingTicketMode.RANKED
@@ -305,6 +306,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       now.getTime() + config.maxMatchDurationSeconds * 1000,
     );
     for (const participant of participants) {
+      if (isGemBlitz) continue;
       for (let position = 0; position < selectedItems.length; position += 1) {
         const token = createAssignmentToken(
           serverNonce,

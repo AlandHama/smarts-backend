@@ -50,9 +50,11 @@ interface GemGroup {
 class SeededRandom {
   private state: number
 
-  constructor(seed: number) {
-    this.state = seed & 0x7fffffff
+  constructor(seed: number, state?: number) {
+    this.state = (state ?? seed) & 0x7fffffff
   }
+
+  get snapshot() { return this.state }
 
   nextInt(max: number): number {
     this.state = (1103515245 * this.state + 12345) & 0x7fffffff
@@ -126,6 +128,25 @@ export class GemBlitzEngine {
       cells.map((cell) => ({ ...cell })),
       new SeededRandom(seed ^ 0x45d9f3b),
     )
+  }
+
+  static fromState(state: {
+    seed: number
+    size: number
+    cells: GemTile[]
+    score?: number
+    moves?: number
+    speedCombo?: number
+    fever?: boolean
+    lastMoveTimestamp?: number
+    randomState?: number
+  }): GemBlitzEngine {
+    if (state.cells.length !== state.size * state.size) throw new Error("Gem Blitz board must contain size × size cells")
+    return new GemBlitzEngine(state.seed, state.size, state.size, state.cells.map((cell) => ({ ...cell })), new SeededRandom(state.seed ^ 0x45d9f3b, state.randomState), state.score ?? 0, state.moves ?? 0, state.speedCombo ?? 0, state.fever ?? false, state.lastMoveTimestamp ?? 0)
+  }
+
+  get stateSnapshot() {
+    return { seed: this.seed, size: this.rows, cells: this.board.map((cell) => ({ ...cell })), score: this.score, moves: this.moves, speedCombo: this.speedCombo, fever: this.fever, lastMoveTimestamp: this.lastMoveTimestamp, randomState: this.random.snapshot }
   }
 
   get board(): readonly GemTile[] {
