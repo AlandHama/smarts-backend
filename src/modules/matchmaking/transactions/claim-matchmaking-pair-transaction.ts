@@ -216,6 +216,20 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         } as Prisma.InputJsonValue,
       },
     });
+    if (game.key === "tile_rush") {
+      const players = [first.userId, ...(second ? [second.userId] : [])];
+      for (const playerId of players) {
+        await transaction.analyticsEvent.create({
+          data: {
+            eventName: "TILE_RUSH_MATCH_FOUND",
+            occurredAt: now,
+            matchId: match.id,
+            playerId,
+            properties: { mode: matchMode, botFallback: !second, ranked: first.isRankingMatch } as Prisma.InputJsonValue,
+          },
+        });
+      }
+    }
     if (
       first.isRankingMatch &&
       second &&

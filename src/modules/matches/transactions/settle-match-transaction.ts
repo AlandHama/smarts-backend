@@ -140,6 +140,23 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         if (specialEvents.length) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "GEM_BLITZ_SPECIAL", sourceId: `${lockedMatch.id}:${player.id}:specials`, amount: specialEvents.length, payload: { ...engagementPayload, count: specialEvents.length } }, transaction)
         if (comboEvents.length) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "GEM_BLITZ_COMBO", sourceId: `${lockedMatch.id}:${player.id}:combos`, amount: comboEvents.length, payload: { ...engagementPayload, count: comboEvents.length } }, transaction)
       }
+      if (lockedMatch.gameDefinition.key === "tile_rush") {
+        const tileEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: "SCORE_UPDATE", accepted: true }, select: { payload: true } })
+        const payloads = tileEvents.map((event) => event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, any> : {})
+        const tilesCleared = payloads.reduce((total, payload) => total + (Array.isArray(payload.clearedCells) ? payload.clearedCells.length : 0), 0)
+        const longChains = payloads.filter((payload) => Number(payload.chainLength ?? 0) >= 8).length
+        const colorCrushes = payloads.filter((payload) => payload.special === "colorCrush").length
+        const maxCombo = payloads.reduce((max, payload) => Math.max(max, Number(payload.combo ?? 0)), 0)
+        if (tilesCleared > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "TILE_RUSH_TILES_CLEARED", sourceId: `${lockedMatch.id}:${player.id}:tiles`, amount: tilesCleared, payload: { ...engagementPayload, tilesCleared } }, transaction)
+        if (longChains > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "TILE_RUSH_LONG_CHAIN", sourceId: `${lockedMatch.id}:${player.id}:long-chains`, amount: longChains, payload: { ...engagementPayload, longChains } }, transaction)
+        if (colorCrushes > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "TILE_RUSH_COLOR_CRUSH", sourceId: `${lockedMatch.id}:${player.id}:color-crushes`, amount: colorCrushes, payload: { ...engagementPayload, colorCrushes } }, transaction)
+        if (maxCombo > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "TILE_RUSH_COMBO", sourceId: `${lockedMatch.id}:${player.id}:combo`, amount: maxCombo, payload: { ...engagementPayload, maxCombo } }, transaction)
+        if (result === "WIN") {
+          await this.missions.recordWithinTransaction({ userId: player.id, eventType: "TILE_RUSH_MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:won`, payload: engagementPayload }, transaction)
+          const opponentScore = scores.find((candidate) => candidate.participant.id !== item.participant.id)?.score
+          if (opponentScore != null && item.score - opponentScore < 100n) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "TILE_RUSH_CLOSE_WIN", sourceId: `${lockedMatch.id}:${player.id}:close-win`, payload: engagementPayload }, transaction)
+        }
+      }
       if (lockedMatch.rankingMatch || cooperativeRanked) {
         await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:ranked-played`, payload: engagementPayload }, transaction)
         if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:ranked-won`, payload: engagementPayload }, transaction)

@@ -141,6 +141,16 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
         metadata: { rankingConfigId: rankingConfig.id, stakeAmountGld: rankingConfig.stakeAmountGld.toString(), entryFeeGld: rankingConfig.entryFeeGld.toString(), entryFeeGldMicros: (rankingConfig.entryFeeGldMicros || rankingConfig.entryFeeGld * 1_000_000n).toString() },
       }, transaction)
     }
+    if (game.key === "tile_rush") {
+      await transaction.analyticsEvent.create({
+        data: {
+          eventName: "TILE_RUSH_QUEUE_JOINED",
+          occurredAt: now,
+          playerId: input.userId,
+          properties: { mode, ranked: mode === MatchmakingTicketMode.RANKED, allowBotFallback: ticket.allowBotFallback } as Prisma.InputJsonValue,
+        },
+      })
+    }
     const response = { ticket: { id: ticket.id, status: ticket.status, mode: ticket.mode, gameKey: game.key, isRankingMatch: ticket.isRankingMatch, rankingConfigId: ticket.rankingConfigId, rankingStakeAmount: ticket.rankingStakeAmount?.toString() ?? null, rankingEntryFee: ticket.rankingEntryFee?.toString() ?? null, rankingEntryFeeMicros: ticket.rankingEntryFeeMicros?.toString() ?? null, levelSnapshot: ticket.levelSnapshot, eloSnapshot: ticket.eloSnapshot.toString(), countryCodeSnapshot: ticket.countryCodeSnapshot, createdAt: ticket.createdAt, expiresAt: ticket.expiresAt, lastHeartbeatAt: ticket.lastHeartbeatAt, matchId: null } }
     if (idempotency) await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: response as Prisma.InputJsonValue, completedAt: new Date() } })
     return response

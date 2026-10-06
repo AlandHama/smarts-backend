@@ -10,7 +10,7 @@ type EventInput = { userId: string; eventType: string; sourceId: string; amount?
 type Tx = Prisma.TransactionClient
 
 const defaultMissions: Array<{
-  key: string; title: string; description: string; icon: string; category: string; eventType: string; target: number; period: MissionPeriod; rewardGld: string; rewardXp: bigint; sortOrder: number
+  key: string; title: string; description: string; icon: string; category: string; eventType: string; target: number; period: MissionPeriod; rewardGld: string; rewardXp: bigint; sortOrder: number; filters?: Prisma.InputJsonValue
 }> = [
   { key: "daily-play-1", title: "Warm up", description: "Play one match today.", icon: "sports_esports", category: "daily", eventType: "MATCH_PLAYED", target: 1, period: "DAILY", rewardGld: "0.5", rewardXp: 50n, sortOrder: 10 },
   { key: "daily-play-3", title: "On a roll", description: "Play three matches today.", icon: "local_fire_department", category: "daily", eventType: "MATCH_PLAYED", target: 3, period: "DAILY", rewardGld: "1", rewardXp: 100n, sortOrder: 20 },
@@ -19,6 +19,12 @@ const defaultMissions: Array<{
   { key: "weekly-play-10", title: "Regular player", description: "Play ten matches this week.", icon: "calendar_month", category: "weekly", eventType: "MATCH_PLAYED", target: 10, period: "WEEKLY", rewardGld: "4", rewardXp: 300n, sortOrder: 50 },
   { key: "weekly-win-5", title: "Winning week", description: "Win five matches this week.", icon: "military_tech", category: "weekly", eventType: "MATCH_WON", target: 5, period: "WEEKLY", rewardGld: "6", rewardXp: 500n, sortOrder: 60 },
   { key: "weekly-friend-1", title: "Stay connected", description: "Add a friend this week.", icon: "group_add", category: "weekly", eventType: "FRIEND_ADDED", target: 1, period: "WEEKLY", rewardGld: "2", rewardXp: 150n, sortOrder: 70 },
+  { key: "tile-rush-clear-100", title: "Tile sweeper", description: "Clear 100 tiles in Tile Rush.", icon: "grid_view", category: "tile-rush", eventType: "TILE_RUSH_TILES_CLEARED", target: 100, period: "WEEKLY", rewardGld: "2", rewardXp: 160n, sortOrder: 80 },
+  { key: "tile-rush-long-chain-3", title: "Path finder", description: "Create three Tile Rush chains of eight or more.", icon: "route", category: "tile-rush", eventType: "TILE_RUSH_LONG_CHAIN", target: 3, period: "WEEKLY", rewardGld: "3", rewardXp: 220n, sortOrder: 90 },
+  { key: "tile-rush-crush-1", title: "Color storm", description: "Trigger a Color Crush in Tile Rush.", icon: "palette", category: "tile-rush", eventType: "TILE_RUSH_COLOR_CRUSH", target: 1, period: "DAILY", rewardGld: "1", rewardXp: 100n, sortOrder: 100 },
+  { key: "tile-rush-combo-5", title: "Combo runner", description: "Reach Combo ×5 in Tile Rush.", icon: "local_fire_department", category: "tile-rush", eventType: "TILE_RUSH_COMBO", target: 5, period: "WEEKLY", rewardGld: "2", rewardXp: 180n, sortOrder: 105 },
+  { key: "tile-rush-casual-win-1", title: "Casual rush", description: "Win one Tile Rush casual match.", icon: "emoji_events", category: "tile-rush", eventType: "TILE_RUSH_MATCH_WON", target: 1, period: "WEEKLY", rewardGld: "2", rewardXp: 180n, sortOrder: 110, filters: { mode: "CASUAL" } },
+  { key: "tile-rush-ranked-win-1", title: "Ranked rush", description: "Win one Tile Rush ranked match.", icon: "military_tech", category: "tile-rush", eventType: "TILE_RUSH_MATCH_WON", target: 1, period: "WEEKLY", rewardGld: "3", rewardXp: 240n, sortOrder: 115, filters: { mode: "RANKED" } },
 ]
 
 const defaultAchievements = [
@@ -31,6 +37,12 @@ const defaultAchievements = [
   { key: "ranked-matches", title: "Ranked journey", description: "Take on the ranked arenas.", icon: "military_tech", category: "ranked", eventType: "RANKED_MATCH_PLAYED", sortOrder: 70, tiers: [[1, "Enter the arena", 1, "2", 75n], [2, "Regular contender", 10, "8", 300n], [3, "Arena regular", 50, "15", 900n]] },
   { key: "gem-specialist", title: "Gem hunter", description: "Create special gems in Gem Blitz.", icon: "auto_awesome", category: "gem-blitz", eventType: "GEM_BLITZ_SPECIAL", sortOrder: 80, tiers: [[1, "First sparkle", 1, "1", 30n], [2, "Power player", 25, "5", 180n], [3, "Gem master", 100, "15", 500n]] },
   { key: "gem-combo", title: "Unstoppable", description: "Trigger Gem Blitz combos.", icon: "bolt", category: "gem-blitz", eventType: "GEM_BLITZ_COMBO", sortOrder: 90, tiers: [[1, "Warm streak", 5, "1", 50n], [2, "Rush master", 25, "5", 250n], [3, "Blitz legend", 100, "15", 800n]] },
+  { key: "tile-rush-on-fire", title: "On Fire", description: "Reach Combo ×10 in Tile Rush.", icon: "local_fire_department", category: "tile-rush", eventType: "TILE_RUSH_COMBO", sortOrder: 100, tiers: [[1, "Spark", 10, "2", 100n], [2, "Flame", 50, "8", 350n], [3, "Inferno", 100, "20", 1000n]] },
+  { key: "tile-rush-rainbow-hunter", title: "Rainbow Hunter", description: "Trigger Color Crushes in Tile Rush.", icon: "palette", category: "tile-rush", eventType: "TILE_RUSH_COLOR_CRUSH", sortOrder: 110, tiers: [[1, "First storm", 1, "1", 60n], [2, "Prismatic", 25, "6", 300n], [3, "Rainbow legend", 100, "18", 900n]] },
+  { key: "tile-rush-lightning-hands", title: "Lightning Hands", description: "Clear tiles in Tile Rush.", icon: "bolt", category: "tile-rush", eventType: "TILE_RUSH_TILES_CLEARED", sortOrder: 120, tiers: [[1, "Fast fingers", 150, "3", 180n], [2, "Tile storm", 750, "12", 600n]] },
+  { key: "tile-rush-master", title: "Tile Master", description: "Win Tile Rush matches.", icon: "military_tech", category: "tile-rush", eventType: "TILE_RUSH_MATCH_WON", sortOrder: 130, tiers: [[1, "First rush", 1, "1", 80n], [2, "Rush regular", 10, "6", 300n], [3, "Tile master", 100, "25", 1200n]] },
+  { key: "tile-rush-path-finder", title: "Path Finder", description: "Create long Tile Rush chains.", icon: "route", category: "tile-rush", eventType: "TILE_RUSH_LONG_CHAIN", sortOrder: 140, tiers: [[1, "Long route", 1, "1", 75n], [2, "Trailblazer", 10, "5", 280n], [3, "Maze master", 50, "15", 850n]] },
+  { key: "tile-rush-photo-finish", title: "Photo Finish", description: "Win Tile Rush by fewer than 100 points.", icon: "timer", category: "tile-rush", eventType: "TILE_RUSH_CLOSE_WIN", sortOrder: 150, tiers: [[1, "Close call", 1, "2", 120n], [2, "Nail-biter", 10, "8", 450n]] },
 ]
 
 @Injectable()

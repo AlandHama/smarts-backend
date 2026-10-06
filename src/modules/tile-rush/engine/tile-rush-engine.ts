@@ -17,6 +17,8 @@ export interface TileRushPolicy {
   durationSeconds?: number
   minimumChain?: number
   comboWindowMs?: number
+  finalRushEndsAtMs?: number
+  finalRushMultiplier?: number
   loopsEnabled?: boolean
   loopMinimumLength?: number
   special5Threshold?: number
@@ -217,9 +219,10 @@ export class TileRushEngine {
     this.lastActionValue = timestamp
     this.bestChainValue = Math.max(this.bestChainValue, uniquePath.length)
     this.longestComboValue = Math.max(this.longestComboValue, this.comboValue)
-    const comboMultiplier = 1 + Math.min(4, Math.max(0, this.comboValue - 1)) * 0.05
+    const comboMultiplier = 1 + Math.min(9, Math.max(0, this.comboValue - 1)) * 0.05
     const specialMultiplier = this.policy.scoring?.specialBonuses?.[special] ?? ({ [TileRushSpecial.None]: 1, [TileRushSpecial.Blast]: 1.2, [TileRushSpecial.Lightning]: 1.35, [TileRushSpecial.Prism]: 1.5, [TileRushSpecial.ColorCrush]: 1.55 }[special] ?? 1)
-    let points = Math.round(this.scoreForChain(uniquePath.length) * comboMultiplier * specialMultiplier)
+    const finalRushMultiplier = Number(this.policy.finalRushEndsAtMs && timestamp >= this.policy.finalRushEndsAtMs ? this.policy.finalRushMultiplier ?? 1 : 1)
+    let points = Math.round(this.scoreForChain(uniquePath.length) * comboMultiplier * specialMultiplier * (Number.isFinite(finalRushMultiplier) ? finalRushMultiplier : 1))
     if (special === TileRushSpecial.ColorCrush) this.colorCrushesValue += 1
     for (const point of cleared.values()) this.boardCells[point.row][point.column] = -1
     this.refill()

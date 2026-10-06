@@ -132,12 +132,15 @@ export class TileRushService {
       }
 
       const nextPlayer: RuntimePlayer = { ...action.player, sequence: dto.sequence, nextBotAt: current.nextBotAt }
+      const previousLeader = this.leader(state)
       state = { ...state, players: { ...state.players, [participant.id]: nextPlayer }, replay: [...state.replay, { sequence: dto.sequence, participantId: participant.id, path, scoreDelta: action.scoreDelta, chainLength: action.chainLength, combo: action.combo, special: action.special, clearedCells: action.clearedCells, cascadeCount: action.cascadeCount, boardHash: action.boardHash, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS) }
       const payload = this.actionPayload(dto.sequence, path, action, nextPlayer, false)
       await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: payload as unknown as Prisma.InputJsonValue, accepted: true, clientOccurredAt } })
       await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_PATH_ACCEPTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, scoreDelta: action.scoreDelta, chainLength: action.chainLength, combo: action.combo, special: action.special, cascadeCount: action.cascadeCount, clientPathLength: path.length, boardHash: action.boardHash } as Prisma.InputJsonValue } })
       if (action.special !== TileRushSpecial.None) await tx.analyticsEvent.create({ data: { eventName: action.special === TileRushSpecial.ColorCrush ? "TILE_RUSH_COLOR_CRUSH" : "TILE_RUSH_SPECIAL_CREATED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, special: action.special, chainLength: action.chainLength, cleared: action.clearedCells.length } as Prisma.InputJsonValue } })
       if (action.combo > 1) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_COMBO_REACHED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, combo: action.combo } as Prisma.InputJsonValue } })
+      const nextLeader = this.leader(state)
+      if (nextLeader !== previousLeader) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_LEAD_CHANGED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { from: previousLeader, to: nextLeader, sequence: dto.sequence } as Prisma.InputJsonValue } })
       const metadata = this.withState(match.metadata, state)
       await tx.match.update({ where: { id: matchId }, data: { metadata } })
       state = await this.advanceBots(tx, { ...match, metadata }, state, Date.now())
@@ -236,11 +239,12 @@ export class TileRushService {
 
   private newState(match: any, participantIds: string[], now: Date): TileRushState {
     const policy = this.policyFor(match)
+    const runtimePolicy = { ...policy, finalRushEndsAtMs: now.getTime() + Math.max(0, Number(policy.durationSeconds) - Number(policy.finalRushSeconds ?? 10)) * 1000 }
     const seed = Math.abs(Number.parseInt(String(match.serverNonce).slice(0, 8), 16)) || 18421
-    const initial = TileRushEngine.newGame(seed, policy.boardSize, policy)
-    const botPolicy = this.humanBotPolicy(policy, match)
+    const initial = TileRushEngine.newGame(seed, runtimePolicy.boardSize, runtimePolicy)
+    const botPolicy = this.humanBotPolicy(runtimePolicy, match)
     const players = Object.fromEntries(participantIds.map((id) => [id, { ...initial.snapshot(0, now.getTime() + Number(botPolicy.bot.reactionDelayMs)), seed: initial.seed }]))
-    return { rulesVersion: String(policy.rulesVersion), policyVersion: match.gameConfig?.version ?? null, seed, boardSize: initial.boardSize, tileTypes: initial.tileTypes, durationSeconds: Number(policy.durationSeconds), startedAt: now.toISOString(), endsAt: new Date(now.getTime() + Number(policy.durationSeconds) * 1000).toISOString(), status: "ACTIVE", players, replay: [], policy }
+    return { rulesVersion: String(runtimePolicy.rulesVersion), policyVersion: match.gameConfig?.version ?? null, seed, boardSize: initial.boardSize, tileTypes: initial.tileTypes, durationSeconds: Number(runtimePolicy.durationSeconds), startedAt: now.toISOString(), endsAt: new Date(now.getTime() + Number(runtimePolicy.durationSeconds) * 1000).toISOString(), status: "ACTIVE", players, replay: [], policy: runtimePolicy }
   }
 
   private policyFor(match: any) {
@@ -336,8 +340,9 @@ export class TileRushService {
     const players = match.participants.map((item: any) => { const player = state?.players[item.id]; return { participantId: item.id, userId: item.userId, participantType: item.participantType, name: item.user?.profile?.displayName || item.user?.username || "SMARTS bot", avatarUrl: item.user?.profile?.avatarUrl ?? null, score: player?.score ?? item.finalScore ?? 0, combo: player?.combo ?? 0, sequence: player?.sequence ?? 0, bestChain: player?.bestChain ?? 0, longestCombo: player?.longestCombo ?? 0, tilesCleared: player?.tilesCleared ?? 0, colorCrushes: player?.colorCrushes ?? 0, result: item.result } })
     const self = state?.players[participantId]
     const policy = state?.policy ?? this.policyFor(match)
-    return { matchId: match.id, selfParticipantId: participantId, status: state?.status === "FINISHED" ? "FINISHED" : match.status, rulesVersion: state?.rulesVersion ?? policy.rulesVersion, policyVersion: state?.policyVersion ?? match.gameConfig?.version ?? null, seed: state?.seed ?? null, boardSize: state?.boardSize ?? policy.boardSize, tileTypes: state?.tileTypes ?? policy.tileTypes, minimumChain: policy.minimumChain, durationSeconds: state?.durationSeconds ?? policy.durationSeconds, startedAt: state?.startedAt ?? match.startedAt?.toISOString() ?? null, endsAt: state?.endsAt ?? null, serverNow: new Date().toISOString(), self: self ? { ...self, board: self.board } : null, players, winnerParticipantId: state?.winnerParticipantId ?? null, replayLength: state?.replay.length ?? 0, settlement: state?.settlement ?? match.settlement?.settlementJson ?? null, policy: { rulesVersion: policy.rulesVersion, boardSize: policy.boardSize, tileTypes: policy.tileTypes, durationSeconds: policy.durationSeconds, minimumChain: policy.minimumChain, loopsEnabled: policy.loopsEnabled } }
+    return { matchId: match.id, selfParticipantId: participantId, status: state?.status === "FINISHED" ? "FINISHED" : match.status, rulesVersion: state?.rulesVersion ?? policy.rulesVersion, policyVersion: state?.policyVersion ?? match.gameConfig?.version ?? null, seed: state?.seed ?? null, boardSize: state?.boardSize ?? policy.boardSize, tileTypes: state?.tileTypes ?? policy.tileTypes, minimumChain: policy.minimumChain, durationSeconds: state?.durationSeconds ?? policy.durationSeconds, startedAt: state?.startedAt ?? match.startedAt?.toISOString() ?? null, endsAt: state?.endsAt ?? null, serverNow: new Date().toISOString(), self: self ? { ...self, board: self.board } : null, players, winnerParticipantId: state?.winnerParticipantId ?? null, replayLength: state?.replay.length ?? 0, settlement: state?.settlement ?? match.settlement?.settlementJson ?? null, policy: { rulesVersion: policy.rulesVersion, boardSize: policy.boardSize, tileTypes: policy.tileTypes, durationSeconds: policy.durationSeconds, minimumChain: policy.minimumChain, loopsEnabled: policy.loopsEnabled, finalRushSeconds: policy.finalRushSeconds, finalRushMultiplier: policy.finalRushMultiplier, comboWindowMs: policy.comboWindowMs } }
   }
+  private leader(state: TileRushState) { const entries = Object.entries(state.players).sort((a, b) => b[1].score - a[1].score); return entries.length < 2 || entries[0][1].score === entries[1][1].score ? "TIED" : entries[0][0] }
 }
 
 function clampInt(value: number, minimum: number, maximum: number, fallback: number) { const number = Number(value); return Number.isInteger(number) ? Math.max(minimum, Math.min(maximum, number)) : fallback }
