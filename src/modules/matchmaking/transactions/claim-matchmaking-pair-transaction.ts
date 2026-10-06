@@ -137,7 +137,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     const now = new Date();
     const gameCandidates = isRandomCasualTicket(first)
       ? await transaction.gameDefinition.findMany({
-          where: { active: true, configs: { some: { active: true } }, content: { some: { active: true } } },
+          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { content: { some: { active: true } } }] },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })
       : [await transaction.gameDefinition.findUnique({
@@ -149,7 +149,9 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       : null;
     const config = game?.configs[0];
     if (!game || !config) return null;
-    const isGemBlitz = game.key === "gem_blitz";
+    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>).tileRushPolicy : null;
+    if (!second && first.mode === MatchmakingTicketMode.RANKED && game.key === "tile_rush" && configuredPolicy?.rankedBotFallback !== true) return null;
+    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush";
     // Provision the human assignments in the same transaction as the match.
     // Previously a newly-created bot match had zero assignments until a
     // client won the start race and called /start, which allowed legacy game
@@ -174,7 +176,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       serverNonce,
       game.key,
     );
-    if (!selectedItems.length && !isGemBlitz) return null;
+    if (!selectedItems.length && !isBoardAuthoritative) return null;
 
     const matchMode = second
       ? first.mode === MatchmakingTicketMode.RANKED
@@ -306,7 +308,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       now.getTime() + config.maxMatchDurationSeconds * 1000,
     );
     for (const participant of participants) {
-      if (isGemBlitz) continue;
+      if (isBoardAuthoritative) continue;
       for (let position = 0; position < selectedItems.length; position += 1) {
         const token = createAssignmentToken(
           serverNonce,

@@ -35,10 +35,12 @@ import { WinStreaksModule } from "../win-streaks/win-streaks.module"
 import { DailyChallengesModule } from "../daily-challenges/daily-challenges.module"
 import { GemBlitzModule } from "../gem-blitz/gem-blitz.module"
 import { GemBlitzAdminController } from "../gem-blitz/gem-blitz-admin.controller"
+import { TileRushModule } from "../tile-rush/tile-rush.module"
+import { TileRushAdminController } from "../tile-rush/tile-rush-admin.controller"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule],
-  controllers: [SystemAdminController, GemBlitzAdminController],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule, TileRushModule],
+  controllers: [SystemAdminController, GemBlitzAdminController, TileRushAdminController],
   providers: [
     SystemAdminService,
     SystemAdminGuard,

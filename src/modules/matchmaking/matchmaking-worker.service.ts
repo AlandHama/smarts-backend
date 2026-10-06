@@ -5,6 +5,7 @@ import { ExpireMatchmakingTicketsTransaction } from "./transactions/expire-match
 import { ExpireMatchTransaction } from "../matches/transactions/expire-match-transaction"
 import { BotGameplayService } from "../matches/bot-gameplay.service"
 import { GemBlitzService } from "../gem-blitz/gem-blitz.service"
+import { TileRushService } from "../tile-rush/tile-rush.service"
 import { matchmakerBatchSize } from "./utilities/matchmaking-policy"
 
 @Injectable()
@@ -13,7 +14,7 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>
   private running = false
 
-  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction, private readonly botGameplay: BotGameplayService, private readonly gemBlitz: GemBlitzService) {}
+  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction, private readonly botGameplay: BotGameplayService, private readonly gemBlitz: GemBlitzService, private readonly tileRush: TileRushService) {}
 
   onModuleInit() {
     void this.tick()
@@ -32,6 +33,8 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
       await this.runStep("expire matchmaking tickets", () => this.expireTickets.run())
       await this.runStep("finalize expired Gem Blitz matches", () => this.gemBlitz.finalizeExpiredMatches())
       await this.runStep("retry Gem Blitz settlements", () => this.gemBlitz.retryPendingSettlements())
+      await this.runStep("finalize expired Tile Rush matches", () => this.tileRush.finalizeExpiredMatches())
+      await this.runStep("retry Tile Rush settlements", () => this.tileRush.retryPendingSettlements())
       await this.runStep("expire matches", () => this.expireMatches.run())
       await this.runStep("advance bot matches", () => this.botGameplay.progressActiveMatches())
       for (let index = 0; index < matchmakerBatchSize(); index += 1) {

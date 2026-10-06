@@ -17,7 +17,7 @@ export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: n
       // Gem Blitz has its own authoritative clock, bot simulation, and
       // settlement path. Let GemBlitzService finalize it; the generic expiry
       // worker cannot see its board state and would incorrectly cancel it.
-      if (match.gameDefinition.key === "gem_blitz") continue
+      if (match.gameDefinition.key === "gem_blitz" || match.gameDefinition.key === "tile_rush") continue
       // Flutter submits FINISH when its synchronized match clock reaches the
       // limit. Give that request a small server-side network grace window so
       // the expiry worker cannot cancel a legitimate completion at the exact

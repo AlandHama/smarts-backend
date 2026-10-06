@@ -14,6 +14,8 @@ import type { JwtPayload } from "../auth/dtos/jwt-payload.dto"
 import type { WebSocket } from "ws"
 import { PartyService } from "../cooperative/party.service"
 import { GemBlitzService } from "../gem-blitz/gem-blitz.service"
+import { TileRushService } from "../tile-rush/tile-rush.service"
+import { randomUUID } from "node:crypto"
 
 type ClientState = {
   userId: string
@@ -54,6 +56,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly supportLiveChat: SupportLiveChatService,
     private readonly parties: PartyService,
     private readonly gemBlitz: GemBlitzService,
+    private readonly tileRush: TileRushService,
   ) {
     this.timer = setInterval(() => void this.publishChanges(), 1000)
     this.timer.unref()
@@ -137,6 +140,18 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.send(client, "gem_blitz.move.accepted", snapshot)
         await this.broadcastGemBlitz(matchId)
       } catch (error) { this.send(client, "gem_blitz.error", { code: "MOVE_REJECTED", message: this.errorMessage(error) }) }
+      return
+    }
+    if (event === "tile_rush.action") {
+      const matchId = this.string(data.matchId)
+      if (!matchId || !state.matchIds.has(matchId)) return this.send(client, "tile_rush.error", { code: "NOT_SUBSCRIBED", message: "Subscribe to the match first" })
+      try {
+        const rawPath = Array.isArray(data.path) ? data.path : []
+        const path = rawPath.map((point) => Array.isArray(point) ? { row: Number(point[0]), column: Number(point[1]) } : { row: Number((point as Record<string, unknown>).row), column: Number((point as Record<string, unknown>).column) })
+        const snapshot = await this.tileRush.action(state.userId, matchId, { sequence: Number(data.sequence), path, clientActionId: this.string(data.clientActionId) || randomUUID(), clientStartedAt: typeof data.clientStartedAt === "string" ? data.clientStartedAt : undefined, clientReleasedAt: typeof data.clientReleasedAt === "string" ? data.clientReleasedAt : undefined, boardHashBefore: typeof data.boardHashBefore === "string" ? data.boardHashBefore : undefined })
+        this.send(client, snapshot.action?.accepted === false ? "tile_rush.action.rejected" : "tile_rush.action.accepted", snapshot)
+        await this.broadcastTileRush(matchId)
+      } catch (error) { this.send(client, "tile_rush.error", { code: "ACTION_REJECTED", message: this.errorMessage(error) }) }
       return
     }
     if (event === "subscribe_player") {
@@ -454,6 +469,15 @@ export class RealtimeGateway implements OnModuleDestroy {
         }
         return
       }
+      if (game?.gameDefinition.key === "tile_rush") {
+        const snapshot = await this.tileRush.snapshot(state.userId, matchId)
+        const key = JSON.stringify(snapshot)
+        if (force || state.lastSnapshots.get(`tile-rush:${matchId}`) !== key) {
+          state.lastSnapshots.set(`tile-rush:${matchId}`, key)
+          this.send(client, "tile_rush.snapshot", snapshot)
+        }
+        return
+      }
       const snapshot = await this.matches.get(matchId, state.userId)
       const key = JSON.stringify(snapshot)
       const cacheKey = `match:${matchId}`
@@ -495,6 +519,16 @@ export class RealtimeGateway implements OnModuleDestroy {
         const snapshot = await this.gemBlitz.snapshot(state.userId, matchId)
         this.send(client, "gem_blitz.snapshot", move ? { ...snapshot, move } : snapshot)
       } catch { /* HTTP reconciliation handles a disconnected match. */ }
+    }
+  }
+
+  private async broadcastTileRush(matchId: string) {
+    for (const [client, state] of this.clients) {
+      if (!state.matchIds.has(matchId)) continue
+      try {
+        const snapshot = await this.tileRush.snapshot(state.userId, matchId)
+        this.send(client, "tile_rush.snapshot", snapshot)
+      } catch { /* HTTP reconcile remains available after a transient failure. */ }
     }
   }
 

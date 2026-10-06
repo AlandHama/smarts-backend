@@ -41,7 +41,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     // two random tickets are paired.
     const game = randomCasual
       ? await transaction.gameDefinition.findFirst({
-          where: { active: true, configs: { some: { active: true } }, content: { some: { active: true } } },
+          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { content: { some: { active: true } } }] },
           orderBy: { key: "asc" },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })
@@ -49,8 +49,10 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const config = game?.configs[0]
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
-    if (!activeContentCount && game.key !== "gem_blitz") throw new ConflictException("No active server content is configured for this game")
+    if (!activeContentCount && game.key !== "gem_blitz" && game.key !== "tile_rush") throw new ConflictException("No active server content is configured for this game")
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
+    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>).tileRushPolicy : null
+    if (game.key === "tile_rush" && mode === MatchmakingTicketMode.RANKED && Boolean(dto.allowBotFallback) && configuredPolicy?.rankedBotFallback !== true) throw new BadRequestException("Tile Rush ranked matchmaking does not allow bot fallback")
     let rankingConfig: { id: string; name: string; stakeAmountGld: bigint; entryFeeGld: bigint; entryFeeGldMicros: bigint } | null = null
     if (mode === MatchmakingTicketMode.RANKED) {
       rankingConfig = await transaction.rankingMatchConfig.findFirst({
