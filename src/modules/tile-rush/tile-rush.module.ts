@@ -1,11 +1,12 @@
 import { Module } from "@nestjs/common"
 import { DatabaseModule } from "../../database/database.module"
 import { MatchesModule } from "../matches/matches.module"
+import { FraudModule } from "../fraud/fraud.module"
 import { TileRushController } from "./tile-rush.controller"
 import { TileRushService } from "./tile-rush.service"
 
 @Module({
-  imports: [DatabaseModule, MatchesModule],
+  imports: [DatabaseModule, MatchesModule, FraudModule],
   controllers: [TileRushController],
   providers: [TileRushService],
   exports: [TileRushService],

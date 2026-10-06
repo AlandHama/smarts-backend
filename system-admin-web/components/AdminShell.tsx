@@ -30,6 +30,7 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import SupportAgentRoundedIcon from "@mui/icons-material/SupportAgentRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import WhatshotRoundedIcon from "@mui/icons-material/WhatshotRounded";
+import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
@@ -82,7 +83,8 @@ export type AdminView =
   | "daily-challenge"
   | "support"
   | "cooperative"
-  | "gem-blitz";
+  | "gem-blitz"
+  | "tile-rush";
 
 const navigation = [
   {
@@ -138,6 +140,7 @@ const navigation = [
   { key: "support" as const, label: "Support center", icon: <SupportAgentRoundedIcon /> },
   { key: "cooperative" as const, label: "Cooperative matches", icon: <GroupsRoundedIcon /> },
   { key: "gem-blitz" as const, label: "Gem Blitz", icon: <AutoAwesomeRoundedIcon /> },
+  { key: "tile-rush" as const, label: "Tile Rush", icon: <RouteRoundedIcon /> },
   {
     key: "economy" as const,
     label: "Economy",

@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { MatchParticipantResult, Prisma } from "@prisma/client"
 import { PrismaService } from "../../prisma.service"
 import { SettleMatchTransaction } from "../matches/transactions/settle-match-transaction"
+import { FraudService } from "../fraud/fraud.service"
 import { TileRushActionDto } from "./dtos/tile-rush.dto"
 import { TileRushActionResult, TileRushEngine, TileRushPlayerState, TileRushPolicy, TileRushPoint, TileRushSpecial } from "./engine/tile-rush-engine"
 
@@ -54,7 +55,7 @@ type TileRushState = {
 
 @Injectable()
 export class TileRushService {
-  constructor(private readonly prisma: PrismaService, private readonly settleMatch: SettleMatchTransaction) {}
+  constructor(private readonly prisma: PrismaService, private readonly settleMatch: SettleMatchTransaction, private readonly fraud: FraudService) {}
 
   async snapshot(userId: string, matchId: string): Promise<any> {
     const result = await this.prisma.$transaction(async (tx) => {
@@ -123,22 +124,33 @@ export class TileRushService {
       const engine = TileRushEngine.fromState(current, state.policy)
       const path = dto.path.map((point) => ({ row: point.row, column: point.column }))
       const now = Date.now()
+      const authoritativeBoardHash = current.board.flat().join(",")
+      const boardHashMismatch = Boolean(dto.boardHashBefore && dto.boardHashBefore !== authoritativeBoardHash)
+      if (boardHashMismatch) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_BOARD_HASH_MISMATCH", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, clientHash: dto.boardHashBefore, authoritativeHash: authoritativeBoardHash } as Prisma.InputJsonValue } })
+      const minimumActionGap = 1000 / Math.max(1, Number(state.policy?.maxActionsPerSecond ?? 8))
+      if (current.lastActionTimestamp > 0 && now - current.lastActionTimestamp < minimumActionGap) {
+        const reason = "Actions are arriving too quickly"
+        await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: { accepted: false, path, reason, boardHash: authoritativeBoardHash, boardHashMismatch } as Prisma.InputJsonValue, accepted: false, rejectionReason: reason } })
+        await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_PATH_REJECTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, reason: "rate_limit", pathLength: path.length, boardHashBefore: dto.boardHashBefore ?? null, boardHashMismatch } as Prisma.InputJsonValue } })
+        return { ...this.project(match, participant.id, state), action: { accepted: false, reason, sequence: dto.sequence, boardHash: authoritativeBoardHash, boardHashMismatch } }
+      }
       const action = engine.resolvePath(path, now)
       const clientOccurredAt = dto.clientReleasedAt && !Number.isNaN(Date.parse(dto.clientReleasedAt)) ? new Date(dto.clientReleasedAt) : undefined
       if (!action.accepted) {
         await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: { accepted: false, path, reason: action.reason ?? "Path rejected", boardHash: action.boardHash } as Prisma.InputJsonValue, accepted: false, clientOccurredAt } })
-        await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_PATH_REJECTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, reason: action.reason ?? "invalid_path", pathLength: path.length, boardHashBefore: dto.boardHashBefore ?? null } as Prisma.InputJsonValue } })
-        return { ...this.project(match, participant.id, state), action: { accepted: false, reason: action.reason ?? "Path rejected", sequence: dto.sequence, boardHash: action.boardHash } }
+        await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_PATH_REJECTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, reason: action.reason ?? "invalid_path", pathLength: path.length, boardHashBefore: dto.boardHashBefore ?? null, boardHashMismatch } as Prisma.InputJsonValue } })
+        return { ...this.project(match, participant.id, state), action: { accepted: false, reason: action.reason ?? "Path rejected", sequence: dto.sequence, boardHash: action.boardHash, boardHashMismatch } }
       }
 
       const nextPlayer: RuntimePlayer = { ...action.player, sequence: dto.sequence, nextBotAt: current.nextBotAt }
       const previousLeader = this.leader(state)
       state = { ...state, players: { ...state.players, [participant.id]: nextPlayer }, replay: [...state.replay, { sequence: dto.sequence, participantId: participant.id, path, scoreDelta: action.scoreDelta, chainLength: action.chainLength, combo: action.combo, special: action.special, clearedCells: action.clearedCells, cascadeCount: action.cascadeCount, boardHash: action.boardHash, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS) }
-      const payload = this.actionPayload(dto.sequence, path, action, nextPlayer, false)
+      const payload = { ...this.actionPayload(dto.sequence, path, action, nextPlayer, false), boardHashBefore: dto.boardHashBefore ?? null, boardHashMismatch }
       await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: payload as unknown as Prisma.InputJsonValue, accepted: true, clientOccurredAt } })
       await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_PATH_ACCEPTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, scoreDelta: action.scoreDelta, chainLength: action.chainLength, combo: action.combo, special: action.special, cascadeCount: action.cascadeCount, clientPathLength: path.length, boardHash: action.boardHash } as Prisma.InputJsonValue } })
       if (action.special !== TileRushSpecial.None) await tx.analyticsEvent.create({ data: { eventName: action.special === TileRushSpecial.ColorCrush ? "TILE_RUSH_COLOR_CRUSH" : "TILE_RUSH_SPECIAL_CREATED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, special: action.special, chainLength: action.chainLength, cleared: action.clearedCells.length } as Prisma.InputJsonValue } })
       if (action.combo > 1) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_COMBO_REACHED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, combo: action.combo } as Prisma.InputJsonValue } })
+      if (current.combo > 1 && action.combo === 1) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_COMBO_LOST", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, previousCombo: current.combo } as Prisma.InputJsonValue } })
       const nextLeader = this.leader(state)
       if (nextLeader !== previousLeader) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_LEAD_CHANGED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { from: previousLeader, to: nextLeader, sequence: dto.sequence } as Prisma.InputJsonValue } })
       const metadata = this.withState(match.metadata, state)
@@ -151,6 +163,9 @@ export class TileRushService {
       await this.settleFinishedMatch(matchId)
       return this.snapshot(userId, matchId)
     }
+    if ((response as any)?.action?.accepted === false) void this.fraud.observe(userId, { type: "REPEATED_INVALID_EVENTS", sourceType: "TILE_RUSH", sourceId: `${matchId}:${dto.clientActionId}`, metadata: { matchId, sequence: dto.sequence, reason: (response as any).action.reason, boardHashMismatch: Boolean((response as any).action.boardHashMismatch) } }).catch(() => undefined)
+    if (Boolean((response as any)?.action?.boardHashMismatch)) void this.fraud.observe(userId, { type: "TILE_RUSH_BOARD_HASH_MISMATCH", sourceType: "TILE_RUSH", sourceId: `${matchId}:${dto.clientActionId}:hash`, metadata: { matchId, sequence: dto.sequence } }).catch(() => undefined)
+    if ((response as any)?.action?.accepted === true && Number((response as any).action.scoreDelta ?? 0) > 5000) void this.fraud.observe(userId, { type: "TILE_RUSH_SCORE_VELOCITY", sourceType: "TILE_RUSH", sourceId: `${matchId}:${dto.clientActionId}:score`, metadata: { matchId, sequence: dto.sequence, scoreDelta: (response as any).action.scoreDelta } }).catch(() => undefined)
     return response
   }
 
@@ -183,7 +198,7 @@ export class TileRushService {
   }
 
   async retryPendingSettlements() {
-    const pending = await this.prisma.match.findMany({ where: { gameDefinition: { key: "tile_rush" }, status: { in: ["FINISHED", "REVIEW"] }, settlement: null }, select: { id: true, participants: { where: { participantType: "PLAYER", userId: { not: null } }, select: { userId: true }, take: 1 } }, orderBy: { endedAt: "asc" }, take: 100 })
+    const pending = await this.prisma.match.findMany({ where: { gameDefinition: { key: "tile_rush" }, status: "FINISHED", settlement: null }, select: { id: true, participants: { where: { participantType: "PLAYER", userId: { not: null } }, select: { userId: true }, take: 1 } }, orderBy: { endedAt: "asc" }, take: 100 })
     let settled = 0
     for (const match of pending) if (match.participants[0]?.userId) { const result = await this.settleFinishedMatch(match.id); if (result?.settlement?.status === "SETTLED") settled += 1 }
     return { settled }
@@ -196,7 +211,7 @@ export class TileRushService {
     if (!match) throw new NotFoundException("Tile Rush match not found")
     if (!["FINISHED", "REVIEW", "SETTLED"].includes(match.status)) throw new ConflictException("Only finished Tile Rush matches can be settled")
     if (match.status === "SETTLED") return this.prisma.matchSettlement.findUnique({ where: { matchId } })
-    await this.settleFinishedMatch(matchId)
+    await this.settleFinishedMatch(matchId, true)
     return this.prisma.matchSettlement.findUnique({ where: { matchId } })
   }
 
@@ -217,13 +232,13 @@ export class TileRushService {
     return finished
   }
 
-  private async settleFinishedMatch(matchId: string): Promise<TileRushState | null> {
+  private async settleFinishedMatch(matchId: string, allowReview = false): Promise<TileRushState | null> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.lockMatch(tx, matchId)
         const match = await this.loadMatch(tx, matchId)
         const state = this.readState(match.metadata)
-        if (!state || state.status !== "FINISHED" || match.settlement) return state
+        if (!state || state.status !== "FINISHED" || match.settlement || (match.status !== "FINISHED" && !(allowReview && match.status === "REVIEW"))) return state
         const human = match.participants.find((item: any) => item.participantType === "PLAYER" && item.userId)
         if (!human?.userId) return state
         const settlement = await this.settleMatch.runWithinTransaction({ matchId, userId: human.userId, idempotencyKey: `tile-rush-settle:${matchId}` }, tx)
@@ -233,6 +248,7 @@ export class TileRushService {
         return settled
       })
     } catch {
+      await this.prisma.analyticsEvent.create({ data: { eventName: "TILE_RUSH_SETTLEMENT_RETRY_FAILED", occurredAt: new Date(), matchId, properties: { matchId } as Prisma.InputJsonValue } }).catch(() => undefined)
       return null
     }
   }
@@ -257,6 +273,7 @@ export class TileRushService {
     policy.minimumChain = clampInt(policy.minimumChain, 3, 5, 3)
     policy.durationSeconds = clampInt(policy.durationSeconds, 30, 180, 60)
     policy.comboWindowMs = Math.max(250, Math.min(10000, Number(policy.comboWindowMs) || 2000))
+    policy.maxActionsPerSecond = Math.max(1, Math.min(20, Number(policy.maxActionsPerSecond) || 8))
     policy.scoreCap = Math.max(1000, Math.min(10000000, Number(policy.scoreCap ?? 250000) || 250000))
     return policy
   }

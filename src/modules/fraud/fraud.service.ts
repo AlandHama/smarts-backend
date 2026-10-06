@@ -18,6 +18,8 @@ const DEFAULT_RULES = [
   { key: "REFERRAL_DEVICE_MATCH", name: "Referral device match", description: "Referred accounts share a device fingerprint with their referrer.", scoreDelta: 20, threshold: 1, windowSeconds: 86400, decayDays: 30, autoOpenScore: 60 },
   { key: "GLD_FUNNELING", name: "GLD funneling", description: "Many related accounts funnel GLD to one destination.", scoreDelta: 25, threshold: 5, windowSeconds: 86400, decayDays: 30, autoOpenScore: 60 },
   { key: "REPEATED_INVALID_EVENTS", name: "Repeated invalid events", description: "Repeated rejected or out-of-order authoritative events.", scoreDelta: 10, threshold: 15, windowSeconds: 3600, decayDays: 14, autoOpenScore: 70 },
+  { key: "TILE_RUSH_BOARD_HASH_MISMATCH", name: "Tile Rush board mismatch", description: "Tile Rush clients repeatedly submit a stale board hash.", scoreDelta: 8, threshold: 5, windowSeconds: 3600, decayDays: 14, autoOpenScore: 70 },
+  { key: "TILE_RUSH_SCORE_VELOCITY", name: "Tile Rush score velocity", description: "Tile Rush score deltas exceed safe human-play thresholds.", scoreDelta: 10, threshold: 3, windowSeconds: 3600, decayDays: 14, autoOpenScore: 70 },
   { key: "ABNORMAL_SESSION_SWITCHING", name: "Abnormal session switching", description: "Frequent device/session changes are detected for one account.", scoreDelta: 8, threshold: 6, windowSeconds: 3600, decayDays: 14, autoOpenScore: 70 },
   { key: "PAID_REWARD_REVIEW", name: "Paid reward review", description: "A paid reward request requires additional fraud review.", scoreDelta: 0, threshold: 60, windowSeconds: 86400, decayDays: 30, autoOpenScore: null },
 ]

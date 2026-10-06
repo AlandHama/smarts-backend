@@ -52,6 +52,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     if (!activeContentCount && game.key !== "gem_blitz" && game.key !== "tile_rush") throw new ConflictException("No active server content is configured for this game")
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
     const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>).tileRushPolicy : null
+    if (game.key === "tile_rush" && configuredPolicy && ((mode === MatchmakingTicketMode.CASUAL && configuredPolicy.casualEnabled === false) || (mode === MatchmakingTicketMode.RANKED && configuredPolicy.rankedEnabled === false))) throw new ConflictException("This Tile Rush mode is currently disabled")
     if (game.key === "tile_rush" && mode === MatchmakingTicketMode.RANKED && Boolean(dto.allowBotFallback) && configuredPolicy?.rankedBotFallback !== true) throw new BadRequestException("Tile Rush ranked matchmaking does not allow bot fallback")
     let rankingConfig: { id: string; name: string; stakeAmountGld: bigint; entryFeeGld: bigint; entryFeeGldMicros: bigint } | null = null
     if (mode === MatchmakingTicketMode.RANKED) {

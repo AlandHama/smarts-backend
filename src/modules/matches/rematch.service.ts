@@ -55,7 +55,7 @@ export class RematchService {
         },
         include: requestInclude,
       });
-      if (context.gameDefinition.key === "gem_blitz") await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_REMATCH_REQUESTED", occurredAt: new Date(), matchId: originalMatchId, playerId: userId, properties: { requestId: createdRequest.id, gameKey: context.gameDefinition.key } as Prisma.InputJsonValue } })
+      if (["gem_blitz", "tile_rush"].includes(context.gameDefinition.key)) await tx.analyticsEvent.create({ data: { eventName: `${context.gameDefinition.key.toUpperCase()}_REMATCH_REQUESTED`, occurredAt: new Date(), matchId: originalMatchId, playerId: userId, properties: { requestId: createdRequest.id, gameKey: context.gameDefinition.key } as Prisma.InputJsonValue } })
       return createdRequest
     });
 
@@ -112,7 +112,7 @@ export class RematchService {
         },
       }, tx);
       acceptedNow = true;
-      if (context.gameDefinition.key === "gem_blitz") await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_REMATCH_ACCEPTED", occurredAt: new Date(), matchId: newMatch.match.id, playerId: userId, properties: { originalMatchId: request.originalMatchId, requestId: request.id } as Prisma.InputJsonValue } })
+      if (["gem_blitz", "tile_rush"].includes(context.gameDefinition.key)) await tx.analyticsEvent.create({ data: { eventName: `${context.gameDefinition.key.toUpperCase()}_REMATCH_ACCEPTED`, occurredAt: new Date(), matchId: newMatch.match.id, playerId: userId, properties: { originalMatchId: request.originalMatchId, requestId: request.id } as Prisma.InputJsonValue } })
       return tx.rematchRequest.update({
         where: { id: request.id },
         data: { status: RematchRequestStatus.ACCEPTED, acceptedAt: new Date(), respondedAt: new Date(), newMatchId: newMatch.match.id },
