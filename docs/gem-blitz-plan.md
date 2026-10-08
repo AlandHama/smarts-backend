@@ -605,7 +605,7 @@ Cover at least:
 - Add bot-fill policies and human-like bot profiles for casual mode.
 - Add operations dashboards, analytics events, settlement monitoring, and audit logs.
 - Add admin validation, activation, rollback, and active-match policy isolation.
-
+ 
 ### Phase 4 — Polish and controlled expansion
 
 - Tune scoring and matchmaking from real analytics.
