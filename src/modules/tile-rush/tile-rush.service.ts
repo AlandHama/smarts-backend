@@ -64,6 +64,9 @@ export class TileRushService {
       const participant = this.authorize(match, userId)
       let state = this.readState(match.metadata)
       let finalized = false
+      const repaired = this.repairState(state, match)
+      state = repaired.state
+      if (repaired.changed && state) await tx.match.update({ where: { id: matchId }, data: { metadata: this.withState(match.metadata, state) } })
       if (state?.status === "ACTIVE") {
         state = await this.advanceBots(tx, match, state, Date.now())
         if (Date.now() >= Date.parse(state.endsAt)) {
@@ -90,7 +93,9 @@ export class TileRushService {
       await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now } })
       const readiness = await tx.matchParticipant.findMany({ where: { matchId }, select: { id: true, participantType: true, readyAt: true } })
       const ready = readiness.filter((item) => item.participantType === "BOT" || item.readyAt !== null)
-      const existing = this.readState(match.metadata)
+      const existingResult = this.repairState(this.readState(match.metadata), match)
+      const existing = existingResult.state
+      if (existingResult.changed && existing) await tx.match.update({ where: { id: matchId }, data: { metadata: this.withState(match.metadata, existing) } })
       if (ready.length < readiness.length && !existing) return { ...this.project(match, participant.id, null), waitingForPlayers: true, readyCount: ready.length, requiredCount: readiness.length }
       const state = existing ?? this.newState(match, readiness.map((item) => item.id), now)
       const metadata = this.withState(match.metadata, state)
@@ -106,8 +111,12 @@ export class TileRushService {
       await this.lockMatch(tx, matchId)
       const match = await this.loadMatch(tx, matchId)
       const participant = this.authorize(match, userId)
-      let state = this.readState(match.metadata)
-      if (!state) throw new ConflictException("The match is waiting for all players to ready up")
+      const initialState = this.readState(match.metadata)
+      if (!initialState) throw new ConflictException("The match is waiting for all players to ready up")
+      const repaired = this.repairState(initialState, match)
+      if (!repaired.state) throw new ConflictException("The Tile Rush board is unavailable")
+      let state: TileRushState = repaired.state
+      if (repaired.changed && state) await tx.match.update({ where: { id: matchId }, data: { metadata: this.withState(match.metadata, state) } })
       if (state.status === "FINISHED" || match.status === "FINISHED" || match.status === "SETTLED") return { ...this.project(match, participant.id, state), duplicate: true }
       if (Date.now() >= Date.parse(state.endsAt)) {
         state = await this.advanceBots(tx, match, state, Date.now())
@@ -344,6 +353,25 @@ export class TileRushService {
   private botOffset(id: string) { return Math.abs(Number.parseInt(id.replace(/[^0-9a-f]/gi, "").slice(0, 8) || "1", 16)) }
 
   private readState(metadata: Prisma.JsonValue | Prisma.InputJsonValue | null | undefined): TileRushState | null { if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null; const state = (metadata as Record<string, unknown>).tileRush; return state && typeof state === "object" ? state as TileRushState : null }
+  private repairState(state: TileRushState | null, match: any): { state: TileRushState | null; changed: boolean } {
+    if (!state || state.status !== "ACTIVE") return { state, changed: false }
+    const policy = this.policyFor(match)
+    const expectedSize = Number(policy.boardSize)
+    const expectedTypes = Number(policy.tileTypes)
+    let changed = state.boardSize !== expectedSize || state.tileTypes !== expectedTypes
+    const players = { ...state.players }
+    for (const [participantId, player] of Object.entries(state.players ?? {})) {
+      const runtime = player as RuntimePlayer
+      const validBoard = Array.isArray(runtime.board) && runtime.board.length === expectedSize && runtime.board.every((row) => Array.isArray(row) && row.length === expectedSize && row.every((tile) => Number.isInteger(tile) && tile >= 0 && tile < expectedTypes))
+      if (validBoard) continue
+      const fresh = TileRushEngine.newGame(Number(runtime.seed ?? state.seed), expectedSize, policy)
+      const generated = fresh.stateSnapshot
+      players[participantId] = { ...runtime, board: generated.board, randomState: generated.randomState, seed: generated.seed }
+      changed = true
+    }
+    if (!changed) return { state, changed: false }
+    return { state: { ...state, boardSize: expectedSize, tileTypes: expectedTypes, policy, players }, changed: true }
+  }
   private withState(metadata: Prisma.JsonValue | Prisma.InputJsonValue | null | undefined, state: TileRushState): Prisma.InputJsonValue { const base = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata as Record<string, unknown> : {}; return { ...base, tileRush: state } as unknown as Prisma.InputJsonValue }
   private async lockMatch(tx: Prisma.TransactionClient, matchId: string) { await tx.$executeRaw`SELECT "id" FROM "Match" WHERE "id" = ${matchId} FOR UPDATE` }
   private async loadMatch(tx: Prisma.TransactionClient, matchId: string) {
@@ -357,7 +385,7 @@ export class TileRushService {
     const players = match.participants.map((item: any) => { const player = state?.players[item.id]; return { participantId: item.id, userId: item.userId, participantType: item.participantType, name: item.user?.profile?.displayName || item.user?.username || "SMARTS bot", avatarUrl: item.user?.profile?.avatarUrl ?? null, score: player?.score ?? item.finalScore ?? 0, combo: player?.combo ?? 0, sequence: player?.sequence ?? 0, bestChain: player?.bestChain ?? 0, longestCombo: player?.longestCombo ?? 0, tilesCleared: player?.tilesCleared ?? 0, colorCrushes: player?.colorCrushes ?? 0, result: item.result } })
     const self = state?.players[participantId]
     const policy = state?.policy ?? this.policyFor(match)
-    return { matchId: match.id, selfParticipantId: participantId, status: state?.status === "FINISHED" ? "FINISHED" : match.status, rulesVersion: state?.rulesVersion ?? policy.rulesVersion, policyVersion: state?.policyVersion ?? match.gameConfig?.version ?? null, seed: state?.seed ?? null, boardSize: state?.boardSize ?? policy.boardSize, tileTypes: state?.tileTypes ?? policy.tileTypes, minimumChain: policy.minimumChain, durationSeconds: state?.durationSeconds ?? policy.durationSeconds, startedAt: state?.startedAt ?? match.startedAt?.toISOString() ?? null, endsAt: state?.endsAt ?? null, serverNow: new Date().toISOString(), self: self ? { ...self, board: self.board } : null, players, winnerParticipantId: state?.winnerParticipantId ?? null, replayLength: state?.replay.length ?? 0, settlement: state?.settlement ?? match.settlement?.settlementJson ?? null, policy: { rulesVersion: policy.rulesVersion, boardSize: policy.boardSize, tileTypes: policy.tileTypes, durationSeconds: policy.durationSeconds, minimumChain: policy.minimumChain, loopsEnabled: policy.loopsEnabled, finalRushSeconds: policy.finalRushSeconds, finalRushMultiplier: policy.finalRushMultiplier, comboWindowMs: policy.comboWindowMs } }
+    return { matchId: match.id, selfParticipantId: participantId, status: state?.status === "FINISHED" ? "FINISHED" : match.status, rulesVersion: state?.rulesVersion ?? policy.rulesVersion, policyVersion: state?.policyVersion ?? match.gameConfig?.version ?? null, seed: state?.seed ?? null, boardSize: state?.boardSize ?? policy.boardSize, tileTypes: state?.tileTypes ?? policy.tileTypes, minimumChain: policy.minimumChain, durationSeconds: state?.durationSeconds ?? policy.durationSeconds, startedAt: state?.startedAt ?? match.startedAt?.toISOString() ?? null, endsAt: state?.endsAt ?? null, serverNow: new Date().toISOString(), board: self?.board ?? [], self: self ? { ...self, board: self.board } : null, players, winnerParticipantId: state?.winnerParticipantId ?? null, replayLength: state?.replay.length ?? 0, settlement: state?.settlement ?? match.settlement?.settlementJson ?? null, policy: { rulesVersion: policy.rulesVersion, boardSize: policy.boardSize, tileTypes: policy.tileTypes, durationSeconds: policy.durationSeconds, minimumChain: policy.minimumChain, loopsEnabled: policy.loopsEnabled, finalRushSeconds: policy.finalRushSeconds, finalRushMultiplier: policy.finalRushMultiplier, comboWindowMs: policy.comboWindowMs } }
   }
   private leader(state: TileRushState) { const entries = Object.entries(state.players).sort((a, b) => b[1].score - a[1].score); return entries.length < 2 || entries[0][1].score === entries[1][1].score ? "TIED" : entries[0][0] }
 }
