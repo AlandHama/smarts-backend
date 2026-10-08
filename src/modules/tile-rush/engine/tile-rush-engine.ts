@@ -124,7 +124,7 @@ export class TileRushEngine {
       const random = new SeededRandom(seed + attempt * 7919)
       const cells = this.generateBoard(size, types, random)
       const engine = new TileRushEngine(seed, size, types, minimum, Number(policy.comboWindowMs ?? 2000), policy.loopsEnabled ?? true, cells, new SeededRandom(seed ^ 0x45d9f3b), 0, 0, 0, 0, 0, 0, 0, policy)
-      if (engine.findStraightPath() !== null) return engine
+      if (engine.findPlayablePath() !== null) return engine
     }
     const random = new SeededRandom(seed ^ 0x45d9f3b)
     const fallback = this.generateBoard(size, types, random)
@@ -164,6 +164,7 @@ export class TileRushEngine {
   get combo() { return this.comboValue }
   get board() { return copyBoard(this.boardCells) }
   get boardHash() { return this.boardCells.flat().join(",") }
+  get hasValidPath() { return this.findPlayablePath() !== null }
 
   scoreForChain(length: number) {
     const configured = this.policy.scoring?.chainTable?.[String(length)]
@@ -238,6 +239,9 @@ export class TileRushEngine {
       points += Math.round(this.scoreForChain(Math.max(this.minimumChain, automatic.length)) * (Number.isFinite(multiplier) ? multiplier : 0.5))
       this.refill()
     }
+    // Refilling can produce a dead board without producing an automatic
+    // match. Keep every active board playable while the timer is running.
+    this.ensurePlayablePath()
     const cap = Number(this.policy.scoreCap ?? Number.MAX_SAFE_INTEGER)
     this.scoreValue = Math.min(Number.isFinite(cap) ? cap : Number.MAX_SAFE_INTEGER, this.scoreValue + points)
     this.tilesClearedValue += cleared.size
@@ -273,6 +277,54 @@ export class TileRushEngine {
       for (let row = this.boardSize - 1; row >= 0; row -= 1) if (this.boardCells[row][column] >= 0) survivors.push(this.boardCells[row][column])
       for (let row = this.boardSize - 1, index = 0; row >= 0; row -= 1, index += 1) this.boardCells[row][column] = index < survivors.length ? survivors[index] : this.random.nextInt(this.tileTypes)
     }
+  }
+
+  private ensurePlayablePath() {
+    if (this.findPlayablePath() !== null) return
+
+    const original = copyBoard(this.boardCells)
+    const restore = (base: number[][]) => {
+      for (let row = 0; row < this.boardSize; row += 1) {
+        for (let column = 0; column < this.boardSize; column += 1) {
+          this.boardCells[row][column] = base[row][column]
+        }
+      }
+    }
+    const validCandidate = () => this.findAutomaticMatches().length === 0 && this.findPlayablePath() !== null
+
+    const tryRepairFrom = (base: number[][]) => {
+      for (const path of this.repairPathCandidates()) {
+        for (let tile = 0; tile < this.tileTypes; tile += 1) {
+          restore(base)
+          for (const point of path) this.boardCells[point.row][point.column] = tile
+          if (validCandidate()) return true
+        }
+      }
+      return false
+    }
+
+    if (tryRepairFrom(original)) return
+
+    for (let attempt = 0; attempt < 64; attempt += 1) {
+      const generated = TileRushEngine.generateBoard(this.boardSize, this.tileTypes, this.random)
+      if (tryRepairFrom(generated)) return
+    }
+    restore(original)
+  }
+
+  private repairPathCandidates() {
+    const paths: TileRushPoint[][] = []
+    const rowSpan = Math.floor((this.minimumChain - 1) / 2)
+    const columnSpan = Math.floor(this.minimumChain / 2)
+    for (let row = 0; row + rowSpan < this.boardSize; row += 1) {
+      for (let column = 0; column + columnSpan < this.boardSize; column += 1) {
+        paths.push(Array.from({ length: this.minimumChain }, (_, index) => ({ row: row + Math.floor(index / 2), column: column + Math.floor((index + 1) / 2) })))
+        if (row + columnSpan < this.boardSize && column + rowSpan < this.boardSize) {
+          paths.push(Array.from({ length: this.minimumChain }, (_, index) => ({ row: row + Math.floor((index + 1) / 2), column: column + Math.floor(index / 2) })))
+        }
+      }
+    }
+    return paths
   }
 
   private findAutomaticMatches() {
@@ -311,6 +363,16 @@ export class TileRushEngine {
       if (row + this.minimumChain <= this.boardSize && Array.from({ length: this.minimumChain }, (_, offset) => this.boardCells[row + offset][column]).every((value) => value === tile)) return { path: Array.from({ length: this.minimumChain }, (_, offset) => ({ row: row + offset, column })), length: this.minimumChain, isLoop: false }
     }
     return null
+  }
+
+  private findPlayablePath(): TileRushPathCandidate | null {
+    const found: TileRushPathCandidate[] = []
+    for (let row = 0; row < this.boardSize && found.length === 0; row += 1) {
+      for (let column = 0; column < this.boardSize && found.length === 0; column += 1) {
+        this.walkPaths([{ row, column }], new Set([`${row}:${column}`]), found, new Set(), 1)
+      }
+    }
+    return found[0] ?? null
   }
 
   private neighbours(point: TileRushPoint) { return [{ row: point.row - 1, column: point.column }, { row: point.row + 1, column: point.column }, { row: point.row, column: point.column - 1 }, { row: point.row, column: point.column + 1 }].filter((candidate) => this.inside(candidate.row, candidate.column)) }

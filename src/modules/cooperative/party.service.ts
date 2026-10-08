@@ -149,8 +149,18 @@ export class PartyService {
     if (dto.mode === "RANKED" && config.minCompletedMatches > 0) { const stats = await this.prisma.playerStats.findMany({ where: { userId: { in: members.map((member) => member.userId) } }, select: { gamesPlayed: true } }); if (stats.length !== members.length || stats.some((row) => row.gamesPlayed < config.minCompletedMatches)) throw new ForbiddenException("Every ranked teammate must complete more matches first") }
     if (dto.mode === "RANKED") { const restricted = await this.prisma.fraudProfile.count({ where: { userId: { in: members.map((member) => member.userId) }, status: { in: ["RESTRICTED", "SUSPENDED"] } } }); if (restricted) throw new ForbiddenException("A teammate is restricted from ranked rewards") }
     const existing = await this.prisma.cooperativeQueueEntry.findFirst({ where: { partyId, status: "SEARCHING" } }); if (existing) return this.serializeQueue(existing)
-    const entry = await this.prisma.$transaction(async (tx) => { await tx.party.update({ where: { id: partyId }, data: { status: "QUEUED", mode: dto.mode, queuedAt: now, expiresAt: new Date(now.getTime() + config.queueTimeoutSeconds * 1000) } }); return tx.cooperativeQueueEntry.create({ data: { partyId, mode: dto.mode, ratingSnapshot: averageElo, levelSnapshot: minLevel, countrySnapshot: profiles[0]?.countryCode || null, clientVersion: dto.clientVersion, expiresAt: new Date(now.getTime() + config.queueTimeoutSeconds * 1000) } }) })
-    return this.serializeQueue(entry)
+    try {
+      const entry = await this.prisma.$transaction(async (tx) => { await tx.party.update({ where: { id: partyId }, data: { status: "QUEUED", mode: dto.mode, queuedAt: now, expiresAt: new Date(now.getTime() + config.queueTimeoutSeconds * 1000) } }); return tx.cooperativeQueueEntry.create({ data: { partyId, mode: dto.mode, ratingSnapshot: averageElo, levelSnapshot: minLevel, countrySnapshot: profiles[0]?.countryCode || null, clientVersion: dto.clientVersion, expiresAt: new Date(now.getTime() + config.queueTimeoutSeconds * 1000) } }) })
+      return this.serializeQueue(entry)
+    } catch (error) {
+      // Two taps/devices can queue the same party at the same time. The
+      // partial active-entry index makes that race safe; return the winner's
+      // entry instead of surfacing a 500 to the player.
+      if ((error as { code?: string }).code !== "P2002") throw error
+      const existing = await this.prisma.cooperativeQueueEntry.findFirst({ where: { partyId, mode: dto.mode, status: "SEARCHING" }, orderBy: { queuedAt: "desc" } })
+      if (!existing) throw error
+      return this.serializeQueue(existing)
+    }
   }
 
   async cancelQueue(userId: string, partyId: string) { const party = await this.requireHost(userId, partyId); await this.prisma.$transaction([this.prisma.cooperativeQueueEntry.updateMany({ where: { partyId, status: "SEARCHING" }, data: { status: "CANCELLED" } }), this.prisma.party.update({ where: { id: party.id }, data: { status: party.members.filter((member) => member.leftAt == null).length > 1 ? "READY" : "CREATED", queuedAt: null } })]); return this.current(userId) }

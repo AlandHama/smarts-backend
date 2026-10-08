@@ -2079,7 +2079,9 @@ model CooperativeQueueEntry {
   matchId         String?  @db.Uuid
   party           Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
 
-  @@unique([partyId, mode, status])
+  // Queue history is retained, so terminal rows may repeat for a party/mode.
+  // The migration adds a partial unique index for active SEARCHING/MATCHED rows.
+  @@index([partyId, mode, status])
   @@index([status, mode, queuedAt])
   @@index([expiresAt, lastHeartbeatAt])
   @@index([partyId, status])

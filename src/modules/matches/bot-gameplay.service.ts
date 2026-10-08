@@ -28,6 +28,8 @@ type LearningProfile = {
  */
 @Injectable()
 export class BotGameplayService {
+  private readonly learningCache = new Map<string, { expiresAt: number; profile: LearningProfile }>()
+
   constructor(private readonly prisma: PrismaService) {}
 
   /** Advance active bots from the server worker so their score is visible
@@ -192,6 +194,7 @@ export class BotGameplayService {
     )
     let score = bot.finalScore ?? 0
     let simulatedCount = bot.answeredCount ?? 0
+    let correctAnswersAdded = 0
     const correctPointsConfig = (match.gameConfig.correctAnswerPoints ?? {}) as Record<string, unknown>
     const penaltyPercent = match.gameConfig.wrongAnswerPenaltyPercent
     const unanswered = botAssignments.filter((assignment) => !assignment.answeredAt)
@@ -228,6 +231,7 @@ export class BotGameplayService {
       const penalty = Math.floor(correctPoints * (penaltyPercent / 100))
       const pointsEarned = correct ? correctPoints : -penalty
       score = Math.max(0, score + pointsEarned)
+      if (correct) correctAnswersAdded += 1
 
       await transaction.matchEvent.create({
         data: {
@@ -265,17 +269,13 @@ export class BotGameplayService {
           : {}),
       },
     })
-    await this.updateCooperativeProjection(transaction, bot.id, score, simulatedCount)
+    await this.updateCooperativeProjection(transaction, bot.id, score, simulatedCount, correctAnswersAdded)
   }
 
-  private async updateCooperativeProjection(transaction: Prisma.TransactionClient, matchParticipantId: string, score: number, answeredQuestions: number) {
+  private async updateCooperativeProjection(transaction: Prisma.TransactionClient, matchParticipantId: string, score: number, answeredQuestions: number, correctAnswersAdded: number) {
     const projection = await transaction.cooperativeParticipant.findUnique({ where: { matchParticipantId }, select: { id: true, teamId: true, correctAnswers: true } })
     if (!projection) return
-    const events = await transaction.matchEvent.findMany({ where: { participantId: matchParticipantId, eventType: "ANSWER", accepted: true }, select: { payload: true } })
-    const correctAnswers = events.reduce((count, event) => {
-      const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {}
-      return count + (payload.correct === true ? 1 : 0)
-    }, 0)
+    const correctAnswers = projection.correctAnswers + correctAnswersAdded
     await transaction.cooperativeParticipant.update({ where: { id: projection.id }, data: { finalScore: score, answeredQuestions, correctAnswers } })
     const teammates = await transaction.cooperativeParticipant.findMany({ where: { teamId: projection.teamId }, select: { finalScore: true, answeredQuestions: true, correctAnswers: true } })
     await transaction.cooperativeTeam.update({ where: { id: projection.teamId }, data: { score: teammates.reduce((total, item) => total + (item.finalScore ?? 0), 0), answeredQuestions: teammates.reduce((total, item) => total + item.answeredQuestions, 0), correctAnswers: teammates.reduce((total, item) => total + item.correctAnswers, 0) } })
@@ -295,6 +295,14 @@ export class BotGameplayService {
     playerUserId: string,
     transaction: Prisma.TransactionClient,
   ): Promise<LearningProfile> {
+    // Keep the current match in the key because its own events are excluded
+    // from the learning query. This still shares one profile between the two
+    // bots in the same co-op match without leaking current-match events.
+    const cacheKey = `${matchId}:${gameDefinitionId}:${playerUserId}`
+    const cached = this.learningCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) return cached.profile
+    if (cached) this.learningCache.delete(cacheKey)
+
     const [events, playerStats] = await Promise.all([
       transaction.matchEvent.findMany({
         where: {
@@ -305,7 +313,7 @@ export class BotGameplayService {
           match: { gameDefinitionId },
         },
         orderBy: { serverReceivedAt: "desc" },
-        take: 5000,
+        take: 2000,
         select: { payload: true },
       }),
       transaction.playerGameStats.findUnique({
@@ -342,13 +350,16 @@ export class BotGameplayService {
         byContent.set(contentId, profile)
       }
     }
-    return {
+    const profile = {
       global,
       byContent,
       playerAccuracy: playerStats && playerStats.totalQuestions > 0
         ? this.clamp(playerStats.totalCorrect / playerStats.totalQuestions, 0, 1)
         : null,
     }
+    if (this.learningCache.size >= 128) this.learningCache.delete(this.learningCache.keys().next().value as string)
+    this.learningCache.set(cacheKey, { expiresAt: Date.now() + 30_000, profile })
+    return profile
   }
 
   private targetAccuracy(profile: AnswerProfile, playerAccuracy: number | null, global: AnswerProfile) {

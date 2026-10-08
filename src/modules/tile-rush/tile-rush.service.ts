@@ -363,7 +363,14 @@ export class TileRushService {
     for (const [participantId, player] of Object.entries(state.players ?? {})) {
       const runtime = player as RuntimePlayer
       const validBoard = Array.isArray(runtime.board) && runtime.board.length === expectedSize && runtime.board.every((row) => Array.isArray(row) && row.length === expectedSize && row.every((tile) => Number.isInteger(tile) && tile >= 0 && tile < expectedTypes))
-      if (validBoard) continue
+      if (validBoard) {
+        try {
+          const engine = TileRushEngine.fromState(runtime, policy)
+          if (engine.hasValidPath) continue
+        } catch {
+          // Fall through to a fresh playable board for malformed legacy state.
+        }
+      }
       const fresh = TileRushEngine.newGame(Number(runtime.seed ?? state.seed), expectedSize, policy)
       const generated = fresh.stateSnapshot
       players[participantId] = { ...runtime, board: generated.board, randomState: generated.randomState, seed: generated.seed }

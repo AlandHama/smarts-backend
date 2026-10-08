@@ -45,6 +45,7 @@ export class RealtimeGateway implements OnModuleDestroy {
   private readonly typingTimers = new Map<string, NodeJS.Timeout>()
   private readonly typingLastSent = new Map<string, number>()
   private readonly timer: NodeJS.Timeout
+  private publishing = false
 
   constructor(
     private readonly prisma: PrismaService,
@@ -399,13 +400,19 @@ export class RealtimeGateway implements OnModuleDestroy {
   }
 
   private async publishChanges() {
-    for (const [client, state] of this.clients) {
-      if (client.readyState !== 1) { this.clients.delete(client); continue }
-      if (state.queueSubscribed) await this.sendQueueSnapshot(client, state, false)
-      for (const matchId of state.matchIds) await this.sendMatchSnapshot(client, state, matchId, false)
-      if (state.supportQueueSubscribed) await this.sendSupportQueueSnapshot(client, state)
-      for (const sessionId of state.supportSessionIds) await this.sendSupportSessionSnapshot(client, state, sessionId)
-      for (const partyId of state.partyIds) await this.sendPartySnapshot(client, state, partyId)
+    if (this.publishing) return
+    this.publishing = true
+    try {
+      for (const [client, state] of this.clients) {
+        if (client.readyState !== 1) { this.clients.delete(client); continue }
+        if (state.queueSubscribed) await this.sendQueueSnapshot(client, state, false)
+        for (const matchId of state.matchIds) await this.sendMatchSnapshot(client, state, matchId, false)
+        if (state.supportQueueSubscribed) await this.sendSupportQueueSnapshot(client, state)
+        for (const sessionId of state.supportSessionIds) await this.sendSupportSessionSnapshot(client, state, sessionId)
+        for (const partyId of state.partyIds) await this.sendPartySnapshot(client, state, partyId)
+      }
+    } finally {
+      this.publishing = false
     }
   }
 
