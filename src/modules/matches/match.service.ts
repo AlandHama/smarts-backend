@@ -91,7 +91,13 @@ export class MatchService {
       where: { id: matchId, participants: { some: { userId } } },
       include: {
         gameDefinition: { select: { key: true, name: true } },
-        gameConfig: { select: { instantSkipPriceGld: true } },
+        gameConfig: {
+          select: {
+            instantSkipPriceGld: true,
+            maxAnswerTimeSeconds: true,
+            maxMatchDurationSeconds: true,
+          },
+        },
         rankingMatch: {
           select: {
             stakeAmountGld: true,
@@ -177,7 +183,11 @@ export class MatchService {
       assignments: match.assignments.map((assignment) =>
         this.publicAssignment(assignment, match.serverNonce),
       ),
-      gameConfig: { instantSkipPriceGld: gameConfig.instantSkipPriceGld },
+      gameConfig: {
+        instantSkipPriceGld: gameConfig.instantSkipPriceGld,
+        maxAnswerTimeSeconds: gameConfig.maxAnswerTimeSeconds,
+        maxMatchDurationSeconds: gameConfig.maxMatchDurationSeconds,
+      },
       rankingMatch: rankingMatch
         ? {
             ...rankingMatch,
