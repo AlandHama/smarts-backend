@@ -85,39 +85,45 @@ export class MatchmakingService {
     // A MATCHED ticket belongs to the active match only while that match is
     // still starting or playing. Excluding settled/cancelled matches prevents
     // a previous game from being resurrected after the player queues again.
-    const ticket = await this.prisma.matchmakingTicket.findFirst({
-      where: {
-        userId,
-        OR: [
-          { status: "SEARCHING" },
-          {
-            status: "MATCHED",
-            match: { is: { status: { in: ["CREATED", "STARTED"] } } },
-          },
-        ],
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
-        gameDefinition: { select: { key: true, name: true } },
-        match: {
-          select: {
-            id: true,
-            status: true,
-            mode: true,
-            startedAt: true,
-            createdAt: true,
-            participants: {
-              select: {
-                id: true,
-                userId: true,
-                participantType: true,
-                result: true,
-              },
+    const ticketInclude = {
+      gameDefinition: { select: { key: true, name: true } },
+      match: {
+        select: {
+          id: true,
+          status: true,
+          mode: true,
+          startedAt: true,
+          createdAt: true,
+          participants: {
+            select: {
+              id: true,
+              userId: true,
+              participantType: true,
+              result: true,
             },
-            gameDefinition: { select: { key: true, name: true } },
           },
+          gameDefinition: { select: { key: true, name: true } },
         },
       },
+    } as const;
+    // A matched ticket owns an active match and must win over a newer
+    // SEARCHING ticket. Selecting both states by createdAt can hide the
+    // match behind a duplicate/retry queue row; the match then expires while
+    // the client keeps polling the newer ticket and eventually gets stuck in
+    // the generic preparation state.
+    const matchedTicket = await this.prisma.matchmakingTicket.findFirst({
+      where: {
+        userId,
+        status: "MATCHED",
+        match: { is: { status: { in: ["CREATED", "STARTED"] } } },
+      },
+      orderBy: { createdAt: "desc" },
+      include: ticketInclude,
+    });
+    const ticket = matchedTicket ?? await this.prisma.matchmakingTicket.findFirst({
+      where: { userId, status: "SEARCHING" },
+      orderBy: { createdAt: "desc" },
+      include: ticketInclude,
     });
     // A friend match has no queue ticket. Always prefer the newest active
     // match for this player, even when an old queue ticket is still present;
