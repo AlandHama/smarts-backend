@@ -108,6 +108,7 @@ export class StartMatchTransaction extends PrismaTransaction<
               contentType: true,
               prompt: true,
               options: true,
+              answerIndex: true,
               difficulty: true,
               category: true,
             },
@@ -115,7 +116,9 @@ export class StartMatchTransaction extends PrismaTransaction<
         },
       });
     if (existingAssignments.length)
-      for (const assignment of existingAssignments)
+      for (const assignment of existingAssignments) {
+        const { answerIndex: _answerIndex, ...publicContentItem } =
+          assignment.contentItem;
         assignments.push({
           id: assignment.id,
           participantId: currentParticipant.id,
@@ -126,9 +129,10 @@ export class StartMatchTransaction extends PrismaTransaction<
             round.id,
             assignment.position,
           ),
-          contentItem: assignment.contentItem,
+          contentItem: publicContentItem,
           expiresAt: assignment.expiresAt,
         });
+      }
     if (!existingAssignments.length) {
       const items = await transaction.gameContentItem.findMany({
         where: { gameDefinitionId: match.gameDefinitionId, active: true },
@@ -139,6 +143,7 @@ export class StartMatchTransaction extends PrismaTransaction<
           contentType: true,
           prompt: true,
           options: true,
+          answerIndex: true,
           difficulty: true,
           category: true,
         },
@@ -182,6 +187,7 @@ export class StartMatchTransaction extends PrismaTransaction<
                   contentType: true,
                   prompt: true,
                   options: true,
+                  answerIndex: true,
                   difficulty: true,
                   category: true,
                 },
@@ -190,15 +196,17 @@ export class StartMatchTransaction extends PrismaTransaction<
           });
           const randomized = randomizeAnswerOptions(
             assignment.contentItem.options as unknown[],
-            0,
+            assignment.contentItem.answerIndex,
             `${match.serverNonce}:options:${assignment.contentItem.id}`,
           );
+          const { answerIndex: _answerIndex, ...publicContentItem } =
+            assignment.contentItem;
           assignments.push({
             id: assignment.id,
             participantId: currentParticipant.id,
             position,
             token,
-            contentItem: { ...assignment.contentItem, options: randomized.options },
+            contentItem: { ...publicContentItem, options: randomized.options },
             expiresAt: assignment.expiresAt,
           });
         }

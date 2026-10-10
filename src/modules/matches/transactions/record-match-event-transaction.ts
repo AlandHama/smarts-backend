@@ -12,7 +12,8 @@ import { emotePreset } from "../../commerce/emote-presets"
 
 const MAX_EVENT_PAYLOAD_BYTES = 8 * 1024
 const MAX_EVENT_SEQUENCE = 1_000_000
-const ANSWER_KEYS = new Set(["assignmentId", "assignmentToken", "selectedAnswerIndex", "timeTakenMs"])
+const ANSWER_KEYS = new Set(["assignmentId", "assignmentToken", "selectedAnswerIndex", "answerCorrect", "timeTakenMs"])
+const LEGACY_LOCAL_GAME_KEYS = new Set(["bird_watching", "similarities", "high_low", "memorize_cards", "flick_master", "follow_the_lead", "stacking"])
 const SKIP_KEYS = new Set(["assignmentId", "assignmentToken", "timeTakenMs"])
 const EMOTE_KEYS = new Set(["emoteKey"])
 
@@ -29,7 +30,7 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     // Serializing events through the match lock prevents two requests from
     // both observing the same sequence/score projection concurrently.
     await transaction.$executeRaw`SELECT "id" FROM "Match" WHERE "id" = ${input.matchId} FOR UPDATE`
-    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { gameConfig: true, participants: true, rounds: { where: { status: "STARTED" }, orderBy: { roundIndex: "desc" }, take: 1 } } })
+    const match = await transaction.match.findUnique({ where: { id: input.matchId }, include: { gameDefinition: { select: { key: true } }, gameConfig: true, participants: true, rounds: { where: { status: "STARTED" }, orderBy: { roundIndex: "desc" }, take: 1 } } })
     if (!match) throw new NotFoundException("Match not found")
     const participant = match.participants.find((item) => item.userId === input.userId)
     if (!participant) throw new NotFoundException("Player is not a participant in this match")
@@ -101,8 +102,10 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     const assignmentId = typeof payload.assignmentId === "string" ? payload.assignmentId.trim() : ""
     const token = typeof payload.assignmentToken === "string" ? payload.assignmentToken : ""
     const selectedAnswerIndex = typeof payload.selectedAnswerIndex === "number" ? payload.selectedAnswerIndex : -1
+    const answerCorrect = payload.answerCorrect
     const timeTakenMs = typeof payload.timeTakenMs === "number" ? payload.timeTakenMs : -1
-    if (!isUuid(assignmentId) || token.length < 16 || token.length > 256 || !Number.isSafeInteger(selectedAnswerIndex) || !Number.isSafeInteger(timeTakenMs)) return this.reject(transaction, base, "Answer payload is invalid")
+    const usesLegacyLocalAnswer = LEGACY_LOCAL_GAME_KEYS.has(match.gameDefinition.key)
+    if (!isUuid(assignmentId) || token.length < 16 || token.length > 256 || (!usesLegacyLocalAnswer && !Number.isSafeInteger(selectedAnswerIndex)) || (usesLegacyLocalAnswer && typeof answerCorrect !== "boolean") || !Number.isSafeInteger(timeTakenMs)) return this.reject(transaction, base, "Answer payload is invalid")
 
     const assignment = await transaction.matchContentAssignment.findFirst({ where: { id: assignmentId, matchId: match.id, roundId, participantId: participant.id }, include: { contentItem: true } })
     if (!assignment || createHash("sha256").update(token).digest("hex") !== assignment.assignmentTokenHash) return this.reject(transaction, base, "Invalid assignment")
@@ -112,7 +115,7 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     if (timeTakenMs < 0 || timeTakenMs > (match.gameConfig?.maxAnswerTimeSeconds ?? 0) * 1000) return this.reject(transaction, base, "Answer time is outside the allowed window")
 
     const options = assignment.contentItem.options as unknown
-    if (!Array.isArray(options) || selectedAnswerIndex < 0 || selectedAnswerIndex >= options.length) return this.reject(transaction, base, "Selected answer is invalid")
+    if (!Array.isArray(options) || (!usesLegacyLocalAnswer && (selectedAnswerIndex < 0 || selectedAnswerIndex >= options.length))) return this.reject(transaction, base, "Selected answer is invalid")
     const answeredCount = await transaction.matchContentAssignment.count({ where: { matchId: match.id, roundId, participantId: participant.id, answeredAt: { not: null } } })
     if (assignment.position !== answeredCount) return this.reject(transaction, base, "Assignments must be answered in order")
 
@@ -125,7 +128,13 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
       assignment.contentItem.answerIndex,
       `${match.serverNonce}:options:${assignment.contentItem.id}`,
     )
-    const correct = selectedAnswerIndex === randomized.answerIndex
+    // These games generate their challenge and answer locally from the
+    // server-issued seed, so their UI does not use the generic content-item
+    // option index. Keep the server score authoritative while accepting the
+    // local correctness signal only for this explicit legacy allow-list.
+    const correct = usesLegacyLocalAnswer
+      ? answerCorrect === true
+      : selectedAnswerIndex === randomized.answerIndex
     const penalty = BigInt(Math.floor(correctPoints * (penaltyPercent / 100)))
     const points = correct ? BigInt(correctPoints) : -penalty
     const locked = await transaction.matchParticipant.findUniqueOrThrow({ where: { id: participant.id } })

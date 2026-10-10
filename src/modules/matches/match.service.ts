@@ -353,6 +353,9 @@ export class MatchService {
           `${serverNonce}:options:${contentItem.id}`,
         )
       : null
+    const publicContentItem = contentItem
+      ? (({ answerIndex: _answerIndex, ...rest }: Record<string, unknown>) => rest)(contentItem)
+      : contentItem
     return {
       id: assignment.id,
       participantId: assignment.participantId,
@@ -364,8 +367,8 @@ export class MatchService {
         assignment.position,
       ),
       contentItem: randomized
-        ? { ...contentItem, options: randomized.options }
-        : assignment.contentItem,
+        ? { ...publicContentItem, options: randomized.options }
+        : publicContentItem,
       expiresAt: assignment.expiresAt,
     };
   }

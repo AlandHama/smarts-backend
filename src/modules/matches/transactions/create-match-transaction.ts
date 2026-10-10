@@ -38,7 +38,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
     else if (input.dto.opponentUserId) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.dto.opponentUserId, participantType: MatchParticipantType.PLAYER } }))
 
     if (isBoardAuthoritative) return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments: [] }
-    const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } })
+    const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true, contentType: true, prompt: true, options: true, answerIndex: true, difficulty: true, category: true } })
     const selectedItems = selectServerContent(items, config.maxQuestions, match.serverNonce, input.dto.gameKey.trim().toLowerCase())
     if (!selectedItems.length) throw new ConflictException("No active server content is configured for this game")
     const assignments: Array<Record<string, unknown>> = []
@@ -47,13 +47,14 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
       for (let position = 0; position < selectedItems.length; position += 1) {
         const token = createAssignmentToken(match.serverNonce, participant.id, round.id, position)
         const expiresAt = new Date(now.getTime() + config.maxMatchDurationSeconds * 1000)
-        const assignment = await transaction.matchContentAssignment.create({ data: { matchId: match.id, roundId: round.id, participantId: participant.id, contentItemId: selectedItems[position].id, position, assignmentTokenHash: createHash("sha256").update(token).digest("hex"), expiresAt }, include: { contentItem: { select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } } } })
+        const assignment = await transaction.matchContentAssignment.create({ data: { matchId: match.id, roundId: round.id, participantId: participant.id, contentItemId: selectedItems[position].id, position, assignmentTokenHash: createHash("sha256").update(token).digest("hex"), expiresAt }, include: { contentItem: { select: { id: true, contentType: true, prompt: true, options: true, answerIndex: true, difficulty: true, category: true } } } })
         const randomized = randomizeAnswerOptions(
           assignment.contentItem.options as unknown[],
-          0,
+          assignment.contentItem.answerIndex,
           `${match.serverNonce}:options:${assignment.contentItem.id}`,
         )
-        assignments.push({ participantId: participant.id, id: assignment.id, position, token, contentItem: { ...assignment.contentItem, options: randomized.options }, expiresAt })
+        const { answerIndex: _answerIndex, ...publicContentItem } = assignment.contentItem
+        assignments.push({ participantId: participant.id, id: assignment.id, position, token, contentItem: { ...publicContentItem, options: randomized.options }, expiresAt })
       }
     }
     return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments: assignments.filter((assignment) => assignment.participantId === participants[0].id) }
