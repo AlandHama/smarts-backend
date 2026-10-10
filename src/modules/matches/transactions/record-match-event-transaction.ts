@@ -7,7 +7,7 @@ import { PrismaService } from "../../../prisma.service"
 import { MatchEventDto } from "../dtos"
 import { BotGameplayService } from "../bot-gameplay.service"
 import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
-import { hashMatchEventRequest, jsonByteLength } from "../utilities/server-content"
+import { hashMatchEventRequest, jsonByteLength, randomizeAnswerOptions } from "../utilities/server-content"
 import { emotePreset } from "../../commerce/emote-presets"
 
 const MAX_EVENT_PAYLOAD_BYTES = 8 * 1024
@@ -120,7 +120,12 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     const correctPoints = Number(pointsConfig[String(assignment.contentItem.difficulty)] ?? pointsConfig["1"] ?? 0)
     const penaltyPercent = match.gameConfig?.wrongAnswerPenaltyPercent
     if (!Number.isSafeInteger(correctPoints) || correctPoints <= 0 || !Number.isInteger(penaltyPercent) || penaltyPercent < 0 || penaltyPercent > 100) return this.reject(transaction, base, "Game scoring is not configured")
-    const correct = selectedAnswerIndex === assignment.contentItem.answerIndex
+    const randomized = randomizeAnswerOptions(
+      options,
+      assignment.contentItem.answerIndex,
+      `${match.serverNonce}:options:${assignment.contentItem.id}`,
+    )
+    const correct = selectedAnswerIndex === randomized.answerIndex
     const penalty = BigInt(Math.floor(correctPoints * (penaltyPercent / 100)))
     const points = correct ? BigInt(correctPoints) : -penalty
     const locked = await transaction.matchParticipant.findUniqueOrThrow({ where: { id: participant.id } })

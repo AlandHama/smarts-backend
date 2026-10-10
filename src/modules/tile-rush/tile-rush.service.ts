@@ -135,33 +135,27 @@ export class TileRushService {
       const now = Date.now()
       const authoritativeBoardHash = current.board.flat().join(",")
       const boardHashMismatch = Boolean(dto.boardHashBefore && dto.boardHashBefore !== authoritativeBoardHash)
-      if (boardHashMismatch) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_BOARD_HASH_MISMATCH", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, clientHash: dto.boardHashBefore, authoritativeHash: authoritativeBoardHash } as Prisma.InputJsonValue } })
       const minimumActionGap = 1000 / Math.max(1, Number(state.policy?.maxActionsPerSecond ?? 8))
       if (current.lastActionTimestamp > 0 && now - current.lastActionTimestamp < minimumActionGap) {
         const reason = "Actions are arriving too quickly"
         await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: { accepted: false, path, reason, boardHash: authoritativeBoardHash, boardHashMismatch } as Prisma.InputJsonValue, accepted: false, rejectionReason: reason } })
-        await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_PATH_REJECTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, reason: "rate_limit", pathLength: path.length, boardHashBefore: dto.boardHashBefore ?? null, boardHashMismatch } as Prisma.InputJsonValue } })
         return { ...this.project(match, participant.id, state), action: { accepted: false, reason, sequence: dto.sequence, boardHash: authoritativeBoardHash, boardHashMismatch } }
       }
       const action = engine.resolvePath(path, now)
       const clientOccurredAt = dto.clientReleasedAt && !Number.isNaN(Date.parse(dto.clientReleasedAt)) ? new Date(dto.clientReleasedAt) : undefined
       if (!action.accepted) {
         await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: { accepted: false, path, reason: action.reason ?? "Path rejected", boardHash: action.boardHash } as Prisma.InputJsonValue, accepted: false, clientOccurredAt } })
-        await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_PATH_REJECTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, reason: action.reason ?? "invalid_path", pathLength: path.length, boardHashBefore: dto.boardHashBefore ?? null, boardHashMismatch } as Prisma.InputJsonValue } })
         return { ...this.project(match, participant.id, state), action: { accepted: false, reason: action.reason ?? "Path rejected", sequence: dto.sequence, boardHash: action.boardHash, boardHashMismatch } }
       }
 
       const nextPlayer: RuntimePlayer = { ...action.player, sequence: dto.sequence, nextBotAt: current.nextBotAt }
-      const previousLeader = this.leader(state)
       state = { ...state, players: { ...state.players, [participant.id]: nextPlayer }, replay: [...state.replay, { sequence: dto.sequence, participantId: participant.id, path, scoreDelta: action.scoreDelta, chainLength: action.chainLength, combo: action.combo, special: action.special, clearedCells: action.clearedCells, cascadeCount: action.cascadeCount, boardHash: action.boardHash, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS) }
       const payload = { ...this.actionPayload(dto.sequence, path, action, nextPlayer, false), boardHashBefore: dto.boardHashBefore ?? null, boardHashMismatch }
-      await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: payload as unknown as Prisma.InputJsonValue, accepted: true, clientOccurredAt } })
-      await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_PATH_ACCEPTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, scoreDelta: action.scoreDelta, chainLength: action.chainLength, combo: action.combo, special: action.special, cascadeCount: action.cascadeCount, clientPathLength: path.length, boardHash: action.boardHash } as Prisma.InputJsonValue } })
-      if (action.special !== TileRushSpecial.None) await tx.analyticsEvent.create({ data: { eventName: action.special === TileRushSpecial.ColorCrush ? "TILE_RUSH_COLOR_CRUSH" : "TILE_RUSH_SPECIAL_CREATED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, special: action.special, chainLength: action.chainLength, cleared: action.clearedCells.length } as Prisma.InputJsonValue } })
-      if (action.combo > 1) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_COMBO_REACHED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, combo: action.combo } as Prisma.InputJsonValue } })
-      if (current.combo > 1 && action.combo === 1) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_COMBO_LOST", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, previousCombo: current.combo } as Prisma.InputJsonValue } })
-      const nextLeader = this.leader(state)
-      if (nextLeader !== previousLeader) await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_LEAD_CHANGED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { from: previousLeader, to: nextLeader, sequence: dto.sequence } as Prisma.InputJsonValue } })
+      // The live response still contains the board for the Flutter animation,
+      // but persisting the same 7x7 board in every replay event multiplies
+      // database/WAL volume. The bounded replay and authoritative metadata
+      // already contain enough state to reconstruct the action.
+      await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: this.persistedActionPayload(payload) as Prisma.InputJsonValue, accepted: true, clientOccurredAt } })
       const metadata = this.withState(match.metadata, state)
       await tx.match.update({ where: { id: matchId }, data: { metadata } })
       state = await this.advanceBots(tx, { ...match, metadata }, state, Date.now())
@@ -237,7 +231,15 @@ export class TileRushService {
       const result: MatchParticipantResult = forfeitingParticipantId === item.id ? "FORFEIT" : tied ? "DRAW" : item.id === winner ? "WIN" : "LOSS"
       await tx.matchParticipant.update({ where: { id: item.id }, data: { finalScore: state.players[item.id]?.score ?? 0, result, submittedAt: endedAt } })
     }
-    await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_MATCH_FINISHED", occurredAt: endedAt, matchId: match.id, properties: { winnerParticipantId: finished.winnerParticipantId, scores } as Prisma.InputJsonValue } })
+    const actionEvents = await tx.matchEvent.findMany({ where: { matchId: match.id, eventType: "SCORE_UPDATE" }, select: { accepted: true, payload: true } })
+    const acceptedEvents = actionEvents.filter((event) => event.accepted)
+    const rejectedEvents = actionEvents.filter((event) => !event.accepted)
+    const payloads = acceptedEvents.map((event) => event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {})
+    const chains = payloads.map((payload) => Number(payload.chainLength ?? 0)).filter((value) => Number.isFinite(value) && value > 0)
+    const specials = payloads.filter((payload) => payload.special && payload.special !== TileRushSpecial.None).length
+    const combos = payloads.filter((payload) => Number(payload.combo ?? 0) > 1).length
+    const boardHashMismatches = payloads.filter((payload) => payload.boardHashMismatch === true).length
+    await tx.analyticsEvent.create({ data: { eventName: "TILE_RUSH_MATCH_FINISHED", occurredAt: endedAt, matchId: match.id, properties: { winnerParticipantId: finished.winnerParticipantId, scores, acceptedActions: acceptedEvents.length, rejectedActions: rejectedEvents.length, specials, combos, maxCombo: payloads.reduce((max, payload) => Math.max(max, Number(payload.combo ?? 0)), 0), averageChain: chains.length ? chains.reduce((total, value) => total + value, 0) / chains.length : 0, maxChain: chains.length ? Math.max(...chains) : 0, boardHashMismatches } as Prisma.InputJsonValue } })
     return finished
   }
 
@@ -331,7 +333,7 @@ export class TileRushService {
         const sequence = player.sequence + 1
         player = { ...result.player, sequence, nextBotAt: reaction + Number(botPolicy.bot.reactionDelayMs) + ((sequence * 37) % Math.max(1, Number(botPolicy.bot.jitterMs ?? 900))) }
         nextState = { ...nextState, players: { ...nextState.players, [bot.id]: player }, replay: [...nextState.replay, { sequence, participantId: bot.id, path: chosen.path, scoreDelta: result.scoreDelta, chainLength: result.chainLength, combo: result.combo, special: result.special, clearedCells: result.clearedCells, cascadeCount: result.cascadeCount, boardHash: result.boardHash, bot: true, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS) }
-        await tx.matchEvent.create({ data: { matchId: match.id, participantId: bot.id, eventType: "SCORE_UPDATE", sequence, clientEventId: `tile-rush:${bot.id}:${sequence}`, payload: this.actionPayload(sequence, chosen.path, result, player, true) as unknown as Prisma.InputJsonValue, accepted: true } })
+        await tx.matchEvent.create({ data: { matchId: match.id, participantId: bot.id, eventType: "SCORE_UPDATE", sequence, clientEventId: `tile-rush:${bot.id}:${sequence}`, payload: this.persistedActionPayload(this.actionPayload(sequence, chosen.path, result, player, true)) as Prisma.InputJsonValue, accepted: true } })
         moves += 1
       }
     }
@@ -348,6 +350,11 @@ export class TileRushService {
 
   private actionPayload(sequence: number, path: TileRushPoint[], result: TileRushActionResult, player: RuntimePlayer, bot: boolean) {
     return { accepted: true, sequence, path, scoreDelta: result.scoreDelta, totalScore: result.totalScore, chainLength: result.chainLength, combo: result.combo, special: result.special, clearedCells: result.clearedCells, cascadeCount: result.cascadeCount, boardHash: result.boardHash, board: player.board, bot }
+  }
+
+  private persistedActionPayload(payload: Record<string, unknown>) {
+    const { board: _board, ...compact } = payload
+    return compact
   }
 
   private botOffset(id: string) { return Math.abs(Number.parseInt(id.replace(/[^0-9a-f]/gi, "").slice(0, 8) || "1", 16)) }
@@ -394,7 +401,6 @@ export class TileRushService {
     const policy = state?.policy ?? this.policyFor(match)
     return { matchId: match.id, selfParticipantId: participantId, status: state?.status === "FINISHED" ? "FINISHED" : match.status, rulesVersion: state?.rulesVersion ?? policy.rulesVersion, policyVersion: state?.policyVersion ?? match.gameConfig?.version ?? null, seed: state?.seed ?? null, boardSize: state?.boardSize ?? policy.boardSize, tileTypes: state?.tileTypes ?? policy.tileTypes, minimumChain: policy.minimumChain, durationSeconds: state?.durationSeconds ?? policy.durationSeconds, startedAt: state?.startedAt ?? match.startedAt?.toISOString() ?? null, endsAt: state?.endsAt ?? null, serverNow: new Date().toISOString(), board: self?.board ?? [], self: self ? { ...self, board: self.board } : null, players, winnerParticipantId: state?.winnerParticipantId ?? null, replayLength: state?.replay.length ?? 0, settlement: state?.settlement ?? match.settlement?.settlementJson ?? null, policy: { rulesVersion: policy.rulesVersion, boardSize: policy.boardSize, tileTypes: policy.tileTypes, durationSeconds: policy.durationSeconds, minimumChain: policy.minimumChain, loopsEnabled: policy.loopsEnabled, finalRushSeconds: policy.finalRushSeconds, finalRushMultiplier: policy.finalRushMultiplier, comboWindowMs: policy.comboWindowMs } }
   }
-  private leader(state: TileRushState) { const entries = Object.entries(state.players).sort((a, b) => b[1].score - a[1].score); return entries.length < 2 || entries[0][1].score === entries[1][1].score ? "TIED" : entries[0][0] }
 }
 
 function clampInt(value: number, minimum: number, maximum: number, fallback: number) { const number = Number(value); return Number.isInteger(number) ? Math.max(minimum, Math.min(maximum, number)) : fallback }

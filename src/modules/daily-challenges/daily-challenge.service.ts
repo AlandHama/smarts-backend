@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 
 import { PrismaService } from "../../prisma.service";
 import { GenerateDailyChallengeDto, UpdateDailyChallengeConfigurationDto } from "./dtos";
+import { randomizeAnswerOptions } from "../matches/utilities/server-content";
 
 const challengeInclude = {
   gameDefinition: { select: { key: true, name: true } },
@@ -81,7 +82,7 @@ export class DailyChallengeService {
     const result = await this.prisma.$transaction(async (tx) => {
       const attempt = await tx.dailyChallengeAttempt.findFirst({
         where: { id: attemptId, userId },
-        include: { challenge: { include: { questions: { where: { position }, include: { contentItem: { select: { options: true, answerIndex: true } } } } } } },
+        include: { challenge: { include: { questions: { where: { position }, include: { contentItem: { select: { id: true, options: true, answerIndex: true } } } } } } },
       });
       if (!attempt) throw new NotFoundException("Daily challenge attempt not found");
       if (attempt.status !== DailyChallengeAttemptStatus.IN_PROGRESS) throw new ConflictException("This daily challenge attempt is closed");
@@ -92,7 +93,12 @@ export class DailyChallengeService {
       if (selectedIndex >= options.length) throw new BadRequestException("Selected answer is out of range");
       const existing = await tx.dailyChallengeAnswer.findUnique({ where: { attemptId_position: { attemptId, position } } });
       if (existing) return { attempt, correct: existing.isCorrect, duplicate: true };
-      const correct = selectedIndex === question.contentItem.answerIndex;
+      const randomized = randomizeAnswerOptions(
+        options,
+        question.contentItem.answerIndex,
+        `${attempt.challenge.id}:options:${question.contentItem.id}`,
+      );
+      const correct = selectedIndex === randomized.answerIndex;
       await tx.dailyChallengeAnswer.create({ data: { attemptId, position, selectedIndex, isCorrect: correct, timeTakenMs: timeTakenMs === undefined ? null : Math.max(0, Math.min(3600000, Math.round(timeTakenMs))) } });
       const updated = await tx.dailyChallengeAttempt.update({
         where: { id: attempt.id },
@@ -229,7 +235,11 @@ export class DailyChallengeService {
   }
 
   private publicChallenge(challenge: any, includeQuestions = false) {
-    return { id: challenge.id, dateKey: challenge.dateKey, status: challenge.status, title: challenge.title, subtitle: challenge.subtitle, questionCount: challenge.questionCount, durationSeconds: challenge.durationSeconds, game: challenge.gameDefinition, questions: includeQuestions ? challenge.questions.map((question: any) => ({ position: question.position, prompt: this.prompt(question.contentItem.prompt), options: this.options(question.contentItem.options) })) : undefined };
+    return { id: challenge.id, dateKey: challenge.dateKey, status: challenge.status, title: challenge.title, subtitle: challenge.subtitle, questionCount: challenge.questionCount, durationSeconds: challenge.durationSeconds, game: challenge.gameDefinition, questions: includeQuestions ? challenge.questions.map((question: any) => {
+      const options = this.options(question.contentItem.options);
+      const randomized = randomizeAnswerOptions(options, question.contentItem.answerIndex, `${challenge.id}:options:${question.contentItem.id}`);
+      return { position: question.position, prompt: this.prompt(question.contentItem.prompt), options: randomized.options };
+    }) : undefined };
   }
 
   private publicAttempt(attempt: any) {

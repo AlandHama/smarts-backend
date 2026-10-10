@@ -5,7 +5,7 @@ import { Prisma, GameMode, MatchParticipantType } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { CreateMatchDto } from "../dtos"
-import { createAssignmentToken, MAX_SERVER_CONTENT_PER_MATCH, selectServerContent } from "../utilities/server-content"
+import { createAssignmentToken, MAX_SERVER_CONTENT_PER_MATCH, randomizeAnswerOptions, selectServerContent } from "../utilities/server-content"
 
 @Injectable()
 export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; dto: CreateMatchDto }, any> {
@@ -48,7 +48,12 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
         const token = createAssignmentToken(match.serverNonce, participant.id, round.id, position)
         const expiresAt = new Date(now.getTime() + config.maxMatchDurationSeconds * 1000)
         const assignment = await transaction.matchContentAssignment.create({ data: { matchId: match.id, roundId: round.id, participantId: participant.id, contentItemId: selectedItems[position].id, position, assignmentTokenHash: createHash("sha256").update(token).digest("hex"), expiresAt }, include: { contentItem: { select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true } } } })
-        assignments.push({ participantId: participant.id, id: assignment.id, position, token, contentItem: assignment.contentItem, expiresAt })
+        const randomized = randomizeAnswerOptions(
+          assignment.contentItem.options as unknown[],
+          0,
+          `${match.serverNonce}:options:${assignment.contentItem.id}`,
+        )
+        assignments.push({ participantId: participant.id, id: assignment.id, position, token, contentItem: { ...assignment.contentItem, options: randomized.options }, expiresAt })
       }
     }
     return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments: assignments.filter((assignment) => assignment.participantId === participants[0].id) }

@@ -59,7 +59,10 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly gemBlitz: GemBlitzService,
     private readonly tileRush: TileRushService,
   ) {
-    this.timer = setInterval(() => void this.publishChanges(), 1000)
+    // Gameplay actions push an immediate snapshot. This timer is only the
+    // recovery/clock path, so polling every second needlessly re-queries and
+    // advances every active board match for every connected socket.
+    this.timer = setInterval(() => void this.publishChanges(), 2000)
     this.timer.unref()
   }
 
@@ -130,7 +133,11 @@ export class RealtimeGateway implements OnModuleDestroy {
       return
     }
     if (event === "unsubscribe_match") {
-      if (typeof data.matchId === "string") state.matchIds.delete(data.matchId)
+      if (typeof data.matchId === "string") {
+        const matchId = data.matchId.trim()
+        state.matchIds.delete(matchId)
+        this.clearMatchSnapshots(state, matchId)
+      }
       return
     }
     if (event === "gem_blitz.move") {
@@ -173,8 +180,10 @@ export class RealtimeGateway implements OnModuleDestroy {
     }
     if (event === "chat.unsubscribe") {
       if (typeof data.conversationId === "string") {
-        state.chatConversationIds.delete(data.conversationId)
-        this.chatPresence.unsubscribe(state.userId, data.conversationId)
+        const conversationId = data.conversationId.trim()
+        state.chatConversationIds.delete(conversationId)
+        state.lastSnapshots.delete(`chat:${conversationId}`)
+        this.chatPresence.unsubscribe(state.userId, conversationId)
       }
       return
     }
@@ -203,9 +212,23 @@ export class RealtimeGateway implements OnModuleDestroy {
       return
     }
     if (event === "party.subscribe") { await this.subscribeParty(client, state, data); return }
-    if (event === "party.unsubscribe") { if (typeof data.partyId === "string") state.partyIds.delete(data.partyId); return }
+    if (event === "party.unsubscribe") {
+      if (typeof data.partyId === "string") {
+        const partyId = data.partyId.trim()
+        state.partyIds.delete(partyId)
+        state.lastSnapshots.delete(`party:${partyId}`)
+      }
+      return
+    }
     if (event === "support.subscribe") { await this.subscribeSupport(client, state, data); return }
-    if (event === "support.unsubscribe") { if (typeof data.sessionId === "string") state.supportSessionIds.delete(data.sessionId); return }
+    if (event === "support.unsubscribe") {
+      if (typeof data.sessionId === "string") {
+        const sessionId = data.sessionId.trim()
+        state.supportSessionIds.delete(sessionId)
+        state.lastSnapshots.delete(`support-session:${sessionId}`)
+      }
+      return
+    }
     if (event === "support.typing.start" || event === "support.typing.stop") { await this.supportTyping(client, state, data, event === "support.typing.start"); return }
     if (event === "support.read") { await this.supportRead(client, state, data); return }
     if (event === "support.message.send") { await this.supportMessage(client, state, data); return }
@@ -430,7 +453,10 @@ export class RealtimeGateway implements OnModuleDestroy {
       if (!force && state.lastSnapshots.get(`party:${partyId}`) === key) return
       state.lastSnapshots.set(`party:${partyId}`, key)
       this.send(client, force ? "party.ready" : "party.snapshot", { party: snapshot })
-    } catch { state.partyIds.delete(partyId) }
+    } catch {
+      state.partyIds.delete(partyId)
+      state.lastSnapshots.delete(`party:${partyId}`)
+    }
   }
 
   private async sendQueueSnapshot(client: WebSocket, state: ClientState, force: boolean) {
@@ -461,7 +487,10 @@ export class RealtimeGateway implements OnModuleDestroy {
       const previous = state.lastSnapshots.get(`support-session:${sessionId}`)
       state.lastSnapshots.set(`support-session:${sessionId}`, key)
       if (previous) this.send(client, "support.live-chat.status-changed", { sessionId, session: snapshot })
-    } catch { /* Authorization or a deleted session is harmless on a later tick. */ }
+    } catch {
+      state.supportSessionIds.delete(sessionId)
+      state.lastSnapshots.delete(`support-session:${sessionId}`)
+    }
   }
 
   private async sendMatchSnapshot(client: WebSocket, state: ClientState, matchId: string, force: boolean) {
@@ -474,6 +503,7 @@ export class RealtimeGateway implements OnModuleDestroy {
           state.lastSnapshots.set(`gem-blitz:${matchId}`, key)
           this.send(client, "gem_blitz.snapshot", snapshot)
         }
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
         return
       }
       if (game?.gameDefinition.key === "tile_rush") {
@@ -483,6 +513,7 @@ export class RealtimeGateway implements OnModuleDestroy {
           state.lastSnapshots.set(`tile-rush:${matchId}`, key)
           this.send(client, "tile_rush.snapshot", snapshot)
         }
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
         return
       }
       const snapshot = await this.matches.get(matchId, state.userId)
@@ -510,8 +541,34 @@ export class RealtimeGateway implements OnModuleDestroy {
         for (const event of recentEvents.filter((item) => !previousIds.has(item.id)).reverse()) this.send(client, "match.event.accepted", { matchId, event: event.eventType === "EMOTE" ? event : { ...event, payload: undefined } })
       }
       const status = typeof (snapshot as { status?: unknown }).status === "string" ? (snapshot as { status: string }).status : ""
-      if (status === "FINISHED" || status === "REVIEW" || status === "SETTLED") this.send(client, "match.settled", { matchId, status })
-    } catch { /* An unauthorized/deleted match is harmless on a later tick. */ }
+      if (status === "FINISHED" || status === "REVIEW" || status === "SETTLED") {
+        this.send(client, "match.settled", { matchId, status })
+        state.matchIds.delete(matchId)
+        this.clearMatchSnapshots(state, matchId)
+      }
+    } catch {
+      // Drop both the subscription and its serialized projection. A player
+      // can play many matches on one socket; retaining every old board here
+      // otherwise makes the per-client cache grow for the lifetime of the
+      // connection.
+      state.matchIds.delete(matchId)
+      this.clearMatchSnapshots(state, matchId)
+    }
+  }
+
+  private clearMatchSnapshots(state: ClientState, matchId: string) {
+    state.lastSnapshots.delete(`gem-blitz:${matchId}`)
+    state.lastSnapshots.delete(`tile-rush:${matchId}`)
+    state.lastSnapshots.delete(`match:${matchId}`)
+    state.lastSnapshots.delete(`events:${matchId}`)
+  }
+
+  private releaseFinishedMatch(client: WebSocket, state: ClientState, matchId: string, snapshot: unknown) {
+    const status = snapshot && typeof snapshot === "object" && "status" in snapshot ? String((snapshot as { status?: unknown }).status ?? "") : ""
+    if (!["FINISHED", "REVIEW", "SETTLED"].includes(status)) return
+    this.send(client, "match.settled", { matchId, status })
+    state.matchIds.delete(matchId)
+    this.clearMatchSnapshots(state, matchId)
   }
 
   private async broadcastGemBlitz(matchId: string) {

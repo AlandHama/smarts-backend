@@ -115,10 +115,20 @@ export class GemBlitzEngine {
       if (engine.hasLegalMove) return engine
     }
 
-    const fallback = Array.from({ length: size * size }, (_, index) => ({
+    const base = Array.from({ length: size * size }, (_, index) => ({
       type: GEM_TYPES[(index * 2 + Math.floor(index / size)) % GEM_TYPES.length],
       special: GemSpecial.None,
     }))
+    // Keep the safety fallback playable, but do not always put its first
+    // useful swap in the upper-left corner.
+    const random = new SeededRandom(seed ^ 0x45d9f3b)
+    const rowOffset = random.nextInt(size)
+    const columnOffset = random.nextInt(size)
+    const fallback = Array.from({ length: size * size }, (_, index) => {
+      const row = Math.floor(index / size)
+      const column = index % size
+      return base[((row + rowOffset) % size) * size + ((column + columnOffset) % size)]
+    })
     return new GemBlitzEngine(
       seed,
       size,

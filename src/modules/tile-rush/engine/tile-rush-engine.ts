@@ -128,7 +128,15 @@ export class TileRushEngine {
     }
     const random = new SeededRandom(seed ^ 0x45d9f3b)
     const fallback = this.generateBoard(size, types, random)
-    for (let column = 0; column < minimum; column += 1) fallback[0][column] = 0
+    const horizontal = random.nextInt(2) === 0
+    const pathRow = horizontal ? random.nextInt(size) : random.nextInt(size - minimum + 1)
+    const pathColumn = horizontal ? random.nextInt(size - minimum + 1) : random.nextInt(size)
+    const pathType = random.nextInt(types)
+    for (let offset = 0; offset < minimum; offset += 1) {
+      const row = horizontal ? pathRow : pathRow + offset
+      const column = horizontal ? pathColumn + offset : pathColumn
+      fallback[row][column] = pathType
+    }
     return new TileRushEngine(seed, size, types, minimum, Number(policy.comboWindowMs ?? 2000), policy.loopsEnabled ?? true, fallback, new SeededRandom(seed ^ 0x45d9f3b), 0, 0, 0, 0, 0, 0, 0, policy)
   }
 

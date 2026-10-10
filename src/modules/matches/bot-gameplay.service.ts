@@ -313,7 +313,10 @@ export class BotGameplayService {
           match: { gameDefinitionId },
         },
         orderBy: { serverReceivedAt: "desc" },
-        take: 2000,
+        // Bot learning is a bounded approximation. Loading thousands of
+        // historical answer payloads for every active bot match made the new
+        // cache retain a large object graph in the API process.
+        take: 500,
         select: { payload: true },
       }),
       transaction.playerGameStats.findUnique({
@@ -357,8 +360,8 @@ export class BotGameplayService {
         ? this.clamp(playerStats.totalCorrect / playerStats.totalQuestions, 0, 1)
         : null,
     }
-    if (this.learningCache.size >= 128) this.learningCache.delete(this.learningCache.keys().next().value as string)
-    this.learningCache.set(cacheKey, { expiresAt: Date.now() + 30_000, profile })
+    if (this.learningCache.size >= 32) this.learningCache.delete(this.learningCache.keys().next().value as string)
+    this.learningCache.set(cacheKey, { expiresAt: Date.now() + 60_000, profile })
     return profile
   }
 

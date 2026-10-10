@@ -64,6 +64,20 @@ export function createAssignmentToken(serverNonce: string, participantId: string
   return createHash("sha256").update(`${serverNonce}:${roundId}:${participantId}:${position}`).digest("base64url")
 }
 
+/** Deterministically shuffles choices while keeping the server answer key private. */
+export function randomizeAnswerOptions<T>(options: T[], answerIndex: number, key: string): { options: T[]; answerIndex: number } {
+  if (options.length < 2 || !Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex >= options.length) {
+    return { options: [...options], answerIndex }
+  }
+  const order = options.map((_, index) => index)
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    const hash = createHash("sha256").update(`${key}:option:${index}`).digest("hex")
+    const swapIndex = Number.parseInt(hash.slice(0, 8), 16) % (index + 1)
+    ;[order[index], order[swapIndex]] = [order[swapIndex], order[index]]
+  }
+  return { options: order.map((index) => options[index]), answerIndex: order.indexOf(answerIndex) }
+}
+
 export function hashMatchEventRequest(input: {
   eventType: string
   clientEventId: string

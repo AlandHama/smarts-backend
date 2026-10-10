@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../prisma.service";
 import { CompleteMatchDto, CreateMatchDto, MatchEventDto } from "./dtos";
-import { createAssignmentToken } from "./utilities/server-content";
+import { createAssignmentToken, randomizeAnswerOptions } from "./utilities/server-content";
 import { CreateMatchTransaction } from "./transactions/create-match-transaction";
 import { RecordMatchEventTransaction } from "./transactions/record-match-event-transaction";
 import { CompleteMatchTransaction } from "./transactions/complete-match-transaction";
@@ -183,6 +183,7 @@ export class MatchService {
       assignments: match.assignments.map((assignment) =>
         this.publicAssignment(assignment, match.serverNonce),
       ),
+      serverNow: new Date().toISOString(),
       gameConfig: {
         instantSkipPriceGld: gameConfig.instantSkipPriceGld,
         maxAnswerTimeSeconds: gameConfig.maxAnswerTimeSeconds,
@@ -344,6 +345,14 @@ export class MatchService {
   }
 
   private publicAssignment(assignment: any, serverNonce: string) {
+    const contentItem = assignment.contentItem
+    const randomized = contentItem && Array.isArray(contentItem.options)
+      ? randomizeAnswerOptions(
+          contentItem.options,
+          typeof contentItem.answerIndex === "number" ? contentItem.answerIndex : 0,
+          `${serverNonce}:options:${contentItem.id}`,
+        )
+      : null
     return {
       id: assignment.id,
       participantId: assignment.participantId,
@@ -354,7 +363,9 @@ export class MatchService {
         assignment.roundId ?? "",
         assignment.position,
       ),
-      contentItem: assignment.contentItem,
+      contentItem: randomized
+        ? { ...contentItem, options: randomized.options }
+        : assignment.contentItem,
       expiresAt: assignment.expiresAt,
     };
   }

@@ -1815,6 +1815,9 @@ model AnalyticsEvent {
   player       User?    @relation(fields: [playerId], references: [id], onDelete: SetNull)
 
   @@index([eventName, occurredAt])
+  // Aggregation scans filter by time first; the event-name-first index does
+  // not support that access pattern as the table grows.
+  @@index([occurredAt, eventName])
   @@index([playerId, occurredAt])
   @@index([platform, appVersion, occurredAt])
   @@index([countryCode, occurredAt])

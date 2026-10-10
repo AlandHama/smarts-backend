@@ -126,7 +126,7 @@ export class TileRushAdminController {
   @Get("api/tile-rush/operations")
   async operations() {
     const gameWhere = { gameDefinition: { key: "tile_rush" } }
-    const [active, searching, finished, review, cancelled, settled, unsettled, bots, accepted, rejected, analytics, recentMatches] = await Promise.all([
+    const [active, searching, finished, review, cancelled, settled, unsettled, bots, actionTotals, analytics, recentMatches] = await Promise.all([
       this.prisma.match.count({ where: { ...gameWhere, status: "STARTED" } }),
       this.prisma.match.count({ where: { ...gameWhere, status: "CREATED" } }),
       this.prisma.match.count({ where: { ...gameWhere, status: "FINISHED" } }),
@@ -135,11 +135,19 @@ export class TileRushAdminController {
       this.prisma.match.count({ where: { ...gameWhere, status: "SETTLED" } }),
       this.prisma.match.count({ where: { ...gameWhere, status: { in: ["FINISHED", "REVIEW"] }, settlement: null } }),
       this.prisma.matchParticipant.count({ where: { participantType: "BOT", match: gameWhere } }),
-      this.prisma.analyticsEvent.count({ where: { eventName: "TILE_RUSH_PATH_ACCEPTED" } }),
-      this.prisma.analyticsEvent.count({ where: { eventName: "TILE_RUSH_PATH_REJECTED" } }),
+      this.prisma.$queryRaw<Array<{ accepted: bigint; rejected: bigint }>>(Prisma.sql`
+        SELECT
+          COALESCE(SUM(CASE WHEN "eventName" = 'TILE_RUSH_PATH_ACCEPTED' THEN 1 ELSE 0 END), 0)
+            + COALESCE(SUM(CASE WHEN "eventName" = 'TILE_RUSH_MATCH_FINISHED' THEN COALESCE(("properties"->>'acceptedActions')::bigint, 0) ELSE 0 END), 0) AS accepted,
+          COALESCE(SUM(CASE WHEN "eventName" = 'TILE_RUSH_PATH_REJECTED' THEN 1 ELSE 0 END), 0)
+            + COALESCE(SUM(CASE WHEN "eventName" = 'TILE_RUSH_MATCH_FINISHED' THEN COALESCE(("properties"->>'rejectedActions')::bigint, 0) ELSE 0 END), 0) AS rejected
+        FROM "AnalyticsEvent"
+      `),
       this.prisma.analyticsEvent.findMany({ where: { eventName: { startsWith: "TILE_RUSH_" } }, orderBy: { occurredAt: "desc" }, take: 500, select: { eventName: true, properties: true, occurredAt: true } }),
       this.prisma.match.findMany({ where: gameWhere, orderBy: { createdAt: "desc" }, take: 25, select: { id: true, status: true, mode: true, createdAt: true, startedAt: true, endedAt: true, settledAt: true, gameConfig: { select: { version: true, settings: true } }, participants: { select: { participantType: true, finalScore: true, result: true } }, settlement: { select: { id: true } } } }),
     ])
+    const accepted = Number(actionTotals[0]?.accepted ?? 0)
+    const rejected = Number(actionTotals[0]?.rejected ?? 0)
     const specialCounts = analytics.filter((event) => event.eventName === "TILE_RUSH_SPECIAL_CREATED" || event.eventName === "TILE_RUSH_COLOR_CRUSH").reduce((result, event) => { result[event.eventName] = (result[event.eventName] ?? 0) + 1; return result }, {} as Record<string, number>)
     const comboValues = analytics.map((event) => this.objectValue(event.properties).combo).filter((value): value is number => typeof value === "number")
     const acceptedEvents = analytics.filter((event) => event.eventName === "TILE_RUSH_PATH_ACCEPTED")
@@ -170,23 +178,31 @@ export class TileRushAdminController {
     for (const event of events) {
       const date = event.occurredAt.toISOString().slice(0, 10)
       const row = byDay.get(date) ?? { date, matches: 0, accepted: 0, rejected: 0, specials: 0, combos: 0, settled: 0 }
+      const properties = this.objectValue(event.properties)
       if (event.eventName === "TILE_RUSH_MATCH_STARTED") row.matches += 1
       if (event.eventName === "TILE_RUSH_PATH_ACCEPTED") row.accepted += 1
       if (event.eventName === "TILE_RUSH_PATH_REJECTED") row.rejected += 1
       if (event.eventName === "TILE_RUSH_SPECIAL_CREATED" || event.eventName === "TILE_RUSH_COLOR_CRUSH") row.specials += 1
       if (event.eventName === "TILE_RUSH_COMBO_REACHED") row.combos += 1
+      if (event.eventName === "TILE_RUSH_MATCH_FINISHED") {
+        row.accepted += Number(properties.acceptedActions ?? 0)
+        row.rejected += Number(properties.rejectedActions ?? 0)
+        row.specials += Number(properties.specials ?? 0)
+        row.combos += Number(properties.combos ?? 0)
+      }
       if (event.eventName === "TILE_RUSH_MATCH_SETTLED") row.settled += 1
       byDay.set(date, row)
     }
     const started = events.filter((event) => event.eventName === "TILE_RUSH_MATCH_STARTED").length
     const settledCount = events.filter((event) => event.eventName === "TILE_RUSH_MATCH_SETTLED").length
-    const accepted = events.filter((event) => event.eventName === "TILE_RUSH_PATH_ACCEPTED").length
-    const rejected = events.filter((event) => event.eventName === "TILE_RUSH_PATH_REJECTED").length
+    const summaries = events.filter((event) => event.eventName === "TILE_RUSH_MATCH_FINISHED").map((event) => this.objectValue(event.properties))
+    const accepted = events.filter((event) => event.eventName === "TILE_RUSH_PATH_ACCEPTED").length + summaries.reduce((total, properties) => total + Number(properties.acceptedActions ?? 0), 0)
+    const rejected = events.filter((event) => event.eventName === "TILE_RUSH_PATH_REJECTED").length + summaries.reduce((total, properties) => total + Number(properties.rejectedActions ?? 0), 0)
     const combos = events.map((event) => this.objectValue(event.properties).combo).filter((value): value is number => typeof value === "number")
     const paths = events.filter((event) => event.eventName === "TILE_RUSH_PATH_ACCEPTED")
     const chains = paths.map((event) => Number(this.objectValue(event.properties).chainLength)).filter((value) => Number.isFinite(value) && value > 0)
-    const specials = events.filter((event) => event.eventName === "TILE_RUSH_SPECIAL_CREATED" || event.eventName === "TILE_RUSH_COLOR_CRUSH").length
-    const mismatch = events.filter((event) => event.eventName === "TILE_RUSH_BOARD_HASH_MISMATCH").length
+    const specials = events.filter((event) => event.eventName === "TILE_RUSH_SPECIAL_CREATED" || event.eventName === "TILE_RUSH_COLOR_CRUSH").length + summaries.reduce((total, properties) => total + Number(properties.specials ?? 0), 0)
+    const mismatch = events.filter((event) => event.eventName === "TILE_RUSH_BOARD_HASH_MISMATCH").length + summaries.reduce((total, properties) => total + Number(properties.boardHashMismatches ?? 0), 0)
     const chainBuckets = chains.reduce((result, value) => { const bucket = value >= 10 ? "10+" : value >= 7 ? "7-9" : value >= 5 ? "5-6" : "3-4"; result[bucket] = (result[bucket] ?? 0) + 1; return result }, {} as Record<string, number>)
     return { range: { from: start.toISOString(), to: end.toISOString(), mode: mode ?? null }, totals: { matchesStarted: started, matchesSettled: settledCount, settlementRate: started ? Math.round((settledCount / started) * 10000) / 100 : 0, acceptedActions: accepted, rejectedActions: rejected, rejectionRate: accepted + rejected ? Math.round((rejected / (accepted + rejected)) * 10000) / 100 : 0, maxCombo: combos.length ? Math.max(...combos) : 0, averageChain: chains.length ? Math.round((chains.reduce((sum, value) => sum + value, 0) / chains.length) * 100) / 100 : 0, specialRate: accepted ? Math.round((specials / accepted) * 10000) / 100 : 0, boardHashMismatches: mismatch }, dimensions: { chainBuckets }, series: [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date)) }
   }

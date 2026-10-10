@@ -11,20 +11,26 @@ const INTERVAL = 5 * 60 * 1000
 export class AnalyticsReportingWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AnalyticsReportingWorkerService.name)
   private timer?: ReturnType<typeof setInterval>
+  private running = false
 
   constructor(private readonly prisma: PrismaService, private readonly reporting: AnalyticsReportingService) {}
-  onModuleInit() { void this.run(); this.timer = setInterval(() => void this.run(), INTERVAL) }
+  onModuleInit() { void this.run(); this.timer = setInterval(() => void this.run(), INTERVAL); this.timer.unref?.() }
   onModuleDestroy() { if (this.timer) clearInterval(this.timer) }
 
   async run() {
-    const lock = await this.prisma.$queryRaw<Array<{ locked: boolean }>>(Prisma.sql`SELECT pg_try_advisory_lock(hashtext('smarts.analytics.operations')) AS locked`)
-    if (!lock[0]?.locked) return
+    if (this.running) return
+    this.running = true
     try {
+      const lock = await this.prisma.$queryRaw<Array<{ locked: boolean }>>(Prisma.sql`SELECT pg_try_advisory_lock(hashtext('smarts.analytics.operations')) AS locked`)
+      if (!lock[0]?.locked) return
       await this.reporting.quality()
       await this.evaluateAlerts()
       await this.advanceSchedules()
     } catch (error) { this.logger.warn(`Analytics operations worker failed: ${error instanceof Error ? error.message : String(error)}`) }
-    finally { await this.prisma.$queryRaw(Prisma.sql`SELECT pg_advisory_unlock(hashtext('smarts.analytics.operations'))`).catch(() => undefined) }
+    finally {
+      await this.prisma.$queryRaw(Prisma.sql`SELECT pg_advisory_unlock(hashtext('smarts.analytics.operations'))`).catch(() => undefined)
+      this.running = false
+    }
   }
 
   private async evaluateAlerts() {

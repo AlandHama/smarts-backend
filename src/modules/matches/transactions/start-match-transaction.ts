@@ -11,6 +11,7 @@ import { PrismaService } from "../../../prisma.service";
 import {
   createAssignmentToken,
   MAX_SERVER_CONTENT_PER_MATCH,
+  randomizeAnswerOptions,
   selectServerContent,
 } from "../utilities/server-content";
 
@@ -187,12 +188,17 @@ export class StartMatchTransaction extends PrismaTransaction<
               },
             },
           });
+          const randomized = randomizeAnswerOptions(
+            assignment.contentItem.options as unknown[],
+            0,
+            `${match.serverNonce}:options:${assignment.contentItem.id}`,
+          );
           assignments.push({
             id: assignment.id,
             participantId: currentParticipant.id,
             position,
             token,
-            contentItem: assignment.contentItem,
+            contentItem: { ...assignment.contentItem, options: randomized.options },
             expiresAt: assignment.expiresAt,
           });
         }
