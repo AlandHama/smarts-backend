@@ -2005,6 +2005,7 @@ model AnalyticsExportJob {
 
   @@index([ownerId, createdAt])
   @@index([status, createdAt])
+  @@index([expiresAt])
 }
 
 /// Temporary two-player party used before a cooperative match is created.
@@ -2797,6 +2798,7 @@ model MatchEvent {
   @@unique([matchId, participantId, sequence])
   @@index([matchId, participantId, serverReceivedAt])
   @@index([roundId, participantId, sequence])
+  @@index([serverReceivedAt])
 }
 
 model MatchSettlement {

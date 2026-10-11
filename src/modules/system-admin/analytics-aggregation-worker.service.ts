@@ -5,8 +5,10 @@ import { PrismaService } from "../../prisma.service"
 
 const WORKER_KEY = "smarts.analytics.aggregate"
 const REFRESH_KEY = "server-events"
-const REFRESH_INTERVAL_MS = 10 * 60 * 1000
-const TRANSACTION_TIMEOUT_MS = 60 * 1000
+const REFRESH_INTERVAL_MS = 15 * 60 * 1000
+const TRANSACTION_TIMEOUT_MS = 120 * 1000
+const DAILY_REFRESH_DAYS = 2
+const HOURLY_REFRESH_HOURS = 12
 
 /** Recomputes recent event buckets so late-arriving events are corrected. */
 @Injectable()
@@ -37,8 +39,12 @@ export class AnalyticsAggregationWorkerService implements OnModuleInit, OnModule
     const startedAt = new Date()
 
     try {
-      const dailyFrom = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
-      const hourlyFrom = new Date(Date.now() - 48 * 60 * 60 * 1000)
+      // Only recent buckets can change because older events are immutable.
+      // The previous 3-day/48-hour windows made every refresh repeatedly scan
+      // the high-cardinality event table and generate a large rollback/WAL
+      // burst when the transaction hit Prisma's default timeout.
+      const dailyFrom = new Date(Date.now() - DAILY_REFRESH_DAYS * 24 * 60 * 60 * 1000)
+      const hourlyFrom = new Date(Date.now() - HOURLY_REFRESH_HOURS * 60 * 60 * 1000)
       const now = new Date()
       let rows = 0
 

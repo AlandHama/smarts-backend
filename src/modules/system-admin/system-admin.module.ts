@@ -31,6 +31,7 @@ import { AnalyticsEventService } from "./analytics-event.service"
 import { AnalyticsAggregationWorkerService } from "./analytics-aggregation-worker.service"
 import { AnalyticsReportingService } from "./analytics-reporting.service"
 import { AnalyticsReportingWorkerService } from "./analytics-reporting-worker.service"
+import { ResourceRetentionWorkerService } from "./resource-retention-worker.service"
 import { WinStreaksModule } from "../win-streaks/win-streaks.module"
 import { DailyChallengesModule } from "../daily-challenges/daily-challenges.module"
 import { GemBlitzModule } from "../gem-blitz/gem-blitz.module"
@@ -55,6 +56,7 @@ import { TileRushAdminController } from "../tile-rush/tile-rush-admin.controller
     AnalyticsAggregationWorkerService,
     AnalyticsReportingService,
     AnalyticsReportingWorkerService,
+    ResourceRetentionWorkerService,
   ],
   exports: [AnalyticsEventService],
 })
