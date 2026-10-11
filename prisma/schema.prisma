@@ -1818,10 +1818,6 @@ model AnalyticsEvent {
   // Aggregation scans filter by time first; the event-name-first index does
   // not support that access pattern as the table grows.
   @@index([occurredAt, eventName])
-  @@index([playerId, occurredAt])
-  @@index([platform, appVersion, occurredAt])
-  @@index([countryCode, occurredAt])
-  @@index([receivedAt])
 }
 
 /// Recomputable daily metric buckets. The aggregate is intentionally generic

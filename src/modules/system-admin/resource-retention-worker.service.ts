@@ -4,13 +4,30 @@ import { Prisma } from "@prisma/client"
 import { PrismaService } from "../../prisma.service"
 
 const LOCK_KEY = "smarts.database.retention"
-const INTERVAL_MS = 15 * 60 * 1000
-const BATCH_SIZE = 500
-const HIGH_VOLUME_ANALYTICS_RETENTION_HOURS = 24
-const ANALYTICS_RETENTION_DAYS = 90
+const INTERVAL_MS = 5 * 60 * 1000
+const BATCH_SIZE = 2_000
+const HIGH_VOLUME_BATCH_SIZE = 10_000
+const HIGH_VOLUME_ANALYTICS_RETENTION_HOURS = 2
+const ANALYTICS_RETENTION_DAYS = 7
+const HIGH_VOLUME_ANALYTICS_MAX_ROWS = 20_000
 const MATCH_EVENT_RETENTION_DAYS = 30
 const QUEUE_HISTORY_RETENTION_DAYS = 30
 const EXPORT_JOB_RETENTION_DAYS = 14
+
+// Per-action telemetry is useful for short-lived diagnostics, but it must not
+// be treated as an append-only product ledger. MatchEvent and the terminal
+// match summary retain the authoritative gameplay information.
+const HIGH_VOLUME_ANALYTICS_EVENTS = [
+  "GEM_BLITZ_MOVE_ACCEPTED",
+  "TILE_RUSH_PATH_ACCEPTED",
+  "TILE_RUSH_PATH_REJECTED",
+  "TILE_RUSH_SPECIAL_CREATED",
+  "TILE_RUSH_COLOR_CRUSH",
+  "TILE_RUSH_COMBO_REACHED",
+  "TILE_RUSH_COMBO_LOST",
+  "TILE_RUSH_LEAD_CHANGED",
+  "TILE_RUSH_BOARD_HASH_MISMATCH",
+] as const
 
 /**
  * Removes only disposable operational history in small batches. Match rows,
@@ -53,23 +70,17 @@ export class ResourceRetentionWorkerService implements OnModuleInit, OnModuleDes
         const exportJobCutoff = new Date(Date.now() - EXPORT_JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000)
 
         let deleted = 0
-        // These events were introduced as per-action Tile Rush telemetry. They
-        // are not authoritative state and retaining them indefinitely is what
-        // caused the sharp post-October-7 growth. MatchEvent and terminal
-        // match analytics summaries remain the source for replay/results.
+        // Per-action telemetry is retained only briefly. The old worker's
+        // 500-row pass was slower than production traffic, allowing this table
+        // to grow into millions of rows.
         deleted += await tx.$executeRaw(Prisma.sql`
           DELETE FROM "AnalyticsEvent"
           WHERE "id" IN (
             SELECT "id" FROM "AnalyticsEvent"
-            WHERE "eventName" IN (
-              'TILE_RUSH_PATH_ACCEPTED', 'TILE_RUSH_PATH_REJECTED',
-              'TILE_RUSH_SPECIAL_CREATED', 'TILE_RUSH_COLOR_CRUSH',
-              'TILE_RUSH_COMBO_REACHED', 'TILE_RUSH_COMBO_LOST',
-              'TILE_RUSH_LEAD_CHANGED', 'TILE_RUSH_BOARD_HASH_MISMATCH'
-            )
+            WHERE "eventName" IN (${Prisma.join(HIGH_VOLUME_ANALYTICS_EVENTS)})
             AND "occurredAt" < ${highVolumeCutoff}
-            ORDER BY "occurredAt" ASC
-            LIMIT ${BATCH_SIZE}
+            ORDER BY "occurredAt" ASC, "id" ASC
+            LIMIT ${HIGH_VOLUME_BATCH_SIZE}
           )
         `)
         deleted += await tx.$executeRaw(Prisma.sql`
@@ -79,6 +90,18 @@ export class ResourceRetentionWorkerService implements OnModuleInit, OnModuleDes
             WHERE "occurredAt" < ${analyticsCutoff}
             ORDER BY "occurredAt" ASC
             LIMIT ${BATCH_SIZE}
+          )
+        `)
+        // Keep a hard row bound for the high-volume event family as a safety
+        // net if traffic spikes or the worker is temporarily unavailable.
+        deleted += await tx.$executeRaw(Prisma.sql`
+          DELETE FROM "AnalyticsEvent"
+          WHERE "id" IN (
+            SELECT "id" FROM "AnalyticsEvent"
+            WHERE "eventName" IN (${Prisma.join(HIGH_VOLUME_ANALYTICS_EVENTS)})
+            ORDER BY "occurredAt" DESC, "id" DESC
+            OFFSET ${HIGH_VOLUME_ANALYTICS_MAX_ROWS}
+            LIMIT ${HIGH_VOLUME_BATCH_SIZE}
           )
         `)
         // Preserve the match, settlement, and final score while removing the

@@ -147,7 +147,6 @@ export class GemBlitzService {
       const next = { ...result.board.stateSnapshot, sequence: dto.sequence }
       state = { ...state, players: { ...state.players, [participant.id]: next }, replay: [...state.replay, { sequence: dto.sequence, participantId: participant.id, fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS) }
       await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: `gem-blitz:${participant.id}:${dto.sequence}`, payload: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, animation: result.animation, score: next.score } as unknown as Prisma.InputJsonValue, accepted: true, clientOccurredAt: dto.clientTimestamp ? new Date(dto.clientTimestamp) : undefined } })
-      await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_MOVE_ACCEPTED", occurredAt: new Date(), matchId, playerId: participant.userId ?? undefined, properties: { sequence: dto.sequence, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, fever: result.fever, reshuffled: result.reshuffled } as Prisma.InputJsonValue } })
       const metadata = this.withState(match.metadata, state)
       await tx.match.update({ where: { id: matchId }, data: { metadata } })
       state = await this.advanceBots(tx, { ...match, metadata }, state, Date.now())
@@ -191,6 +190,9 @@ export class GemBlitzService {
       const result: MatchParticipantResult = forfeitingParticipantId === item.id ? "FORFEIT" : tied ? "DRAW" : item.id === winner ? "WIN" : "LOSS"
       await tx.matchParticipant.update({ where: { id: item.id }, data: { finalScore: state.players[item.id]?.score ?? 0, result, submittedAt: endedAt } })
     }
+    const moves = state.replay.filter((event) => event && typeof event === "object")
+    const acceptedMoves = await tx.matchEvent.count({ where: { matchId: match.id, eventType: "SCORE_UPDATE", accepted: true } })
+    await tx.analyticsEvent.create({ data: { eventName: "GEM_BLITZ_MATCH_FINISHED", occurredAt: endedAt, matchId: match.id, properties: { winnerParticipantId: finished.winnerParticipantId, scores, acceptedMoves, totalScoreDelta: moves.reduce((total, event) => total + Number((event as any).scoreDelta ?? 0), 0), totalCleared: moves.reduce((total, event) => total + Number((event as any).cleared ?? 0), 0), totalCascades: moves.reduce((total, event) => total + Number((event as any).cascades ?? 0), 0) } as Prisma.InputJsonValue } })
     return finished
   }
 
