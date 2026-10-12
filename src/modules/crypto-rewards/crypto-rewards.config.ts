@@ -18,6 +18,11 @@ function positiveDecimal(name: string, fallback: string) {
   return value && /^\d+(?:\.\d{1,6})?$/.test(value) && Number(value) > 0 ? value : fallback
 }
 
+function nonNegativeDecimal(name: string, fallback: string) {
+  const value = process.env[name]?.trim()
+  return value && /^\d+(?:\.\d{1,6})?$/.test(value) && Number(value) >= 0 ? value : fallback
+}
+
 function nonNegativeBigInt(name: string, fallback: bigint) {
   const value = process.env[name]?.trim()
   if (!value || !/^\d+$/.test(value)) return fallback
@@ -45,6 +50,7 @@ export function getCryptoRewardsConfig() {
     providerBaseUrl: process.env.NOWPAYMENTS_API_BASE_URL?.trim() || (environment === "production" ? "https://api.nowpayments.io/v1" : "https://api.sandbox.nowpayments.io/v1"),
     apiKey: process.env.NOWPAYMENTS_API_KEY?.trim() || "",
     ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET?.trim() || "",
+    ipnCallbackUrl: process.env.CRYPTO_REWARDS_IPN_CALLBACK_URL?.trim() || process.env.NOWPAYMENTS_IPN_PUBLIC_URL?.trim() || "",
     supportedCurrencies: [...CRYPTO_REWARD_CURRENCIES],
     networkCode: CRYPTO_REWARD_NETWORK,
     requestTimeoutMs: positiveInt("NOWPAYMENTS_REQUEST_TIMEOUT_MS", 10_000, 60_000),
@@ -63,6 +69,7 @@ export function getCryptoRewardsConfig() {
     pollMaxBackoffMs: positiveInt("CRYPTO_REWARDS_POLL_MAX_BACKOFF_MS", 900_000, 3_600_000),
     defaultUsdtSolGldPerUnit: positiveDecimal("CRYPTO_REWARDS_USDT_SOL_GLD_PER_UNIT", "0"),
     defaultUsdcSolGldPerUnit: positiveDecimal("CRYPTO_REWARDS_USDC_SOL_GLD_PER_UNIT", "0"),
+    minProviderReserveUsd: nonNegativeDecimal("CRYPTO_REWARDS_MIN_PROCESSING_RESERVE_USD", "0"),
   }
 }
 

@@ -1617,6 +1617,7 @@ export class SystemAdminService implements OnModuleInit {
     return this.cryptoRewardsService.decideAdmin(id, actorId, dto);
   }
   cryptoRewardConfig() { return this.cryptoRewardsService.getAdminConfig(); }
+  cryptoRewardProviderHealth() { return this.cryptoRewardsService.getAdminProviderHealth(); }
   updateCryptoRewardConfig(dto: UpdateCryptoRewardConfigDto, actorId: string) {
     return this.cryptoRewardsService.updateAdminConfig(actorId, dto);
   }

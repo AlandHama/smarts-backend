@@ -32,6 +32,7 @@ import { Player360View } from "../components/Player360View";
 import { FeedbackView } from "../components/FeedbackView";
 import { RewardPoliciesView } from "../components/RewardPoliciesView";
 import { PaidRewardsView } from "../components/PaidRewardsView";
+import { CryptoRewardsView } from "../components/CryptoRewardsView";
 import { StorageView } from "../components/StorageView";
 import { FriendsView } from "../components/FriendsView";
 import { OperationsView } from "../components/OperationsView";
@@ -76,6 +77,7 @@ const viewPaths: Record<
   commerce: "/commerce/",
   "social-gifts": "/social-gifts/",
   "paid-rewards": "/paid-rewards/",
+  "crypto-rewards": "/crypto-rewards/",
   leaderboards: "/leaderboards/",
   "game-config": "/game-config/",
   "google-auth": "/google-auth/",
@@ -234,6 +236,7 @@ export default function AdminPage() {
           {view === "paid-rewards" && (
             <PaidRewardsView onOpenPlayer360={openPlayer360} />
           )}
+          {view === "crypto-rewards" && <CryptoRewardsView onOpenPlayer360={openPlayer360} />}
           {view === "storage" && <StorageView />}
           {view === "leaderboards" && (
             <>

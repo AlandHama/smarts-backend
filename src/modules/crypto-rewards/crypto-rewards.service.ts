@@ -126,8 +126,8 @@ export class CryptoRewardsService {
 
   async listAdminRequests(status?: CryptoPayoutRequestStatus) {
     if (status && !(Object.values(CryptoPayoutRequestStatus) as string[]).includes(status)) throw new BadRequestException("Invalid crypto payout status")
-    const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: status ? { status } : {}, include: { user: { select: { id: true, email: true, status: true, profile: { select: { displayName: true } } } }, hold: true }, orderBy: { createdAt: "asc" }, take: 200 })
-    return rows.map((row) => ({ ...this.serializeRequest(row), providerUniqueExternalId: row.providerUniqueExternalId, providerBatchWithdrawalId: row.providerBatchWithdrawalId, providerPayoutId: row.providerPayoutId, providerStatusRaw: row.providerStatusRaw, submissionAttempts: row.submissionAttempts, pollAttempts: row.pollAttempts, user: row.user, hold: row.hold ? { status: row.hold.status, amount: row.hold.amount.toString(), released: row.hold.released.toString(), expiresAt: row.hold.expiresAt } : null }))
+    const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: status ? { status } : {}, include: { user: { select: { id: true, username: true, email: true, status: true, profile: { select: { displayName: true } } } }, hold: true }, orderBy: { createdAt: "asc" }, take: 200 })
+    return rows.map((row) => ({ ...this.serializeRequest(row), adminDecision: row.adminDecision, adminNote: row.adminNote, providerUniqueExternalId: row.providerUniqueExternalId, providerBatchWithdrawalId: row.providerBatchWithdrawalId, providerPayoutId: row.providerPayoutId, providerStatusRaw: row.providerStatusRaw, submissionAttempts: row.submissionAttempts, pollAttempts: row.pollAttempts, user: row.user, hold: row.hold ? { status: row.hold.status, amount: row.hold.amount.toString(), released: row.hold.released.toString(), expiresAt: row.hold.expiresAt } : null }))
   }
 
   async decideAdmin(id: string, adminId: string, dto: CryptoAdminDecisionDto) {
@@ -144,6 +144,8 @@ export class CryptoRewardsService {
       const feeBase = row.providerFeeCrypto as Prisma.Decimal
       const feeDriftBps = feeBase.gt(0) ? currentFee.sub(feeBase).abs().mul(10000).div(feeBase) : currentFee.gt(0) ? new Prisma.Decimal(10000) : new Prisma.Decimal(0)
       if (feeDriftBps.gt(config.maxQuoteDriftBps)) throw new ConflictException("The NOWPayments fee changed; request a new quote")
+      const providerBalance = await this.provider.getPayoutBalance()
+      this.assertProviderReserve(providerBalance, row.currencyCode as CryptoRewardCurrency, row.grossCryptoAmount, config.minProviderReserveUsd ?? new Prisma.Decimal(0))
     }
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.cryptoPayoutRequest.findUnique({ where: { id }, include: { hold: true } })
@@ -159,8 +161,8 @@ export class CryptoRewardsService {
 
   /** Claim an approved request before making the external POST. The claim is durable across process restarts. */
   async submitApproved(id: string, adminId: string) {
-    const callbackUrl = process.env.CRYPTO_REWARDS_IPN_CALLBACK_URL?.trim()
-    if (!callbackUrl) throw new ServiceUnavailableException("CRYPTO_REWARDS_IPN_CALLBACK_URL is not configured")
+    const callbackUrl = getCryptoRewardsConfig().ipnCallbackUrl
+    if (!callbackUrl) throw new ServiceUnavailableException("NOWPAYMENTS_IPN_PUBLIC_URL or CRYPTO_REWARDS_IPN_CALLBACK_URL is not configured")
     const claim = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT "id" FROM "CryptoPayoutRequest" WHERE "id" = ${id} FOR UPDATE`
       const row = await tx.cryptoPayoutRequest.findUnique({ where: { id }, include: { hold: true } })
@@ -302,6 +304,17 @@ export class CryptoRewardsService {
   private async expireHeldRequests() { const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: { status: { in: [CryptoPayoutRequestStatus.PENDING_ADMIN_APPROVAL, CryptoPayoutRequestStatus.APPROVED] }, holdExpiresAt: { lt: new Date() } }, include: { hold: true }, take: 50 }); let expired = 0; for (const row of rows) { try { await this.prisma.$transaction(async (tx) => { const locked = await tx.cryptoPayoutRequest.findUnique({ where: { id: row.id }, include: { hold: true } }); if (!locked || locked.status === CryptoPayoutRequestStatus.SUBMITTING || !locked.hold || locked.hold.status !== CryptoPayoutHoldStatus.HELD) return; await this.releaseHold(tx, locked, "HOLD_EXPIRED", CryptoPayoutRequestStatus.EXPIRED); }); expired += 1 } catch { /* another worker/admin owns the row */ } } return expired }
 
   async getAdminConfig() { const config = await this.getConfig(); return this.serializeConfig(config, true) }
+  async getAdminProviderHealth() {
+    const config = getCryptoRewardsConfig()
+    const configured = Boolean(config.providerEnabled && config.apiKey && config.ipnSecret && process.env.NOWPAYMENTS_ACCOUNT_EMAIL?.trim() && process.env.NOWPAYMENTS_ACCOUNT_PASSWORD?.trim())
+    if (!configured) return { configured: false, environment: config.providerEnvironment, status: null, balance: null, error: "NOWPayments credentials are not fully configured" }
+    try {
+      const [status, balance] = await Promise.all([this.provider.getApiStatus(), this.provider.getPayoutBalance()])
+      return { configured: true, environment: config.providerEnvironment, status: this.safeJson(status), balance: this.safeJson(balance) }
+    } catch {
+      return { configured: false, environment: config.providerEnvironment, status: null, balance: null, error: "NOWPayments health check failed" }
+    }
+  }
   async updateAdminConfig(adminId: string, dto: UpdateCryptoRewardConfigDto) {
     const current = await this.getConfig()
     const data: any = { ...(dto.enabled === undefined ? {} : { enabled: dto.enabled }) }
@@ -315,14 +328,17 @@ export class CryptoRewardsService {
     if (dto.dailyGldLimit !== undefined) data.dailyGldLimit = BigInt(dto.dailyGldLimit)
     if (dto.maxPendingRequestsPerPlayer !== undefined) data.maxPendingPerUser = dto.maxPendingRequestsPerPlayer
     if (dto.holdExpirySeconds !== undefined) data.holdExpiryHours = Math.ceil(dto.holdExpirySeconds / 3600)
+    if (dto.minProviderReserveUsd !== undefined) data.minProviderReserveUsd = new Prisma.Decimal(dto.minProviderReserveUsd)
     if (dto.requireAdminApproval !== undefined) data.requireAdminApproval = dto.requireAdminApproval
     if (dto.usdtSolGldRate !== undefined || dto.usdcSolGldRate !== undefined) data.rateVersion = `admin-${Date.now()}`
     const updated = await this.prisma.cryptoRewardConfig.update({ where: { id: current.id }, data })
-    await this.prisma.$transaction((tx) => writeAdminAudit(tx, { actorId: adminId, action: "CRYPTO_REWARD_CONFIG_UPDATED", entityType: "CryptoRewardConfig", entityId: updated.id, metadata: { changedFields: Object.keys(data) } }))
+    const oldValues = this.serializeConfig(current, true)
+    const newValues = this.serializeConfig(updated, true)
+    await this.prisma.$transaction((tx) => writeAdminAudit(tx, { actorId: adminId, action: "CRYPTO_REWARD_CONFIG_UPDATED", entityType: "CryptoRewardConfig", entityId: updated.id, reason: dto.changeReason?.trim() || undefined, metadata: { changedFields: Object.keys(data), oldValues, newValues } }))
     return this.serializeConfig(updated, true)
   }
 
-  private async getConfig() { const env = getCryptoRewardsConfig(); return this.prisma.cryptoRewardConfig.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default", enabled: env.enabled, networkCode: SOLANA, usdtSolGldPerUnit: env.defaultUsdtSolGldPerUnit, usdcSolGldPerUnit: env.defaultUsdcSolGldPerUnit, quoteTtlSeconds: env.quoteTtlSeconds, maxQuoteDriftBps: env.maxQuoteDriftBps, minGld: BigInt(env.minGld), maxGldPerRequest: BigInt(env.maxGldPerRequest), dailyGldLimit: BigInt(env.dailyGldLimit), maxPendingPerUser: env.maxPendingPerUser, holdExpiryHours: env.holdExpiryHours, platformFeeBps: env.platformFeeBps, requireAdminApproval: env.requireAdminApproval }, update: {} }) }
+  private async getConfig() { const env = getCryptoRewardsConfig(); return this.prisma.cryptoRewardConfig.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default", enabled: env.enabled, networkCode: SOLANA, usdtSolGldPerUnit: env.defaultUsdtSolGldPerUnit, usdcSolGldPerUnit: env.defaultUsdcSolGldPerUnit, quoteTtlSeconds: env.quoteTtlSeconds, maxQuoteDriftBps: env.maxQuoteDriftBps, minGld: BigInt(env.minGld), maxGldPerRequest: BigInt(env.maxGldPerRequest), dailyGldLimit: BigInt(env.dailyGldLimit), maxPendingPerUser: env.maxPendingPerUser, holdExpiryHours: env.holdExpiryHours, platformFeeBps: env.platformFeeBps, minProviderReserveUsd: new Prisma.Decimal(env.minProviderReserveUsd), requireAdminApproval: env.requireAdminApproval }, update: {} }) }
   private assertEnabled(config: any) { if (!config.enabled || !getCryptoRewardsConfig().providerEnabled) throw new ServiceUnavailableException("Crypto rewards are not available") }
   private assertCurrency(currency: string, network: string) { if (!isCryptoRewardCurrency(currency) || network !== SOLANA) throw new BadRequestException("Only USDTSOL and USDCSOL on Solana are supported") }
   private assertSolanaAddress(address: string) { const value = address.trim(); if (!value || [...value].some((char) => !BASE58.includes(char)) || this.base58Bytes(value) !== 32) throw new BadRequestException("Enter a valid Solana address") }
@@ -333,10 +349,19 @@ export class CryptoRewardsService {
   private async assertGldBalance(userId: string, amount: Prisma.Decimal) { const balance = await this.prisma.walletBalance.findFirst({ where: { wallet: { userId }, currency: { code: "GLD" } } }); if (!balance || balance.exactAmount.lt(amount)) throw new BadRequestException("Insufficient GLD balance") }
   private rateFor(config: any, currency: CryptoRewardCurrency) { return currency === "USDTSOL" ? config.usdtSolGldPerUnit : config.usdcSolGldPerUnit }
   private providerBoolean(value: any) { if (typeof value?.valid === "boolean") return value.valid; if (typeof value?.is_valid === "boolean") return value.is_valid; return true }
+  private assertProviderReserve(value: unknown, currency: CryptoRewardCurrency, amount: Prisma.Decimal, reserve: Prisma.Decimal) {
+    if (reserve.lte(0)) return
+    const body: any = value as any
+    const entries = Array.isArray(body) ? body : Array.isArray(body?.balances) ? body.balances : Array.isArray(body?.data) ? body.data : []
+    const entry = entries.find((item: any) => String(item?.currency ?? item?.code ?? item?.ticker ?? "").toUpperCase() === currency)
+    const available = entry?.amount ?? entry?.balance ?? entry?.available ?? entry?.available_balance
+    if (!/^\d+(?:\.\d+)?$/.test(String(available ?? ""))) throw new ConflictException("NOWPayments balance could not be verified against the configured reserve")
+    if (new Prisma.Decimal(String(available)).lt(amount.add(reserve))) throw new ConflictException("NOWPayments balance is below the payout plus configured reserve")
+  }
   private extractDecimal(value: any, keys: string[], fallback: string) { for (const key of keys) { const candidate = value?.[key] ?? value?.data?.[key]; if (candidate !== undefined && /^\d+(?:\.\d+)?$/.test(String(candidate))) return new Prisma.Decimal(String(candidate)) }; return new Prisma.Decimal(fallback) }
   private serializeQuote(row: any) { return { id: row.id, currencyCode: row.currencyCode, networkCode: row.networkCode, destinationAddressMasked: row.destinationAddressMasked, gldAmount: row.gldAmount.toString(), gldRatePerStablecoin: row.gldRatePerStablecoin.toString(), grossCryptoAmount: row.grossCryptoAmount.toString(), platformFeeCrypto: row.platformFeeCrypto.toString(), providerFeeCrypto: row.providerFeeCrypto.toString(), netCryptoAmount: row.netCryptoAmount.toString(), minimumPayoutAmount: row.minimumPayoutAmount.toString(), expiresAt: row.expiresAt } }
-  private serializeRequest(row: any) { return { id: row.id, status: row.status, currencyCode: row.currencyCode, networkCode: row.networkCode, destinationAddressMasked: row.destinationAddressMasked, gldRequested: row.gldRequested.toString(), gldHeld: row.gldHeld.toString(), gldReleased: row.gldReleased.toString(), grossCryptoAmount: row.grossCryptoAmount.toString(), platformFeeCrypto: row.platformFeeCrypto.toString(), providerFeeCrypto: row.providerFeeCrypto.toString(), netCryptoAmount: row.netCryptoAmount.toString(), providerStatus: row.providerStatus, transactionHash: row.transactionHash, quoteExpiresAt: row.quoteExpiresAt, holdExpiresAt: row.holdExpiresAt, requestedAt: row.requestedAt, approvedAt: row.approvedAt, rejectedAt: row.rejectedAt, completedAt: row.completedAt } }
-  private serializeConfig(row: any, admin = false) { return { enabled: row.enabled, networkCode: row.networkCode, currencies: CRYPTO_REWARD_CURRENCIES, rateVersion: admin ? row.rateVersion : undefined, ...(admin ? { usdtSolGldPerUnit: row.usdtSolGldPerUnit.toString(), usdcSolGldPerUnit: row.usdcSolGldPerUnit.toString(), platformFeeBps: row.platformFeeBps, quoteTtlSeconds: row.quoteTtlSeconds, maxQuoteDriftBps: row.maxQuoteDriftBps, minGld: row.minGld.toString(), maxGldPerRequest: row.maxGldPerRequest.toString(), dailyGldLimit: row.dailyGldLimit.toString(), maxPendingPerUser: row.maxPendingPerUser, holdExpiryHours: row.holdExpiryHours, requireAdminApproval: row.requireAdminApproval } : {}) } }
+  private serializeRequest(row: any) { return { id: row.id, status: row.status, statusReason: row.status === CryptoPayoutRequestStatus.REJECTED ? "ADMIN_REJECTED" : row.status === CryptoPayoutRequestStatus.REFUNDED ? "PROVIDER_REJECTED" : row.status === CryptoPayoutRequestStatus.EXPIRED ? "HOLD_EXPIRED" : null, currencyCode: row.currencyCode, networkCode: row.networkCode, destinationAddressMasked: row.destinationAddressMasked, gldRequested: row.gldRequested.toString(), gldHeld: row.gldHeld.toString(), gldReleased: row.gldReleased.toString(), grossCryptoAmount: row.grossCryptoAmount.toString(), platformFeeCrypto: row.platformFeeCrypto.toString(), providerFeeCrypto: row.providerFeeCrypto.toString(), netCryptoAmount: row.netCryptoAmount.toString(), providerStatus: row.providerStatus, transactionHash: row.transactionHash, providerEnvironment: row.providerEnvironment, addressValidatedAt: row.addressValidatedAt, quoteExpiresAt: row.quoteExpiresAt, holdExpiresAt: row.holdExpiresAt, requestedAt: row.requestedAt, approvedAt: row.approvedAt, rejectedAt: row.rejectedAt, completedAt: row.completedAt } }
+  private serializeConfig(row: any, admin = false) { const provider = getCryptoRewardsConfig(); return { enabled: row.enabled, networkCode: row.networkCode, currencies: CRYPTO_REWARD_CURRENCIES, rateVersion: admin ? row.rateVersion : undefined, ...(admin ? { usdtSolGldPerUnit: row.usdtSolGldPerUnit.toString(), usdcSolGldPerUnit: row.usdcSolGldPerUnit.toString(), platformFeeBps: row.platformFeeBps, quoteTtlSeconds: row.quoteTtlSeconds, maxQuoteDriftBps: row.maxQuoteDriftBps, minGld: row.minGld.toString(), maxGldPerRequest: row.maxGldPerRequest.toString(), dailyGldLimit: row.dailyGldLimit.toString(), maxPendingPerUser: row.maxPendingPerUser, holdExpiryHours: row.holdExpiryHours, minProviderReserveUsd: row.minProviderReserveUsd?.toString() ?? "0", requireAdminApproval: row.requireAdminApproval, updatedAt: row.updatedAt?.toISOString?.() ?? null, providerEnabled: provider.providerEnabled, providerEnvironment: provider.providerEnvironment, providerBaseUrl: provider.providerBaseUrl, supportedCurrencies: provider.supportedCurrencies, providerConfigured: Boolean(provider.providerEnabled && provider.apiKey && provider.ipnSecret && process.env.NOWPAYMENTS_ACCOUNT_EMAIL?.trim() && process.env.NOWPAYMENTS_ACCOUNT_PASSWORD?.trim() && provider.ipnCallbackUrl), callbackConfigured: Boolean(provider.ipnCallbackUrl), requirePayoutVerification: provider.requirePayoutVerification, payoutVerificationMode: provider.requirePayoutVerification ? "MANUAL_2FA" : "PROVIDER_DEFAULT" } : {}) } }
   private hashAddress(value: string) { return createHash("sha256").update(value.trim()).digest("hex") }
   private mask(value: string) { const v = value.trim(); return `${v.slice(0, 4)}…${v.slice(-4)}` }
   private key() { return createHash("sha256").update(process.env.CRYPTO_REWARDS_ADDRESS_ENCRYPTION_KEY || getAuthConfig().accessSecret).digest() }

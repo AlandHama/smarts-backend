@@ -56,6 +56,7 @@ export class CryptoPayoutVerificationDto {
 
 export class UpdateCryptoRewardConfigDto {
   @IsOptional() @IsBoolean() enabled?: boolean
+  @IsOptional() @IsString() @MaxLength(1000) changeReason?: string
   @IsOptional() @IsString() @Matches(/^\d+(?:\.\d{1,6})?$/) usdtSolGldRate?: string
   @IsOptional() @IsString() @Matches(/^\d+(?:\.\d{1,6})?$/) usdcSolGldRate?: string
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(10000) platformFeeBps?: number
@@ -66,5 +67,6 @@ export class UpdateCryptoRewardConfigDto {
   @IsOptional() @IsString() @Matches(/^\d+$/) dailyGldLimit?: string
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) maxPendingRequestsPerPlayer?: number
   @IsOptional() @Type(() => Number) @IsInt() @Min(3600) @Max(2592000) holdExpirySeconds?: number
+  @IsOptional() @IsString() @Matches(/^\d+(?:\.\d{1,6})?$/) minProviderReserveUsd?: string
   @IsOptional() @IsBoolean() requireAdminApproval?: boolean
 }

@@ -1448,6 +1448,11 @@ export class SystemAdminController {
   cryptoRewardRequests(@Query("status") status?: string) { return this.systemAdminService.listCryptoPayoutRequests(status); }
 
   @UseGuards(SystemAdminGuard)
+  @Get("api/crypto-rewards/provider-health")
+  @ApiBearerAuth("access-token")
+  cryptoRewardProviderHealth() { return this.systemAdminService.cryptoRewardProviderHealth(); }
+
+  @UseGuards(SystemAdminGuard)
   @Patch("api/crypto-rewards/requests/:requestId")
   @ApiBearerAuth("access-token")
   decideCryptoRewardRequest(@Param("requestId", ParseUUIDPipe) requestId: string, @Body() dto: CryptoAdminDecisionDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.decideCryptoPayoutRequest(requestId, dto, admin.id); }

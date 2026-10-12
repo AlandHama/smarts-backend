@@ -16,6 +16,7 @@ import FolderCopyRoundedIcon from "@mui/icons-material/FolderCopyRounded";
 import PeopleAltRoundedIcon from "@mui/icons-material/PeopleAltRounded";
 import SecurityRoundedIcon from "@mui/icons-material/SecurityRounded";
 import RedeemRoundedIcon from "@mui/icons-material/RedeemRounded";
+import CurrencyBitcoinRoundedIcon from "@mui/icons-material/CurrencyBitcoinRounded";
 import CardGiftcardRoundedIcon from "@mui/icons-material/CardGiftcardRounded";
 import MonitorHeartRoundedIcon from "@mui/icons-material/MonitorHeartRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
@@ -64,6 +65,7 @@ export type AdminView =
   | "commerce"
   | "social-gifts"
   | "paid-rewards"
+  | "crypto-rewards"
   | "leaderboards"
   | "game-config"
   | "google-auth"
@@ -165,6 +167,11 @@ const navigation = [
     key: "paid-rewards" as const,
     label: "Paid rewards",
     icon: <RedeemRoundedIcon />,
+  },
+  {
+    key: "crypto-rewards" as const,
+    label: "Crypto rewards",
+    icon: <CurrencyBitcoinRoundedIcon />,
   },
   {
     key: "storage" as const,
