@@ -17,7 +17,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false })
   app.useWebSocketAdapter(new WsAdapter(app))
   app.use("/system-admin/api/game-content/import", express.json({ limit: "2mb" }))
-  app.use(express.json())
+  app.use(express.json({ verify: (request, _response, buffer) => { (request as any).rawBody = buffer.toString("utf8") } }))
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("Smarts NestJs Backend API")

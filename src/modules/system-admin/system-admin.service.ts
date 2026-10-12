@@ -100,7 +100,7 @@ import { writePlayerAudit } from "../../common/helpers/player-audit";
 import { GoogleAuthService } from "../auth/services/google-auth.service";
 import { UpdateGoogleAuthConfigDto } from "../auth/dtos/google-auth.dto";
 import { CryptoRewardsService } from "../crypto-rewards/crypto-rewards.service";
-import { CryptoAdminDecisionDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
+import { CryptoAdminDecisionDto, CryptoPayoutVerificationDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -1619,6 +1619,15 @@ export class SystemAdminService implements OnModuleInit {
   cryptoRewardConfig() { return this.cryptoRewardsService.getAdminConfig(); }
   updateCryptoRewardConfig(dto: UpdateCryptoRewardConfigDto, actorId: string) {
     return this.cryptoRewardsService.updateAdminConfig(actorId, dto);
+  }
+  submitCryptoPayout(id: string, actorId: string) {
+    return this.cryptoRewardsService.submitApproved(id, actorId);
+  }
+  verifyCryptoPayout(id: string, dto: CryptoPayoutVerificationDto) {
+    return this.cryptoRewardsService.verifyProviderPayout(id, dto.verificationCode);
+  }
+  markCryptoPayoutReconciliation(id: string, actorId: string, note?: string) {
+    return this.cryptoRewardsService.markReconciliation(id, actorId, note);
   }
   rebuildPlayerGameStats(userId: string, gameKey: string) {
     return this.rebuildPlayerGameStatsTransaction.run({ userId, gameKey });

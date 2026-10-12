@@ -116,7 +116,7 @@ import { AnalyticsReportingService } from "./analytics-reporting.service";
 import { AnalyticsAlertRuleDto, AnalyticsPlayerExplorerQueryDto, AnalyticsSavedReportDto, AnalyticsScheduledReportDto } from "./dtos/analytics-report.dto";
 import { DailyChallengeService } from "../daily-challenges/daily-challenge.service";
 import { GenerateDailyChallengeDto, UpdateDailyChallengeConfigurationDto } from "../daily-challenges/dtos";
-import { CryptoAdminDecisionDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
+import { CryptoAdminDecisionDto, CryptoPayoutVerificationDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -1451,6 +1451,21 @@ export class SystemAdminController {
   @Patch("api/crypto-rewards/requests/:requestId")
   @ApiBearerAuth("access-token")
   decideCryptoRewardRequest(@Param("requestId", ParseUUIDPipe) requestId: string, @Body() dto: CryptoAdminDecisionDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.decideCryptoPayoutRequest(requestId, dto, admin.id); }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/crypto-rewards/requests/:requestId/submit")
+  @ApiBearerAuth("access-token")
+  submitCryptoReward(@Param("requestId", ParseUUIDPipe) requestId: string, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.submitCryptoPayout(requestId, admin.id); }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/crypto-rewards/requests/:requestId/verify")
+  @ApiBearerAuth("access-token")
+  verifyCryptoReward(@Param("requestId", ParseUUIDPipe) requestId: string, @Body() dto: CryptoPayoutVerificationDto) { return this.systemAdminService.verifyCryptoPayout(requestId, dto); }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/crypto-rewards/requests/:requestId/reconciliation")
+  @ApiBearerAuth("access-token")
+  markCryptoRewardReconciliation(@Param("requestId", ParseUUIDPipe) requestId: string, @Body("note") note: string | undefined, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.markCryptoPayoutReconciliation(requestId, admin.id, note); }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/commerce/catalogs")

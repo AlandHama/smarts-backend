@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common"
+import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Req } from "@nestjs/common"
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
+import { SkipAuth } from "../../common/decorators/skip-auth.decorator"
 import { UserResponseDto } from "../auth/dtos"
 import { CryptoRewardsService } from "./crypto-rewards.service"
 import { CryptoAddressValidationDto, CreateCryptoPayoutRequestDto, CryptoRewardQuoteDto } from "./dtos"
@@ -19,4 +20,11 @@ export class CryptoRewardsController {
   @Get("requests") list(@CurrentUser() user: UserResponseDto) { return this.rewards.listPlayerRequests(user.id) }
   @Get("requests/:requestId") get(@CurrentUser() user: UserResponseDto, @Param("requestId", ParseUUIDPipe) requestId: string) { return this.rewards.getPlayerRequest(user.id, requestId) }
   @Post("requests/:requestId/cancel") cancel(@CurrentUser() user: UserResponseDto, @Param("requestId", ParseUUIDPipe) requestId: string) { return this.rewards.cancel(user.id, requestId) }
+
+  @SkipAuth()
+  @Post("webhooks/nowpayments")
+  webhook(@Req() request: any, @Headers("x-nowpayments-sig") signature?: string) {
+    const rawBody = typeof request.rawBody === "string" ? request.rawBody : JSON.stringify(request.body ?? {})
+    return this.rewards.handleProviderIpn(rawBody, signature)
+  }
 }

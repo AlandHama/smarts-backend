@@ -48,6 +48,12 @@ export class CryptoAdminDecisionDto {
   adminNote?: string
 }
 
+export class CryptoPayoutVerificationDto {
+  @IsString()
+  @Matches(/^\d{6,8}$/)
+  verificationCode!: string
+}
+
 export class UpdateCryptoRewardConfigDto {
   @IsOptional() @IsBoolean() enabled?: boolean
   @IsOptional() @IsString() @Matches(/^\d+(?:\.\d{1,6})?$/) usdtSolGldRate?: string

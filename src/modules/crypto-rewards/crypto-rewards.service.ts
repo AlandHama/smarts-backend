@@ -125,8 +125,9 @@ export class CryptoRewardsService {
   }
 
   async listAdminRequests(status?: CryptoPayoutRequestStatus) {
+    if (status && !(Object.values(CryptoPayoutRequestStatus) as string[]).includes(status)) throw new BadRequestException("Invalid crypto payout status")
     const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: status ? { status } : {}, include: { user: { select: { id: true, email: true, status: true, profile: { select: { displayName: true } } } }, hold: true }, orderBy: { createdAt: "asc" }, take: 200 })
-    return rows.map((row) => ({ ...this.serializeRequest(row), user: row.user, hold: row.hold ? { status: row.hold.status, amount: row.hold.amount.toString(), released: row.hold.released.toString(), expiresAt: row.hold.expiresAt } : null }))
+    return rows.map((row) => ({ ...this.serializeRequest(row), providerUniqueExternalId: row.providerUniqueExternalId, providerBatchWithdrawalId: row.providerBatchWithdrawalId, providerPayoutId: row.providerPayoutId, providerStatusRaw: row.providerStatusRaw, submissionAttempts: row.submissionAttempts, pollAttempts: row.pollAttempts, user: row.user, hold: row.hold ? { status: row.hold.status, amount: row.hold.amount.toString(), released: row.hold.released.toString(), expiresAt: row.hold.expiresAt } : null }))
   }
 
   async decideAdmin(id: string, adminId: string, dto: CryptoAdminDecisionDto) {
@@ -155,6 +156,150 @@ export class CryptoRewardsService {
       return this.serializeRequest(updated)
     })
   }
+
+  /** Claim an approved request before making the external POST. The claim is durable across process restarts. */
+  async submitApproved(id: string, adminId: string) {
+    const callbackUrl = process.env.CRYPTO_REWARDS_IPN_CALLBACK_URL?.trim()
+    if (!callbackUrl) throw new ServiceUnavailableException("CRYPTO_REWARDS_IPN_CALLBACK_URL is not configured")
+    const claim = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT "id" FROM "CryptoPayoutRequest" WHERE "id" = ${id} FOR UPDATE`
+      const row = await tx.cryptoPayoutRequest.findUnique({ where: { id }, include: { hold: true } })
+      if (!row) throw new NotFoundException("Crypto payout request not found")
+      if (row.providerPayoutId || row.providerBatchWithdrawalId) return { alreadySubmitted: true, row: this.serializeRequest(row) }
+      if (row.status !== CryptoPayoutRequestStatus.APPROVED || !row.hold || row.hold.status !== CryptoPayoutHoldStatus.HELD) throw new ConflictException("Only an approved, held request can be submitted")
+      if (row.holdExpiresAt <= new Date()) throw new ConflictException("Crypto payout hold has expired")
+      const externalId = row.providerUniqueExternalId || `smarts-${row.id}`
+      const updated = await tx.cryptoPayoutRequest.update({ where: { id }, data: { status: CryptoPayoutRequestStatus.SUBMITTING, providerUniqueExternalId: externalId, submissionAttempts: { increment: 1 }, nextPollAt: new Date(), adminId, submittedAt: null } })
+      return { alreadySubmitted: false, row: updated, externalId }
+    })
+    if (claim.alreadySubmitted) return claim.row
+    try {
+      const address = await this.loadDestination(id)
+      const response = await this.provider.createPayout({ ipnCallbackUrl: callbackUrl, withdrawals: [{ address, currency: claim.row.currencyCode as CryptoRewardCurrency, amount: claim.row.grossCryptoAmount.toFixed(9), unique_external_id: claim.externalId, payout_description: `SMARTS crypto reward ${id}` }] })
+      return this.storeProviderCreation(id, response)
+    } catch (error) {
+      // Keep SUBMITTING with the external id. Reconciliation will search the provider
+      // before any human is allowed to attempt another action.
+      await this.prisma.cryptoPayoutRequest.update({ where: { id }, data: { nextPollAt: new Date() } }).catch(() => undefined)
+      throw error
+    }
+  }
+
+  async verifyProviderPayout(id: string, verificationCode: string) {
+    const row = await this.prisma.cryptoPayoutRequest.findUnique({ where: { id } })
+    if (!row) throw new NotFoundException("Crypto payout request not found")
+    if (row.status !== CryptoPayoutRequestStatus.AWAITING_PROVIDER_VERIFICATION || !row.providerBatchWithdrawalId) throw new ConflictException("This payout is not awaiting provider verification")
+    const response = await this.provider.verifyPayout(row.providerBatchWithdrawalId, verificationCode)
+    const updated = await this.prisma.cryptoPayoutRequest.update({ where: { id }, data: { status: CryptoPayoutRequestStatus.PROCESSING, providerVerificationAt: new Date(), nextPollAt: new Date(), providerStatusSnapshot: this.safeJson(response) } })
+    return this.serializeRequest(updated)
+  }
+
+  async handleProviderIpn(rawBody: string, signature: string | undefined) {
+    const payload = this.provider.verifyAndNormalizeIpn(rawBody, signature)
+    return this.applyProviderStatus(payload, "IPN")
+  }
+
+  async runReconciliation() {
+    const expired = await this.expireHeldRequests()
+    const now = new Date()
+    const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: { status: { in: [CryptoPayoutRequestStatus.SUBMITTING, CryptoPayoutRequestStatus.CREATED, CryptoPayoutRequestStatus.AWAITING_PROVIDER_VERIFICATION, CryptoPayoutRequestStatus.PROCESSING, CryptoPayoutRequestStatus.SENDING, CryptoPayoutRequestStatus.RECONCILIATION_REQUIRED] }, OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }] }, orderBy: { createdAt: "asc" }, take: 25 })
+    let processed = 0
+    for (const row of rows) {
+      try {
+        const claimed = await this.prisma.cryptoPayoutRequest.updateMany({ where: { id: row.id, status: row.status, pollAttempts: row.pollAttempts, OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }] }, data: { nextPollAt: new Date(Date.now() + getCryptoRewardsConfig().pollMaxBackoffMs) } })
+        if (claimed.count !== 1) continue
+        let response: unknown
+        if (row.providerPayoutId) response = await this.provider.getPayoutStatus(row.providerPayoutId)
+        else {
+          const listed = await this.provider.listPayouts({ limit: 100, page: 1 })
+          response = this.findListedProviderPayout(listed, row.providerUniqueExternalId || `smarts-${row.id}`)
+          if (!response) continue
+        }
+        const result = await this.applyProviderStatus(response, "POLL", row.id)
+        if (result && !(result as any).ignored) processed += 1
+      } catch (error) {
+        await this.prisma.cryptoPayoutRequest.update({ where: { id: row.id }, data: { pollAttempts: { increment: 1 }, nextPollAt: new Date(Date.now() + this.pollBackoff(row.pollAttempts + 1)) } }).catch(() => undefined)
+      }
+    }
+    return { skipped: false, processed, expired }
+  }
+
+  async runSubmissionQueue() {
+    const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: { status: CryptoPayoutRequestStatus.APPROVED, providerPayoutId: null, providerBatchWithdrawalId: null }, orderBy: { approvedAt: "asc" }, take: 10, select: { id: true, adminId: true } })
+    let submitted = 0
+    for (const row of rows) {
+      if (!row.adminId) continue
+      try { await this.submitApproved(row.id, row.adminId); submitted += 1 } catch { /* the next worker tick or an admin action retries/reconciles it */ }
+    }
+    return { submitted }
+  }
+
+  async markReconciliation(id: string, adminId: string, note?: string) {
+    const row = await this.prisma.cryptoPayoutRequest.update({ where: { id }, data: { status: CryptoPayoutRequestStatus.RECONCILIATION_REQUIRED, nextPollAt: new Date(), adminId, adminNote: note?.trim() } })
+    await this.prisma.$transaction((tx) => writeAdminAudit(tx, { actorId: adminId, action: "CRYPTO_PAYOUT_MARKED_RECONCILIATION", entityType: "CryptoPayoutRequest", entityId: id, reason: note, metadata: { providerPayoutId: row.providerPayoutId, providerBatchWithdrawalId: row.providerBatchWithdrawalId } }))
+    return this.serializeRequest(row)
+  }
+
+  private async loadDestination(id: string) { const row = await this.prisma.cryptoPayoutRequest.findUnique({ where: { id }, select: { destinationAddressCiphertext: true } }); if (!row) throw new NotFoundException("Crypto payout request not found"); return this.decryptAddress(row.destinationAddressCiphertext) }
+
+  private async storeProviderCreation(id: string, response: unknown) {
+    const body = response as any
+    const first = Array.isArray(body) ? body[0] : body?.withdrawals?.[0] || body?.payouts?.[0] || body
+    const batchId = this.stringValue(body, ["batch_withdrawal_id", "batchWithdrawalId"]) || this.stringValue(first, ["batch_withdrawal_id", "batchWithdrawalId"])
+    const payoutId = this.stringValue(first, ["id", "payout_id", "payoutId"]) || this.stringValue(body, ["payout_id", "payoutId"])
+    if (!batchId && !payoutId) throw new ServiceUnavailableException("NOWPayments returned no payout identifier")
+    const requiresVerification = getCryptoRewardsConfig().requirePayoutVerification
+    const status = requiresVerification ? CryptoPayoutRequestStatus.AWAITING_PROVIDER_VERIFICATION : CryptoPayoutRequestStatus.CREATED
+    const updated = await this.prisma.cryptoPayoutRequest.update({ where: { id }, data: { status, providerBatchWithdrawalId: batchId, providerPayoutId: payoutId, providerVerificationRequired: requiresVerification, providerStatus: this.normalizedProviderStatus(first?.status || body?.status), providerStatusRaw: this.stringValue(first, ["status"]), providerStatusSnapshot: this.safeJson(response), providerCreatedAt: this.dateValue(first?.created_at || body?.created_at), submittedAt: new Date(), nextPollAt: new Date() } })
+    return this.serializeRequest(updated)
+  }
+
+  private async applyProviderStatus(payload: unknown, source: "IPN" | "POLL", expectedRequestId?: string) {
+    const rowData = this.findProviderRow(payload)
+    if (!rowData) return { ignored: true, reason: "NO_MATCHING_PROVIDER_ID" }
+    const request = await this.prisma.cryptoPayoutRequest.findFirst({ where: { OR: [{ id: expectedRequestId || "00000000-0000-0000-0000-000000000000" }, { providerPayoutId: rowData.payoutId || undefined }, { providerBatchWithdrawalId: rowData.batchId || undefined }, { providerUniqueExternalId: rowData.externalId || undefined }] } })
+    if (!request) return { ignored: true, reason: "NO_MATCHING_REQUEST" }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT "id" FROM "CryptoPayoutRequest" WHERE "id" = ${request.id} FOR UPDATE`
+      const locked = await tx.cryptoPayoutRequest.findUniqueOrThrow({ where: { id: request.id }, include: { hold: true } })
+      if (locked.providerPayoutId && rowData.payoutId && locked.providerPayoutId !== rowData.payoutId) throw new ConflictException("Provider payout identifier mismatch")
+      if (rowData.currency && rowData.currency.toUpperCase() !== locked.currencyCode.toUpperCase()) throw new ConflictException("Provider currency mismatch")
+      if (this.isFinalLocalStatus(locked.status) && locked.status !== CryptoPayoutRequestStatus.RECONCILIATION_REQUIRED) return { ignored: true, reason: "FINAL_ALREADY_APPLIED", requestId: locked.id }
+      const providerStatus = this.normalizedProviderStatus(rowData.status)
+      if (this.providerRank(providerStatus) < this.providerRank(locked.providerStatus || "")) return { ignored: true, reason: "OLDER_PROVIDER_STATUS", requestId: locked.id }
+      if (rowData.address && this.hashAddress(rowData.address) !== locked.destinationAddressHash) throw new ConflictException("Provider payout address mismatch")
+      if (rowData.amount) {
+        const providerAmount = new Prisma.Decimal(rowData.amount)
+        if (providerAmount.sub(locked.grossCryptoAmount).abs().gt(new Prisma.Decimal("0.000001"))) throw new ConflictException("Provider payout amount mismatch")
+      }
+      const common = { providerPayoutId: rowData.payoutId || locked.providerPayoutId, providerBatchWithdrawalId: rowData.batchId || locked.providerBatchWithdrawalId, providerStatus, providerStatusRaw: rowData.status, transactionHash: rowData.hash || locked.transactionHash, providerUpdatedAt: this.dateValue(rowData.updatedAt) || new Date(), providerLastEventAt: new Date(), providerStatusSnapshot: this.safeJson(payload), nextPollAt: providerStatus === "FINISHED" || providerStatus === "REJECTED" ? null : new Date(Date.now() + this.pollBackoff(locked.pollAttempts + 1)), pollAttempts: { increment: 1 } }
+      if (providerStatus === "FINISHED") { await this.consumeHold(tx, locked, common); await this.emitStatusEvent(tx, locked, "COMPLETED", source); return { applied: true, status: "COMPLETED", requestId: locked.id, source } }
+      if (providerStatus === "REJECTED") { await this.releaseHold(tx, locked, "PROVIDER_REJECTED", CryptoPayoutRequestStatus.REFUNDED); await tx.cryptoPayoutRequest.update({ where: { id: locked.id }, data: common }); await this.emitStatusEvent(tx, locked, "REFUNDED", source); return { applied: true, status: "REFUNDED", requestId: locked.id, source } }
+      const localStatus = providerStatus === "SENDING" ? CryptoPayoutRequestStatus.SENDING : providerStatus === "PROCESSING" ? CryptoPayoutRequestStatus.PROCESSING : providerStatus === "WAITING" || providerStatus === "CREATING" ? (locked.status === CryptoPayoutRequestStatus.AWAITING_PROVIDER_VERIFICATION ? CryptoPayoutRequestStatus.AWAITING_PROVIDER_VERIFICATION : CryptoPayoutRequestStatus.PROCESSING) : providerStatus === "FAILED" ? CryptoPayoutRequestStatus.RECONCILIATION_REQUIRED : locked.status
+      const updated = await tx.cryptoPayoutRequest.update({ where: { id: locked.id }, data: { ...common, status: localStatus } })
+      await this.emitStatusEvent(tx, locked, localStatus, source)
+      return { applied: true, status: updated.status, requestId: updated.id, source }
+    })
+  }
+
+  private findListedProviderPayout(value: unknown, externalId: string) { const body: any = value as any; const list = Array.isArray(body) ? body : Array.isArray(body?.payouts) ? body.payouts : Array.isArray(body?.data) ? body.data : body ? [body] : []; return list.find((item: any) => this.stringValue(item, ["unique_external_id", "uniqueExternalId"]) === externalId) || null }
+  private findProviderRow(value: unknown): { payoutId?: string; batchId?: string; externalId?: string; currency?: string; status?: string; hash?: string; address?: string; amount?: string; updatedAt?: unknown } | null {
+    const body: any = Array.isArray(value) ? value[0] : value
+    if (!body || typeof body !== "object") return null
+    const first: any = body.withdrawals?.[0] || body.payouts?.[0] || body
+    return { payoutId: this.stringValue(first, ["id", "payout_id", "payoutId", "payment_id"]) || this.stringValue(body, ["payout_id", "payoutId", "payment_id"]), batchId: this.stringValue(first, ["batch_withdrawal_id", "batchWithdrawalId"]) || this.stringValue(body, ["batch_withdrawal_id", "batchWithdrawalId"]), externalId: this.stringValue(first, ["unique_external_id", "uniqueExternalId"]) || this.stringValue(body, ["unique_external_id", "uniqueExternalId"]), currency: this.stringValue(first, ["currency", "pay_currency", "outcome_currency"]), status: this.stringValue(first, ["status", "payment_status"]), hash: this.stringValue(first, ["hash", "tx_hash", "transaction_hash"]), address: this.stringValue(first, ["address", "pay_address"]), amount: this.stringValue(first, ["amount", "pay_amount", "outcome_amount"]), updatedAt: first.updated_at || body.updated_at }
+  }
+
+  private normalizedProviderStatus(value: unknown) { return String(value || "").trim().toUpperCase() }
+  private providerRank(status: string) { return ({ "": 0, CREATING: 1, WAITING: 2, PROCESSING: 3, FAILED: 3, SENDING: 4, REJECTED: 5, FINISHED: 6 } as Record<string, number>)[status] ?? 0 }
+  private stringValue(value: any, keys: string[]) { for (const key of keys) if (value?.[key] !== undefined && value?.[key] !== null && String(value[key]).trim()) return String(value[key]).trim(); return undefined }
+  private dateValue(value: unknown) { if (!value) return undefined; const date = new Date(String(value)); return Number.isNaN(date.getTime()) ? undefined : date }
+  private isFinalLocalStatus(status: CryptoPayoutRequestStatus) { return ([CryptoPayoutRequestStatus.COMPLETED, CryptoPayoutRequestStatus.REFUNDED, CryptoPayoutRequestStatus.REJECTED, CryptoPayoutRequestStatus.EXPIRED] as CryptoPayoutRequestStatus[]).includes(status) }
+  private pollBackoff(attempt: number) { const config = getCryptoRewardsConfig(); return Math.min(config.pollMaxBackoffMs, config.pollIntervalMs * Math.max(1, 2 ** Math.min(attempt, 5))) }
+  private async consumeHold(tx: Prisma.TransactionClient, row: any, providerFields: Record<string, unknown>) { if (row.hold?.status === CryptoPayoutHoldStatus.HELD) await tx.cryptoPayoutHold.update({ where: { id: row.hold.id }, data: { status: CryptoPayoutHoldStatus.CONSUMED, consumedAt: new Date() } }); await tx.cryptoPayoutRequest.update({ where: { id: row.id }, data: { ...providerFields, status: CryptoPayoutRequestStatus.COMPLETED, gldCharged: row.gldHeld, completedAt: new Date() } }) }
+  private emitStatusEvent(tx: Prisma.TransactionClient, row: any, status: string, source: string) { return tx.outboxEvent.create({ data: { eventType: "crypto-payout.status-changed", aggregateType: "CryptoPayoutRequest", aggregateId: row.id, payload: { requestId: row.id, userId: row.userId, status, currencyCode: row.currencyCode, source } as Prisma.InputJsonValue } }) }
+
+  private async expireHeldRequests() { const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: { status: { in: [CryptoPayoutRequestStatus.PENDING_ADMIN_APPROVAL, CryptoPayoutRequestStatus.APPROVED] }, holdExpiresAt: { lt: new Date() } }, include: { hold: true }, take: 50 }); let expired = 0; for (const row of rows) { try { await this.prisma.$transaction(async (tx) => { const locked = await tx.cryptoPayoutRequest.findUnique({ where: { id: row.id }, include: { hold: true } }); if (!locked || locked.status === CryptoPayoutRequestStatus.SUBMITTING || !locked.hold || locked.hold.status !== CryptoPayoutHoldStatus.HELD) return; await this.releaseHold(tx, locked, "HOLD_EXPIRED", CryptoPayoutRequestStatus.EXPIRED); }); expired += 1 } catch { /* another worker/admin owns the row */ } } return expired }
 
   async getAdminConfig() { const config = await this.getConfig(); return this.serializeConfig(config, true) }
   async updateAdminConfig(adminId: string, dto: UpdateCryptoRewardConfigDto) {
@@ -198,5 +343,5 @@ export class CryptoRewardsService {
   private encryptAddress(value: string) { const iv = randomBytes(12); const cipher = createCipheriv("aes-256-gcm", this.key(), iv); const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]); return `${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}` }
   private decryptAddress(value: string) { const [iv, tag, data] = value.split("."); const decipher = createDecipheriv("aes-256-gcm", this.key(), Buffer.from(iv, "base64url")); decipher.setAuthTag(Buffer.from(tag, "base64url")); return Buffer.concat([decipher.update(Buffer.from(data, "base64url")), decipher.final()]).toString("utf8") }
   private safeJson(value: unknown) { return JSON.parse(JSON.stringify(value, (_, item) => item instanceof Prisma.Decimal ? item.toString() : item)) as Prisma.InputJsonValue }
-  private async releaseHold(tx: Prisma.TransactionClient, row: any, reason: string) { const amount = BigInt(row.hold.amount) - BigInt(row.hold.released); if (amount > 0n) await this.creditWallet.runWithinTransaction({ userId: row.userId, currencyCode: "GLD", amount, amountDecimal: amount.toString(), sourceId: `${row.id}:release`, sourceType: WalletTransactionSourceType.REFUND, rewardGrantKey: `CRYPTO_PAYOUT_RELEASE:${row.id}`, metadata: { requestId: row.id, reason } }, tx); await tx.cryptoPayoutHold.update({ where: { id: row.hold.id }, data: { status: CryptoPayoutHoldStatus.RELEASED, released: row.hold.amount, releasedAt: new Date() } }); await tx.cryptoPayoutRequest.update({ where: { id: row.id }, data: { status: CryptoPayoutRequestStatus.REJECTED, gldReleased: row.hold.amount, rejectedAt: new Date(), adminDecision: reason } }) }
+  private async releaseHold(tx: Prisma.TransactionClient, row: any, reason: string, finalStatus: CryptoPayoutRequestStatus = CryptoPayoutRequestStatus.REJECTED) { const amount = BigInt(row.hold.amount) - BigInt(row.hold.released); if (amount > 0n) await this.creditWallet.runWithinTransaction({ userId: row.userId, currencyCode: "GLD", amount, amountDecimal: amount.toString(), sourceId: `${row.id}:release`, sourceType: WalletTransactionSourceType.REFUND, rewardGrantKey: `CRYPTO_PAYOUT_RELEASE:${row.id}`, metadata: { requestId: row.id, reason } }, tx); await tx.cryptoPayoutHold.update({ where: { id: row.hold.id }, data: { status: CryptoPayoutHoldStatus.RELEASED, released: row.hold.amount, releasedAt: new Date() } }); await tx.cryptoPayoutRequest.update({ where: { id: row.id }, data: { status: finalStatus, gldReleased: row.hold.amount, rejectedAt: new Date(), adminDecision: reason } }) }
 }

@@ -58,6 +58,9 @@ export function getCryptoRewardsConfig() {
     holdExpiryHours: positiveInt("CRYPTO_REWARDS_HOLD_EXPIRY_HOURS", 72, 720),
     platformFeeBps: nonNegativeInt("CRYPTO_REWARDS_PLATFORM_FEE_BPS", 0, 10_000),
     requireAdminApproval: booleanEnv("CRYPTO_REWARDS_REQUIRE_ADMIN_APPROVAL", true),
+    requirePayoutVerification: booleanEnv("NOWPAYMENTS_REQUIRE_PAYOUT_VERIFICATION", true),
+    pollIntervalMs: positiveInt("CRYPTO_REWARDS_POLL_INTERVAL_MS", 30_000, 300_000),
+    pollMaxBackoffMs: positiveInt("CRYPTO_REWARDS_POLL_MAX_BACKOFF_MS", 900_000, 3_600_000),
     defaultUsdtSolGldPerUnit: positiveDecimal("CRYPTO_REWARDS_USDT_SOL_GLD_PER_UNIT", "0"),
     defaultUsdcSolGldPerUnit: positiveDecimal("CRYPTO_REWARDS_USDC_SOL_GLD_PER_UNIT", "0"),
   }

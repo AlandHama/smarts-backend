@@ -283,9 +283,18 @@ enum WalletTransactionSourceType {
 enum CryptoPayoutRequestStatus {
   PENDING_ADMIN_APPROVAL
   APPROVED
+  SUBMITTING
+  CREATED
+  AWAITING_PROVIDER_VERIFICATION
+  PROCESSING
+  SENDING
+  COMPLETED
   REJECTED
+  REFUNDED
+  FAILED_RETRYABLE
   EXPIRED
   ADDRESS_INVALID
+  REQUOTE_REQUIRED
   RECONCILIATION_REQUIRED
 }
 
@@ -1603,6 +1612,13 @@ model CryptoPayoutRequest {
   transactionHash              String?                   @db.VarChar(255)
   providerCreatedAt            DateTime?
   providerUpdatedAt            DateTime?
+  providerStatusSnapshot       Json?
+  providerLastEventAt          DateTime?
+  nextPollAt                   DateTime?
+  pollAttempts                 Int                       @default(0)
+  submissionAttempts           Int                       @default(0)
+  providerVerificationRequired Boolean                   @default(false)
+  providerVerificationAt       DateTime?
   adminDecision                String?                   @db.VarChar(20)
   adminId                      String?                   @db.Uuid
   adminNote                    String?                   @db.VarChar(500)
@@ -1623,6 +1639,7 @@ model CryptoPayoutRequest {
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([providerStatus, updatedAt])
+  @@index([status, nextPollAt])
   @@index([destinationAddressHash, currencyCode])
 }
 
