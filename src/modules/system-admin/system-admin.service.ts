@@ -99,6 +99,8 @@ import { ReferralsService } from "../referrals/referrals.service";
 import { writePlayerAudit } from "../../common/helpers/player-audit";
 import { GoogleAuthService } from "../auth/services/google-auth.service";
 import { UpdateGoogleAuthConfigDto } from "../auth/dtos/google-auth.dto";
+import { CryptoRewardsService } from "../crypto-rewards/crypto-rewards.service";
+import { CryptoAdminDecisionDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -130,6 +132,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly analyticsService: SystemAdminAnalyticsService,
     private readonly referralsService: ReferralsService,
     private readonly googleAuthService: GoogleAuthService,
+    private readonly cryptoRewardsService: CryptoRewardsService,
   ) {}
 
   async onModuleInit() {
@@ -1606,6 +1609,16 @@ export class SystemAdminService implements OnModuleInit {
     actorId: string,
   ) {
     return this.commerceService.decidePaidRewardRequest(id, dto, actorId);
+  }
+  listCryptoPayoutRequests(status?: string) {
+    return this.cryptoRewardsService.listAdminRequests(status as any);
+  }
+  decideCryptoPayoutRequest(id: string, dto: CryptoAdminDecisionDto, actorId: string) {
+    return this.cryptoRewardsService.decideAdmin(id, actorId, dto);
+  }
+  cryptoRewardConfig() { return this.cryptoRewardsService.getAdminConfig(); }
+  updateCryptoRewardConfig(dto: UpdateCryptoRewardConfigDto, actorId: string) {
+    return this.cryptoRewardsService.updateAdminConfig(actorId, dto);
   }
   rebuildPlayerGameStats(userId: string, gameKey: string) {
     return this.rebuildPlayerGameStatsTransaction.run({ userId, gameKey });

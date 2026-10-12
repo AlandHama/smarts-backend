@@ -38,9 +38,10 @@ import { GemBlitzModule } from "../gem-blitz/gem-blitz.module"
 import { GemBlitzAdminController } from "../gem-blitz/gem-blitz-admin.controller"
 import { TileRushModule } from "../tile-rush/tile-rush.module"
 import { TileRushAdminController } from "../tile-rush/tile-rush-admin.controller"
+import { CryptoRewardsModule } from "../crypto-rewards/crypto-rewards.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule, TileRushModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule, TileRushModule, CryptoRewardsModule],
   controllers: [SystemAdminController, GemBlitzAdminController, TileRushAdminController],
   providers: [
     SystemAdminService,

@@ -116,6 +116,7 @@ import { AnalyticsReportingService } from "./analytics-reporting.service";
 import { AnalyticsAlertRuleDto, AnalyticsPlayerExplorerQueryDto, AnalyticsSavedReportDto, AnalyticsScheduledReportDto } from "./dtos/analytics-report.dto";
 import { DailyChallengeService } from "../daily-challenges/daily-challenge.service";
 import { GenerateDailyChallengeDto, UpdateDailyChallengeConfigurationDto } from "../daily-challenges/dtos";
+import { CryptoAdminDecisionDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -1430,6 +1431,26 @@ export class SystemAdminController {
       admin.id,
     );
   }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/crypto-rewards/config")
+  @ApiBearerAuth("access-token")
+  cryptoRewardConfig() { return this.systemAdminService.cryptoRewardConfig(); }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/crypto-rewards/config")
+  @ApiBearerAuth("access-token")
+  updateCryptoRewardConfig(@Body() dto: UpdateCryptoRewardConfigDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.updateCryptoRewardConfig(dto, admin.id); }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/crypto-rewards/requests")
+  @ApiBearerAuth("access-token")
+  cryptoRewardRequests(@Query("status") status?: string) { return this.systemAdminService.listCryptoPayoutRequests(status); }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/crypto-rewards/requests/:requestId")
+  @ApiBearerAuth("access-token")
+  decideCryptoRewardRequest(@Param("requestId", ParseUUIDPipe) requestId: string, @Body() dto: CryptoAdminDecisionDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.decideCryptoPayoutRequest(requestId, dto, admin.id); }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/commerce/catalogs")

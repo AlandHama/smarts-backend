@@ -277,6 +277,23 @@ enum WalletTransactionSourceType {
   REFUND
   ADMIN
   SYSTEM
+  CRYPTO_PAYOUT
+}
+
+enum CryptoPayoutRequestStatus {
+  PENDING_ADMIN_APPROVAL
+  APPROVED
+  REJECTED
+  EXPIRED
+  ADDRESS_INVALID
+  RECONCILIATION_REQUIRED
+}
+
+enum CryptoPayoutHoldStatus {
+  HELD
+  CONSUMED
+  RELEASED
+  EXPIRED
 }
 
 enum RankingMatchStatus {
@@ -629,6 +646,10 @@ model User {
   playerAuditEvents           PlayerAuditEvent[]
   paidRewardRequests          PaidRewardRequest[]
   paidRewardDecisions         PaidRewardRequest[]          @relation("PaidRewardRequestDecider")
+  cryptoPayoutRequests        CryptoPayoutRequest[]
+  cryptoPayoutDecisions       CryptoPayoutRequest[]        @relation("CryptoPayoutRequestDecider")
+  cryptoPayoutHolds           CryptoPayoutHold[]
+  cryptoPayoutQuotes          CryptoPayoutQuote[]
   gldControlUpdates           GldAdminControl[]            @relation("GldControlUpdater")
   gldManualBackings           GldManualBacking[]           @relation("GldManualBackingCreator")
   assignedRedeemCodes         AssetRedeemCode[]            @relation("RedeemCodeAssignedUser")
@@ -689,7 +710,7 @@ model User {
   partyInvitesReceived        PartyInvite[]                @relation("PartyInviteInvitee")
   cooperativeParticipants     CooperativeParticipant[]
   cooperativeLedgerOperations CooperativeLedgerOperation[]
-  dailyChallengeAttempts       DailyChallengeAttempt[]
+  dailyChallengeAttempts      DailyChallengeAttempt[]
   rematchRequestsSent         RematchRequest[]             @relation("RematchRequester")
   rematchRequestsReceived     RematchRequest[]             @relation("RematchRecipient")
 }
@@ -842,19 +863,19 @@ model StreakActivity {
 /// Server-owned consecutive-win streak policy. Milestones are editable from
 /// System Admin and the active bonus is resolved from server-owned match stats.
 model WinStreakConfiguration {
-  id              String              @id @default(uuid()) @db.Uuid
-  key             String              @unique @default("default") @db.VarChar(40)
-  enabled         Boolean             @default(true)
-  resetOnNonWin   Boolean             @default(true)
-  maxBonusPercent Decimal             @default(35) @db.Decimal(20, 6)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id              String               @id @default(uuid()) @db.Uuid
+  key             String               @unique @default("default") @db.VarChar(40)
+  enabled         Boolean              @default(true)
+  resetOnNonWin   Boolean              @default(true)
+  maxBonusPercent Decimal              @default(35) @db.Decimal(20, 6)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
   milestones      WinStreakMilestone[]
 }
 
 model WinStreakMilestone {
-  id              String                @id @default(uuid()) @db.Uuid
-  configurationId String                @db.Uuid
+  id              String                 @id @default(uuid()) @db.Uuid
+  configurationId String                 @db.Uuid
   wins            Int
   bonusPercent    Decimal                @db.Decimal(20, 6)
   title           String?                @db.VarChar(120)
@@ -1540,6 +1561,137 @@ model PaidRewardRequest {
   @@index([assetDefinitionId, assetVariationId, status])
 }
 
+/// Player-requested crypto payout. Provider submission is intentionally a
+/// later phase; this aggregate owns the quote, GLD hold, and admin decision.
+model CryptoPayoutRequest {
+  id                           String                    @id @default(uuid()) @db.Uuid
+  userId                       String                    @db.Uuid
+  status                       CryptoPayoutRequestStatus @default(PENDING_ADMIN_APPROVAL)
+  requestKey                   String                    @unique @db.VarChar(128)
+  idempotencyKeyId             String                    @unique @db.Uuid
+  currencyCode                 String                    @db.VarChar(16)
+  networkCode                  String                    @db.VarChar(32)
+  destinationAddressCiphertext String                    @db.Text
+  destinationAddressHash       String                    @db.Char(64)
+  destinationAddressMasked     String                    @db.VarChar(80)
+  addressValidatedAt           DateTime?
+  addressValidationProvider    String?                   @db.VarChar(40)
+  addressValidationCode        String?                   @db.VarChar(80)
+  gldRequested                 BigInt
+  gldHeld                      BigInt
+  gldReleased                  BigInt                    @default(0)
+  gldCharged                   BigInt                    @default(0)
+  gldRatePerStablecoinSnapshot Decimal                   @db.Decimal(30, 6)
+  gldRateVersion               String                    @db.VarChar(80)
+  platformFeeBpsSnapshot       Int                       @default(0)
+  platformFeeCrypto            Decimal                   @db.Decimal(30, 9)
+  providerFeeCrypto            Decimal                   @db.Decimal(30, 9)
+  providerFeeCurrency          String                    @db.VarChar(16)
+  grossCryptoAmount            Decimal                   @db.Decimal(30, 9)
+  netCryptoAmount              Decimal                   @db.Decimal(30, 9)
+  quoteExpiresAt               DateTime
+  quoteSnapshot                Json
+  providerName                 String?                   @db.VarChar(40)
+  providerEnvironment          String?                   @db.VarChar(20)
+  providerUniqueExternalId     String?                   @unique @db.VarChar(255)
+  providerBatchWithdrawalId    String?                   @unique @db.VarChar(255)
+  providerPayoutId             String?                   @unique @db.VarChar(255)
+  providerStatus               String?                   @db.VarChar(40)
+  providerStatusRaw            String?                   @db.VarChar(80)
+  providerErrorCode            String?                   @db.VarChar(120)
+  providerErrorMessageRedacted String?                   @db.VarChar(500)
+  transactionHash              String?                   @db.VarChar(255)
+  providerCreatedAt            DateTime?
+  providerUpdatedAt            DateTime?
+  adminDecision                String?                   @db.VarChar(20)
+  adminId                      String?                   @db.Uuid
+  adminNote                    String?                   @db.VarChar(500)
+  requestedAt                  DateTime                  @default(now())
+  approvedAt                   DateTime?
+  rejectedAt                   DateTime?
+  submittedAt                  DateTime?
+  completedAt                  DateTime?
+  failedAt                     DateTime?
+  holdExpiresAt                DateTime
+  createdAt                    DateTime                  @default(now())
+  updatedAt                    DateTime                  @updatedAt
+  user                         User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idempotencyKey               IdempotencyKey            @relation(fields: [idempotencyKeyId], references: [id], onDelete: Restrict)
+  admin                        User?                     @relation("CryptoPayoutRequestDecider", fields: [adminId], references: [id], onDelete: SetNull)
+  hold                         CryptoPayoutHold?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([providerStatus, updatedAt])
+  @@index([destinationAddressHash, currencyCode])
+}
+
+model CryptoPayoutHold {
+  id         String                 @id @default(uuid()) @db.Uuid
+  requestId  String                 @unique @db.Uuid
+  userId     String                 @db.Uuid
+  amount     BigInt
+  released   BigInt                 @default(0)
+  status     CryptoPayoutHoldStatus @default(HELD)
+  expiresAt  DateTime
+  createdAt  DateTime               @default(now())
+  releasedAt DateTime?
+  consumedAt DateTime?
+  request    CryptoPayoutRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, expiresAt])
+}
+
+model CryptoPayoutQuote {
+  id                       String    @id @default(uuid()) @db.Uuid
+  userId                   String    @db.Uuid
+  currencyCode             String    @db.VarChar(16)
+  networkCode              String    @db.VarChar(32)
+  destinationAddressHash   String    @db.Char(64)
+  destinationAddressMasked String    @db.VarChar(80)
+  gldAmount                BigInt
+  gldRatePerStablecoin     Decimal   @db.Decimal(30, 6)
+  gldRateVersion           String    @db.VarChar(80)
+  platformFeeBps           Int       @default(0)
+  platformFeeCrypto        Decimal   @db.Decimal(30, 9)
+  providerFeeCrypto        Decimal   @db.Decimal(30, 9)
+  providerFeeCurrency      String    @db.VarChar(16)
+  grossCryptoAmount        Decimal   @db.Decimal(30, 9)
+  netCryptoAmount          Decimal   @db.Decimal(30, 9)
+  minimumPayoutAmount      Decimal   @db.Decimal(30, 9)
+  quoteSnapshot            Json
+  expiresAt                DateTime
+  consumedAt               DateTime?
+  createdAt                DateTime  @default(now())
+  user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model CryptoRewardConfig {
+  id                    String   @id @default(uuid()) @db.Uuid
+  singletonKey          String   @unique @default("default") @db.VarChar(32)
+  enabled               Boolean  @default(false)
+  networkCode           String   @default("SOLANA") @db.VarChar(32)
+  usdtSolGldPerUnit     Decimal  @default(0) @db.Decimal(30, 6)
+  usdcSolGldPerUnit     Decimal  @default(0) @db.Decimal(30, 6)
+  rateVersion           String   @default("initial") @db.VarChar(80)
+  platformFeeBps        Int      @default(0)
+  quoteTtlSeconds       Int      @default(300)
+  maxQuoteDriftBps      Int      @default(500)
+  minGld                BigInt   @default(100)
+  maxGldPerRequest      BigInt   @default(100000)
+  dailyGldLimit         BigInt   @default(200000)
+  maxPendingPerUser     Int      @default(1)
+  holdExpiryHours       Int      @default(72)
+  minProviderReserveUsd Decimal? @db.Decimal(30, 6)
+  requireAdminApproval  Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
 model Purchase {
   id                String             @id @default(uuid()) @db.Uuid
   userId            String             @db.Uuid
@@ -1631,21 +1783,22 @@ model WalletBalance {
 }
 
 model IdempotencyKey {
-  id                 String              @id @default(uuid()) @db.Uuid
-  userId             String?             @db.Uuid
-  scope              String              @db.VarChar(100)
-  key                String              @db.VarChar(128)
-  requestHash        String              @db.Char(64)
-  responseJson       Json?
-  status             IdempotencyStatus   @default(PROCESSING)
-  createdAt          DateTime            @default(now())
-  completedAt        DateTime?
-  user               User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
-  matchSettlement    MatchSettlement?
-  purchase           Purchase?
-  matchmakingTickets MatchmakingTicket[]
-  paidRewardRequest  PaidRewardRequest?
-  playerGift         PlayerGift?
+  id                  String               @id @default(uuid()) @db.Uuid
+  userId              String?              @db.Uuid
+  scope               String               @db.VarChar(100)
+  key                 String               @db.VarChar(128)
+  requestHash         String               @db.Char(64)
+  responseJson        Json?
+  status              IdempotencyStatus    @default(PROCESSING)
+  createdAt           DateTime             @default(now())
+  completedAt         DateTime?
+  user                User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  matchSettlement     MatchSettlement?
+  purchase            Purchase?
+  matchmakingTickets  MatchmakingTicket[]
+  paidRewardRequest   PaidRewardRequest?
+  cryptoPayoutRequest CryptoPayoutRequest?
+  playerGift          PlayerGift?
 
   @@unique([scope, key])
   @@index([userId, scope])
@@ -2811,22 +2964,22 @@ model MatchSettlement {
 }
 
 model GameContentItem {
-  id               String                   @id @default(uuid()) @db.Uuid
-  gameDefinitionId String                   @db.Uuid
-  version          Int                      @default(1)
-  contentType      String                   @db.VarChar(40)
-  sourceKey        String?                  @db.VarChar(160)
-  prompt           Json
-  options          Json
-  difficulty       Int                      @default(1)
-  category         String?                  @db.VarChar(80)
-  answerHash       String                   @db.Char(64)
-  answerIndex      Int
-  active           Boolean                  @default(true)
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
-  gameDefinition   GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
-  assignments      MatchContentAssignment[]
+  id                      String                   @id @default(uuid()) @db.Uuid
+  gameDefinitionId        String                   @db.Uuid
+  version                 Int                      @default(1)
+  contentType             String                   @db.VarChar(40)
+  sourceKey               String?                  @db.VarChar(160)
+  prompt                  Json
+  options                 Json
+  difficulty              Int                      @default(1)
+  category                String?                  @db.VarChar(80)
+  answerHash              String                   @db.Char(64)
+  answerIndex             Int
+  active                  Boolean                  @default(true)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  gameDefinition          GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
+  assignments             MatchContentAssignment[]
   dailyChallengeQuestions DailyChallengeQuestion[]
 
   @@index([gameDefinitionId, active, version])
@@ -2835,47 +2988,47 @@ model GameContentItem {
 /// Singleton policy for the server-owned daily challenge. The mobile client
 /// only reads this policy through the public daily-challenge endpoints.
 model DailyChallengeConfiguration {
-  id              String   @id @default(uuid()) @db.Uuid
-  key             String   @unique @default("default") @db.VarChar(40)
-  enabled         Boolean  @default(true)
-  gameKey         String   @default("trivia") @db.VarChar(64)
-  timezone        String   @default("UTC") @db.VarChar(64)
-  questionsPerDay Int      @default(10)
-  durationSeconds Int      @default(60)
-  maxAttempts     Int      @default(1)
-  pointsPerCorrect Int     @default(1)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(uuid()) @db.Uuid
+  key              String   @unique @default("default") @db.VarChar(40)
+  enabled          Boolean  @default(true)
+  gameKey          String   @default("trivia") @db.VarChar(64)
+  timezone         String   @default("UTC") @db.VarChar(64)
+  questionsPerDay  Int      @default(10)
+  durationSeconds  Int      @default(60)
+  maxAttempts      Int      @default(1)
+  pointsPerCorrect Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model DailyChallenge {
-  id              String               @id @default(uuid()) @db.Uuid
-  dateKey         String               @unique @db.VarChar(10)
-  gameDefinitionId String              @db.Uuid
-  status          DailyChallengeStatus @default(DRAFT)
-  title           String               @default("Today's SMARTS Challenge") @db.VarChar(160)
-  subtitle        String               @default("One global challenge. One attempt.") @db.VarChar(300)
-  questionCount   Int
-  durationSeconds Int
-  pointsPerCorrect Int               @default(1)
-  publishedAt     DateTime?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  gameDefinition  GameDefinition       @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
-  questions       DailyChallengeQuestion[]
-  attempts        DailyChallengeAttempt[]
+  id               String                   @id @default(uuid()) @db.Uuid
+  dateKey          String                   @unique @db.VarChar(10)
+  gameDefinitionId String                   @db.Uuid
+  status           DailyChallengeStatus     @default(DRAFT)
+  title            String                   @default("Today's SMARTS Challenge") @db.VarChar(160)
+  subtitle         String                   @default("One global challenge. One attempt.") @db.VarChar(300)
+  questionCount    Int
+  durationSeconds  Int
+  pointsPerCorrect Int                      @default(1)
+  publishedAt      DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  gameDefinition   GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  questions        DailyChallengeQuestion[]
+  attempts         DailyChallengeAttempt[]
 
   @@index([status, dateKey])
 }
 
 model DailyChallengeQuestion {
-  id            String           @id @default(uuid()) @db.Uuid
-  challengeId   String           @db.Uuid
-  contentItemId String           @db.Uuid
+  id            String          @id @default(uuid()) @db.Uuid
+  challengeId   String          @db.Uuid
+  contentItemId String          @db.Uuid
   position      Int
-  createdAt     DateTime         @default(now())
-  challenge     DailyChallenge   @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  contentItem   GameContentItem  @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
+  createdAt     DateTime        @default(now())
+  challenge     DailyChallenge  @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  contentItem   GameContentItem @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
 
   @@unique([challengeId, position])
   @@unique([challengeId, contentItemId])
@@ -2883,22 +3036,22 @@ model DailyChallengeQuestion {
 }
 
 model DailyChallengeAttempt {
-  id              String                     @id @default(uuid()) @db.Uuid
-  challengeId     String                     @db.Uuid
-  userId          String                     @db.Uuid
-  status          DailyChallengeAttemptStatus @default(IN_PROGRESS)
-  startedAt       DateTime                   @default(now())
-  submittedAt     DateTime?
-  expiresAt       DateTime
-  score           Int                        @default(0)
-  correctAnswers  Int                        @default(0)
-  answeredQuestions Int                      @default(0)
-  elapsedMs       Int?
-  createdAt       DateTime                   @default(now())
-  updatedAt       DateTime                   @updatedAt
-  challenge       DailyChallenge             @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  user            User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  answers         DailyChallengeAnswer[]
+  id                String                      @id @default(uuid()) @db.Uuid
+  challengeId       String                      @db.Uuid
+  userId            String                      @db.Uuid
+  status            DailyChallengeAttemptStatus @default(IN_PROGRESS)
+  startedAt         DateTime                    @default(now())
+  submittedAt       DateTime?
+  expiresAt         DateTime
+  score             Int                         @default(0)
+  correctAnswers    Int                         @default(0)
+  answeredQuestions Int                         @default(0)
+  elapsedMs         Int?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  challenge         DailyChallenge              @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user              User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers           DailyChallengeAnswer[]
 
   @@unique([challengeId, userId])
   @@index([challengeId, status, score, elapsedMs])
@@ -2906,14 +3059,14 @@ model DailyChallengeAttempt {
 }
 
 model DailyChallengeAnswer {
-  id          String                 @id @default(uuid()) @db.Uuid
-  attemptId   String                 @db.Uuid
-  position    Int
+  id            String                @id @default(uuid()) @db.Uuid
+  attemptId     String                @db.Uuid
+  position      Int
   selectedIndex Int
-  isCorrect   Boolean
-  timeTakenMs Int?
-  answeredAt  DateTime               @default(now())
-  attempt     DailyChallengeAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  isCorrect     Boolean
+  timeTakenMs   Int?
+  answeredAt    DateTime              @default(now())
+  attempt       DailyChallengeAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
   @@unique([attemptId, position])
   @@index([attemptId, answeredAt])
