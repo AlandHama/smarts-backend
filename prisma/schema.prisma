@@ -1694,6 +1694,7 @@ model CryptoRewardConfig {
   networkCode           String   @default("SOLANA") @db.VarChar(32)
   usdtSolGldPerUnit     Decimal  @default(0) @db.Decimal(30, 6)
   usdcSolGldPerUnit     Decimal  @default(0) @db.Decimal(30, 6)
+  assetRates            Json     @default("{}")
   rateVersion           String   @default("initial") @db.VarChar(80)
   platformFeeBps        Int      @default(0)
   quoteTtlSeconds       Int      @default(300)

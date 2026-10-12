@@ -10,10 +10,9 @@ import { getAuthConfig } from "../auth/auth.config"
 import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-transaction"
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
 import { CryptoRewardQuoteDto, CreateCryptoPayoutRequestDto, CryptoAdminDecisionDto, UpdateCryptoRewardConfigDto } from "./dtos"
-import { CRYPTO_REWARD_CURRENCIES, CryptoRewardCurrency, getCryptoRewardsConfig, isCryptoRewardCurrency } from "./crypto-rewards.config"
+import { CRYPTO_REWARD_ASSETS, CRYPTO_REWARD_CURRENCIES, CryptoRewardCurrency, getCryptoRewardAsset, getCryptoRewardsConfig, isCryptoRewardCurrency } from "./crypto-rewards.config"
 import { NowPaymentsHttpError, NowPaymentsPayoutAdapter } from "./nowpayments-payout.adapter"
 
-const SOLANA = "SOLANA"
 const ACTIVE_REQUEST_STATUSES: CryptoPayoutRequestStatus[] = [CryptoPayoutRequestStatus.PENDING_ADMIN_APPROVAL, CryptoPayoutRequestStatus.APPROVED]
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -29,24 +28,24 @@ export class CryptoRewardsService {
 
   async getPublicConfig() {
     const config = await this.getConfig()
-    return { enabled: config.enabled, networkCode: config.networkCode, currencies: CRYPTO_REWARD_CURRENCIES, quoteTtlSeconds: config.quoteTtlSeconds, minGld: config.minGld.toString(), maxGldPerRequest: config.maxGldPerRequest.toString(), requireAdminApproval: config.requireAdminApproval }
+    return { enabled: config.enabled, networkCode: config.networkCode, currencies: CRYPTO_REWARD_CURRENCIES, assets: this.assetViews(config), quoteTtlSeconds: config.quoteTtlSeconds, minGld: config.minGld.toString(), maxGldPerRequest: config.maxGldPerRequest.toString(), requireAdminApproval: config.requireAdminApproval }
   }
 
   async validateAddress(userId: string, input: { currencyCode: CryptoRewardCurrency; networkCode: string; destinationAddress: string }) {
-    this.assertCurrency(input.currencyCode, input.networkCode)
-    this.assertSolanaAddress(input.destinationAddress)
+    const asset = this.assertCurrency(input.currencyCode, input.networkCode)
+    this.assertDestinationAddress(input.destinationAddress, asset.addressKind, asset.networkLabel)
     const config = await this.getConfig()
     if (!config.enabled || !getCryptoRewardsConfig().providerEnabled) throw new ServiceUnavailableException("Crypto rewards are not available")
     const result = await this.provider.validatePayoutAddress(input.destinationAddress.trim(), input.currencyCode)
     const valid = this.providerBoolean(result)
     if (valid === false) throw new BadRequestException("The payout address was rejected by NOWPayments")
-    return { valid: true, provider: "NOWPayments", providerValidated: true, currencyCode: input.currencyCode, networkCode: SOLANA, destinationAddressMasked: this.mask(input.destinationAddress) }
+    return { valid: true, provider: "NOWPayments", providerValidated: true, currencyCode: input.currencyCode, networkCode: asset.networkCode, destinationAddressMasked: this.mask(input.destinationAddress) }
   }
 
   async quote(userId: string, input: CryptoRewardQuoteDto) {
     await this.fraud.assertRewardAllowed(userId)
-    this.assertCurrency(input.currencyCode, input.networkCode)
-    this.assertSolanaAddress(input.destinationAddress)
+    const asset = this.assertCurrency(input.currencyCode, input.networkCode)
+    this.assertDestinationAddress(input.destinationAddress, asset.addressKind, asset.networkLabel)
     const gld = this.parseGld(input.gldAmount)
     const config = await this.getConfig()
     this.assertEnabled(config)
@@ -72,7 +71,7 @@ export class CryptoRewardsService {
     const expiresAt = new Date(Date.now() + config.quoteTtlSeconds * 1000)
     const providerConfig = getCryptoRewardsConfig()
     const snapshot = { provider: "NOWPayments", environment: providerConfig.providerEnvironment, addressValidated: true, feeResponse: this.safeJson(feeResult), minimumResponse: this.safeJson(minimumResult), providerStatus: this.safeJson(providerStatus), providerBalance: this.safeJson(providerBalance) }
-    const quote = await this.prisma.cryptoPayoutQuote.create({ data: { userId, currencyCode: input.currencyCode, networkCode: SOLANA, destinationAddressHash: this.hashAddress(input.destinationAddress), destinationAddressMasked: this.mask(input.destinationAddress), gldAmount: BigInt(gld.toString()), gldRatePerStablecoin: rate, gldRateVersion: config.rateVersion, platformFeeBps: config.platformFeeBps, platformFeeCrypto: platformFee, providerFeeCrypto: providerFee, providerFeeCurrency: input.currencyCode, grossCryptoAmount: gross, netCryptoAmount: net, minimumPayoutAmount: minimum, quoteSnapshot: snapshot, expiresAt } })
+    const quote = await this.prisma.cryptoPayoutQuote.create({ data: { userId, currencyCode: input.currencyCode, networkCode: asset.networkCode, destinationAddressHash: this.hashAddress(input.destinationAddress), destinationAddressMasked: this.mask(input.destinationAddress), gldAmount: BigInt(gld.toString()), gldRatePerStablecoin: rate, gldRateVersion: config.rateVersion, platformFeeBps: config.platformFeeBps, platformFeeCrypto: platformFee, providerFeeCrypto: providerFee, providerFeeCurrency: input.currencyCode, grossCryptoAmount: gross, netCryptoAmount: net, minimumPayoutAmount: minimum, quoteSnapshot: snapshot, expiresAt } })
     return this.serializeQuote(quote)
   }
 
@@ -86,9 +85,11 @@ export class CryptoRewardsService {
     const existing = await this.prisma.idempotencyKey.findUnique({ where: { scope_key: { scope: `crypto-payout-request:${userId}`, key } } })
     if (existing?.status === "COMPLETED" && existing.responseJson) return existing.responseJson
     const requestHash = createHash("sha256").update(`${userId}:${input.quoteId}:${key}`).digest("hex")
-    this.assertSolanaAddress(input.destinationAddress)
     const addressCheck = await this.prisma.cryptoPayoutQuote.findFirst({ where: { id: input.quoteId, userId }, select: { destinationAddressHash: true, currencyCode: true, networkCode: true, expiresAt: true, consumedAt: true, gldAmount: true } })
     if (!addressCheck) throw new NotFoundException("Crypto reward quote not found")
+    const checkedAsset = getCryptoRewardAsset(addressCheck.currencyCode)
+    if (!checkedAsset || checkedAsset.networkCode !== addressCheck.networkCode) throw new ConflictException("The crypto reward asset is no longer supported")
+    this.assertDestinationAddress(input.destinationAddress, checkedAsset.addressKind, checkedAsset.networkLabel)
     if (addressCheck.destinationAddressHash !== this.hashAddress(input.destinationAddress)) throw new ConflictException("The payout address does not match the quote")
     if (addressCheck.consumedAt || addressCheck.expiresAt <= new Date()) throw new ConflictException("Crypto reward quote is no longer available")
     const result = await this.prisma.$transaction(async (tx) => {
@@ -345,7 +346,13 @@ export class CryptoRewardsService {
     if (dto.holdExpirySeconds !== undefined) data.holdExpiryHours = Math.ceil(dto.holdExpirySeconds / 3600)
     if (dto.minProviderReserveUsd !== undefined) data.minProviderReserveUsd = new Prisma.Decimal(dto.minProviderReserveUsd)
     if (dto.requireAdminApproval !== undefined) data.requireAdminApproval = dto.requireAdminApproval
-    if (dto.usdtSolGldRate !== undefined || dto.usdcSolGldRate !== undefined) data.rateVersion = `admin-${Date.now()}`
+    if (dto.usdtSolGldRate !== undefined || dto.usdcSolGldRate !== undefined || dto.assetRates !== undefined) {
+      const rates = { ...this.assetRateMap(current), ...(dto.assetRates || {}) }
+      if (dto.usdtSolGldRate !== undefined) rates.USDTSOL = dto.usdtSolGldRate
+      if (dto.usdcSolGldRate !== undefined) rates.USDCSOL = dto.usdcSolGldRate
+      data.assetRates = this.cleanAssetRates(rates)
+      data.rateVersion = `admin-${Date.now()}`
+    }
     const updated = await this.prisma.cryptoRewardConfig.update({ where: { id: current.id }, data })
     const oldValues = this.serializeConfig(current, true)
     const newValues = this.serializeConfig(updated, true)
@@ -353,16 +360,22 @@ export class CryptoRewardsService {
     return this.serializeConfig(updated, true)
   }
 
-  private async getConfig() { const env = getCryptoRewardsConfig(); return this.prisma.cryptoRewardConfig.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default", enabled: env.enabled, networkCode: SOLANA, usdtSolGldPerUnit: env.defaultUsdtSolGldPerUnit, usdcSolGldPerUnit: env.defaultUsdcSolGldPerUnit, quoteTtlSeconds: env.quoteTtlSeconds, maxQuoteDriftBps: env.maxQuoteDriftBps, minGld: BigInt(env.minGld), maxGldPerRequest: BigInt(env.maxGldPerRequest), dailyGldLimit: BigInt(env.dailyGldLimit), maxPendingPerUser: env.maxPendingPerUser, holdExpiryHours: env.holdExpiryHours, platformFeeBps: env.platformFeeBps, minProviderReserveUsd: new Prisma.Decimal(env.minProviderReserveUsd), requireAdminApproval: env.requireAdminApproval }, update: {} }) }
+  private async getConfig() { const env = getCryptoRewardsConfig(); return this.prisma.cryptoRewardConfig.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default", enabled: env.enabled, networkCode: env.networkCode, usdtSolGldPerUnit: env.defaultUsdtSolGldPerUnit, usdcSolGldPerUnit: env.defaultUsdcSolGldPerUnit, assetRates: { ...env.assetRates, ...(env.defaultUsdtSolGldPerUnit !== "0" ? { USDTSOL: env.defaultUsdtSolGldPerUnit } : {}), ...(env.defaultUsdcSolGldPerUnit !== "0" ? { USDCSOL: env.defaultUsdcSolGldPerUnit } : {}) }, quoteTtlSeconds: env.quoteTtlSeconds, maxQuoteDriftBps: env.maxQuoteDriftBps, minGld: BigInt(env.minGld), maxGldPerRequest: BigInt(env.maxGldPerRequest), dailyGldLimit: BigInt(env.dailyGldLimit), maxPendingPerUser: env.maxPendingPerUser, holdExpiryHours: env.holdExpiryHours, platformFeeBps: env.platformFeeBps, minProviderReserveUsd: new Prisma.Decimal(env.minProviderReserveUsd), requireAdminApproval: env.requireAdminApproval }, update: {} }) }
   private assertEnabled(config: any) { if (!config.enabled || !getCryptoRewardsConfig().providerEnabled) throw new ServiceUnavailableException("Crypto rewards are not available") }
-  private assertCurrency(currency: string, network: string) { if (!isCryptoRewardCurrency(currency) || network !== SOLANA) throw new BadRequestException("Only USDTSOL and USDCSOL on Solana are supported") }
-  private assertSolanaAddress(address: string) { const value = address.trim(); if (!value || [...value].some((char) => !BASE58.includes(char)) || this.base58Bytes(value) !== 32) throw new BadRequestException("Enter a valid Solana address") }
+  private assertCurrency(currency: string, network: string) { const asset = getCryptoRewardAsset(currency); if (!asset || asset.networkCode !== network) throw new BadRequestException("The selected asset and network do not match"); return asset }
+  private assertDestinationAddress(address: string, kind: string, networkLabel: string) {
+    const value = address.trim()
+    if (!value || value.length > 128) throw new BadRequestException(`Enter a valid ${networkLabel} address`)
+    if (kind === "SOLANA" && ([...value].some((char) => !BASE58.includes(char)) || this.base58Bytes(value) !== 32)) throw new BadRequestException("Enter a valid Solana address")
+    if (kind === "EVM" && !/^0x[a-fA-F0-9]{40}$/.test(value)) throw new BadRequestException(`Enter a valid ${networkLabel} address`)
+    if (kind === "TRON" && !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value)) throw new BadRequestException("Enter a valid TRON address")
+  }
   private base58Bytes(value: string) { let number = 0n; for (const char of value) number = number * 58n + BigInt(BASE58.indexOf(char)); const significantBytes = number === 0n ? 0 : Math.ceil(number.toString(16).length / 2); let leadingZeroBytes = 0; for (const char of value) { if (char !== "1") break; leadingZeroBytes++ } return significantBytes + leadingZeroBytes }
   private parseGld(value: string) { if (!/^\d+$/.test(value) || BigInt(value) <= 0n) throw new BadRequestException("GLD amount must be positive"); return new Prisma.Decimal(value) }
   private assertLimits(amount: Prisma.Decimal, config: any) { if (amount.lt(config.minGld) || amount.gt(config.maxGldPerRequest)) throw new BadRequestException("GLD amount is outside the configured limits") }
   private async assertRequestLimits(userId: string, amount: Prisma.Decimal | bigint, config: any, tx?: Prisma.TransactionClient) { const db: any = tx ?? this.prisma; const count = await db.cryptoPayoutRequest.count({ where: { userId, status: { in: ACTIVE_REQUEST_STATUSES } } }); if (count >= config.maxPendingPerUser) throw new ConflictException("You already have the maximum number of pending crypto rewards"); const start = new Date(); start.setUTCHours(0, 0, 0, 0); const daily = await db.cryptoPayoutRequest.aggregate({ where: { userId, requestedAt: { gte: start }, status: { not: CryptoPayoutRequestStatus.REJECTED } }, _sum: { gldRequested: true } }); if ((daily._sum.gldRequested ?? 0n) + BigInt(amount.toString()) > config.dailyGldLimit) throw new BadRequestException("Your daily crypto reward limit has been reached") }
   private async assertGldBalance(userId: string, amount: Prisma.Decimal) { const balance = await this.prisma.walletBalance.findFirst({ where: { wallet: { userId }, currency: { code: "GLD" } } }); if (!balance || balance.exactAmount.lt(amount)) throw new BadRequestException("Insufficient GLD balance") }
-  private rateFor(config: any, currency: CryptoRewardCurrency) { return currency === "USDTSOL" ? config.usdtSolGldPerUnit : config.usdcSolGldPerUnit }
+  private rateFor(config: any, currency: CryptoRewardCurrency) { const rates = this.assetRateMap(config); const value = rates[currency] ?? (currency === "USDTSOL" ? config.usdtSolGldPerUnit?.toString() : currency === "USDCSOL" ? config.usdcSolGldPerUnit?.toString() : "0"); return new Prisma.Decimal(value || "0") }
   private providerBoolean(value: any) { if (typeof value?.valid === "boolean") return value.valid; if (typeof value?.is_valid === "boolean") return value.is_valid; return true }
   private providerHealthError(error: unknown) {
     if (error instanceof NowPaymentsHttpError) {
@@ -386,7 +399,10 @@ export class CryptoRewardsService {
   private extractDecimal(value: any, keys: string[], fallback: string) { for (const key of keys) { const candidate = value?.[key] ?? value?.data?.[key]; if (candidate !== undefined && /^\d+(?:\.\d+)?$/.test(String(candidate))) return new Prisma.Decimal(String(candidate)) }; return new Prisma.Decimal(fallback) }
   private serializeQuote(row: any) { return { id: row.id, currencyCode: row.currencyCode, networkCode: row.networkCode, destinationAddressMasked: row.destinationAddressMasked, gldAmount: row.gldAmount.toString(), gldRatePerStablecoin: row.gldRatePerStablecoin.toString(), grossCryptoAmount: row.grossCryptoAmount.toString(), platformFeeCrypto: row.platformFeeCrypto.toString(), providerFeeCrypto: row.providerFeeCrypto.toString(), netCryptoAmount: row.netCryptoAmount.toString(), minimumPayoutAmount: row.minimumPayoutAmount.toString(), expiresAt: row.expiresAt } }
   private serializeRequest(row: any) { return { id: row.id, status: row.status, statusReason: row.status === CryptoPayoutRequestStatus.REJECTED ? "ADMIN_REJECTED" : row.status === CryptoPayoutRequestStatus.REFUNDED ? "PROVIDER_REJECTED" : row.status === CryptoPayoutRequestStatus.EXPIRED ? "HOLD_EXPIRED" : null, currencyCode: row.currencyCode, networkCode: row.networkCode, destinationAddressMasked: row.destinationAddressMasked, gldRequested: row.gldRequested.toString(), gldHeld: row.gldHeld.toString(), gldReleased: row.gldReleased.toString(), grossCryptoAmount: row.grossCryptoAmount.toString(), platformFeeCrypto: row.platformFeeCrypto.toString(), providerFeeCrypto: row.providerFeeCrypto.toString(), netCryptoAmount: row.netCryptoAmount.toString(), providerStatus: row.providerStatus, transactionHash: row.transactionHash, providerEnvironment: row.providerEnvironment, addressValidatedAt: row.addressValidatedAt, quoteExpiresAt: row.quoteExpiresAt, holdExpiresAt: row.holdExpiresAt, requestedAt: row.requestedAt, approvedAt: row.approvedAt, rejectedAt: row.rejectedAt, completedAt: row.completedAt } }
-  private serializeConfig(row: any, admin = false) { const provider = getCryptoRewardsConfig(); return { enabled: row.enabled, networkCode: row.networkCode, currencies: CRYPTO_REWARD_CURRENCIES, rateVersion: admin ? row.rateVersion : undefined, ...(admin ? { usdtSolGldPerUnit: row.usdtSolGldPerUnit.toString(), usdcSolGldPerUnit: row.usdcSolGldPerUnit.toString(), platformFeeBps: row.platformFeeBps, quoteTtlSeconds: row.quoteTtlSeconds, maxQuoteDriftBps: row.maxQuoteDriftBps, minGld: row.minGld.toString(), maxGldPerRequest: row.maxGldPerRequest.toString(), dailyGldLimit: row.dailyGldLimit.toString(), maxPendingPerUser: row.maxPendingPerUser, holdExpiryHours: row.holdExpiryHours, minProviderReserveUsd: row.minProviderReserveUsd?.toString() ?? "0", requireAdminApproval: row.requireAdminApproval, updatedAt: row.updatedAt?.toISOString?.() ?? null, providerEnabled: provider.providerEnabled, providerEnvironment: provider.providerEnvironment, providerBaseUrl: provider.providerBaseUrl, supportedCurrencies: provider.supportedCurrencies, providerConfigured: Boolean(provider.providerEnabled && provider.apiKey && provider.ipnSecret && process.env.NOWPAYMENTS_ACCOUNT_EMAIL?.trim() && process.env.NOWPAYMENTS_ACCOUNT_PASSWORD?.trim() && provider.ipnCallbackUrl), callbackConfigured: Boolean(provider.ipnCallbackUrl), requirePayoutVerification: provider.requirePayoutVerification, payoutVerificationMode: provider.requirePayoutVerification ? "MANUAL_2FA" : "PROVIDER_DEFAULT" } : {}) } }
+  private assetRateMap(row: any): Record<string, string> { const raw = row?.assetRates; return raw && typeof raw === "object" && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).map(([key, value]) => [key.toUpperCase(), String(value)])) : {} }
+  private cleanAssetRates(value: Record<string, unknown>) { return Object.fromEntries(Object.entries(value).filter(([code, rate]) => isCryptoRewardCurrency(code) && typeof rate === "string" && /^\d+(?:\.\d{1,6})?$/.test(rate) && Number(rate) > 0)) }
+  private assetViews(row: any) { const rates = this.assetRateMap(row); return CRYPTO_REWARD_ASSETS.map((asset) => ({ ...asset, rate: rates[asset.code] || (asset.code === "USDTSOL" ? row.usdtSolGldPerUnit.toString() : asset.code === "USDCSOL" ? row.usdcSolGldPerUnit.toString() : "0"), rateConfigured: new Prisma.Decimal(rates[asset.code] || (asset.code === "USDTSOL" ? row.usdtSolGldPerUnit.toString() : asset.code === "USDCSOL" ? row.usdcSolGldPerUnit.toString() : "0")).gt(0) })) }
+  private serializeConfig(row: any, admin = false) { const provider = getCryptoRewardsConfig(); return { enabled: row.enabled, networkCode: row.networkCode, currencies: CRYPTO_REWARD_CURRENCIES, assets: this.assetViews(row), rateVersion: admin ? row.rateVersion : undefined, ...(admin ? { assetRates: this.assetRateMap(row), usdtSolGldPerUnit: row.usdtSolGldPerUnit.toString(), usdcSolGldPerUnit: row.usdcSolGldPerUnit.toString(), platformFeeBps: row.platformFeeBps, quoteTtlSeconds: row.quoteTtlSeconds, maxQuoteDriftBps: row.maxQuoteDriftBps, minGld: row.minGld.toString(), maxGldPerRequest: row.maxGldPerRequest.toString(), dailyGldLimit: row.dailyGldLimit.toString(), maxPendingPerUser: row.maxPendingPerUser, holdExpiryHours: row.holdExpiryHours, minProviderReserveUsd: row.minProviderReserveUsd?.toString() ?? "0", requireAdminApproval: row.requireAdminApproval, updatedAt: row.updatedAt?.toISOString?.() ?? null, providerEnabled: provider.providerEnabled, providerEnvironment: provider.providerEnvironment, providerBaseUrl: provider.providerBaseUrl, supportedCurrencies: provider.supportedCurrencies, providerConfigured: Boolean(provider.providerEnabled && provider.apiKey && provider.ipnSecret && process.env.NOWPAYMENTS_ACCOUNT_EMAIL?.trim() && process.env.NOWPAYMENTS_ACCOUNT_PASSWORD?.trim() && provider.ipnCallbackUrl), callbackConfigured: Boolean(provider.ipnCallbackUrl), requirePayoutVerification: provider.requirePayoutVerification, payoutVerificationMode: provider.requirePayoutVerification ? "MANUAL_2FA" : "PROVIDER_DEFAULT" } : {}) } }
   private hashAddress(value: string) { return createHash("sha256").update(value.trim()).digest("hex") }
   private mask(value: string) { const v = value.trim(); return `${v.slice(0, 4)}…${v.slice(-4)}` }
   private key() { return createHash("sha256").update(process.env.CRYPTO_REWARDS_ADDRESS_ENCRYPTION_KEY || getAuthConfig().accessSecret).digest() }

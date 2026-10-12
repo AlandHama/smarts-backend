@@ -1,5 +1,5 @@
 import { Type } from "class-transformer"
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from "class-validator"
+import { IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from "class-validator"
 
 import { CRYPTO_REWARD_CURRENCIES, CryptoRewardCurrency } from "../crypto-rewards.config"
 
@@ -8,8 +8,8 @@ export class CryptoAddressValidationDto {
   currencyCode!: CryptoRewardCurrency
 
   @IsString()
-  @Matches(/^SOLANA$/)
-  networkCode!: "SOLANA"
+  @Matches(/^[A-Z0-9_]+$/)
+  networkCode!: string
 
   @IsString()
   @MaxLength(128)
@@ -59,6 +59,7 @@ export class UpdateCryptoRewardConfigDto {
   @IsOptional() @IsString() @MaxLength(1000) changeReason?: string
   @IsOptional() @IsString() @Matches(/^\d+(?:\.\d{1,6})?$/) usdtSolGldRate?: string
   @IsOptional() @IsString() @Matches(/^\d+(?:\.\d{1,6})?$/) usdcSolGldRate?: string
+  @IsOptional() @IsObject() assetRates?: Record<string, string>
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(10000) platformFeeBps?: number
   @IsOptional() @Type(() => Number) @IsInt() @Min(60) @Max(86400) quoteTtlSeconds?: number
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(10000) maxQuoteDriftBps?: number

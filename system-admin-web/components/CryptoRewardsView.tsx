@@ -33,6 +33,8 @@ type CryptoConfig = {
   enabled: boolean;
   networkCode: string;
   currencies: string[];
+  assets: Array<{ code: string; symbol: string; name: string; networkCode: string; networkLabel: string; category: string; rate: string; rateConfigured: boolean }>;
+  assetRates: Record<string, string>;
   rateVersion: string;
   usdtSolGldPerUnit: string;
   usdcSolGldPerUnit: string;
@@ -120,6 +122,7 @@ type ConfigForm = {
   enabled: boolean;
   usdtSolGldRate: string;
   usdcSolGldRate: string;
+  assetRates: Record<string, string>;
   platformFeeBps: string;
   quoteTtlSeconds: string;
   maxQuoteDriftBps: string;
@@ -154,6 +157,7 @@ const emptyForm: ConfigForm = {
   enabled: false,
   usdtSolGldRate: "0",
   usdcSolGldRate: "0",
+  assetRates: {},
   platformFeeBps: "0",
   quoteTtlSeconds: "300",
   maxQuoteDriftBps: "500",
@@ -220,6 +224,7 @@ export function CryptoRewardsView({
         enabled: nextConfig.enabled,
         usdtSolGldRate: nextConfig.usdtSolGldPerUnit,
         usdcSolGldRate: nextConfig.usdcSolGldPerUnit,
+        assetRates: Object.fromEntries((nextConfig.assets || []).map((asset) => [asset.code, asset.rate || "0"])),
         platformFeeBps: String(nextConfig.platformFeeBps),
         quoteTtlSeconds: String(nextConfig.quoteTtlSeconds),
         maxQuoteDriftBps: String(nextConfig.maxQuoteDriftBps),
@@ -250,6 +255,8 @@ export function CryptoRewardsView({
 
   const update = <K extends keyof ConfigForm>(key: K, value: ConfigForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
+  const updateAssetRate = (code: string, value: string) =>
+    setForm((current) => ({ ...current, assetRates: { ...current.assetRates, [code]: value } }));
 
   const saveConfig = async () => {
     setSaving(true);
@@ -261,6 +268,7 @@ export function CryptoRewardsView({
           enabled: form.enabled,
           usdtSolGldRate: form.usdtSolGldRate.trim(),
           usdcSolGldRate: form.usdcSolGldRate.trim(),
+          assetRates: form.assetRates,
           platformFeeBps: Number(form.platformFeeBps),
           quoteTtlSeconds: Number(form.quoteTtlSeconds),
           maxQuoteDriftBps: Number(form.maxQuoteDriftBps),
@@ -329,7 +337,7 @@ export function CryptoRewardsView({
         <Box>
           <Typography variant="h4" fontWeight={850}>Crypto rewards</Typography>
           <Typography color="text.secondary" sx={{ mt: 0.7 }}>
-            Configure GLD-backed USDT/USDC Solana payouts and review every provider submission.
+            Configure GLD-backed multi-network crypto payouts and review every provider submission.
           </Typography>
         </Box>
         <Button startIcon={<RefreshRoundedIcon />} variant="outlined" onClick={() => void load()} disabled={loading}>Refresh</Button>
@@ -354,8 +362,7 @@ export function CryptoRewardsView({
             </Stack>
             <Divider />
             <Grid container spacing={2}>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}><TextField fullWidth label="USDT-Solana GLD rate" value={form.usdtSolGldRate} onChange={(event) => update("usdtSolGldRate", event.target.value)} helperText="GLD per 1 USDTSOL" /></Grid>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}><TextField fullWidth label="USDC-Solana GLD rate" value={form.usdcSolGldRate} onChange={(event) => update("usdcSolGldRate", event.target.value)} helperText="GLD per 1 USDCSOL" /></Grid>
+              {(config?.assets || []).map((asset) => <Grid key={asset.code} size={{ xs: 12, sm: 6, md: 3 }}><TextField fullWidth label={`${asset.symbol} · ${asset.networkLabel}`} value={form.assetRates[asset.code] ?? asset.rate ?? "0"} onChange={(event) => updateAssetRate(asset.code, event.target.value)} helperText={`GLD per 1 ${asset.code} · ${asset.name}`} /></Grid>)}
               <Grid size={{ xs: 6, md: 3 }}><TextField fullWidth label="Platform fee (bps)" type="number" value={form.platformFeeBps} onChange={(event) => update("platformFeeBps", event.target.value)} inputProps={{ min: 0, max: 10000 }} /></Grid>
               <Grid size={{ xs: 6, md: 3 }}><TextField fullWidth label="Quote lifetime (seconds)" type="number" value={form.quoteTtlSeconds} onChange={(event) => update("quoteTtlSeconds", event.target.value)} inputProps={{ min: 60, max: 86400 }} /></Grid>
               <Grid size={{ xs: 6, md: 3 }}><TextField fullWidth label="Maximum fee drift (bps)" type="number" value={form.maxQuoteDriftBps} onChange={(event) => update("maxQuoteDriftBps", event.target.value)} inputProps={{ min: 0, max: 10000 }} /></Grid>
@@ -369,7 +376,7 @@ export function CryptoRewardsView({
             <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ md: "center" }} spacing={2}>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <FormControlLabel control={<Switch checked={form.requireAdminApproval} onChange={(event) => update("requireAdminApproval", event.target.checked)} />} label="Require admin approval" />
-                <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center" }}>Network: SOLANA · Assets: USDTSOL, USDCSOL</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center" }}>Rates are enabled only when greater than zero. Provider availability is checked again when quoting.</Typography>
               </Stack>
               <TextField size="small" label="Change reason (audit)" value={form.changeReason} onChange={(event) => update("changeReason", event.target.value)} sx={{ minWidth: { md: 300 } }} />
               <Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={() => void saveConfig()} disabled={saving || !config}>{saving ? "Saving…" : "Save policy"}</Button>
