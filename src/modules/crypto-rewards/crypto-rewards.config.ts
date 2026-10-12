@@ -43,11 +43,15 @@ function booleanEnv(name: string, fallback: boolean) {
 
 export function getCryptoRewardsConfig() {
   const environment = process.env.NOWPAYMENTS_ENVIRONMENT?.trim().toLowerCase() === "production" ? "production" : "sandbox"
+  const configuredBaseUrl = process.env.NOWPAYMENTS_API_BASE_URL?.trim()
+  // NOWPayments' sandbox API uses a hyphenated host. Normalize the older
+  // dotted value so an existing Railway variable does not keep breaking DNS.
+  const providerBaseUrl = configuredBaseUrl?.replace(/^https:\/\/api\.sandbox\.nowpayments\.io(?=\/|$)/, "https://api-sandbox.nowpayments.io") || (environment === "production" ? "https://api.nowpayments.io/v1" : "https://api-sandbox.nowpayments.io/v1")
   return {
     enabled: booleanEnv("CRYPTO_REWARDS_ENABLED", false),
     providerEnabled: booleanEnv("NOWPAYMENTS_ENABLED", false),
     providerEnvironment: environment,
-    providerBaseUrl: process.env.NOWPAYMENTS_API_BASE_URL?.trim() || (environment === "production" ? "https://api.nowpayments.io/v1" : "https://api.sandbox.nowpayments.io/v1"),
+    providerBaseUrl,
     apiKey: process.env.NOWPAYMENTS_API_KEY?.trim() || "",
     ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET?.trim() || "",
     ipnCallbackUrl: process.env.CRYPTO_REWARDS_IPN_CALLBACK_URL?.trim() || process.env.NOWPAYMENTS_IPN_PUBLIC_URL?.trim() || "",

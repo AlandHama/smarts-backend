@@ -25,9 +25,9 @@ export type CryptoPayoutProvider = {
   verifyAndNormalizeIpn(rawBody: string, signature: string | undefined): Record<string, unknown>
 }
 
-class NowPaymentsHttpError extends Error {
-  constructor(public readonly statusCode: number, public readonly responseBody: unknown) {
-    super(`NOWPayments request failed with HTTP ${statusCode}`)
+export class NowPaymentsHttpError extends Error {
+  constructor(public readonly statusCode: number, public readonly responseBody: unknown, public readonly path: string) {
+    super(`NOWPayments ${path} failed with HTTP ${statusCode}`)
   }
 }
 
@@ -126,7 +126,7 @@ export class NowPaymentsPayoutAdapter implements CryptoPayoutProvider {
         this.jwtExpiresAt = 0
         return this.request(path, options, 1)
       }
-      if (!response.ok) throw new NowPaymentsHttpError(response.status, body)
+      if (!response.ok) throw new NowPaymentsHttpError(response.status, body, path)
       return body
     } catch (error) {
       if (error instanceof NowPaymentsHttpError) throw error
@@ -134,8 +134,11 @@ export class NowPaymentsPayoutAdapter implements CryptoPayoutProvider {
         await new Promise((resolve) => setTimeout(resolve, 150 * (retry + 1)))
         return this.request(path, options, retry + 1)
       }
-      this.logger.warn(`NOWPayments request failed: ${error instanceof Error ? error.message : "unknown error"}`)
-      throw new ServiceUnavailableException("NOWPayments is temporarily unavailable")
+      const reason = error instanceof Error ? error.message : "unknown error"
+      this.logger.warn(`NOWPayments request failed for ${path}: ${reason}`)
+      const unavailable = new ServiceUnavailableException(`NOWPayments request failed for ${path}`)
+      ;(unavailable as ServiceUnavailableException & { cause?: unknown }).cause = error
+      throw unavailable
     } finally {
       clearTimeout(timeout)
     }

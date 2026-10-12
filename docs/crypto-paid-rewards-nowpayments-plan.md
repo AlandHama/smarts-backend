@@ -196,7 +196,7 @@ Use the existing backend configuration module and Railway environment management
 ```text
 NOWPAYMENTS_ENABLED=false
 NOWPAYMENTS_ENVIRONMENT=sandbox
-NOWPAYMENTS_API_BASE_URL=https://api.sandbox.nowpayments.io/v1
+NOWPAYMENTS_API_BASE_URL=https://api-sandbox.nowpayments.io/v1
 NOWPAYMENTS_API_KEY=
 NOWPAYMENTS_ACCOUNT_EMAIL=
 NOWPAYMENTS_ACCOUNT_PASSWORD=

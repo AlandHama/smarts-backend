@@ -11,7 +11,7 @@ import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-t
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
 import { CryptoRewardQuoteDto, CreateCryptoPayoutRequestDto, CryptoAdminDecisionDto, UpdateCryptoRewardConfigDto } from "./dtos"
 import { CRYPTO_REWARD_CURRENCIES, CryptoRewardCurrency, getCryptoRewardsConfig, isCryptoRewardCurrency } from "./crypto-rewards.config"
-import { NowPaymentsPayoutAdapter } from "./nowpayments-payout.adapter"
+import { NowPaymentsHttpError, NowPaymentsPayoutAdapter } from "./nowpayments-payout.adapter"
 
 const SOLANA = "SOLANA"
 const ACTIVE_REQUEST_STATUSES: CryptoPayoutRequestStatus[] = [CryptoPayoutRequestStatus.PENDING_ADMIN_APPROVAL, CryptoPayoutRequestStatus.APPROVED]
@@ -307,12 +307,27 @@ export class CryptoRewardsService {
   async getAdminProviderHealth() {
     const config = getCryptoRewardsConfig()
     const configured = Boolean(config.providerEnabled && config.apiKey && config.ipnSecret && process.env.NOWPAYMENTS_ACCOUNT_EMAIL?.trim() && process.env.NOWPAYMENTS_ACCOUNT_PASSWORD?.trim())
-    if (!configured) return { configured: false, environment: config.providerEnvironment, status: null, balance: null, error: "NOWPayments credentials are not fully configured" }
-    try {
-      const [status, balance] = await Promise.all([this.provider.getApiStatus(), this.provider.getPayoutBalance()])
-      return { configured: true, environment: config.providerEnvironment, status: this.safeJson(status), balance: this.safeJson(balance) }
-    } catch {
-      return { configured: false, environment: config.providerEnvironment, status: null, balance: null, error: "NOWPayments health check failed" }
+    if (!configured) return { configured: false, healthy: false, environment: config.providerEnvironment, status: null, balance: null, checks: { status: { ok: false, error: "Credentials are not fully configured" }, balance: { ok: false, error: "Credentials are not fully configured" } }, error: "NOWPayments credentials are not fully configured" }
+
+    const [statusCheck, balanceCheck] = await Promise.all([
+      this.provider.getApiStatus().then((value) => ({ ok: true as const, value })).catch((error) => ({ ok: false as const, error: this.providerHealthError(error) })),
+      this.provider.getPayoutBalance().then((value) => ({ ok: true as const, value })).catch((error) => ({ ok: false as const, error: this.providerHealthError(error) })),
+    ])
+    const errors = [
+      !statusCheck.ok ? `status: ${statusCheck.error}` : null,
+      !balanceCheck.ok ? `balance: ${balanceCheck.error}` : null,
+    ].filter((value): value is string => Boolean(value))
+    return {
+      configured: true,
+      healthy: errors.length === 0,
+      environment: config.providerEnvironment,
+      status: statusCheck.ok ? this.safeJson(statusCheck.value) : null,
+      balance: balanceCheck.ok ? this.safeJson(balanceCheck.value) : null,
+      checks: {
+        status: statusCheck.ok ? { ok: true } : { ok: false, error: statusCheck.error },
+        balance: balanceCheck.ok ? { ok: true } : { ok: false, error: balanceCheck.error },
+      },
+      ...(errors.length ? { error: `NOWPayments health check failed (${errors.join("; ")})` } : {}),
     }
   }
   async updateAdminConfig(adminId: string, dto: UpdateCryptoRewardConfigDto) {
@@ -349,6 +364,16 @@ export class CryptoRewardsService {
   private async assertGldBalance(userId: string, amount: Prisma.Decimal) { const balance = await this.prisma.walletBalance.findFirst({ where: { wallet: { userId }, currency: { code: "GLD" } } }); if (!balance || balance.exactAmount.lt(amount)) throw new BadRequestException("Insufficient GLD balance") }
   private rateFor(config: any, currency: CryptoRewardCurrency) { return currency === "USDTSOL" ? config.usdtSolGldPerUnit : config.usdcSolGldPerUnit }
   private providerBoolean(value: any) { if (typeof value?.valid === "boolean") return value.valid; if (typeof value?.is_valid === "boolean") return value.is_valid; return true }
+  private providerHealthError(error: unknown) {
+    if (error instanceof NowPaymentsHttpError) {
+      const body = error.responseBody as any
+      const providerMessage = typeof body?.message === "string" ? body.message : typeof body?.error === "string" ? body.error : undefined
+      return `${error.path} returned HTTP ${error.statusCode}${providerMessage ? `: ${providerMessage.slice(0, 180)}` : ""}`
+    }
+    const cause = (error as { cause?: unknown })?.cause
+    const causeMessage = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : undefined
+    return `${error instanceof Error ? error.message : "Unknown provider error"}${causeMessage ? `: ${causeMessage.slice(0, 180)}` : ""}`
+  }
   private assertProviderReserve(value: unknown, currency: CryptoRewardCurrency, amount: Prisma.Decimal, reserve: Prisma.Decimal) {
     if (reserve.lte(0)) return
     const body: any = value as any

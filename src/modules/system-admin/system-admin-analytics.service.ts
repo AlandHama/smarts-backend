@@ -170,7 +170,7 @@ export class SystemAdminAnalyticsService {
 
   private async trend(from: Date, to: Date, filters?: AnalyticsFilters) {
     const auditFilters = this.playerFilters(filters, "audit_user", "audit_profile")
-    const sessionFilters = this.sessionFilters(filters, "activity_session", "session_user", "session_profile")
+    const sessionFilters = this.sessionFilters(filters, "activity_session", "activity_user", "activity_profile")
     const matchFilters = this.matchFilters(filters, "activity_match")
     const newPlayerFilters = this.playerFilters(filters, "new_user", "new_profile")
     const createdMatchFilters = this.matchFilters(filters, "created_match")
@@ -184,7 +184,7 @@ export class SystemAdminAnalyticsService {
         SELECT generate_series(date_trunc('day', ${from}::timestamp), date_trunc('day', ${to}::timestamp), interval '1 day') AS day
       ), activity AS (
         SELECT audit_event."userId", audit_event."createdAt" AS occurred_at FROM "PlayerAuditEvent" audit_event JOIN "User" audit_user ON audit_user."id" = audit_event."userId" LEFT JOIN "PlayerProfile" audit_profile ON audit_profile."userId" = audit_user."id" WHERE audit_event."createdAt" >= ${from} AND audit_event."createdAt" <= ${to} ${auditFilters}
-        UNION ALL SELECT activity_session."userId", activity_session."loginTimestamp" FROM "Session" activity_session JOIN "User" session_user ON session_user."id" = activity_session."userId" LEFT JOIN "PlayerProfile" session_profile ON session_profile."userId" = session_user."id" WHERE activity_session."loginTimestamp" >= ${from} AND activity_session."loginTimestamp" <= ${to} ${sessionFilters}
+        UNION ALL SELECT activity_session."userId", activity_session."loginTimestamp" FROM "Session" activity_session JOIN "User" activity_user ON activity_user."id" = activity_session."userId" LEFT JOIN "PlayerProfile" activity_profile ON activity_profile."userId" = activity_user."id" WHERE activity_session."loginTimestamp" >= ${from} AND activity_session."loginTimestamp" <= ${to} ${sessionFilters}
         UNION ALL SELECT activity_participant."userId", activity_event."serverReceivedAt" FROM "MatchEvent" activity_event JOIN "MatchParticipant" activity_participant ON activity_participant."id" = activity_event."participantId" JOIN "Match" activity_match ON activity_match."id" = activity_event."matchId" WHERE activity_participant."userId" IS NOT NULL AND activity_event."serverReceivedAt" >= ${from} AND activity_event."serverReceivedAt" <= ${to} ${matchFilters}
       ), daily_activity AS (
         SELECT date_trunc('day', occurred_at) AS day, count(DISTINCT "userId") AS dau FROM activity GROUP BY 1
@@ -271,13 +271,13 @@ export class SystemAdminAnalyticsService {
 
   private summary(from: Date, to: Date, filters?: AnalyticsFilters) {
     const auditFilters = this.playerFilters(filters, "summary_audit_user", "summary_audit_profile")
-    const sessionFilters = this.sessionFilters(filters, "summary_session", "summary_session_user", "summary_session_profile")
+    const sessionFilters = this.sessionFilters(filters, "summary_session", "summary_user", "summary_profile")
     const matchFilters = this.matchFilters(filters, "summary_match")
     const newPlayerFilters = this.playerFilters(filters, "summary_new_user", "summary_new_profile")
     return this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`
       WITH activity AS (
         SELECT summary_audit_event."userId", summary_audit_event."createdAt" AS occurred_at FROM "PlayerAuditEvent" summary_audit_event JOIN "User" summary_audit_user ON summary_audit_user."id" = summary_audit_event."userId" LEFT JOIN "PlayerProfile" summary_audit_profile ON summary_audit_profile."userId" = summary_audit_user."id" WHERE summary_audit_event."createdAt" <= ${to} ${auditFilters}
-        UNION ALL SELECT summary_session."userId", summary_session."loginTimestamp" FROM "Session" summary_session JOIN "User" summary_session_user ON summary_session_user."id" = summary_session."userId" LEFT JOIN "PlayerProfile" summary_session_profile ON summary_session_profile."userId" = summary_session_user."id" WHERE summary_session."loginTimestamp" <= ${to} ${sessionFilters}
+        UNION ALL SELECT summary_session."userId", summary_session."loginTimestamp" FROM "Session" summary_session JOIN "User" summary_user ON summary_user."id" = summary_session."userId" LEFT JOIN "PlayerProfile" summary_profile ON summary_profile."userId" = summary_user."id" WHERE summary_session."loginTimestamp" <= ${to} ${sessionFilters}
         UNION ALL SELECT p."userId", e."serverReceivedAt" FROM "MatchEvent" e JOIN "MatchParticipant" p ON p."id" = e."participantId" JOIN "Match" summary_match ON summary_match."id" = e."matchId" WHERE p."userId" IS NOT NULL AND e."serverReceivedAt" <= ${to} ${matchFilters}
       )
       SELECT count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${from}) AS period_active_users, count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${this.daysBefore(to, 7)}) AS wau, count(DISTINCT "userId") FILTER (WHERE occurred_at >= ${this.daysBefore(to, 30)}) AS mau, (SELECT count(*) FROM "User" summary_new_user LEFT JOIN "PlayerProfile" summary_new_profile ON summary_new_profile."userId" = summary_new_user."id" WHERE summary_new_user."createdAt" >= ${from} AND summary_new_user."createdAt" <= ${to} ${newPlayerFilters}) AS new_players FROM activity
@@ -289,7 +289,7 @@ export class SystemAdminAnalyticsService {
   }
 
   private matchSummary(from: Date, to: Date, filters?: AnalyticsFilters) {
-    return this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`SELECT count(*) AS created, count(*) FILTER (WHERE m."startedAt" IS NOT NULL) AS started, count(*) FILTER (WHERE m."status" = 'SETTLED') AS settled, count(*) FILTER (WHERE m."status" = 'REVIEW') AS review, count(*) FILTER (WHERE m."status" = 'CANCELLED') AS cancelled, count(*) FILTER (WHERE m."status" = 'SETTLED' AND (m."settlementJson"->>'draw')::boolean = true) AS draws, count(*) FILTER (WHERE m."mode" = 'BOT') AS bot_matches, COALESCE(avg(EXTRACT(EPOCH FROM (m."endedAt" - m."startedAt"))) FILTER (WHERE m."endedAt" IS NOT NULL AND m."startedAt" IS NOT NULL), 0) AS average_duration_seconds FROM "Match" m LEFT JOIN "MatchSettlement" ON "MatchSettlement"."matchId" = m."id" WHERE m."createdAt" >= ${from} AND m."createdAt" <= ${to} ${this.matchFilters(filters, "m")}`)
+    return this.prisma.$queryRaw<Array<NumericRow>>(Prisma.sql`SELECT count(*) AS created, count(*) FILTER (WHERE m."startedAt" IS NOT NULL) AS started, count(*) FILTER (WHERE m."status" = 'SETTLED') AS settled, count(*) FILTER (WHERE m."status" = 'REVIEW') AS review, count(*) FILTER (WHERE m."status" = 'CANCELLED') AS cancelled, count(*) FILTER (WHERE m."status" = 'SETTLED' AND (ms."settlementJson"->>'draw')::boolean = true) AS draws, count(*) FILTER (WHERE m."mode" = 'BOT') AS bot_matches, COALESCE(avg(EXTRACT(EPOCH FROM (m."endedAt" - m."startedAt"))) FILTER (WHERE m."endedAt" IS NOT NULL AND m."startedAt" IS NOT NULL), 0) AS average_duration_seconds FROM "Match" m LEFT JOIN "MatchSettlement" ms ON ms."matchId" = m."id" WHERE m."createdAt" >= ${from} AND m."createdAt" <= ${to} ${this.matchFilters(filters, "m")}`)
   }
 
   private commerceSummary(from: Date, to: Date, filters?: AnalyticsFilters) {

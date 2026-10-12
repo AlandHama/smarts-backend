@@ -105,9 +105,14 @@ type CryptoRequest = {
 
 type ProviderHealth = {
   configured: boolean;
+  healthy?: boolean;
   environment: string;
   status: unknown;
   balance: unknown;
+  checks?: {
+    status: { ok: boolean; error?: string };
+    balance: { ok: boolean; error?: string };
+  };
   error?: string;
 };
 
@@ -386,6 +391,7 @@ export function CryptoRewardsView({
               <Chip label={`Base URL: ${config?.providerBaseUrl || "—"}`} variant="outlined" />
             </Stack>
             {providerHealth?.error && <Alert severity="warning">Provider health check: {providerHealth.error}</Alert>}
+            {providerHealth?.checks && <Stack direction={{ xs: "column", sm: "row" }} spacing={1}><Chip size="small" color={providerHealth.checks.status.ok ? "success" : "error"} label={`API status: ${providerHealth.checks.status.ok ? "OK" : providerHealth.checks.status.error || "failed"}`} /><Chip size="small" color={providerHealth.checks.balance.ok ? "success" : "error"} label={`Payout balance: ${providerHealth.checks.balance.ok ? "OK" : providerHealth.checks.balance.error || "failed"}`} /></Stack>}
             {providerHealth && !providerHealth.error && <Typography variant="caption" color="text.secondary">The provider health and balance response is available to authorized administrators only and is never returned to mobile clients.</Typography>}
           </Stack>
         </CardContent>
