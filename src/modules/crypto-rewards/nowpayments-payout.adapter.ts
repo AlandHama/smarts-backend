@@ -76,6 +76,30 @@ export class NowPaymentsPayoutAdapter implements CryptoPayoutProvider {
     })
   }
 
+  /** Generates the current RFC 6238 code from the authenticator-app secret. */
+  generatePayoutTotp() {
+    const secret = getCryptoRewardsConfig().payoutTotpSecret
+    if (!secret) throw new ServiceUnavailableException("NOWPayments payout TOTP secret is not configured")
+    const normalized = secret.toUpperCase().replace(/=+$/, "")
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+    let bits = ""
+    for (const character of normalized) {
+      const index = alphabet.indexOf(character)
+      if (index < 0) throw new ServiceUnavailableException("NOWPayments payout TOTP secret is invalid")
+      bits += index.toString(2).padStart(5, "0")
+    }
+    const bytes = Buffer.alloc(Math.floor(bits.length / 8))
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2)
+    const counter = Math.floor(Date.now() / 1000 / 30)
+    const message = Buffer.alloc(8)
+    let remainder = counter
+    for (let index = 7; index >= 0; index -= 1) { message[index] = remainder & 0xff; remainder = Math.floor(remainder / 256) }
+    const digest = createHmac("sha1", bytes).update(message).digest()
+    const offset = digest[digest.length - 1] & 0x0f
+    const binary = ((digest[offset] & 0x7f) << 24) | ((digest[offset + 1] & 0xff) << 16) | ((digest[offset + 2] & 0xff) << 8) | (digest[offset + 3] & 0xff)
+    return String(binary % 1_000_000).padStart(6, "0")
+  }
+
   async getPayoutStatus(payoutId: string) {
     return this.request(`/payout/${encodeURIComponent(payoutId)}`, { method: "GET", requiresJwt: true })
   }

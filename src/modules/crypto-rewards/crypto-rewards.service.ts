@@ -179,7 +179,10 @@ export class CryptoRewardsService {
     try {
       const address = await this.loadDestination(id)
       const response = await this.provider.createPayout({ ipnCallbackUrl: callbackUrl, withdrawals: [{ address, currency: claim.row.currencyCode as CryptoRewardCurrency, amount: claim.row.grossCryptoAmount.toFixed(9), unique_external_id: claim.externalId, payout_description: `SMARTS crypto reward ${id}` }] })
-      return this.storeProviderCreation(id, response)
+      const created = await this.storeProviderCreation(id, response)
+      const providerConfig = getCryptoRewardsConfig()
+      if (providerConfig.requirePayoutVerification && providerConfig.autoVerifyPayouts && providerConfig.payoutTotpSecret) return this.autoVerifyProviderPayout(id)
+      return created
     } catch (error) {
       // Keep SUBMITTING with the external id. Reconciliation will search the provider
       // before any human is allowed to attempt another action.
@@ -193,6 +196,15 @@ export class CryptoRewardsService {
     if (!row) throw new NotFoundException("Crypto payout request not found")
     if (row.status !== CryptoPayoutRequestStatus.AWAITING_PROVIDER_VERIFICATION || !row.providerBatchWithdrawalId) throw new ConflictException("This payout is not awaiting provider verification")
     const response = await this.provider.verifyPayout(row.providerBatchWithdrawalId, verificationCode)
+    const updated = await this.prisma.cryptoPayoutRequest.update({ where: { id }, data: { status: CryptoPayoutRequestStatus.PROCESSING, providerVerificationAt: new Date(), nextPollAt: new Date(), providerStatusSnapshot: this.safeJson(response) } })
+    return this.serializeRequest(updated)
+  }
+
+  private async autoVerifyProviderPayout(id: string) {
+    const row = await this.prisma.cryptoPayoutRequest.findUnique({ where: { id } })
+    if (!row) throw new NotFoundException("Crypto payout request not found")
+    if (row.status !== CryptoPayoutRequestStatus.AWAITING_PROVIDER_VERIFICATION || !row.providerBatchWithdrawalId) return this.serializeRequest(row)
+    const response = await this.provider.verifyPayout(row.providerBatchWithdrawalId, this.provider.generatePayoutTotp())
     const updated = await this.prisma.cryptoPayoutRequest.update({ where: { id }, data: { status: CryptoPayoutRequestStatus.PROCESSING, providerVerificationAt: new Date(), nextPollAt: new Date(), providerStatusSnapshot: this.safeJson(response) } })
     return this.serializeRequest(updated)
   }
@@ -211,6 +223,13 @@ export class CryptoRewardsService {
       try {
         const claimed = await this.prisma.cryptoPayoutRequest.updateMany({ where: { id: row.id, status: row.status, pollAttempts: row.pollAttempts, OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }] }, data: { nextPollAt: new Date(Date.now() + getCryptoRewardsConfig().pollMaxBackoffMs) } })
         if (claimed.count !== 1) continue
+        const providerConfig = getCryptoRewardsConfig()
+        if (row.status === CryptoPayoutRequestStatus.AWAITING_PROVIDER_VERIFICATION && providerConfig.requirePayoutVerification && providerConfig.autoVerifyPayouts && providerConfig.payoutTotpSecret && row.providerBatchWithdrawalId) {
+          const verification = await this.provider.verifyPayout(row.providerBatchWithdrawalId, this.provider.generatePayoutTotp())
+          await this.prisma.cryptoPayoutRequest.update({ where: { id: row.id }, data: { status: CryptoPayoutRequestStatus.PROCESSING, providerVerificationAt: new Date(), nextPollAt: new Date(), providerStatusSnapshot: this.safeJson(verification) } })
+          processed += 1
+          continue
+        }
         let response: unknown
         if (row.providerPayoutId) response = await this.provider.getPayoutStatus(row.providerPayoutId)
         else {
@@ -402,7 +421,7 @@ export class CryptoRewardsService {
   private assetRateMap(row: any): Record<string, string> { const raw = row?.assetRates; return raw && typeof raw === "object" && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).map(([key, value]) => [key.toUpperCase(), String(value)])) : {} }
   private cleanAssetRates(value: Record<string, unknown>) { return Object.fromEntries(Object.entries(value).filter(([code, rate]) => isCryptoRewardCurrency(code) && typeof rate === "string" && /^\d+(?:\.\d{1,6})?$/.test(rate) && Number(rate) > 0)) }
   private assetViews(row: any) { const rates = this.assetRateMap(row); return CRYPTO_REWARD_ASSETS.map((asset) => ({ ...asset, rate: rates[asset.code] || (asset.code === "USDTSOL" ? row.usdtSolGldPerUnit.toString() : asset.code === "USDCSOL" ? row.usdcSolGldPerUnit.toString() : "0"), rateConfigured: new Prisma.Decimal(rates[asset.code] || (asset.code === "USDTSOL" ? row.usdtSolGldPerUnit.toString() : asset.code === "USDCSOL" ? row.usdcSolGldPerUnit.toString() : "0")).gt(0) })) }
-  private serializeConfig(row: any, admin = false) { const provider = getCryptoRewardsConfig(); return { enabled: row.enabled, networkCode: row.networkCode, currencies: CRYPTO_REWARD_CURRENCIES, assets: this.assetViews(row), rateVersion: admin ? row.rateVersion : undefined, ...(admin ? { assetRates: this.assetRateMap(row), usdtSolGldPerUnit: row.usdtSolGldPerUnit.toString(), usdcSolGldPerUnit: row.usdcSolGldPerUnit.toString(), platformFeeBps: row.platformFeeBps, quoteTtlSeconds: row.quoteTtlSeconds, maxQuoteDriftBps: row.maxQuoteDriftBps, minGld: row.minGld.toString(), maxGldPerRequest: row.maxGldPerRequest.toString(), dailyGldLimit: row.dailyGldLimit.toString(), maxPendingPerUser: row.maxPendingPerUser, holdExpiryHours: row.holdExpiryHours, minProviderReserveUsd: row.minProviderReserveUsd?.toString() ?? "0", requireAdminApproval: row.requireAdminApproval, updatedAt: row.updatedAt?.toISOString?.() ?? null, providerEnabled: provider.providerEnabled, providerEnvironment: provider.providerEnvironment, providerBaseUrl: provider.providerBaseUrl, supportedCurrencies: provider.supportedCurrencies, providerConfigured: Boolean(provider.providerEnabled && provider.apiKey && provider.ipnSecret && process.env.NOWPAYMENTS_ACCOUNT_EMAIL?.trim() && process.env.NOWPAYMENTS_ACCOUNT_PASSWORD?.trim() && provider.ipnCallbackUrl), callbackConfigured: Boolean(provider.ipnCallbackUrl), requirePayoutVerification: provider.requirePayoutVerification, payoutVerificationMode: provider.requirePayoutVerification ? "MANUAL_2FA" : "PROVIDER_DEFAULT" } : {}) } }
+  private serializeConfig(row: any, admin = false) { const provider = getCryptoRewardsConfig(); return { enabled: row.enabled, networkCode: row.networkCode, currencies: CRYPTO_REWARD_CURRENCIES, assets: this.assetViews(row), rateVersion: admin ? row.rateVersion : undefined, ...(admin ? { assetRates: this.assetRateMap(row), usdtSolGldPerUnit: row.usdtSolGldPerUnit.toString(), usdcSolGldPerUnit: row.usdcSolGldPerUnit.toString(), platformFeeBps: row.platformFeeBps, quoteTtlSeconds: row.quoteTtlSeconds, maxQuoteDriftBps: row.maxQuoteDriftBps, minGld: row.minGld.toString(), maxGldPerRequest: row.maxGldPerRequest.toString(), dailyGldLimit: row.dailyGldLimit.toString(), maxPendingPerUser: row.maxPendingPerUser, holdExpiryHours: row.holdExpiryHours, minProviderReserveUsd: row.minProviderReserveUsd?.toString() ?? "0", requireAdminApproval: row.requireAdminApproval, updatedAt: row.updatedAt?.toISOString?.() ?? null, providerEnabled: provider.providerEnabled, providerEnvironment: provider.providerEnvironment, providerBaseUrl: provider.providerBaseUrl, supportedCurrencies: provider.supportedCurrencies, providerConfigured: Boolean(provider.providerEnabled && provider.apiKey && provider.ipnSecret && process.env.NOWPAYMENTS_ACCOUNT_EMAIL?.trim() && process.env.NOWPAYMENTS_ACCOUNT_PASSWORD?.trim() && provider.ipnCallbackUrl), callbackConfigured: Boolean(provider.ipnCallbackUrl), requirePayoutVerification: provider.requirePayoutVerification, payoutTotpConfigured: Boolean(provider.payoutTotpSecret), payoutVerificationMode: !provider.requirePayoutVerification ? "DISABLED" : provider.autoVerifyPayouts && provider.payoutTotpSecret ? "AUTO_TOTP" : "MANUAL_2FA" } : {}) } }
   private hashAddress(value: string) { return createHash("sha256").update(value.trim()).digest("hex") }
   private mask(value: string) { const v = value.trim(); return `${v.slice(0, 4)}…${v.slice(-4)}` }
   private key() { return createHash("sha256").update(process.env.CRYPTO_REWARDS_ADDRESS_ENCRYPTION_KEY || getAuthConfig().accessSecret).digest() }

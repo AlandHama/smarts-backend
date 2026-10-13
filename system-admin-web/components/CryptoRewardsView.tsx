@@ -57,6 +57,7 @@ type CryptoConfig = {
   callbackConfigured: boolean;
   requirePayoutVerification: boolean;
   payoutVerificationMode: string;
+  payoutTotpConfigured?: boolean;
 };
 
 type CryptoRequest = {
@@ -394,7 +395,8 @@ export function CryptoRewardsView({
               <Chip label={`Environment: ${config?.providerEnvironment || "—"}`} />
               <Chip label={`API: ${config?.providerEnabled ? "enabled" : "disabled"}`} color={config?.providerEnabled ? "success" : "default"} />
               <Chip label={`Callback: ${config?.callbackConfigured ? "configured" : "missing"}`} color={config?.callbackConfigured ? "success" : "warning"} />
-              <Chip label={`Payout mode: ${config?.payoutVerificationMode || "—"}`} />
+              <Chip label={`Payout mode: ${config?.payoutVerificationMode || "—"}`} color={config?.payoutVerificationMode === "AUTO_TOTP" ? "success" : "default"} />
+              <Chip label={`TOTP secret: ${config?.payoutTotpConfigured ? "configured" : "not configured"}`} color={config?.payoutTotpConfigured ? "success" : "warning"} />
               <Chip label={`Base URL: ${config?.providerBaseUrl || "—"}`} variant="outlined" />
             </Stack>
             {providerHealth?.error && <Alert severity="warning">Provider health check: {providerHealth.error}</Alert>}
