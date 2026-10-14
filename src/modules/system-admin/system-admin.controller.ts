@@ -1458,6 +1458,11 @@ export class SystemAdminController {
   decideCryptoRewardRequest(@Param("requestId", ParseUUIDPipe) requestId: string, @Body() dto: CryptoAdminDecisionDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.decideCryptoPayoutRequest(requestId, dto, admin.id); }
 
   @UseGuards(SystemAdminGuard)
+  @Post("api/crypto-rewards/requests/:requestId/approve-and-submit")
+  @ApiBearerAuth("access-token")
+  approveAndSubmitCryptoReward(@Param("requestId", ParseUUIDPipe) requestId: string, @Body() dto: CryptoAdminDecisionDto, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.approveAndSubmitCryptoPayout(requestId, dto, admin.id); }
+
+  @UseGuards(SystemAdminGuard)
   @Post("api/crypto-rewards/requests/:requestId/submit")
   @ApiBearerAuth("access-token")
   submitCryptoReward(@Param("requestId", ParseUUIDPipe) requestId: string, @CurrentUser() admin: UserResponseDto) { return this.systemAdminService.submitCryptoPayout(requestId, admin.id); }

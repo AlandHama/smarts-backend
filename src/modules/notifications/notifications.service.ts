@@ -474,7 +474,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
                           ? "Referral reward earned"
                           : event.eventType === "referral.joined"
                             ? "Referral joined"
-                            : event.eventType ===
+                              : event.eventType === "crypto-payout.status-changed"
+                                ? this.cryptoRewardNotificationTitle(String(payload.status ?? ""))
+                              : event.eventType ===
                                 "matchmaking.friend-invite.created"
                               ? "Game invite"
                               : "Account activity";
@@ -509,7 +511,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
                             ? payload.referralRole === "referred"
                               ? "Your account is now linked to a referral."
                               : "A player joined using your referral code."
-                            : event.eventType ===
+                              : event.eventType === "crypto-payout.status-changed"
+                                ? this.cryptoRewardNotificationBody(String(payload.status ?? ""), String(payload.currencyCode ?? ""))
+                              : event.eventType ===
                                 "matchmaking.friend-invite.created"
                               ? `${String(payload.inviterName ?? "A friend")} invited you to play ${String(payload.gameName ?? "a game")}.`
                               : "A server event was processed for your account.";
@@ -576,6 +580,37 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       return "You have a new account update. Tap to view it.";
     }
     return body;
+  }
+
+  private cryptoRewardNotificationTitle(status: string) {
+    switch (status.toUpperCase()) {
+      case "COMPLETED": return "Your crypto reward is complete";
+      case "REFUNDED":
+      case "REJECTED": return "Your crypto reward was returned";
+      case "SENDING": return "Your crypto reward is being sent";
+      case "PROCESSING":
+      case "SUBMITTING":
+      case "CREATED":
+      case "AWAITING_PROVIDER_VERIFICATION": return "Your crypto reward is preparing";
+      case "PENDING_ADMIN_APPROVAL": return "Your crypto reward request was received";
+      default: return "Crypto reward update";
+    }
+  }
+
+  private cryptoRewardNotificationBody(status: string, currencyCode: string) {
+    const asset = currencyCode || "crypto"
+    switch (status.toUpperCase()) {
+      case "COMPLETED": return `Your ${asset} reward has been sent successfully. Tap to view the transaction.`;
+      case "REFUNDED":
+      case "REJECTED": return `Your ${asset} reward could not be sent. Your held GLD has been returned.`;
+      case "SENDING": return `Your ${asset} reward is being sent to your wallet.`;
+      case "PROCESSING":
+      case "SUBMITTING":
+      case "CREATED":
+      case "AWAITING_PROVIDER_VERIFICATION": return `Your ${asset} reward is now preparing for delivery.`;
+      case "PENDING_ADMIN_APPROVAL": return `Your ${asset} reward is waiting for secure review.`;
+      default: return `Your ${asset} reward status has been updated.`;
+    }
   }
 
   private serialize<T>(value: T): T {

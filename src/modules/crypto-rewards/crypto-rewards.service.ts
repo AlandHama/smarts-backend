@@ -10,7 +10,7 @@ import { getAuthConfig } from "../auth/auth.config"
 import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-transaction"
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
 import { CryptoRewardQuoteDto, CreateCryptoPayoutRequestDto, CryptoAdminDecisionDto, UpdateCryptoRewardConfigDto } from "./dtos"
-import { CRYPTO_REWARD_ASSETS, CRYPTO_REWARD_CURRENCIES, CryptoRewardCurrency, getCryptoRewardAsset, getCryptoRewardsConfig, isCryptoRewardCurrency } from "./crypto-rewards.config"
+import { CRYPTO_REWARD_ASSETS, CRYPTO_REWARD_CURRENCIES, CryptoRewardCurrency, PLAYER_CRYPTO_REWARD_CURRENCY, PLAYER_CRYPTO_REWARD_NETWORK, getCryptoRewardAsset, getCryptoRewardsConfig, isCryptoRewardCurrency } from "./crypto-rewards.config"
 import { NowPaymentsHttpError, NowPaymentsPayoutAdapter } from "./nowpayments-payout.adapter"
 
 const ACTIVE_REQUEST_STATUSES: CryptoPayoutRequestStatus[] = [CryptoPayoutRequestStatus.PENDING_ADMIN_APPROVAL, CryptoPayoutRequestStatus.APPROVED]
@@ -28,10 +28,12 @@ export class CryptoRewardsService {
 
   async getPublicConfig() {
     const config = await this.getConfig()
-    return { enabled: config.enabled, networkCode: config.networkCode, currencies: CRYPTO_REWARD_CURRENCIES, assets: this.assetViews(config), quoteTtlSeconds: config.quoteTtlSeconds, minGld: config.minGld.toString(), maxGldPerRequest: config.maxGldPerRequest.toString(), requireAdminApproval: config.requireAdminApproval }
+    const assets = this.assetViews(config).filter((asset) => asset.code === PLAYER_CRYPTO_REWARD_CURRENCY && asset.networkCode === PLAYER_CRYPTO_REWARD_NETWORK)
+    return { enabled: config.enabled, networkCode: PLAYER_CRYPTO_REWARD_NETWORK, currencies: [PLAYER_CRYPTO_REWARD_CURRENCY], assets, quoteTtlSeconds: config.quoteTtlSeconds, minGld: config.minGld.toString(), maxGldPerRequest: config.maxGldPerRequest.toString(), requireAdminApproval: config.requireAdminApproval }
   }
 
   async validateAddress(userId: string, input: { currencyCode: CryptoRewardCurrency; networkCode: string; destinationAddress: string }) {
+    this.assertPlayerAsset(input.currencyCode, input.networkCode)
     const asset = this.assertCurrency(input.currencyCode, input.networkCode)
     this.assertDestinationAddress(input.destinationAddress, asset.addressKind, asset.networkLabel)
     const config = await this.getConfig()
@@ -44,6 +46,7 @@ export class CryptoRewardsService {
 
   async quote(userId: string, input: CryptoRewardQuoteDto) {
     await this.fraud.assertRewardAllowed(userId)
+    this.assertPlayerAsset(input.currencyCode, input.networkCode)
     const asset = this.assertCurrency(input.currencyCode, input.networkCode)
     this.assertDestinationAddress(input.destinationAddress, asset.addressKind, asset.networkLabel)
     const gld = this.parseGld(input.gldAmount)
@@ -89,6 +92,7 @@ export class CryptoRewardsService {
     if (!addressCheck) throw new NotFoundException("Crypto reward quote not found")
     const checkedAsset = getCryptoRewardAsset(addressCheck.currencyCode)
     if (!checkedAsset || checkedAsset.networkCode !== addressCheck.networkCode) throw new ConflictException("The crypto reward asset is no longer supported")
+    this.assertPlayerAsset(addressCheck.currencyCode, addressCheck.networkCode)
     this.assertDestinationAddress(input.destinationAddress, checkedAsset.addressKind, checkedAsset.networkLabel)
     if (addressCheck.destinationAddressHash !== this.hashAddress(input.destinationAddress)) throw new ConflictException("The payout address does not match the quote")
     if (addressCheck.consumedAt || addressCheck.expiresAt <= new Date()) throw new ConflictException("Crypto reward quote is no longer available")
@@ -158,6 +162,14 @@ export class CryptoRewardsService {
       await writePlayerAudit(tx, { userId: row.userId, actorType: PlayerAuditActorType.ADMIN, action: `CRYPTO_PAYOUT_${dto.decision}`, entityType: "CryptoPayoutRequest", entityId: id, summary: `Crypto payout request ${dto.decision.toLowerCase()} by administrator`, metadata: { requestId: id } })
       return this.serializeRequest(updated)
     })
+  }
+
+  /** Approve and submit as one audited admin action. The external provider call
+   * remains outside the database transaction; submitApproved claims the row
+   * first so retries cannot create a duplicate payout. */
+  async approveAndSubmit(id: string, adminId: string, adminNote?: string) {
+    await this.decideAdmin(id, adminId, { decision: "APPROVE", adminNote })
+    return this.submitApproved(id, adminId)
   }
 
   /** Claim an approved request before making the external POST. The claim is durable across process restarts. */
@@ -382,6 +394,7 @@ export class CryptoRewardsService {
   private async getConfig() { const env = getCryptoRewardsConfig(); return this.prisma.cryptoRewardConfig.upsert({ where: { singletonKey: "default" }, create: { singletonKey: "default", enabled: env.enabled, networkCode: env.networkCode, usdtSolGldPerUnit: env.defaultUsdtSolGldPerUnit, usdcSolGldPerUnit: env.defaultUsdcSolGldPerUnit, assetRates: { ...env.assetRates, ...(env.defaultUsdtSolGldPerUnit !== "0" ? { USDTSOL: env.defaultUsdtSolGldPerUnit } : {}), ...(env.defaultUsdcSolGldPerUnit !== "0" ? { USDCSOL: env.defaultUsdcSolGldPerUnit } : {}) }, quoteTtlSeconds: env.quoteTtlSeconds, maxQuoteDriftBps: env.maxQuoteDriftBps, minGld: BigInt(env.minGld), maxGldPerRequest: BigInt(env.maxGldPerRequest), dailyGldLimit: BigInt(env.dailyGldLimit), maxPendingPerUser: env.maxPendingPerUser, holdExpiryHours: env.holdExpiryHours, platformFeeBps: env.platformFeeBps, minProviderReserveUsd: new Prisma.Decimal(env.minProviderReserveUsd), requireAdminApproval: env.requireAdminApproval }, update: {} }) }
   private assertEnabled(config: any) { if (!config.enabled || !getCryptoRewardsConfig().providerEnabled) throw new ServiceUnavailableException("Crypto rewards are not available") }
   private assertCurrency(currency: string, network: string) { const asset = getCryptoRewardAsset(currency); if (!asset || asset.networkCode !== network) throw new BadRequestException("The selected asset and network do not match"); return asset }
+  private assertPlayerAsset(currency: string, network: string) { if (currency !== PLAYER_CRYPTO_REWARD_CURRENCY || network !== PLAYER_CRYPTO_REWARD_NETWORK) throw new BadRequestException("Only USDT on Polygon is currently available for crypto rewards") }
   private assertDestinationAddress(address: string, kind: string, networkLabel: string) {
     const value = address.trim()
     if (!value || value.length > 128) throw new BadRequestException(`Enter a valid ${networkLabel} address`)

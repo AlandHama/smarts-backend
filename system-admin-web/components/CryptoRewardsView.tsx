@@ -293,13 +293,18 @@ export function CryptoRewardsView({
     }
   };
 
-  const action = async (request: CryptoRequest, kind: "approve" | "reject" | "submit" | "verify" | "reconcile") => {
+  const action = async (request: CryptoRequest, kind: "approve-and-submit" | "reject" | "submit" | "verify" | "reconcile") => {
     let path = `/crypto-rewards/requests/${request.id}`;
     let init: RequestInit = { method: "PATCH" };
-    if (kind === "approve" || kind === "reject") {
-      const note = window.prompt(kind === "approve" ? "Optional approval note" : "Reason for rejection", request.adminNote || "") ?? "";
+    if (kind === "approve-and-submit" || kind === "reject") {
+      const note = window.prompt(kind === "approve-and-submit" ? "Optional approval note" : "Reason for rejection", request.adminNote || "") ?? "";
       if (kind === "reject" && !note.trim() && !window.confirm("Reject without a note?")) return;
-      init.body = JSON.stringify({ decision: kind === "approve" ? "APPROVE" : "REJECT", adminNote: note.trim() || undefined });
+      if (kind === "approve-and-submit") {
+        path += "/approve-and-submit";
+        init = { method: "POST", body: JSON.stringify({ decision: "APPROVE", adminNote: note.trim() || undefined }) };
+      } else {
+        init.body = JSON.stringify({ decision: "REJECT", adminNote: note.trim() || undefined });
+      }
     } else if (kind === "submit") {
       path += "/submit";
       init = { method: "POST" };
@@ -317,7 +322,7 @@ export function CryptoRewardsView({
     try {
       setError("");
       await api(path, init);
-      setMessage(kind === "approve" ? "Request approved." : kind === "reject" ? "Request rejected and GLD released." : kind === "submit" ? "Payout submitted to NOWPayments." : kind === "verify" ? "Payout verification submitted." : "Request marked for reconciliation.");
+      setMessage(kind === "approve-and-submit" ? "Request approved and sent to NOWPayments." : kind === "reject" ? "Request rejected and GLD released." : kind === "submit" ? "Payout submitted to NOWPayments." : kind === "verify" ? "Payout verification submitted." : "Request marked for reconciliation.");
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Crypto reward action failed");
@@ -424,7 +429,7 @@ export function CryptoRewardsView({
                 <TableCell><Typography fontWeight={750}>{request.gldRequested}</Typography><Typography variant="caption" display="block" color="text.secondary">Held {request.gldHeld}</Typography>{request.gldReleased !== "0" && <Typography variant="caption" display="block" color="success.main">Released {request.gldReleased}</Typography>}</TableCell>
                 <TableCell><Typography fontWeight={750}>{request.netCryptoAmount} {request.currencyCode}</Typography><Typography variant="caption" display="block" color="text.secondary">Gross {request.grossCryptoAmount}</Typography><Typography variant="caption" display="block" color="text.secondary">Fees {request.platformFeeCrypto} + {request.providerFeeCrypto}</Typography>{request.transactionHash && <Typography variant="caption" display="block" color="success.main">Hash {request.transactionHash.slice(0, 12)}…</Typography>}</TableCell>
                 <TableCell><Chip size="small" color={chipColor(request.status)} label={humanize(request.status)} />{request.providerStatus && <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>Provider: {request.providerStatus}</Typography>}{request.adminNote && <Typography variant="caption" display="block" color="text.secondary" sx={{ maxWidth: 180 }}>{request.adminNote}</Typography>}</TableCell>
-                <TableCell align="right"><Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap" useFlexGap>{request.status === "PENDING_ADMIN_APPROVAL" && <><Button size="small" variant="contained" color="success" onClick={() => void action(request, "approve")} disabled={working === request.id}>Approve</Button><Button size="small" variant="outlined" color="error" onClick={() => void action(request, "reject")} disabled={working === request.id}>Reject</Button></>}{request.status === "APPROVED" && <Button size="small" variant="contained" onClick={() => void action(request, "submit")} disabled={working === request.id}>Submit</Button>}{request.status === "AWAITING_PROVIDER_VERIFICATION" && <Button size="small" variant="contained" onClick={() => void action(request, "verify")} disabled={working === request.id}>Verify</Button>}{request.status === "RECONCILIATION_REQUIRED" && <Button size="small" variant="outlined" onClick={() => void action(request, "reconcile")} disabled={working === request.id}>Reconcile</Button>}{working === request.id && <CircularProgress size={18} />}</Stack></TableCell>
+                <TableCell align="right"><Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap" useFlexGap>{request.status === "PENDING_ADMIN_APPROVAL" && <><Button size="small" variant="contained" color="success" onClick={() => void action(request, "approve-and-submit")} disabled={working === request.id}>Approve &amp; send</Button><Button size="small" variant="outlined" color="error" onClick={() => void action(request, "reject")} disabled={working === request.id}>Reject</Button></>}{request.status === "APPROVED" && <Button size="small" variant="contained" onClick={() => void action(request, "submit")} disabled={working === request.id}>Send to NOWPayments</Button>}{request.status === "AWAITING_PROVIDER_VERIFICATION" && <Button size="small" variant="contained" onClick={() => void action(request, "verify")} disabled={working === request.id}>Verify</Button>}{request.status === "RECONCILIATION_REQUIRED" && <Button size="small" variant="outlined" onClick={() => void action(request, "reconcile")} disabled={working === request.id}>Reconcile</Button>}{working === request.id && <CircularProgress size={18} />}</Stack></TableCell>
               </TableRow>)}
               {!requests.length && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No crypto reward requests in this filter.</Typography></TableCell></TableRow>}
             </TableBody></Table></TableContainer>}

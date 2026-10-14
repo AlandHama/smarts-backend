@@ -51,6 +51,11 @@ export type CryptoRewardAsset = (typeof CRYPTO_REWARD_ASSETS)[number]
 export type CryptoRewardCurrency = CryptoRewardAsset["code"]
 export const CRYPTO_REWARD_CURRENCIES = CRYPTO_REWARD_ASSETS.map((asset) => asset.code) as readonly CryptoRewardCurrency[]
 export const CRYPTO_REWARD_NETWORK = "SOLANA" as const
+// The player-facing rollout is intentionally narrower than the admin catalog.
+// Keep the full catalog available for configuration/history, but expose only
+// the tested USDT-on-Polygon rail to mobile clients for now.
+export const PLAYER_CRYPTO_REWARD_CURRENCY = "USDTMATIC" as const
+export const PLAYER_CRYPTO_REWARD_NETWORK = "POLYGON" as const
 
 function positiveInt(name: string, fallback: number, max = Number.MAX_SAFE_INTEGER) { const value = Number(process.env[name]); return Number.isInteger(value) && value > 0 && value <= max ? value : fallback }
 function nonNegativeInt(name: string, fallback: number, max = Number.MAX_SAFE_INTEGER) { const value = Number(process.env[name]); return Number.isInteger(value) && value >= 0 && value <= max ? value : fallback }
