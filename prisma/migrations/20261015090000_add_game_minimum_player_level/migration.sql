@@ -1,0 +1,2 @@
+ALTER TABLE "GameConfig"
+ADD COLUMN "minimumPlayerLevel" INTEGER NOT NULL DEFAULT 1;

@@ -15,14 +15,17 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
     const game = await transaction.gameDefinition.findUnique({ where: { key: input.dto.gameKey.trim().toLowerCase() }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     const config = game?.configs[0]
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
-    const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { id: true, status: true } })
+    const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { id: true, status: true, profile: { select: { level: true } } } })
     if (!user || user.status !== "ACTIVE") throw new BadRequestException("Player is not active")
-    if (input.dto.mode === GameMode.SINGLE_PLAYER && input.dto.opponentUserId) throw new BadRequestException("Single-player matches cannot have an opponent")
-    if (input.dto.mode !== GameMode.SINGLE_PLAYER && !input.dto.opponentUserId) throw new BadRequestException("An opponent is required for this match mode")
+    if ((user.profile?.level ?? 1) < config.minimumPlayerLevel) throw new ConflictException(`Reach level ${config.minimumPlayerLevel} to unlock ${game.name}`)
+    const isSoloMode = input.dto.mode === GameMode.SINGLE_PLAYER || input.dto.mode === GameMode.PRACTICE
+    if (isSoloMode && input.dto.opponentUserId) throw new BadRequestException("This match mode cannot have an opponent")
+    if (!isSoloMode && !input.dto.opponentUserId) throw new BadRequestException("An opponent is required for this match mode")
     if (input.dto.opponentUserId === input.userId) throw new BadRequestException("A player cannot challenge itself")
     if (input.dto.opponentUserId) {
-      const opponent = await transaction.user.findUnique({ where: { id: input.dto.opponentUserId }, select: { id: true, status: true } })
+      const opponent = await transaction.user.findUnique({ where: { id: input.dto.opponentUserId }, select: { id: true, status: true, profile: { select: { level: true } } } })
       if (!opponent || opponent.status !== "ACTIVE") throw new NotFoundException("Opponent not found or inactive")
+      if ((opponent.profile?.level ?? 1) < config.minimumPlayerLevel) throw new ConflictException(`Opponent must reach level ${config.minimumPlayerLevel} to play ${game.name}`)
     }
     const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush"
     const activeContentCount = isBoardAuthoritative ? 1 : await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })

@@ -13,7 +13,7 @@ export class GameService {
 
   async listDefinitions(includeInactive = false) {
     const items = await this.prisma.gameDefinition.findMany({ where: includeInactive ? undefined : { active: true }, orderBy: { key: "asc" }, take: 100, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
-    return this.serialize(items.map((item) => ({ id: item.id, key: item.key, name: item.name, active: item.active, modePolicy: item.modePolicy, config: item.configs[0] ? { version: item.configs[0].version, maxAnswerTimeSeconds: item.configs[0].maxAnswerTimeSeconds, maxMatchDurationSeconds: item.configs[0].maxMatchDurationSeconds, maxQuestions: item.configs[0].maxQuestions, rankingEnabled: item.configs[0].rankingEnabled } : null })))
+    return this.serialize(items.map((item) => ({ id: item.id, key: item.key, name: item.name, active: item.active, modePolicy: item.modePolicy, config: item.configs[0] ? { version: item.configs[0].version, maxAnswerTimeSeconds: item.configs[0].maxAnswerTimeSeconds, maxMatchDurationSeconds: item.configs[0].maxMatchDurationSeconds, maxQuestions: item.configs[0].maxQuestions, minimumPlayerLevel: item.configs[0].minimumPlayerLevel, rankingEnabled: item.configs[0].rankingEnabled } : null })))
   }
 
   async listAdminDefinitions() {
@@ -25,7 +25,7 @@ export class GameService {
     const item = await this.prisma.gameDefinition.findUnique({ where: { key: key.trim().toLowerCase() }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     if (!item || !item.active) throw new NotFoundException("Game definition not found")
     const config = item.configs[0]
-    return this.serialize({ id: item.id, key: item.key, name: item.name, active: item.active, modePolicy: item.modePolicy, config: config ? { version: config.version, maxAnswerTimeSeconds: config.maxAnswerTimeSeconds, maxMatchDurationSeconds: config.maxMatchDurationSeconds, maxQuestions: config.maxQuestions, rankingEnabled: config.rankingEnabled } : null })
+    return this.serialize({ id: item.id, key: item.key, name: item.name, active: item.active, modePolicy: item.modePolicy, config: config ? { version: config.version, maxAnswerTimeSeconds: config.maxAnswerTimeSeconds, maxMatchDurationSeconds: config.maxMatchDurationSeconds, maxQuestions: config.maxQuestions, minimumPlayerLevel: config.minimumPlayerLevel, rankingEnabled: config.rankingEnabled } : null })
   }
 
   updateConfig(gameKey: string, dto: UpdateGameConfigDto) { return this.updateConfigTransaction.run({ gameKey, dto }).then((item) => this.serialize(item)) }

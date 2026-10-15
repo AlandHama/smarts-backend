@@ -144,8 +144,13 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
           where: { id: first.gameDefinitionId },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })].filter((value): value is NonNullable<typeof value> => value !== null);
-    const game = gameCandidates.length
-      ? gameCandidates[Math.floor(Math.random() * gameCandidates.length)]
+    const eligibleLevel = Math.min(first.levelSnapshot, second?.levelSnapshot ?? first.levelSnapshot);
+    const eligibleGameCandidates = gameCandidates.filter((candidate) => {
+      const minimumLevel = candidate.configs[0]?.minimumPlayerLevel ?? 1;
+      return eligibleLevel >= minimumLevel;
+    });
+    const game = eligibleGameCandidates.length
+      ? eligibleGameCandidates[Math.floor(Math.random() * eligibleGameCandidates.length)]
       : null;
     const config = game?.configs[0];
     if (!game || !config) return null;

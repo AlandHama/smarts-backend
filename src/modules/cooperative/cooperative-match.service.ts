@@ -219,7 +219,9 @@ export class CooperativeMatchService {
     if (!second && !useBots) return null
 
     const games = await tx.gameDefinition.findMany({ where: { active: true, configs: { some: { active: true } }, content: { some: { active: true } } }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
-    const game = games[Math.floor(Math.random() * games.length)]
+    const eligibleLevel = Math.min(...[...first.party.members, ...(second ? second.party.members : [])].map((member) => member.user?.profile?.level ?? 1))
+    const eligibleGames = games.filter((candidate) => (candidate.configs[0]?.minimumPlayerLevel ?? 1) <= eligibleLevel)
+    const game = eligibleGames[Math.floor(Math.random() * eligibleGames.length)]
     const gameConfig = game?.configs[0]
     if (!game || !gameConfig) return null
     const content = await tx.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: Math.max(1, gameConfig.maxQuestions) })

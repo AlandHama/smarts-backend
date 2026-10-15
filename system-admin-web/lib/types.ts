@@ -235,6 +235,7 @@ export interface GameConfigRecord {
     maxAnswerTimeSeconds: number;
     maxMatchDurationSeconds: number;
     maxQuestions: number;
+    minimumPlayerLevel: number;
     instantSkipPriceGld: string;
     rankingEnabled: boolean;
     rankingEloMultiplier: string;

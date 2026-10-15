@@ -12,12 +12,13 @@ export class CreateFriendInviteTransaction extends PrismaTransaction<{ userId: s
 
   protected async execute(input: { userId: string; dto: CreateFriendInviteDto }, transaction: Prisma.TransactionClient) {
     if (input.userId === input.dto.friendId) throw new ConflictException("A player cannot invite themselves")
-    const users = await transaction.user.findMany({ where: { id: { in: [input.userId, input.dto.friendId] } }, select: { id: true, status: true, username: true, profile: { select: { displayName: true } } } })
+    const users = await transaction.user.findMany({ where: { id: { in: [input.userId, input.dto.friendId] } }, select: { id: true, status: true, username: true, profile: { select: { displayName: true, level: true } } } })
     if (users.length !== 2 || users.some((user) => user.status !== "ACTIVE")) throw new NotFoundException("Both players must be active")
     const friendship = await transaction.friendship.findFirst({ where: { OR: [{ userId: input.userId, friendId: input.dto.friendId }, { userId: input.dto.friendId, friendId: input.userId }] }, select: { id: true } })
     if (!friendship) throw new ConflictException("Players must be friends before sending a match invite")
     const game = await transaction.gameDefinition.findUnique({ where: { key: input.dto.gameKey.trim().toLowerCase() }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     if (!game || !game.active || !game.configs[0]) throw new NotFoundException("Game definition or configuration is inactive")
+    if (users.some((user) => (user.profile?.level ?? 1) < game.configs[0].minimumPlayerLevel)) throw new ConflictException(`Both players must reach level ${game.configs[0].minimumPlayerLevel} to play ${game.name}`)
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
     if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
     const pending = await transaction.matchmakingInvite.findFirst({ where: { OR: [{ inviterId: input.userId, inviteeId: input.dto.friendId }, { inviterId: input.dto.friendId, inviteeId: input.userId }], status: "PENDING", expiresAt: { gt: new Date() } } })

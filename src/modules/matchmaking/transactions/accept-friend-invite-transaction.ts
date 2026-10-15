@@ -12,7 +12,7 @@ export class AcceptFriendInviteTransaction extends PrismaTransaction<{ inviteId:
 
   protected async execute(input: { inviteId: string; userId: string }, transaction: Prisma.TransactionClient) {
     await transaction.$executeRaw`SELECT "id" FROM "MatchmakingInvite" WHERE "id" = ${input.inviteId} FOR UPDATE`
-    const invite = await transaction.matchmakingInvite.findUnique({ where: { id: input.inviteId }, include: { inviter: { select: { id: true, status: true } }, invitee: { select: { id: true, status: true } }, gameDefinition: { include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } } } })
+    const invite = await transaction.matchmakingInvite.findUnique({ where: { id: input.inviteId }, include: { inviter: { select: { id: true, status: true, profile: { select: { level: true } } } }, invitee: { select: { id: true, status: true, profile: { select: { level: true } } } }, gameDefinition: { include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } } } })
     if (!invite) throw new NotFoundException("Friend match invite not found")
     if (invite.inviteeId !== input.userId) throw new ConflictException("Only the invited player can accept this invite")
     if (invite.status !== "PENDING") throw new ConflictException("This friend match invite is no longer pending")
@@ -21,6 +21,7 @@ export class AcceptFriendInviteTransaction extends PrismaTransaction<{ inviteId:
       throw new ConflictException("This friend match invite has expired")
     }
     if (invite.inviter.status !== "ACTIVE" || invite.invitee.status !== "ACTIVE" || !invite.gameDefinition.active || !invite.gameDefinition.configs[0]) throw new ConflictException("The friend match is no longer available")
+    if (Math.min(invite.inviter.profile?.level ?? 1, invite.invitee.profile?.level ?? 1) < invite.gameDefinition.configs[0].minimumPlayerLevel) throw new ConflictException(`Both players must reach level ${invite.gameDefinition.configs[0].minimumPlayerLevel} to play ${invite.gameDefinition.name}`)
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: invite.gameDefinitionId, active: true } })
     if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
     const now = new Date()

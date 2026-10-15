@@ -122,6 +122,13 @@ export class UpdateGameConfigDto {
   @Max(100)
   maxQuestions?: number
 
+  @ApiPropertyOptional({ example: 1, description: "Minimum player level required to access this game" })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  minimumPlayerLevel?: number
+
   @ApiPropertyOptional({ example: "10", description: "GLD price for passing the current question" })
   @IsOptional()
   @IsString()

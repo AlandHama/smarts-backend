@@ -359,6 +359,7 @@ enum GameMode {
   BOT
   RANKED
   CASUAL
+  PRACTICE
 }
 
 enum MatchmakingTicketMode {
@@ -2603,6 +2604,7 @@ model GameConfig {
   maxAnswerTimeSeconds       Int
   maxMatchDurationSeconds    Int
   maxQuestions               Int
+  minimumPlayerLevel         Int            @default(1)
   instantSkipPriceGld        BigInt         @default(10)
   rankingEnabled             Boolean        @default(false)
   rankingEloMultiplier       Decimal        @db.Decimal(20, 8)

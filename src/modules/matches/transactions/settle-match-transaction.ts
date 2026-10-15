@@ -53,6 +53,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     // after an administrator activates a newer version. They must still settle
     // against that frozen configuration; other games keep the legacy guard.
     if (!config || (!config.active && lockedMatch.gameDefinition.key !== "gem_blitz" && lockedMatch.gameDefinition.key !== "tile_rush")) throw new BadRequestException("Game reward configuration is inactive")
+    const isPractice = lockedMatch.mode === "PRACTICE"
     const cooperative = lockedMatch.cooperativeMatch
     const resetWinStreakOnNonWin = await this.winStreaks.shouldResetOnNonWin(transaction)
     const cooperativeRanked = cooperative?.mode === "RANKED"
@@ -100,6 +101,27 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
           progression: null,
           eloProgression: null,
           wallet: null,
+        })
+        continue
+      }
+      // Practice is a fully playable, server-authoritative match, but its
+      // settlement is only a result projection. Do not call any of the
+      // progression/economy/mission/streak/stat/leaderboard services here.
+      // Keeping this guard before score calculations also makes the invariant
+      // obvious: no future reward path can accidentally leak into practice.
+      if (isPractice) {
+        results.push({
+          playerId: player.id,
+          username: player.username,
+          participantType: item.participant.participantType,
+          result,
+          score: item.score.toString(),
+          eloDelta: "0",
+          progression: null,
+          eloProgression: null,
+          wallet: null,
+          cognitiveStats: null,
+          practice: true,
         })
         continue
       }
@@ -181,7 +203,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       if (entry.result === "WIN" && endedOpponentStreaks.length) entry.endedOpponentStreaks = endedOpponentStreaks
     }
 
-    if (lockedMatch.rankingMatch) {
+    if (!isPractice && lockedMatch.rankingMatch) {
       if (winner?.participant.userId) {
         await this.creditWallet.runWithinTransaction({
           userId: winner.participant.userId,
@@ -202,7 +224,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       }
     }
 
-    if (cooperativeRanked && cooperativePolicy?.cooperativeRewardsEnabled) {
+    if (!isPractice && cooperativeRanked && cooperativePolicy?.cooperativeRewardsEnabled) {
       const winningPlayers = humanParticipants.filter((item) => cooperative?.participants.find((entry) => entry.matchParticipantId === item.id)?.teamId === winnerTeamId && item.result !== "FORFEIT")
       if (winnerTeamId && winningPlayers.length) {
         const perWinner = new Prisma.Decimal(cooperative.payoutAmountGld).div(winningPlayers.length)
@@ -222,7 +244,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       }
     }
 
-    if (cooperative) {
+    if (!isPractice && cooperative) {
       await Promise.all(cooperative.teams.map((team) => transaction.cooperativeTeam.update({ where: { id: team.id }, data: { result: draw ? "DRAW" : team.id === winnerTeamId ? "WIN" : "LOSS" } })))
       await transaction.cooperativeMatch.update({ where: { id: cooperative.id }, data: { status: "SETTLED", endedAt: lockedMatch.endedAt ?? new Date(), settledAt: new Date() } })
       const metadata = lockedMatch.metadata && typeof lockedMatch.metadata === "object" && !Array.isArray(lockedMatch.metadata) ? lockedMatch.metadata as Record<string, unknown> : {}
@@ -242,7 +264,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         })
       }
     }
-    const settlementJson = { status: "SETTLED", matchId: lockedMatch.id, policyVersion, winnerPlayerId: winner?.participant.userId ?? null, draw, cooperative: cooperative ? { mode: cooperative.mode, winnerTeamId: winnerTeamId ?? null, entryFeeGld: cooperative.entryFeeGld, payoutAmountGld: cooperative.payoutAmountGld, teams: cooperative.teams.map((team) => ({ teamId: team.id, teamNumber: team.teamNumber, score: team.score, result: draw ? "DRAW" : team.id === winnerTeamId ? "WIN" : "LOSS" })) } : null, results }
+    const settlementJson = { status: "SETTLED", matchId: lockedMatch.id, mode: lockedMatch.mode, practice: isPractice, policyVersion, winnerPlayerId: winner?.participant.userId ?? null, draw, cooperative: !isPractice && cooperative ? { mode: cooperative.mode, winnerTeamId: winnerTeamId ?? null, entryFeeGld: cooperative.entryFeeGld, payoutAmountGld: cooperative.payoutAmountGld, teams: cooperative.teams.map((team) => ({ teamId: team.id, teamNumber: team.teamNumber, score: team.score, result: draw ? "DRAW" : team.id === winnerTeamId ? "WIN" : "LOSS" })) } : null, results }
     const settlement = await transaction.matchSettlement.create({ data: { matchId: lockedMatch.id, policyVersion, winnerParticipantId: winner?.participant.id, settlementJson: settlementJson as Prisma.InputJsonValue, idempotencyKeyId: idem.id } })
     await transaction.outboxEvent.create({ data: { eventType: "MATCH_SETTLED", aggregateType: "Match", aggregateId: lockedMatch.id, payload: settlementJson as Prisma.InputJsonValue } })
     await transaction.match.update({ where: { id: lockedMatch.id }, data: { status: "SETTLED", endedAt: lockedMatch.endedAt ?? new Date(), settledAt: new Date() } })

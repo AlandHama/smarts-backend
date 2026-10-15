@@ -35,19 +35,21 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const now = new Date()
     const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { id: true, status: true, profile: { select: { level: true, elo: true, countryCode: true } } } })
     if (!user || user.status !== "ACTIVE") throw new BadRequestException("Player is not active")
+    const playerLevel = user.profile?.level ?? 1
     // MatchmakingTicket keeps a required game relation for legacy/reporting
     // compatibility. Random casual tickets use a valid active game as a
     // placeholder; the matcher replaces it with a server-selected game after
     // two random tickets are paired.
     const game = randomCasual
       ? await transaction.gameDefinition.findFirst({
-          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { content: { some: { active: true } } }] },
+          where: { active: true, configs: { some: { active: true, minimumPlayerLevel: { lte: playerLevel } } }, OR: [{ key: "tile_rush" }, { content: { some: { active: true } } }] },
           orderBy: { key: "asc" },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })
       : await transaction.gameDefinition.findUnique({ where: { key: requestedGameKey }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     const config = game?.configs[0]
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
+    if (playerLevel < config.minimumPlayerLevel) throw new ConflictException(`Reach level ${config.minimumPlayerLevel} to unlock ${game.name}`)
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
     if (!activeContentCount && game.key !== "gem_blitz" && game.key !== "tile_rush") throw new ConflictException("No active server content is configured for this game")
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
