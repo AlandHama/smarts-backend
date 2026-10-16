@@ -46,7 +46,7 @@ export const DEFAULT_WORD_DASH_POLICY: WordDashPolicy = {
   visibleName: "Word Dash",
   description: "Find words fast.",
   rulesVersion: "word-dash.v1",
-  dictionaryVersion: "english.v2",
+  dictionaryVersion: "english.v3",
   boardSize: 5,
   durationSeconds: 60,
   minimumWordLength: 3,
