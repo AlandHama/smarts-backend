@@ -250,7 +250,8 @@ export class WordDashService {
     if (!self) throw new ConflictException("The Word Dash player state is unavailable")
     const opponentParticipant = match.participants.find((item: any) => item.id !== participantId)
     const opponent = opponentParticipant ? states.find((item: any) => item.matchParticipantId === opponentParticipant.id) : null
-    const ownWords = await tx.wordDashFoundWord.findMany({ where: { matchParticipantId: participantId }, orderBy: { acceptedAt: "desc" }, take: 20, select: { word: true, scoreDelta: true, acceptedAt: true } })
+    const acceptedWords = await tx.wordDashFoundWord.findMany({ where: { matchParticipantId: participantId }, orderBy: { firstSequence: "asc" }, take: policy.maxAcceptedWordsPerPlayer, select: { word: true, path: true, scoreDelta: true, acceptedAt: true } })
+    const ownWords = [...acceptedWords].reverse().slice(0, 20)
     const submissions = await tx.wordDashSubmission.findMany({ where: { matchId: match.id, accepted: true }, orderBy: { serverReceivedAt: "desc" }, take: 20, select: { matchParticipantId: true, reconstructedWord: true, scoreDelta: true, comboAfter: true, serverReceivedAt: true } })
     const finished = ["FINISHED", "REVIEW", "SETTLED"].includes(match.status)
     const result = finished ? await this.resultWords(tx, wordDash, match, participantId) : null
@@ -274,7 +275,7 @@ export class WordDashService {
       dictionaryVersion: wordDash.dictionaryVersion,
       dictionarySha256: wordDash.dictionarySha256,
       selfParticipantId: participantId,
-      self: { score: self.score, combo: self.combo, bestCombo: self.bestCombo, acceptedWordCount: self.acceptedWordCount, longestWordLength: self.longestWordLength, nextSequence: self.nextSequence, recentWords: ownWords.map((item: any) => ({ word: item.word, scoreDelta: item.scoreDelta, acceptedAt: item.acceptedAt })) },
+      self: { score: self.score, combo: self.combo, bestCombo: self.bestCombo, acceptedWordCount: self.acceptedWordCount, longestWordLength: self.longestWordLength, nextSequence: self.nextSequence, recentWords: ownWords.map((item: any) => ({ word: item.word, scoreDelta: item.scoreDelta, acceptedAt: item.acceptedAt })), acceptedWords: acceptedWords.map((item: any) => ({ word: item.word, path: Array.isArray(item.path) ? item.path : [], scoreDelta: item.scoreDelta, acceptedAt: item.acceptedAt })) },
       opponent: opponentParticipant ? { participantId: opponentParticipant.id, userId: opponentParticipant.userId, name: opponentParticipant.user?.profile?.displayName ?? opponentParticipant.user?.username ?? "SMARTS bot", username: opponentParticipant.user?.username ?? null, avatarUrl: opponentParticipant.user?.profile?.avatarUrl ?? null, score: opponent?.score ?? 0, combo: opponent?.combo ?? 0, acceptedWordCount: opponent?.acceptedWordCount ?? 0, longestWordLength: opponent?.longestWordLength ?? 0, participantType: opponentParticipant.participantType } : null,
       recentEvents: publicEvents,
       result,
