@@ -143,12 +143,16 @@ export class PlayersService {
     const currentAverage = current
       ? Number(current.totalScore) / Math.max(1, current.gamesPlayed)
       : null
+    const matchPlayersBeaten = score === undefined
+      ? null
+      : comparison.reduce((count, item) => count + (score > item ? 1 : 0), 0)
 
     return {
       gameKey: game.key,
       gameName: game.name,
       percentile: currentAverage === null ? null : this.percentile(currentAverage, comparison),
       matchPercentile: score === undefined ? null : this.percentile(score, comparison),
+      matchPlayersBeaten,
       comparisonPlayers: comparison.length,
       score: score ?? null,
     }
