@@ -702,6 +702,9 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
       title: conversation.name ?? null,
       imageUrl: conversation.imageUrl ?? null,
       createdById: conversation.createdById ?? null,
+      // Party-linked conversations are intentionally rendered only inside
+      // the cooperative ally-lobby screen, not in the general chat inbox.
+      isPartyChat: Boolean(conversation.partyId),
       wallpaperKey: viewer?.wallpaperKey ?? null,
       mutedUntil: viewer?.mutedUntil?.toISOString() ?? null,
       participants: conversation.type === ChatConversationType.GROUP ? (conversation.participants ?? []).map((row: any) => ({ ...this.serializeUser(row.user), role: row.role })) : [],
