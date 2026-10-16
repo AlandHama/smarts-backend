@@ -41,10 +41,12 @@ import { TileRushAdminController } from "../tile-rush/tile-rush-admin.controller
 import { CryptoRewardsModule } from "../crypto-rewards/crypto-rewards.module"
 import { WordDashModule } from "../word-dash/word-dash.module"
 import { WordDashAdminController } from "../word-dash/word-dash-admin.controller"
+import { DominoModule } from "../domino/domino.module"
+import { DominoAdminController } from "../domino/domino-admin.controller"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, CryptoRewardsModule],
-  controllers: [SystemAdminController, GemBlitzAdminController, TileRushAdminController, WordDashAdminController],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule],
+  controllers: [SystemAdminController, GemBlitzAdminController, TileRushAdminController, WordDashAdminController, DominoAdminController],
   providers: [
     SystemAdminService,
     SystemAdminGuard,

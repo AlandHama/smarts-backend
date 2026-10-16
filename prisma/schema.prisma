@@ -2647,10 +2647,12 @@ model Match {
   rounds              MatchRound[]
   rankingMatch        RankingMatch?
   cooperativeMatch    CooperativeMatch?
+  dominoMatch         DominoMatchState?
   wordDashMatch       WordDashMatch?
   rematchRequests     RematchRequest[]         @relation("RematchOriginalMatch")
   rematchCreatedFrom  RematchRequest?          @relation("RematchNewMatch")
   wordDashSubmissions WordDashSubmission[]
+  dominoActions       DominoAction[]
 
   @@index([status, createdAt])
   @@index([createdByUserId, status])
@@ -2822,10 +2824,66 @@ model MatchParticipant {
   wordDashState          WordDashParticipantState?
   wordDashSubmissions    WordDashSubmission[]
   wordDashFoundWords     WordDashFoundWord[]
+  dominoActions          DominoAction[]
 
   @@unique([matchId, userId])
   @@index([matchId, result])
   @@index([userId, createdAt])
+}
+
+/// Server-owned four-seat Domino state. Private hands and the boneyard remain
+/// in this state projection and are filtered per recipient by DominoService.
+model DominoMatchState {
+  id             String         @id @default(uuid()) @db.Uuid
+  matchId        String         @unique @db.Uuid
+  rulesVersion   String         @db.VarChar(64)
+  policyVersion  String         @db.VarChar(64)
+  seed           String         @db.VarChar(128)
+  roundNumber    Int            @default(1)
+  currentSeat    Int            @default(0)
+  nextSequence   Int            @default(1)
+  leftOpenValue  Int
+  rightOpenValue Int
+  chainHash      String         @db.Char(64)
+  boneyardCount  Int            @default(0)
+  state          Json
+  replay         Json
+  startedAt      DateTime?
+  roundEndsAt    DateTime?
+  matchEndsAt    DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  match          Match          @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  actions        DominoAction[]
+
+  @@index([endedAt, createdAt])
+  @@index([matchEndsAt, currentSeat])
+}
+
+/// Idempotent Domino action journal. The payload is server-generated and does
+/// not contain another player's private hand.
+model DominoAction {
+  id                 String           @id @default(uuid()) @db.Uuid
+  matchId            String           @db.Uuid
+  dominoMatchStateId String           @db.Uuid
+  matchParticipantId String           @db.Uuid
+  sequence           Int
+  clientActionId     String           @db.VarChar(128)
+  actionType         String           @db.VarChar(32)
+  accepted           Boolean          @default(false)
+  rejectionReason    String?          @db.VarChar(160)
+  payload            Json?
+  serverReceivedAt   DateTime         @default(now())
+  clientOccurredAt   DateTime?
+  match              Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  dominoMatchState   DominoMatchState @relation(fields: [dominoMatchStateId], references: [id], onDelete: Cascade)
+  matchParticipant   MatchParticipant @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, matchParticipantId, clientActionId])
+  @@unique([matchId, matchParticipantId, sequence])
+  @@index([matchId, serverReceivedAt])
+  @@index([dominoMatchStateId, sequence])
 }
 
 /// Server-owned projection for a four-player cooperative match. The regular

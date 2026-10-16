@@ -129,27 +129,38 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       LIMIT 1
     `;
 
-    if (
-      !second &&
-      !(first.allowBotFallback && elapsedSeconds >= botFallbackSeconds())
-    )
+    const firstGame = await transaction.gameDefinition.findUnique({ where: { id: first.gameDefinitionId }, select: { key: true } })
+    const dominoQueue = firstGame?.key === "domino" && !isRandomCasualTicket(first)
+    let additional: TicketRow[] = []
+    if (dominoQueue && second) {
+      additional = await transaction.$queryRaw<TicketRow[]>`
+        SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "createdAt"
+        FROM "MatchmakingTicket"
+        WHERE "status" = 'SEARCHING' AND "expiresAt" > NOW() AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
+          AND "id" NOT IN (${first.id}, ${second.id}) AND "userId" <> ${first.userId} AND "gameDefinitionId" = ${first.gameDefinitionId}
+          AND "mode"::text = ${first.mode} AND "isRankingMatch" = ${first.isRankingMatch}
+        ORDER BY "createdAt" ASC FOR UPDATE SKIP LOCKED LIMIT 2
+      `
+    }
+    const realTickets = [first, ...(second ? [second] : []), ...additional]
+    if (!second && !(first.allowBotFallback && elapsedSeconds >= botFallbackSeconds()))
       return null;
     const now = new Date();
     const gameCandidates = isRandomCasualTicket(first)
       ? await transaction.gameDefinition.findMany({
-          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { key: "word_dash" }, { content: { some: { active: true } } }] },
+          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { key: "word_dash" }, { key: "domino" }, { content: { some: { active: true } } }] },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })
       : [await transaction.gameDefinition.findUnique({
           where: { id: first.gameDefinitionId },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })].filter((value): value is NonNullable<typeof value> => value !== null);
-    const eligibleLevel = Math.min(first.levelSnapshot, second?.levelSnapshot ?? first.levelSnapshot);
+    const eligibleLevel = Math.min(...realTickets.map((ticket) => ticket.levelSnapshot));
     const eligibleGameCandidates = gameCandidates.filter((candidate) => {
       const minimumLevel = candidate.configs[0]?.minimumPlayerLevel ?? 1;
       if (eligibleLevel < minimumLevel) return false;
       const settings = candidate.configs[0]?.settings && typeof candidate.configs[0].settings === "object" && !Array.isArray(candidate.configs[0].settings) ? candidate.configs[0].settings as Record<string, any> : {};
-      const policyKey = candidate.key === "word_dash" ? "wordDashPolicy" : candidate.key === "tile_rush" ? "tileRushPolicy" : null;
+      const policyKey = candidate.key === "word_dash" ? "wordDashPolicy" : candidate.key === "tile_rush" ? "tileRushPolicy" : candidate.key === "domino" ? "dominoPolicy" : null;
       const policy = policyKey ? settings[policyKey] as Record<string, any> | undefined : undefined;
       return !policy || (first.mode === MatchmakingTicketMode.CASUAL ? policy.casualEnabled !== false : policy.rankedEnabled !== false);
     });
@@ -158,9 +169,9 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       : null;
     const config = game?.configs[0];
     if (!game || !config) return null;
-    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>)[game.key === "word_dash" ? "wordDashPolicy" : "tileRushPolicy"] : null;
+    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>)[game.key === "word_dash" ? "wordDashPolicy" : game.key === "tile_rush" ? "tileRushPolicy" : game.key === "domino" ? "dominoPolicy" : ""] : null;
     if (!second && first.mode === MatchmakingTicketMode.RANKED && (game.key === "tile_rush" || game.key === "word_dash") && configuredPolicy?.rankedBotFallback !== true) return null;
-    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash";
+    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino";
     // Provision the human assignments in the same transaction as the match.
     // Previously a newly-created bot match had zero assignments until a
     // client won the start race and called /start, which allowed legacy game
@@ -187,7 +198,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     );
     if (!selectedItems.length && !isBoardAuthoritative) return null;
 
-    const matchMode = second
+    const matchMode = realTickets.length > 1
       ? first.mode === MatchmakingTicketMode.RANKED
         ? GameMode.RANKED
         : GameMode.CASUAL
@@ -201,9 +212,9 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         serverNonce,
         createdByUserId: first.userId,
         metadata: {
-          source: second ? "MATCHMAKING_QUEUE" : "BOT_FALLBACK",
+          source: realTickets.length > 1 ? "MATCHMAKING_QUEUE" : "BOT_FALLBACK",
           isRankingMatch: first.isRankingMatch,
-          queueTicketIds: second ? [first.id, second.id] : [first.id],
+          queueTicketIds: realTickets.map((ticket) => ticket.id),
           serverSnapshots: [
             {
               userId: first.userId,
@@ -211,26 +222,17 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
               elo: first.eloSnapshot.toString(),
               countryCode: first.countryCodeSnapshot,
             },
-            ...(second
-              ? [
-                  {
-                    userId: second.userId,
-                    level: second.levelSnapshot,
-                    elo: second.eloSnapshot.toString(),
-                    countryCode: second.countryCodeSnapshot,
-                  },
-                ]
-              : []),
+            ...realTickets.slice(1).map((ticket) => ({ userId: ticket.userId, level: ticket.levelSnapshot, elo: ticket.eloSnapshot.toString(), countryCode: ticket.countryCodeSnapshot })),
           ],
         } as Prisma.InputJsonValue,
       },
     });
-    if (game.key === "tile_rush" || game.key === "word_dash") {
-      const players = [first.userId, ...(second ? [second.userId] : [])];
+    if (game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino") {
+      const players = realTickets.map((ticket) => ticket.userId);
       for (const playerId of players) {
         await transaction.analyticsEvent.create({
           data: {
-            eventName: game.key === "word_dash" ? "WORD_DASH_MATCH_FOUND" : "TILE_RUSH_MATCH_FOUND",
+            eventName: game.key === "word_dash" ? "WORD_DASH_MATCH_FOUND" : game.key === "tile_rush" ? "TILE_RUSH_MATCH_FOUND" : "DOMINO_MATCH_FOUND",
             occurredAt: now,
             matchId: match.id,
             playerId,
@@ -273,21 +275,8 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
             rankingEntryFee: (first.rankingEntryFee ?? 0n).toString(),
             rankingEntryFeeMicros: feeMicros.toString(),
             rankingPayoutAmount: expectedPayout.toString(),
-            queueTicketIds: [first.id, second.id],
-            serverSnapshots: [
-              {
-                userId: first.userId,
-                level: first.levelSnapshot,
-                elo: first.eloSnapshot.toString(),
-                countryCode: first.countryCodeSnapshot,
-              },
-              {
-                userId: second.userId,
-                level: second.levelSnapshot,
-                elo: second.eloSnapshot.toString(),
-                countryCode: second.countryCodeSnapshot,
-              },
-            ],
+            queueTicketIds: realTickets.map((ticket) => ticket.id),
+            serverSnapshots: realTickets.map((ticket) => ({ userId: ticket.userId, level: ticket.levelSnapshot, elo: ticket.eloSnapshot.toString(), countryCode: ticket.countryCodeSnapshot })),
           } as Prisma.InputJsonValue,
         },
       });
@@ -303,29 +292,10 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
           .digest("hex"),
       },
     });
-    const participants = [
-      await transaction.matchParticipant.create({
-        data: {
-          matchId: match.id,
-          userId: first.userId,
-          participantType: "PLAYER",
-        },
-      }),
-    ];
-    if (second)
-      participants.push(
-        await transaction.matchParticipant.create({
-          data: {
-            matchId: match.id,
-            userId: second.userId,
-            participantType: "PLAYER",
-          },
-        }),
-      );
-    else
-      participants.push(await transaction.matchParticipant.create({
-        data: { matchId: match.id, participantType: "BOT", result: "PENDING" },
-      }));
+    const participants = [];
+    for (const ticket of realTickets) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: ticket.userId, participantType: "PLAYER" } }));
+    const requiredSeats = game.key === "domino" ? 4 : Math.max(2, participants.length + 1);
+    while (participants.length < requiredSeats) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: "BOT", result: "PENDING" } }));
 
     const expiresAt = new Date(
       now.getTime() + config.maxMatchDurationSeconds * 1000,
@@ -355,7 +325,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       }
     }
 
-    const ids = second ? [first.id, second.id] : [first.id];
+    const ids = realTickets.map((ticket) => ticket.id);
     await transaction.matchmakingTicket.updateMany({
       where: { id: { in: ids }, status: "SEARCHING" },
       // Do not leave the second ticket pointing at the game its device chose

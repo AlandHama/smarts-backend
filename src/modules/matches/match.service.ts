@@ -86,7 +86,7 @@ export class MatchService {
     if (
       lifecycle &&
       (lifecycle.status === "CREATED" || lifecycle.status === "STARTED") &&
-      lifecycle.gameDefinition.key !== "word_dash"
+      lifecycle.gameDefinition.key !== "word_dash" && lifecycle.gameDefinition.key !== "domino"
     ) {
       await this.startMatch.run({ matchId, userId });
     }

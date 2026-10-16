@@ -16,6 +16,7 @@ import { PartyService } from "../cooperative/party.service"
 import { GemBlitzService } from "../gem-blitz/gem-blitz.service"
 import { TileRushService } from "../tile-rush/tile-rush.service"
 import { WordDashService } from "../word-dash/word-dash.service"
+import { DominoService } from "../domino/domino.service"
 import { randomUUID } from "node:crypto"
 
 type ClientState = {
@@ -60,6 +61,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly gemBlitz: GemBlitzService,
     private readonly tileRush: TileRushService,
     private readonly wordDash: WordDashService,
+    private readonly domino: DominoService,
   ) {
     // Gameplay actions push an immediate snapshot. This timer is only the
     // recovery/clock path, so polling every second needlessly re-queries and
@@ -181,6 +183,19 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.send(client, snapshot.submission?.accepted === false ? "word_dash.submission.rejected" : "word_dash.submission.accepted", snapshot)
         await this.broadcastWordDash(matchId)
       } catch (error) { this.send(client, "word_dash.error", { code: "SUBMISSION_REJECTED", message: this.errorMessage(error) }) }
+      return
+    }
+    if (event === "domino.play_tile" || event === "domino.draw_tile" || event === "domino.pass") {
+      const matchId = this.string(data.matchId)
+      if (!matchId || !state.matchIds.has(matchId)) return this.send(client, "domino.error", { code: "NOT_SUBSCRIBED", message: "Subscribe to the match first" })
+      try {
+        const base = { sequence: Number(data.sequence), clientActionId: this.string(data.clientActionId) || randomUUID(), clientOccurredAt: typeof data.clientOccurredAt === "string" ? data.clientOccurredAt : undefined, chainHashBefore: typeof data.chainHashBefore === "string" ? data.chainHashBefore : undefined }
+        const snapshot = event === "domino.play_tile"
+          ? await this.domino.play(state.userId, matchId, { ...base, tileKey: this.string(data.tileKey), side: this.string(data.side) as "LEFT" | "RIGHT" })
+          : event === "domino.draw_tile" ? await this.domino.draw(state.userId, matchId, base) : await this.domino.pass(state.userId, matchId, base)
+        this.send(client, snapshot.action?.accepted === false ? "domino.action.rejected" : "domino.action.accepted", snapshot)
+        await this.broadcastDomino(matchId)
+      } catch (error) { this.send(client, "domino.error", { code: "ACTION_REJECTED", message: this.errorMessage(error) }) }
       return
     }
     if (event === "subscribe_player") {
@@ -547,6 +562,16 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.releaseFinishedMatch(client, state, matchId, snapshot)
         return
       }
+      if (game?.gameDefinition.key === "domino") {
+        const snapshot = await this.domino.snapshot(state.userId, matchId)
+        const key = JSON.stringify(snapshot)
+        if (force || state.lastSnapshots.get(`domino:${matchId}`) !== key) {
+          state.lastSnapshots.set(`domino:${matchId}`, key)
+          this.send(client, "domino.snapshot", snapshot)
+        }
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
+        return
+      }
       const snapshot = await this.matches.get(matchId, state.userId)
       const key = JSON.stringify(snapshot)
       const cacheKey = `match:${matchId}`
@@ -591,6 +616,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     state.lastSnapshots.delete(`gem-blitz:${matchId}`)
     state.lastSnapshots.delete(`tile-rush:${matchId}`)
     state.lastSnapshots.delete(`word-dash:${matchId}`)
+    state.lastSnapshots.delete(`domino:${matchId}`)
     state.lastSnapshots.delete(`match:${matchId}`)
     state.lastSnapshots.delete(`events:${matchId}`)
   }
@@ -636,6 +662,17 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.send(client, "word_dash.snapshot", snapshot)
         this.releaseFinishedMatch(client, state, matchId, snapshot)
       } catch { /* HTTP reconcile remains available after a transient failure. */ }
+    }
+  }
+
+  private async broadcastDomino(matchId: string) {
+    for (const [client, state] of this.clients) {
+      if (!state.matchIds.has(matchId)) continue
+      try {
+        const snapshot = await this.domino.snapshot(state.userId, matchId)
+        this.send(client, "domino.snapshot", snapshot)
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
+      } catch { /* HTTP reconciliation remains available after a transient failure. */ }
     }
   }
 

@@ -33,6 +33,7 @@ import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import WhatshotRoundedIcon from "@mui/icons-material/WhatshotRounded";
 import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
+import CasinoRoundedIcon from "@mui/icons-material/CasinoRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
@@ -87,7 +88,8 @@ export type AdminView =
   | "cooperative"
   | "gem-blitz"
   | "tile-rush"
-  | "word-dash";
+  | "word-dash"
+  | "domino";
 
 const navigation = [
   {
@@ -145,6 +147,7 @@ const navigation = [
   { key: "gem-blitz" as const, label: "Gem Blitz", icon: <AutoAwesomeRoundedIcon /> },
   { key: "tile-rush" as const, label: "Tile Rush", icon: <RouteRoundedIcon /> },
   { key: "word-dash" as const, label: "Word Dash", icon: <PsychologyRoundedIcon /> },
+  { key: "domino" as const, label: "Domino Duel", icon: <CasinoRoundedIcon /> },
   {
     key: "economy" as const,
     label: "Economy",
