@@ -11,6 +11,6 @@ import { WordDashService } from "./word-dash.service"
   imports: [DatabaseModule, FraudModule, MatchesModule],
   controllers: [WordDashController],
   providers: [WordDashDictionary, WordDashService],
-  exports: [WordDashService],
+  exports: [WordDashService, WordDashDictionary],
 })
 export class WordDashModule {}
