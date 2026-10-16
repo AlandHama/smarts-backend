@@ -104,11 +104,15 @@ export class WordDashService {
       const engine = new WordDashEngine(board.letters, policy)
       const validation = engine.validatePath(dto.tileIndexes)
       const word = validation ? null : dto.tileIndexes.map((index) => board.letters[index]).join("")
-      const validBoardPath = word ? board.validWords.get(word) : undefined
+      // The submitted path is authoritative for board membership. Do not
+      // depend on the generated valid-word map here: that map is intentionally
+      // bounded for generation/runtime safety and could omit a legitimate
+      // dictionary word on a dense board.
+      const validWord = word ? this.dictionary.has(word) : false
       const duplicate = word ? await tx.wordDashFoundWord.findFirst({ where: { matchParticipantId: participant.id, word } }) : null
       const reason = dto.boardHashBefore && dto.boardHashBefore !== wordDash.boardHash
         ? "BOARD_MISMATCH"
-        : validation ?? (!validBoardPath ? "INVALID_WORD" : duplicate ? "DUPLICATE_WORD" : null)
+        : validation ?? (!validWord ? "INVALID_WORD" : duplicate ? "DUPLICATE_WORD" : null)
       const clientReleasedAt = dto.clientReleasedAt && !Number.isNaN(Date.parse(dto.clientReleasedAt)) ? new Date(dto.clientReleasedAt) : undefined
       if (reason) {
         const rejected = await this.recordRejected(tx, match, participant.id, dto, reason, state, clientReleasedAt)
@@ -325,7 +329,7 @@ export class WordDashService {
   private policy(match: MatchRow): WordDashPolicy {
     const settings = match.gameConfig?.settings && typeof match.gameConfig.settings === "object" && !Array.isArray(match.gameConfig.settings) ? match.gameConfig.settings as Record<string, unknown> : {}
     const configured = settings.wordDashPolicy && typeof settings.wordDashPolicy === "object" && !Array.isArray(settings.wordDashPolicy) ? settings.wordDashPolicy as Record<string, any> : {}
-    return { ...DEFAULT_WORD_DASH_POLICY, ...configured, scoreTable: { ...DEFAULT_WORD_DASH_POLICY.scoreTable, ...(configured.scoreTable ?? {}) }, comboBonuses: { ...DEFAULT_WORD_DASH_POLICY.comboBonuses, ...(configured.comboBonuses ?? {}) }, bot: { ...DEFAULT_WORD_DASH_POLICY.bot, ...(configured.bot ?? {}) } }
+    return { ...DEFAULT_WORD_DASH_POLICY, ...configured, dictionaryVersion: this.dictionary.version, scoreTable: { ...DEFAULT_WORD_DASH_POLICY.scoreTable, ...(configured.scoreTable ?? {}) }, comboBonuses: { ...DEFAULT_WORD_DASH_POLICY.comboBonuses, ...(configured.comboBonuses ?? {}) }, bot: { ...DEFAULT_WORD_DASH_POLICY.bot, ...(configured.bot ?? {}) } }
   }
 
   private async loadMatch(tx: Prisma.TransactionClient, matchId: string): Promise<MatchRow> {

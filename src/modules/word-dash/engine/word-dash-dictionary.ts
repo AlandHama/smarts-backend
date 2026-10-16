@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { dirname, resolve } from "node:path"
 import { Injectable } from "@nestjs/common"
 
 type TrieNode = { terminal: boolean; children: Map<string, TrieNode> }
@@ -10,7 +10,7 @@ function node(): TrieNode { return { terminal: false, children: new Map<string, 
 
 @Injectable()
 export class WordDashDictionary {
-  readonly version = "english.v1"
+  readonly version = "english.v2"
   readonly sha256: string
   private readonly words = new Set<string>()
   private readonly root: TrieNode = node()
@@ -20,8 +20,18 @@ export class WordDashDictionary {
   // provider token and prevents the application from booting. The path is
   // configuration, not a Nest dependency.
   constructor() {
-    const filePath = process.env.WORD_DASH_DICTIONARY_PATH ?? resolve(process.cwd(), "assets/word-dash/dictionaries/english.v1.txt")
-    const source = readFileSync(filePath)
+    const configuredPath = process.env.WORD_DASH_DICTIONARY_PATH
+    const filePath = configuredPath ?? resolve(process.cwd(), "assets/word-dash/dictionaries/english.v1.txt")
+    const sources = [readFileSync(filePath)]
+    // The project list contains the curated beginner vocabulary. The MIT
+    // word-list package adds broad English coverage, including ordinary words
+    // that may appear through diagonal combinations on a board. Keep both
+    // server-side and hash the combined bytes for deployment verification.
+    if (process.env.WORD_DASH_DISABLE_WORD_LIST !== "true") {
+      const wordListPath = resolve(dirname(require.resolve("word-list")), "words.txt")
+      sources.push(readFileSync(wordListPath))
+    }
+    const source = Buffer.concat(sources)
     this.sha256 = createHash("sha256").update(source).digest("hex")
     const expected = process.env.WORD_DASH_DICTIONARY_SHA256?.trim().toLowerCase()
     if (expected && expected !== this.sha256) throw new Error(`Word Dash dictionary checksum mismatch: expected ${expected}, got ${this.sha256}`)
