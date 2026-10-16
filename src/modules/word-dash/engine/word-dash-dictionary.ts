@@ -15,7 +15,12 @@ export class WordDashDictionary {
   private readonly words = new Set<string>()
   private readonly root: TrieNode = node()
 
-  constructor(filePath = process.env.WORD_DASH_DICTIONARY_PATH ?? resolve(process.cwd(), "assets/word-dash/dictionaries/english.v1.txt")) {
+  // Keep this constructor dependency-free. Nest inspects constructor
+  // parameters at runtime, so an optional string path is still treated as a
+  // provider token and prevents the application from booting. The path is
+  // configuration, not a Nest dependency.
+  constructor() {
+    const filePath = process.env.WORD_DASH_DICTIONARY_PATH ?? resolve(process.cwd(), "assets/word-dash/dictionaries/english.v1.txt")
     const source = readFileSync(filePath)
     this.sha256 = createHash("sha256").update(source).digest("hex")
     const expected = process.env.WORD_DASH_DICTIONARY_SHA256?.trim().toLowerCase()
