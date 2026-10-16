@@ -110,8 +110,30 @@ export class CooperativeMatchService {
       if (!participant) throw new NotFoundException("Player is not a participant in this match")
       if (match.status === "COMMITTED" || match.status === "STARTED" || match.status === "SETTLED") return
       if (match.status !== "FOUND" || (match.confirmationDeadline && match.confirmationDeadline < new Date())) throw new ConflictException("This cooperative match is no longer accepting confirmations")
-      await tx.cooperativeParticipant.update({ where: { id: participant.id }, data: { confirmedAt: new Date() } })
+      const now = new Date()
+      const metadata = match.match.metadata && typeof match.match.metadata === "object" && !Array.isArray(match.match.metadata)
+        ? match.match.metadata as Record<string, unknown>
+        : {}
+      const partyIds = Array.isArray(metadata.partyIds)
+        ? metadata.partyIds.filter((value): value is string => typeof value === "string")
+        : []
+      const confirmingParty = partyIds.length
+        ? await tx.party.findFirst({
+            where: { id: { in: partyIds }, hostUserId: userId },
+            select: { members: { where: { leftAt: null }, select: { userId: true } } },
+          })
+        : null
       const humans = match.participants.filter((item) => item.userId)
+      // A party host is the party's ready authority. Once the host starts a
+      // found match, all queued human participants are allowed through the
+      // shared barrier so teammates and opponents do not need a second tap.
+      const userIdsToConfirm = confirmingParty
+        ? humans.map((item) => item.userId!)
+        : [userId]
+      await tx.cooperativeParticipant.updateMany({
+        where: { cooperativeMatchId: match.id, userId: { in: userIdsToConfirm } },
+        data: { confirmedAt: now },
+      })
       const confirmations = await tx.cooperativeParticipant.findMany({ where: { cooperativeMatchId: match.id, userId: { not: null } }, select: { userId: true, confirmedAt: true } })
       if (confirmations.length < humans.length || confirmations.some((item) => !item.confirmedAt)) return
 
