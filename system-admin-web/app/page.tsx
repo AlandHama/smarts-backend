@@ -55,6 +55,7 @@ import { SupportCenterView } from "../components/SupportCenterView";
 import { CooperativeMatchesView } from "../components/CooperativeMatchesView";
 import { GemBlitzView } from "../components/GemBlitzView";
 import { TileRushView } from "../components/TileRushView";
+import { WordDashView } from "../components/WordDashView";
 import { api, clearSession, hasSession, login } from "../lib/api";
 import { adminTheme } from "../lib/theme";
 
@@ -99,6 +100,7 @@ const viewPaths: Record<
   cooperative: "/cooperative/",
   "gem-blitz": "/gem-blitz/",
   "tile-rush": "/tile-rush/",
+  "word-dash": "/word-dash/",
 };
 
 function routeState() {
@@ -224,6 +226,7 @@ export default function AdminPage() {
           {view === "cooperative" && <CooperativeMatchesView />}
           {view === "gem-blitz" && <GemBlitzView />}
           {view === "tile-rush" && <TileRushView />}
+          {view === "word-dash" && <WordDashView />}
           {view === "economy" && (
             <>
               <EconomyView />

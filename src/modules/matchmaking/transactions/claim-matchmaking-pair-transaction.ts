@@ -137,7 +137,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     const now = new Date();
     const gameCandidates = isRandomCasualTicket(first)
       ? await transaction.gameDefinition.findMany({
-          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { content: { some: { active: true } } }] },
+          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { key: "word_dash" }, { content: { some: { active: true } } }] },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })
       : [await transaction.gameDefinition.findUnique({
@@ -147,16 +147,20 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     const eligibleLevel = Math.min(first.levelSnapshot, second?.levelSnapshot ?? first.levelSnapshot);
     const eligibleGameCandidates = gameCandidates.filter((candidate) => {
       const minimumLevel = candidate.configs[0]?.minimumPlayerLevel ?? 1;
-      return eligibleLevel >= minimumLevel;
+      if (eligibleLevel < minimumLevel) return false;
+      const settings = candidate.configs[0]?.settings && typeof candidate.configs[0].settings === "object" && !Array.isArray(candidate.configs[0].settings) ? candidate.configs[0].settings as Record<string, any> : {};
+      const policyKey = candidate.key === "word_dash" ? "wordDashPolicy" : candidate.key === "tile_rush" ? "tileRushPolicy" : null;
+      const policy = policyKey ? settings[policyKey] as Record<string, any> | undefined : undefined;
+      return !policy || (first.mode === MatchmakingTicketMode.CASUAL ? policy.casualEnabled !== false : policy.rankedEnabled !== false);
     });
     const game = eligibleGameCandidates.length
       ? eligibleGameCandidates[Math.floor(Math.random() * eligibleGameCandidates.length)]
       : null;
     const config = game?.configs[0];
     if (!game || !config) return null;
-    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>).tileRushPolicy : null;
-    if (!second && first.mode === MatchmakingTicketMode.RANKED && game.key === "tile_rush" && configuredPolicy?.rankedBotFallback !== true) return null;
-    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush";
+    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>)[game.key === "word_dash" ? "wordDashPolicy" : "tileRushPolicy"] : null;
+    if (!second && first.mode === MatchmakingTicketMode.RANKED && (game.key === "tile_rush" || game.key === "word_dash") && configuredPolicy?.rankedBotFallback !== true) return null;
+    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash";
     // Provision the human assignments in the same transaction as the match.
     // Previously a newly-created bot match had zero assignments until a
     // client won the start race and called /start, which allowed legacy game
@@ -221,12 +225,12 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         } as Prisma.InputJsonValue,
       },
     });
-    if (game.key === "tile_rush") {
+    if (game.key === "tile_rush" || game.key === "word_dash") {
       const players = [first.userId, ...(second ? [second.userId] : [])];
       for (const playerId of players) {
         await transaction.analyticsEvent.create({
           data: {
-            eventName: "TILE_RUSH_MATCH_FOUND",
+            eventName: game.key === "word_dash" ? "WORD_DASH_MATCH_FOUND" : "TILE_RUSH_MATCH_FOUND",
             occurredAt: now,
             matchId: match.id,
             playerId,

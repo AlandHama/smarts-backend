@@ -77,13 +77,16 @@ export class MatchService {
     // StartMatchTransaction is idempotent for CREATED/STARTED matches: it
     // records this participant's readiness, starts only after all humans are
     // ready, and provisions this participant's assignments when missing.
+    // Word Dash owns its board/timer initialization in WordDashService so the
+    // generic assignment path must not try to provision question content.
     const lifecycle = await this.prisma.match.findFirst({
       where: { id: matchId, participants: { some: { userId } } },
-      select: { status: true },
+      select: { status: true, gameDefinition: { select: { key: true } } },
     });
     if (
       lifecycle &&
-      (lifecycle.status === "CREATED" || lifecycle.status === "STARTED")
+      (lifecycle.status === "CREATED" || lifecycle.status === "STARTED") &&
+      lifecycle.gameDefinition.key !== "word_dash"
     ) {
       await this.startMatch.run({ matchId, userId });
     }

@@ -35,9 +35,10 @@ import { DailyChallengesModule } from "./modules/daily-challenges/daily-challeng
 import { GemBlitzModule } from "./modules/gem-blitz/gem-blitz.module"
 import { TileRushModule } from "./modules/tile-rush/tile-rush.module"
 import { CryptoRewardsModule } from "./modules/crypto-rewards/crypto-rewards.module"
+import { WordDashModule } from "./modules/word-dash/word-dash.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, CooperativeModule, DailyChallengesModule, GemBlitzModule, TileRushModule, CryptoRewardsModule],
+  imports: [DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, CooperativeModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, CryptoRewardsModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

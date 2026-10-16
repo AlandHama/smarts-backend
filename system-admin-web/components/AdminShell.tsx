@@ -86,7 +86,8 @@ export type AdminView =
   | "support"
   | "cooperative"
   | "gem-blitz"
-  | "tile-rush";
+  | "tile-rush"
+  | "word-dash";
 
 const navigation = [
   {
@@ -143,6 +144,7 @@ const navigation = [
   { key: "cooperative" as const, label: "Cooperative matches", icon: <GroupsRoundedIcon /> },
   { key: "gem-blitz" as const, label: "Gem Blitz", icon: <AutoAwesomeRoundedIcon /> },
   { key: "tile-rush" as const, label: "Tile Rush", icon: <RouteRoundedIcon /> },
+  { key: "word-dash" as const, label: "Word Dash", icon: <PsychologyRoundedIcon /> },
   {
     key: "economy" as const,
     label: "Economy",

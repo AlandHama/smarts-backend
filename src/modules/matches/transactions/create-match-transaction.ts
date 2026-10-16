@@ -27,7 +27,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
       if (!opponent || opponent.status !== "ACTIVE") throw new NotFoundException("Opponent not found or inactive")
       if ((opponent.profile?.level ?? 1) < config.minimumPlayerLevel) throw new ConflictException(`Opponent must reach level ${config.minimumPlayerLevel} to play ${game.name}`)
     }
-    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush"
+    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash"
     const activeContentCount = isBoardAuthoritative ? 1 : await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
     if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
 

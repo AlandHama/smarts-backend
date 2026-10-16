@@ -10,9 +10,10 @@ import { CooperativeModule } from "../cooperative/cooperative.module"
 import { RealtimeGateway } from "./realtime.gateway"
 import { GemBlitzModule } from "../gem-blitz/gem-blitz.module"
 import { TileRushModule } from "../tile-rush/tile-rush.module"
+import { WordDashModule } from "../word-dash/word-dash.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, MatchesModule, MatchmakingModule, ChatsModule, SupportModule, CooperativeModule, GemBlitzModule, TileRushModule],
+  imports: [DatabaseModule, AuthModule, MatchesModule, MatchmakingModule, ChatsModule, SupportModule, CooperativeModule, GemBlitzModule, TileRushModule, WordDashModule],
   providers: [RealtimeGateway],
 })
 export class RealtimeModule {}

@@ -92,6 +92,13 @@ export class StartMatchTransaction extends PrismaTransaction<
         };
       }
     }
+    if (match.gameDefinition.key === "word_dash") {
+      if (match.status === "CREATED") {
+        await transaction.match.update({ where: { id: match.id }, data: { status: "STARTED", startedAt: now } });
+        await transaction.matchRound.update({ where: { id: round.id }, data: { status: "STARTED", startedAt: now } });
+      }
+      return { matchId: match.id, status: "STARTED", startedAt: match.startedAt ?? now, assignments: [] };
+    }
     const assignments: Array<Record<string, unknown>> = [];
     const existingAssignments =
       await transaction.matchContentAssignment.findMany({

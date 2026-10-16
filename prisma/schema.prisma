@@ -2621,33 +2621,35 @@ model GameConfig {
 }
 
 model Match {
-  id                 String                   @id @default(uuid()) @db.Uuid
-  gameDefinitionId   String                   @db.Uuid
-  gameConfigId       String                   @db.Uuid
-  mode               GameMode
-  status             MatchStatus              @default(CREATED)
-  serverNonce        String                   @unique @db.VarChar(128)
-  startedAt          DateTime?
-  endedAt            DateTime?
-  settledAt          DateTime?
-  createdByUserId    String                   @db.Uuid
-  metadata           Json?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
-  gameDefinition     GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
-  gameConfig         GameConfig               @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
-  createdBy          User                     @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  participants       MatchParticipant[]
-  events             MatchEvent[]
-  settlement         MatchSettlement?
-  assignments        MatchContentAssignment[]
-  matchmakingTickets MatchmakingTicket[]
-  matchmakingInvite  MatchmakingInvite?
-  rounds             MatchRound[]
-  rankingMatch       RankingMatch?
-  cooperativeMatch   CooperativeMatch?
-  rematchRequests    RematchRequest[]         @relation("RematchOriginalMatch")
-  rematchCreatedFrom RematchRequest?          @relation("RematchNewMatch")
+  id                  String                   @id @default(uuid()) @db.Uuid
+  gameDefinitionId    String                   @db.Uuid
+  gameConfigId        String                   @db.Uuid
+  mode                GameMode
+  status              MatchStatus              @default(CREATED)
+  serverNonce         String                   @unique @db.VarChar(128)
+  startedAt           DateTime?
+  endedAt             DateTime?
+  settledAt           DateTime?
+  createdByUserId     String                   @db.Uuid
+  metadata            Json?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  gameDefinition      GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  gameConfig          GameConfig               @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
+  createdBy           User                     @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  participants        MatchParticipant[]
+  events              MatchEvent[]
+  settlement          MatchSettlement?
+  assignments         MatchContentAssignment[]
+  matchmakingTickets  MatchmakingTicket[]
+  matchmakingInvite   MatchmakingInvite?
+  rounds              MatchRound[]
+  rankingMatch        RankingMatch?
+  cooperativeMatch    CooperativeMatch?
+  wordDashMatch       WordDashMatch?
+  rematchRequests     RematchRequest[]         @relation("RematchOriginalMatch")
+  rematchCreatedFrom  RematchRequest?          @relation("RematchNewMatch")
+  wordDashSubmissions WordDashSubmission[]
 
   @@index([status, createdAt])
   @@index([createdByUserId, status])
@@ -2799,23 +2801,26 @@ model RematchRequest {
 }
 
 model MatchParticipant {
-  id                     String                   @id @default(uuid()) @db.Uuid
-  matchId                String                   @db.Uuid
-  userId                 String?                  @db.Uuid
+  id                     String                    @id @default(uuid()) @db.Uuid
+  matchId                String                    @db.Uuid
+  userId                 String?                   @db.Uuid
   participantType        MatchParticipantType
   finalScore             Int?
-  answeredCount          Int                      @default(0)
-  result                 MatchParticipantResult   @default(PENDING)
+  answeredCount          Int                       @default(0)
+  result                 MatchParticipantResult    @default(PENDING)
   readyAt                DateTime?
   submittedAt            DateTime?
-  createdAt              DateTime                 @default(now())
-  updatedAt              DateTime                 @updatedAt
-  match                  Match                    @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  user                   User?                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  match                  Match                     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user                   User?                     @relation(fields: [userId], references: [id], onDelete: Restrict)
   events                 MatchEvent[]
   assignments            MatchContentAssignment[]
-  winnerSettlement       MatchSettlement?         @relation("MatchSettlementWinner")
+  winnerSettlement       MatchSettlement?          @relation("MatchSettlementWinner")
   cooperativeParticipant CooperativeParticipant?
+  wordDashState          WordDashParticipantState?
+  wordDashSubmissions    WordDashSubmission[]
+  wordDashFoundWords     WordDashFoundWord[]
 
   @@unique([matchId, userId])
   @@index([matchId, result])
@@ -2943,6 +2948,91 @@ model CooperativeSettlementAttempt {
 
   @@unique([cooperativeMatchId, attempt])
   @@index([status, nextAttemptAt])
+}
+
+/// Immutable board and policy snapshot for a Word Dash match. The board is
+/// shared by all participants; player-owned progress is stored separately.
+model WordDashMatch {
+  id                String                     @id @default(uuid()) @db.Uuid
+  matchId           String                     @unique @db.Uuid
+  seed              String                     @db.VarChar(64)
+  boardLetters      String                     @db.Char(25)
+  boardHash         String                     @db.Char(64)
+  rulesVersion      String                     @db.VarChar(64)
+  dictionaryVersion String                     @db.VarChar(64)
+  dictionarySha256  String                     @db.Char(64)
+  durationSeconds   Int
+  startedAt         DateTime?
+  endsAt            DateTime?
+  endedAt           DateTime?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  match             Match                      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participants      WordDashParticipantState[]
+
+  @@index([endedAt, createdAt])
+  @@index([dictionaryVersion, rulesVersion])
+}
+
+/// Mutable server-owned score/combo counters for one MatchParticipant.
+model WordDashParticipantState {
+  id                 String           @id @default(uuid()) @db.Uuid
+  wordDashMatchId    String           @db.Uuid
+  matchParticipantId String           @unique @db.Uuid
+  score              Int              @default(0)
+  combo              Int              @default(0)
+  bestCombo          Int              @default(0)
+  acceptedWordCount  Int              @default(0)
+  longestWordLength  Int              @default(0)
+  lastAcceptedAt     DateTime?
+  nextSequence       Int              @default(1)
+  lastSubmissionAt   DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  wordDashMatch      WordDashMatch    @relation(fields: [wordDashMatchId], references: [id], onDelete: Cascade)
+  matchParticipant   MatchParticipant @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
+
+  @@index([wordDashMatchId, score])
+}
+
+/// Accepted unique words are normalized separately so a growing JSON array is
+/// never rewritten on every submission.
+model WordDashFoundWord {
+  id                 String           @id @default(uuid()) @db.Uuid
+  matchParticipantId String           @db.Uuid
+  word               String           @db.VarChar(25)
+  firstSequence      Int
+  scoreDelta         Int              @default(0)
+  path               Json
+  acceptedAt         DateTime         @default(now())
+  matchParticipant   MatchParticipant @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
+
+  @@unique([matchParticipantId, word])
+  @@index([matchParticipantId, acceptedAt])
+  @@index([matchParticipantId, word])
+}
+
+/// Compact idempotency/replay record for accepted and rejected submissions.
+model WordDashSubmission {
+  id                 String           @id @default(uuid()) @db.Uuid
+  matchId            String           @db.Uuid
+  matchParticipantId String           @db.Uuid
+  sequence           Int
+  clientSubmissionId String           @db.VarChar(128)
+  tileIndexes        Json
+  reconstructedWord  String?          @db.VarChar(25)
+  accepted           Boolean          @default(false)
+  rejectionReason    String?          @db.VarChar(160)
+  scoreDelta         Int              @default(0)
+  comboAfter         Int              @default(0)
+  serverReceivedAt   DateTime         @default(now())
+  clientReleasedAt   DateTime?
+  match              Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  matchParticipant   MatchParticipant @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, matchParticipantId, clientSubmissionId])
+  @@unique([matchId, matchParticipantId, sequence])
+  @@index([matchId, matchParticipantId, serverReceivedAt])
 }
 
 model MatchEvent {

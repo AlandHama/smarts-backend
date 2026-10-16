@@ -6,6 +6,7 @@ import { ExpireMatchTransaction } from "../matches/transactions/expire-match-tra
 import { BotGameplayService } from "../matches/bot-gameplay.service"
 import { GemBlitzService } from "../gem-blitz/gem-blitz.service"
 import { TileRushService } from "../tile-rush/tile-rush.service"
+import { WordDashService } from "../word-dash/word-dash.service"
 import { matchmakerBatchSize } from "./utilities/matchmaking-policy"
 
 @Injectable()
@@ -15,7 +16,7 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
   private running = false
   private ticks = 0
 
-  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction, private readonly botGameplay: BotGameplayService, private readonly gemBlitz: GemBlitzService, private readonly tileRush: TileRushService) {}
+  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction, private readonly botGameplay: BotGameplayService, private readonly gemBlitz: GemBlitzService, private readonly tileRush: TileRushService, private readonly wordDash: WordDashService) {}
 
   onModuleInit() {
     void this.tick()
@@ -43,10 +44,12 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
       if (gameMaintenanceTick) {
         await this.runStep("finalize expired Gem Blitz matches", () => this.gemBlitz.finalizeExpiredMatches())
         await this.runStep("finalize expired Tile Rush matches", () => this.tileRush.finalizeExpiredMatches())
+        await this.runStep("finalize expired Word Dash matches", () => this.wordDash.finalizeExpiredMatches())
       }
       if (settlementTick) {
         await this.runStep("retry Gem Blitz settlements", () => this.gemBlitz.retryPendingSettlements())
         await this.runStep("retry Tile Rush settlements", () => this.tileRush.retryPendingSettlements())
+        await this.runStep("retry Word Dash settlements", () => this.wordDash.retryPendingSettlements())
       }
       await this.runStep("expire matches", () => this.expireMatches.run())
       await this.runStep("advance bot matches", () => this.botGameplay.progressActiveMatches())

@@ -15,6 +15,7 @@ import type { WebSocket } from "ws"
 import { PartyService } from "../cooperative/party.service"
 import { GemBlitzService } from "../gem-blitz/gem-blitz.service"
 import { TileRushService } from "../tile-rush/tile-rush.service"
+import { WordDashService } from "../word-dash/word-dash.service"
 import { randomUUID } from "node:crypto"
 
 type ClientState = {
@@ -58,6 +59,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly parties: PartyService,
     private readonly gemBlitz: GemBlitzService,
     private readonly tileRush: TileRushService,
+    private readonly wordDash: WordDashService,
   ) {
     // Gameplay actions push an immediate snapshot. This timer is only the
     // recovery/clock path, so polling every second needlessly re-queries and
@@ -160,6 +162,25 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.send(client, snapshot.action?.accepted === false ? "tile_rush.action.rejected" : "tile_rush.action.accepted", snapshot)
         await this.broadcastTileRush(matchId)
       } catch (error) { this.send(client, "tile_rush.error", { code: "ACTION_REJECTED", message: this.errorMessage(error) }) }
+      return
+    }
+    if (event === "word_dash.submit") {
+      const matchId = this.string(data.matchId)
+      if (!matchId || !state.matchIds.has(matchId)) return this.send(client, "word_dash.error", { code: "NOT_SUBSCRIBED", message: "Subscribe to the match first" })
+      try {
+        const rawIndexes = Array.isArray(data.tileIndexes) ? data.tileIndexes : []
+        const tileIndexes = rawIndexes.map((value) => Number(value))
+        const snapshot = await this.wordDash.submit(state.userId, matchId, {
+          sequence: Number(data.sequence),
+          tileIndexes,
+          clientSubmissionId: this.string(data.clientSubmissionId) || randomUUID(),
+          clientStartedAt: typeof data.clientStartedAt === "string" ? data.clientStartedAt : undefined,
+          clientReleasedAt: typeof data.clientReleasedAt === "string" ? data.clientReleasedAt : undefined,
+          boardHashBefore: typeof data.boardHashBefore === "string" ? data.boardHashBefore : undefined,
+        })
+        this.send(client, snapshot.submission?.accepted === false ? "word_dash.submission.rejected" : "word_dash.submission.accepted", snapshot)
+        await this.broadcastWordDash(matchId)
+      } catch (error) { this.send(client, "word_dash.error", { code: "SUBMISSION_REJECTED", message: this.errorMessage(error) }) }
       return
     }
     if (event === "subscribe_player") {
@@ -516,6 +537,16 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.releaseFinishedMatch(client, state, matchId, snapshot)
         return
       }
+      if (game?.gameDefinition.key === "word_dash") {
+        const snapshot = await this.wordDash.snapshot(state.userId, matchId)
+        const key = JSON.stringify(snapshot)
+        if (force || state.lastSnapshots.get(`word-dash:${matchId}`) !== key) {
+          state.lastSnapshots.set(`word-dash:${matchId}`, key)
+          this.send(client, "word_dash.snapshot", snapshot)
+        }
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
+        return
+      }
       const snapshot = await this.matches.get(matchId, state.userId)
       const key = JSON.stringify(snapshot)
       const cacheKey = `match:${matchId}`
@@ -559,6 +590,7 @@ export class RealtimeGateway implements OnModuleDestroy {
   private clearMatchSnapshots(state: ClientState, matchId: string) {
     state.lastSnapshots.delete(`gem-blitz:${matchId}`)
     state.lastSnapshots.delete(`tile-rush:${matchId}`)
+    state.lastSnapshots.delete(`word-dash:${matchId}`)
     state.lastSnapshots.delete(`match:${matchId}`)
     state.lastSnapshots.delete(`events:${matchId}`)
   }
@@ -592,6 +624,17 @@ export class RealtimeGateway implements OnModuleDestroy {
       try {
         const snapshot = await this.tileRush.snapshot(state.userId, matchId)
         this.send(client, "tile_rush.snapshot", snapshot)
+      } catch { /* HTTP reconcile remains available after a transient failure. */ }
+    }
+  }
+
+  private async broadcastWordDash(matchId: string) {
+    for (const [client, state] of this.clients) {
+      if (!state.matchIds.has(matchId)) continue
+      try {
+        const snapshot = await this.wordDash.snapshot(state.userId, matchId)
+        this.send(client, "word_dash.snapshot", snapshot)
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
       } catch { /* HTTP reconcile remains available after a transient failure. */ }
     }
   }

@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#100e20">
+  <title>SMARTS — Word Match</title>
+  <style>
+    :root {
+      --ink: #f8f6ff;
+      --muted: #aaa5bd;
+      --subtle: #77718d;
+      --canvas: #100e20;
+      --surface: #1b1830;
+      --surface-2: #25203f;
+      --surface-3: #302753;
+      --purple: #9678ff;
+      --purple-2: #6e45df;
+      --purple-soft: #d8cbff;
+      --gold: #ffd166;
+      --mint: #56e0ad;
+      --blue: #61c9ff;
+      --danger: #ff7891;
+      --stroke: rgba(255,255,255,.10);
+      --shadow: 0 18px 48px rgba(4, 2, 16, .35);
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: var(--canvas); }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(123, 83, 245, .22), transparent 28rem),
+        radial-gradient(circle at 100% 60%, rgba(46, 196, 182, .10), transparent 30rem),
+        var(--canvas);
+      font: 14px/1.4 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button { font: inherit; }
+    button, .answer-card { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, .answer-card:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+
+    .page { width: min(100%, 1180px); min-height: 100vh; margin: 0 auto; padding: 28px 24px 44px; }
+    .concept-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; color: var(--subtle); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+    .brand-mark { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); font-weight: 800; letter-spacing: .12em; }
+    .brand-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; color: #211644; background: linear-gradient(145deg, #c4b3ff, #7654df); box-shadow: 0 6px 16px rgba(122, 81, 229, .4); }
+
+    .device {
+      position: relative;
+      overflow: hidden;
+      max-width: 540px;
+      min-height: 900px;
+      margin: 0 auto;
+      padding: 18px 16px 96px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 36px;
+      background: linear-gradient(180deg, #19152f 0%, #111022 58%, #0d0b18 100%);
+      box-shadow: var(--shadow), 0 0 0 7px rgba(255,255,255,.025);
+    }
+
+    .device::before { content: ""; position: absolute; left: 50%; top: 8px; width: 76px; height: 5px; border-radius: 99px; background: rgba(255,255,255,.12); transform: translateX(-50%); }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 2px 17px; }
+    .identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .avatar { display: grid; place-items: center; flex: 0 0 auto; width: 43px; height: 43px; border: 2px solid rgba(255,209,102,.45); border-radius: 50%; color: #fff; background: linear-gradient(145deg, #ad96ff, #6338c6); font-size: 13px; font-weight: 800; box-shadow: 0 8px 22px rgba(93, 56, 191, .35); }
+    .eyebrow { color: var(--muted); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+    .username { margin-top: 2px; overflow: hidden; font-size: 15px; font-weight: 780; text-overflow: ellipsis; white-space: nowrap; }
+    .header-actions { display: flex; align-items: center; gap: 7px; }
+    .icon-button { position: relative; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 1px solid var(--stroke); border-radius: 50%; color: var(--ink); background: rgba(255,255,255,.07); cursor: pointer; }
+    .icon-button:hover { background: rgba(255,255,255,.13); }
+
+    .game-head { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin: 0 2px 14px; }
+    .back-link { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; color: var(--purple-soft); background: transparent; font-size: 12px; cursor: pointer; }
+    .game-kicker { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--gold); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .game-kicker::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 5px rgba(255,209,102,.11); }
+    h1 { margin: 3px 0 0; font-size: clamp(27px, 7vw, 37px); line-height: 1; letter-spacing: -.055em; }
+    .mode-pill { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; padding: 7px 10px; border: 1px solid rgba(86,224,173,.26); border-radius: 99px; color: var(--mint); background: rgba(86,224,173,.09); font-size: 10px; font-weight: 800; letter-spacing: .07em; }
+    .mode-pill::before { content: "✦"; color: var(--gold); }
+
+    .hud { display: grid; grid-template-columns: 1fr 1.1fr 1fr; gap: 8px; margin-bottom: 13px; }
+    .hud-card { min-width: 0; padding: 11px 12px; border: 1px solid var(--stroke); border-radius: 15px; background: rgba(37,32,63,.78); }
+    .hud-label { color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+    .hud-value { overflow: hidden; margin-top: 2px; font-size: 18px; font-weight: 850; letter-spacing: -.03em; text-overflow: ellipsis; white-space: nowrap; }
+    .hud-value.gold { color: var(--gold); }
+    .hud-value.mint { color: var(--mint); }
+    .timer-card { display: flex; align-items: center; gap: 9px; }
+    .timer-ring { --timer-angle: 360deg; position: relative; display: grid; place-items: center; flex: 0 0 auto; width: 35px; height: 35px; border-radius: 50%; background: conic-gradient(var(--gold) var(--timer-angle), rgba(255,255,255,.11) 0deg); }
+    .timer-ring::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--surface-2); }
+    .timer-ring span { position: relative; z-index: 1; font-size: 10px; font-weight: 850; }
+    .timer-copy { min-width: 0; }
+    .timer-copy .hud-value { font-size: 16px; }
+
+    .progress-track { height: 6px; margin: 0 1px 16px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.08); }
+    .progress-track span { display: block; width: 12.5%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--purple), var(--blue)); transition: width .25s ease; }
+
+    .play-card { position: relative; overflow: hidden; padding: 19px 16px 16px; border: 1px solid rgba(255,255,255,.13); border-radius: 25px; background: linear-gradient(145deg, rgba(92,64,174,.63), rgba(38,29,79,.94) 62%, rgba(27,24,48,.98)); box-shadow: 0 18px 32px rgba(29,16,72,.26); }
+    .play-card::before { content: "Aa"; position: absolute; right: 10px; top: -17px; color: rgba(255,255,255,.08); font-size: 116px; font-weight: 900; line-height: 1; transform: rotate(-12deg); }
+    .play-card::after { content: ""; position: absolute; right: 54px; bottom: -38px; width: 130px; height: 130px; border: 1px solid rgba(255,209,102,.13); border-radius: 50%; box-shadow: 0 0 0 16px rgba(255,209,102,.025), 0 0 0 32px rgba(255,209,102,.018); }
+    .play-copy, .target-word, .answer-label, .answer-grid, .round-footer { position: relative; z-index: 1; }
+    .play-copy { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+    .section-label { color: #d9d1ff; font-size: 10px; font-weight: 850; letter-spacing: .13em; text-transform: uppercase; }
+    .instruction { max-width: 230px; margin: 5px 0 0; color: #d4ccef; font-size: 12px; }
+    .combo-badge { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 7px 9px; border: 1px solid rgba(255,209,102,.22); border-radius: 10px; color: var(--gold); background: rgba(255,209,102,.10); font-size: 10px; font-weight: 850; }
+    .combo-badge strong { font-size: 14px; }
+
+    .target-word { display: flex; align-items: center; justify-content: center; min-height: 116px; margin: 18px 0 16px; padding: 20px 14px; border: 1px solid rgba(255,255,255,.19); border-radius: 20px; background: linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.045)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); text-align: center; }
+    .target-word span { display: block; color: #fff; font-size: clamp(30px, 9vw, 45px); font-weight: 900; letter-spacing: .04em; text-shadow: 0 5px 22px rgba(0,0,0,.2); }
+    .target-word small { display: block; margin-top: 3px; color: #c7bdf0; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+    .answer-label { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: #c7bdf0; font-size: 11px; }
+    .answer-label span:last-child { color: var(--subtle); }
+    .answer-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .answer-card { min-height: 65px; padding: 10px 5px; border: 1px solid rgba(255,255,255,.12); border-radius: 15px; color: var(--ink); background: rgba(17,14,34,.48); cursor: pointer; text-align: center; transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+    .answer-card:hover { border-color: rgba(150,120,255,.85); background: rgba(150,120,255,.17); transform: translateY(-2px); }
+    .answer-card:disabled { cursor: default; }
+    .answer-card .key { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-bottom: 4px; border: 1px solid rgba(255,255,255,.18); border-radius: 6px; color: var(--muted); font-size: 9px; }
+    .answer-card strong { display: block; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .answer-card.is-correct { border-color: var(--mint); color: #e7fff6; background: rgba(86,224,173,.20); box-shadow: 0 0 0 3px rgba(86,224,173,.10); }
+    .answer-card.is-correct .key { border-color: var(--mint); color: #1f5c4b; background: var(--mint); }
+    .answer-card.is-wrong { border-color: var(--danger); color: #ffe8ed; background: rgba(255,120,145,.18); animation: shake .25s ease; }
+    .answer-card.is-wrong .key { border-color: var(--danger); color: #5e2635; background: var(--danger); }
+    @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+    .feedback { min-height: 24px; margin: 12px 3px 0; color: #d0c7ec; font-size: 12px; font-weight: 700; text-align: center; }
+    .feedback.good { color: var(--mint); }
+    .feedback.bad { color: var(--danger); }
+    .round-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.10); color: var(--subtle); font-size: 10px; }
+    .round-footer strong { color: var(--purple-soft); }
+
+    .below-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 10px; margin-top: 11px; }
+    .mini-panel { min-width: 0; padding: 14px; border: 1px solid var(--stroke); border-radius: 19px; background: rgba(27,24,48,.82); }
+    .mini-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 11px; }
+    .mini-heading h2 { margin: 0; font-size: 13px; letter-spacing: -.015em; }
+    .mini-heading span { color: var(--subtle); font-size: 10px; }
+    .accuracy-row { display: flex; align-items: center; gap: 10px; }
+    .accuracy-ring { display: grid; place-items: center; flex: 0 0 auto; width: 48px; height: 48px; border-radius: 50%; background: conic-gradient(var(--mint) 74%, rgba(255,255,255,.08) 0); }
+    .accuracy-ring::before { content: ""; position: absolute; width: 38px; height: 38px; border-radius: 50%; background: var(--surface); }
+    .accuracy-ring span { position: relative; z-index: 1; font-size: 11px; font-weight: 850; }
+    .accuracy-copy { min-width: 0; }
+    .accuracy-copy strong { display: block; font-size: 12px; }
+    .accuracy-copy small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
+    .recent-list { display: flex; align-items: center; gap: 5px; }
+    .recent-chip { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 10px; color: var(--mint); background: rgba(86,224,173,.13); font-size: 12px; font-weight: 850; }
+    .recent-chip.wrong { color: var(--danger); background: rgba(255,120,145,.12); }
+    .recent-chip.empty { color: var(--subtle); background: rgba(255,255,255,.06); }
+
+    .bottom-nav { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 4; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; padding: 8px 5px 7px; border: 1px solid rgba(255,255,255,.13); border-radius: 22px; background: rgba(30,25,55,.88); box-shadow: 0 15px 35px rgba(0,0,0,.3); backdrop-filter: blur(16px); }
+    .nav-item { display: grid; justify-items: center; gap: 3px; padding: 5px 2px; border: 0; border-radius: 14px; color: var(--muted); background: transparent; cursor: pointer; font-size: 10px; }
+    .nav-item span:first-child { display: grid; place-items: center; width: 29px; height: 25px; border-radius: 10px; font-size: 16px; }
+    .nav-item.active { color: #fff; }
+    .nav-item.active span:first-child { color: #27184e; background: var(--purple); }
+
+    .toast { position: fixed; left: 50%; bottom: 24px; z-index: 10; max-width: calc(100% - 30px); padding: 11px 16px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; color: #fff; background: #2c2450; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity .2s, transform .2s; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    .modal-backdrop { position: fixed; inset: 0; z-index: 8; display: grid; place-items: end center; padding: 16px; background: rgba(6,4,16,.72); opacity: 0; pointer-events: none; transition: opacity .2s; }
+    .modal-backdrop.open { opacity: 1; pointer-events: auto; }
+    .modal { width: min(100%, 430px); padding: 24px 21px 21px; border: 1px solid rgba(255,255,255,.14); border-radius: 27px 27px 18px 18px; background: var(--surface); box-shadow: var(--shadow); transform: translateY(24px); transition: transform .2s; }
+    .modal-backdrop.open .modal { transform: translateY(0); }
+    .modal-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 12px; border-radius: 16px; color: #2b1b42; background: linear-gradient(145deg, var(--gold), #ff9c5b); font-size: 22px; }
+    .modal h2 { margin: 0; font-size: 24px; letter-spacing: -.04em; }
+    .modal p { margin: 6px 0 18px; color: var(--muted); }
+    .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .result-stat { padding: 12px 8px; border: 1px solid var(--stroke); border-radius: 14px; background: var(--surface-2); text-align: center; }
+    .result-stat strong { display: block; color: var(--gold); font-size: 18px; }
+    .result-stat span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
+    .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 19px; }
+    .modal-button { min-height: 45px; padding: 10px 12px; border: 1px solid var(--stroke); border-radius: 14px; color: var(--ink); background: var(--surface-2); cursor: pointer; font-weight: 760; }
+    .modal-button.primary { border-color: transparent; color: #27184e; background: var(--gold); }
+    .modal-button:hover { filter: brightness(1.07); transform: translateY(-1px); }
+
+    @media (min-width: 760px) {
+      .page { padding-top: 40px; }
+      .device { max-width: 760px; min-height: 830px; padding: 22px 25px 96px; border-radius: 30px; }
+      .play-card { padding-inline: 20px; }
+      .target-word { min-height: 122px; }
+    }
+    @media (max-width: 450px) {
+      .page { padding: 16px 10px 32px; }
+      .device { min-height: 880px; padding-inline: 12px; border-radius: 29px; }
+      .concept-bar span { display: none; }
+      .game-head { align-items: start; }
+      .mode-pill { margin-top: 2px; }
+      .hud-card { padding-inline: 9px; }
+      .hud-value { font-size: 16px; }
+      .below-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 360px) {
+      .game-head { display: block; }
+      .mode-pill { margin-top: 11px; }
+      .answer-grid { gap: 6px; }
+      .answer-card { min-height: 61px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="concept-bar">
+      <div class="brand-mark"><span class="brand-icon">✦</span> SMARTS</div>
+      <span>Word Match · In-game concept</span>
+    </div>
+
+    <section class="device" aria-label="SMARTS Word Match game">
+      <header class="topbar">
+        <div class="identity">
+          <div class="avatar">AK</div>
+          <div>
+            <div class="eyebrow">Playing as</div>
+            <div class="username">aland khalid</div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button class="icon-button" id="soundButton" type="button" aria-label="Toggle sound">♬</button>
+          <button class="icon-button" id="pauseButton" type="button" aria-label="Pause game">Ⅱ</button>
+        </div>
+      </header>
+
+      <section class="game-head">
+        <div>
+          <button class="back-link" id="backButton" type="button">←&nbsp; Leave game</button>
+          <div class="game-kicker">Speed round</div>
+          <h1>Word Match</h1>
+        </div>
+        <span class="mode-pill">Solo sprint</span>
+      </section>
+
+      <section class="hud" aria-label="Game status">
+        <div class="hud-card">
+          <div class="hud-label">Score</div>
+          <div class="hud-value gold" id="scoreValue">0</div>
+        </div>
+        <div class="hud-card timer-card">
+          <div class="timer-ring" id="timerRing" aria-hidden="true"><span id="timerRingValue">30</span></div>
+          <div class="timer-copy"><div class="hud-label">Time left</div><div class="hud-value" id="timerValue">00:30</div></div>
+        </div>
+        <div class="hud-card">
+          <div class="hud-label">Best streak</div>
+          <div class="hud-value mint" id="bestStreakValue">0×</div>
+        </div>
+      </section>
+
+      <div class="progress-track" aria-label="Round progress"><span id="roundProgress"></span></div>
+
+      <section class="play-card" aria-live="polite">
+        <div class="play-copy">
+          <div>
+            <div class="section-label">Match the meaning</div>
+            <p class="instruction">Find the closest word before the clock runs out.</p>
+          </div>
+          <div class="combo-badge">Combo <strong id="comboValue">0×</strong></div>
+        </div>
+
+        <div class="target-word" id="targetWord" aria-label="Word to match">
+          <div><span id="targetValue">BRIGHT</span><small id="targetHint">Choose its closest meaning</small></div>
+        </div>
+
+        <div class="answer-label"><span>Tap an answer</span><span>Keyboard 1–6 works too</span></div>
+        <div class="answer-grid" id="answerGrid"></div>
+        <div class="feedback" id="feedback" role="status">Quick hands, sharp mind. Your round starts now.</div>
+
+        <div class="round-footer"><span>ROUND <strong id="roundValue">01</strong> / 08</span><span id="roundType">Synonym sprint</span></div>
+      </section>
+
+      <div class="below-grid">
+        <section class="mini-panel">
+          <div class="mini-heading"><h2>Session accuracy</h2><span id="accuracyCaption">Warm up</span></div>
+          <div class="accuracy-row">
+            <div class="accuracy-ring" id="accuracyRing"><span id="accuracyValue">0%</span></div>
+            <div class="accuracy-copy"><strong id="accuracyTitle">Make your first match</strong><small>Correct answers keep your combo alive.</small></div>
+          </div>
+        </section>
+        <section class="mini-panel">
+          <div class="mini-heading"><h2>Recent answers</h2><span>Last 5</span></div>
+          <div class="recent-list" id="recentList"><span class="recent-chip empty">—</span><span class="recent-chip empty">—</span><span class="recent-chip empty">—</span><span class="recent-chip empty">—</span><span class="recent-chip empty">—</span></div>
+        </section>
+      </div>
+
+      <nav class="bottom-nav" aria-label="Primary navigation">
+        <button class="nav-item" data-nav="Leaderboards" type="button"><span>▥</span><span>Leaders</span></button>
+        <button class="nav-item" data-nav="Store" type="button"><span>♧</span><span>Store</span></button>
+        <button class="nav-item active" data-nav="Play" type="button"><span>▶</span><span>Play</span></button>
+        <button class="nav-item" data-nav="Friends" type="button"><span>♧</span><span>Friends</span></button>
+        <button class="nav-item" data-nav="Wallet" type="button"><span>◉</span><span>Wallet</span></button>
+      </nav>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="resultsBackdrop" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="resultsTitle">
+      <div class="modal-icon">✦</div>
+      <h2 id="resultsTitle">Sprint complete</h2>
+      <p id="resultsMessage">Nice run. Your speed and accuracy are building.</p>
+      <div class="result-grid">
+        <div class="result-stat"><strong id="resultScore">0</strong><span>Score</span></div>
+        <div class="result-stat"><strong id="resultAccuracy">0%</strong><span>Accuracy</span></div>
+        <div class="result-stat"><strong id="resultStreak">0×</strong><span>Best streak</span></div>
+      </div>
+      <div class="modal-actions"><button class="modal-button" id="resultClose" type="button">Back to play</button><button class="modal-button primary" id="restartButton" type="button">Play again&nbsp; ↗</button></div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const rounds = [
+      { word: 'BRIGHT', hint: 'Choose its closest meaning', answer: 'RADIANT', type: 'Synonym sprint', options: ['RADIANT', 'SILENT', 'NARROW', 'HEAVY', 'HOLLOW', 'SLEEPY'] },
+      { word: 'ANCIENT', hint: 'Choose its closest meaning', answer: 'OLD', type: 'Synonym sprint', options: ['LOUD', 'OLD', 'FRESH', 'QUICK', 'TIDY', 'SMALL'] },
+      { word: 'BEGIN', hint: 'Choose its closest meaning', answer: 'START', type: 'Synonym sprint', options: ['FINISH', 'START', 'HIDE', 'FLOAT', 'BREAK', 'SHARE'] },
+      { word: 'FRAGILE', hint: 'Choose its closest meaning', answer: 'DELICATE', type: 'Synonym sprint', options: ['DELICATE', 'NOISY', 'RAPID', 'RIGID', 'HONEST', 'WARM'] },
+      { word: 'CALM', hint: 'Choose its closest meaning', answer: 'PEACEFUL', type: 'Synonym sprint', options: ['PEACEFUL', 'BRAVE', 'CROWDED', 'ANGRY', 'HUNGRY', 'ROUGH'] },
+      { word: 'BRAVE', hint: 'Choose its closest meaning', answer: 'FEARLESS', type: 'Synonym sprint', options: ['CAREFUL', 'FEARLESS', 'QUIET', 'EMPTY', 'POLITE', 'DULL'] },
+      { word: 'HIDDEN', hint: 'Choose its closest meaning', answer: 'CONCEALED', type: 'Synonym sprint', options: ['OPEN', 'CONCEALED', 'FAMOUS', 'SIMPLE', 'NOISY', 'SMOOTH'] },
+      { word: 'RAPID', hint: 'Choose its closest meaning', answer: 'FAST', type: 'Synonym sprint', options: ['LATE', 'FAST', 'SOFT', 'DEEP', 'STILL', 'ROUND'] }
+    ];
+
+    const roundTime = 30;
+    let roundIndex = 0;
+    let score = 0;
+    let combo = 0;
+    let bestStreak = 0;
+    let correct = 0;
+    let answered = 0;
+    let timeLeft = roundTime;
+    let locked = false;
+    let paused = false;
+    let timerId;
+    let toastTimer;
+    const $ = (selector) => document.querySelector(selector);
+
+    function showToast(message) {
+      const toast = $('#toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+
+    function renderRound() {
+      const round = rounds[roundIndex];
+      $('#targetValue').textContent = round.word;
+      $('#targetHint').textContent = round.hint;
+      $('#roundType').textContent = round.type;
+      $('#roundValue').textContent = String(roundIndex + 1).padStart(2, '0');
+      $('#roundProgress').style.width = `${((roundIndex + 1) / rounds.length) * 100}%`;
+      $('#feedback').className = 'feedback';
+      $('#feedback').textContent = 'Quick hands, sharp mind. Pick the closest match.';
+      const grid = $('#answerGrid');
+      grid.innerHTML = '';
+      round.options.forEach((option, index) => {
+        const card = document.createElement('button');
+        card.className = 'answer-card';
+        card.type = 'button';
+        card.dataset.answer = option;
+        card.dataset.index = index + 1;
+        card.setAttribute('aria-label', `Answer ${index + 1}: ${option}`);
+        card.innerHTML = `<span class="key">${index + 1}</span><strong>${option}</strong>`;
+        card.addEventListener('click', () => selectAnswer(card));
+        grid.appendChild(card);
+      });
+      updateTimer();
+      updateStats();
+    }
+
+    function updateTimer() {
+      $('#timerValue').textContent = `00:${String(timeLeft).padStart(2, '0')}`;
+      $('#timerRingValue').textContent = timeLeft;
+      $('#timerRing').style.setProperty('--timer-angle', `${(timeLeft / roundTime) * 360}deg`);
+      $('#timerValue').style.color = timeLeft <= 7 ? 'var(--danger)' : '';
+    }
+
+    function updateStats() {
+      $('#scoreValue').textContent = score.toLocaleString();
+      $('#comboValue').textContent = `${combo}×`;
+      $('#bestStreakValue').textContent = `${bestStreak}×`;
+      const accuracy = answered ? Math.round((correct / answered) * 100) : 0;
+      $('#accuracyValue').textContent = `${accuracy}%`;
+      $('#accuracyRing').style.background = `conic-gradient(var(--mint) ${accuracy}%, rgba(255,255,255,.08) 0)`;
+      $('#accuracyCaption').textContent = answered ? (accuracy >= 80 ? 'On fire' : 'Keep going') : 'Warm up';
+      $('#accuracyTitle').textContent = answered ? `${correct} of ${answered} correct` : 'Make your first match';
+    }
+
+    function updateRecent(isCorrect) {
+      const list = $('#recentList');
+      const chips = [...list.children];
+      chips.forEach((chip, index) => {
+        if (index < chips.length - 1) chips[index].className = chips[index + 1].className;
+      });
+      const last = chips[chips.length - 1];
+      last.className = `recent-chip${isCorrect ? '' : ' wrong'}`;
+      last.textContent = isCorrect ? '✓' : '×';
+    }
+
+    function selectAnswer(card) {
+      if (locked || paused) return;
+      locked = true;
+      answered += 1;
+      const isCorrect = card.dataset.answer === rounds[roundIndex].answer;
+      const correctCard = [...document.querySelectorAll('.answer-card')].find((item) => item.dataset.answer === rounds[roundIndex].answer);
+      document.querySelectorAll('.answer-card').forEach((item) => { item.disabled = true; });
+      if (isCorrect) {
+        correct += 1;
+        combo += 1;
+        bestStreak = Math.max(bestStreak, combo);
+        const speedBonus = Math.max(40, timeLeft * 7);
+        score += 100 + speedBonus + (combo - 1) * 25;
+        card.classList.add('is-correct');
+        $('#feedback').className = 'feedback good';
+        $('#feedback').textContent = `Perfect match! +${100 + speedBonus + (combo - 1) * 25} points`;
+      } else {
+        combo = 0;
+        card.classList.add('is-wrong');
+        correctCard.classList.add('is-correct');
+        $('#feedback').className = 'feedback bad';
+        $('#feedback').textContent = `Not quite — the answer was ${rounds[roundIndex].answer}.`;
+      }
+      updateRecent(isCorrect);
+      updateStats();
+      setTimeout(nextRound, 620);
+    }
+
+    function nextRound() {
+      if (roundIndex >= rounds.length - 1) {
+        finishGame();
+        return;
+      }
+      roundIndex += 1;
+      timeLeft = roundTime;
+      locked = false;
+      renderRound();
+    }
+
+    function tick() {
+      if (paused || locked) return;
+      timeLeft -= 1;
+      updateTimer();
+      if (timeLeft <= 0) {
+        locked = true;
+        answered += 1;
+        combo = 0;
+        const correctCard = [...document.querySelectorAll('.answer-card')].find((item) => item.dataset.answer === rounds[roundIndex].answer);
+        document.querySelectorAll('.answer-card').forEach((item) => { item.disabled = true; });
+        correctCard.classList.add('is-correct');
+        $('#feedback').className = 'feedback bad';
+        $('#feedback').textContent = `Time's up — ${rounds[roundIndex].answer} was the match.`;
+        updateRecent(false);
+        updateStats();
+        setTimeout(nextRound, 760);
+      }
+    }
+
+    function finishGame() {
+      clearInterval(timerId);
+      const accuracy = answered ? Math.round((correct / answered) * 100) : 0;
+      $('#resultScore').textContent = score.toLocaleString();
+      $('#resultAccuracy').textContent = `${accuracy}%`;
+      $('#resultStreak').textContent = `${bestStreak}×`;
+      $('#resultsMessage').textContent = accuracy >= 80 ? 'Lightning work. Your word reflexes are getting sharp.' : 'Good run. One more sprint and you will beat this score.';
+      $('#resultsBackdrop').classList.add('open');
+      $('#resultsBackdrop').setAttribute('aria-hidden', 'false');
+    }
+
+    function restartGame() {
+      roundIndex = 0;
+      score = 0;
+      combo = 0;
+      bestStreak = 0;
+      correct = 0;
+      answered = 0;
+      timeLeft = roundTime;
+      locked = false;
+      paused = false;
+      $('#resultsBackdrop').classList.remove('open');
+      $('#resultsBackdrop').setAttribute('aria-hidden', 'true');
+      $('#pauseButton').textContent = 'Ⅱ';
+      renderRound();
+      clearInterval(timerId);
+      timerId = setInterval(tick, 1000);
+    }
+
+    function togglePause() {
+      if (locked) return;
+      paused = !paused;
+      $('#pauseButton').textContent = paused ? '▶' : 'Ⅱ';
+      showToast(paused ? 'Game paused' : 'Back in the sprint');
+      $('#feedback').textContent = paused ? 'Paused — take a breath, then keep matching.' : 'Quick hands, sharp mind. Pick the closest match.';
+    }
+
+    $('#pauseButton').addEventListener('click', togglePause);
+    $('#soundButton').addEventListener('click', (event) => { event.currentTarget.textContent = event.currentTarget.textContent === '♬' ? '⌁' : '♬'; showToast(event.currentTarget.textContent === '♬' ? 'Sound on' : 'Sound off'); });
+    $('#backButton').addEventListener('click', () => showToast('Leave-game confirmation would open here'));
+    $('#resultClose').addEventListener('click', () => { $('#resultsBackdrop').classList.remove('open'); $('#resultsBackdrop').setAttribute('aria-hidden', 'true'); });
+    $('#restartButton').addEventListener('click', restartGame);
+    $('#resultsBackdrop').addEventListener('click', (event) => { if (event.target === $('#resultsBackdrop')) $('#resultClose').click(); });
+    document.querySelectorAll('.nav-item').forEach((item) => item.addEventListener('click', () => { if (item.dataset.nav !== 'Play') showToast(`${item.dataset.nav} preview`); }));
+    document.addEventListener('keydown', (event) => {
+      if (event.key.toLowerCase() === 'p') { togglePause(); return; }
+      const number = Number(event.key);
+      if (number >= 1 && number <= 6) document.querySelector(`.answer-card[data-index="${number}"]`)?.click();
+    });
+
+    renderRound();
+    timerId = setInterval(tick, 1000);
+  </script>
+</body>
+</html>

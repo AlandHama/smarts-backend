@@ -39,10 +39,12 @@ import { GemBlitzAdminController } from "../gem-blitz/gem-blitz-admin.controller
 import { TileRushModule } from "../tile-rush/tile-rush.module"
 import { TileRushAdminController } from "../tile-rush/tile-rush-admin.controller"
 import { CryptoRewardsModule } from "../crypto-rewards/crypto-rewards.module"
+import { WordDashModule } from "../word-dash/word-dash.module"
+import { WordDashAdminController } from "../word-dash/word-dash-admin.controller"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule, TileRushModule, CryptoRewardsModule],
-  controllers: [SystemAdminController, GemBlitzAdminController, TileRushAdminController],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, CryptoRewardsModule],
+  controllers: [SystemAdminController, GemBlitzAdminController, TileRushAdminController, WordDashAdminController],
   providers: [
     SystemAdminService,
     SystemAdminGuard,

@@ -16,9 +16,10 @@ import { MatchmakingService } from "./matchmaking.service"
 import { MatchmakingWorkerService } from "./matchmaking-worker.service"
 import { GemBlitzModule } from "../gem-blitz/gem-blitz.module"
 import { TileRushModule } from "../tile-rush/tile-rush.module"
+import { WordDashModule } from "../word-dash/word-dash.module"
 
 @Module({
-  imports: [DatabaseModule, MatchesModule, EconomyModule, GemBlitzModule, TileRushModule],
+  imports: [DatabaseModule, MatchesModule, EconomyModule, GemBlitzModule, TileRushModule, WordDashModule],
   controllers: [MatchmakingController],
   providers: [MatchmakingService, MatchmakingWorkerService, EnqueuePlayerTransaction, HeartbeatTicketTransaction, CancelTicketTransaction, ExpireMatchmakingTicketsTransaction, ClaimMatchmakingPairTransaction, CreateFriendInviteTransaction, AcceptFriendInviteTransaction, RespondFriendInviteTransaction],
   exports: [MatchmakingService],

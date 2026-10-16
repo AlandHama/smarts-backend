@@ -1,0 +1,37 @@
+{
+  "version": "word-dash.v1",
+  "dictionaryVersion": "english.v1",
+  "board": {
+    "letters": "SMARTENTLGPAYOHCDIVERUSHK",
+    "size": 5,
+    "allowDiagonal": true,
+    "examples": [
+      { "word": "SMART", "tileIndexes": [0, 1, 2, 3, 4] },
+      { "word": "PLAY", "tileIndexes": [10, 11, 12, 8] },
+      { "word": "DIVE", "tileIndexes": [16, 17, 18, 19] },
+      { "word": "RUSH", "tileIndexes": [20, 21, 22, 23] }
+    ]
+  },
+  "validations": {
+    "rejected": [
+      { "tileIndexes": [0, 0, 1], "reason": "REPEATED_TILE" },
+      { "tileIndexes": [0, 4, 8], "reason": "NON_ADJACENT_TILE" },
+      { "tileIndexes": [0, 1], "reason": "WORD_TOO_SHORT" },
+      { "tileIndexes": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "reason": "INVALID_WORD" }
+    ]
+  },
+  "scores": [
+    { "length": 3, "baseScore": 100 },
+    { "length": 4, "baseScore": 200 },
+    { "length": 5, "baseScore": 350 },
+    { "length": 6, "baseScore": 550 },
+    { "length": 7, "baseScore": 800 },
+    { "length": 8, "baseScore": 1100 },
+    { "length": 9, "baseScore": 1250 }
+  ],
+  "comboBonuses": [
+    { "acceptedWords": 3, "label": "COMBO ×2", "bonus": 10 },
+    { "acceptedWords": 5, "label": "COMBO ×3", "bonus": 18 },
+    { "acceptedWords": 8, "label": "WORD RUSH", "bonus": 25 }
+  ]
+}

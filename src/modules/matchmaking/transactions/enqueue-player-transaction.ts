@@ -42,7 +42,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     // two random tickets are paired.
     const game = randomCasual
       ? await transaction.gameDefinition.findFirst({
-          where: { active: true, configs: { some: { active: true, minimumPlayerLevel: { lte: playerLevel } } }, OR: [{ key: "tile_rush" }, { content: { some: { active: true } } }] },
+          where: { active: true, configs: { some: { active: true, minimumPlayerLevel: { lte: playerLevel } } }, OR: [{ key: "tile_rush" }, { key: "word_dash" }, { content: { some: { active: true } } }] },
           orderBy: { key: "asc" },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })
@@ -51,11 +51,11 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
     if (playerLevel < config.minimumPlayerLevel) throw new ConflictException(`Reach level ${config.minimumPlayerLevel} to unlock ${game.name}`)
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
-    if (!activeContentCount && game.key !== "gem_blitz" && game.key !== "tile_rush") throw new ConflictException("No active server content is configured for this game")
+    if (!activeContentCount && game.key !== "gem_blitz" && game.key !== "tile_rush" && game.key !== "word_dash") throw new ConflictException("No active server content is configured for this game")
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
-    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>).tileRushPolicy : null
-    if (game.key === "tile_rush" && configuredPolicy && ((mode === MatchmakingTicketMode.CASUAL && configuredPolicy.casualEnabled === false) || (mode === MatchmakingTicketMode.RANKED && configuredPolicy.rankedEnabled === false))) throw new ConflictException("This Tile Rush mode is currently disabled")
-    if (game.key === "tile_rush" && mode === MatchmakingTicketMode.RANKED && Boolean(dto.allowBotFallback) && configuredPolicy?.rankedBotFallback !== true) throw new BadRequestException("Tile Rush ranked matchmaking does not allow bot fallback")
+    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>)[game.key === "word_dash" ? "wordDashPolicy" : "tileRushPolicy"] : null
+    if ((game.key === "tile_rush" || game.key === "word_dash") && configuredPolicy && ((mode === MatchmakingTicketMode.CASUAL && configuredPolicy.casualEnabled === false) || (mode === MatchmakingTicketMode.RANKED && configuredPolicy.rankedEnabled === false))) throw new ConflictException(`This ${game.key === "word_dash" ? "Word Dash" : "Tile Rush"} mode is currently disabled`)
+    if ((game.key === "tile_rush" || game.key === "word_dash") && mode === MatchmakingTicketMode.RANKED && Boolean(dto.allowBotFallback) && configuredPolicy?.rankedBotFallback !== true) throw new BadRequestException(`${game.key === "word_dash" ? "Word Dash" : "Tile Rush"} ranked matchmaking does not allow bot fallback`)
     let rankingConfig: { id: string; name: string; stakeAmountGld: bigint; entryFeeGld: bigint; entryFeeGldMicros: bigint } | null = null
     if (mode === MatchmakingTicketMode.RANKED) {
       rankingConfig = await transaction.rankingMatchConfig.findFirst({
@@ -144,10 +144,10 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
         metadata: { rankingConfigId: rankingConfig.id, stakeAmountGld: rankingConfig.stakeAmountGld.toString(), entryFeeGld: rankingConfig.entryFeeGld.toString(), entryFeeGldMicros: (rankingConfig.entryFeeGldMicros || rankingConfig.entryFeeGld * 1_000_000n).toString() },
       }, transaction)
     }
-    if (game.key === "tile_rush") {
+    if (game.key === "tile_rush" || game.key === "word_dash") {
       await transaction.analyticsEvent.create({
         data: {
-          eventName: "TILE_RUSH_QUEUE_JOINED",
+          eventName: game.key === "word_dash" ? "WORD_DASH_QUEUE_JOINED" : "TILE_RUSH_QUEUE_JOINED",
           occurredAt: now,
           playerId: input.userId,
           properties: { mode, ranked: mode === MatchmakingTicketMode.RANKED, allowBotFallback: ticket.allowBotFallback } as Prisma.InputJsonValue,
