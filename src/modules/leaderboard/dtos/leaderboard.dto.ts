@@ -197,3 +197,28 @@ export class CreateLeaderboardSeasonDto {
 }
 
 export class LeaderboardTopQueryDto extends LeaderboardQueryDto {}
+
+export enum GameLeaderboardScope {
+  GLOBAL = "GLOBAL",
+  FRIENDS = "FRIENDS",
+}
+
+export class GameLeaderboardQueryDto {
+  @ApiPropertyOptional({ enum: GameLeaderboardScope, default: GameLeaderboardScope.GLOBAL })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined || value === null || value === "" ? GameLeaderboardScope.GLOBAL : String(value).toUpperCase()))
+  @IsEnum(GameLeaderboardScope)
+  scope: GameLeaderboardScope = GameLeaderboardScope.GLOBAL
+
+  @ApiPropertyOptional({ default: 50, maximum: 100 })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === "") return value
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? Math.min(100, Math.max(1, Math.trunc(parsed))) : value
+  })
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit = 50
+}

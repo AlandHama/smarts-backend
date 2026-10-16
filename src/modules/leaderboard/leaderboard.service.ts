@@ -5,6 +5,8 @@ import { PrismaService } from "../../prisma.service";
 import {
   CreateLeaderboardDto,
   CreateLeaderboardSeasonDto,
+  GameLeaderboardQueryDto,
+  GameLeaderboardScope,
   LeaderboardMembersDto,
   LeaderboardQueryDto,
   UpdateLeaderboardDto,
@@ -124,6 +126,123 @@ export class LeaderboardService {
       },
       currentUserRank,
     });
+  }
+
+  async gameLeaderboard(gameKey: string, query: GameLeaderboardQueryDto, userId: string) {
+    const normalizedKey = gameKey.trim().toLowerCase()
+    const scope = query.scope ?? GameLeaderboardScope.GLOBAL
+    const limit = Math.min(Math.max(query.limit ?? 50, 1), 100)
+    const game = await this.prisma.gameDefinition.findUnique({
+      where: { key: normalizedKey },
+      select: { id: true, key: true, name: true, active: true },
+    })
+    if (!game || !game.active) throw new NotFoundException("Game not found")
+
+    let userIds: string[] | undefined
+    if (scope === GameLeaderboardScope.FRIENDS) {
+      const friendships = await this.prisma.friendship.findMany({
+        where: { OR: [{ userId }, { friendId: userId }] },
+        select: { userId: true, friendId: true },
+      })
+      userIds = Array.from(new Set([userId, ...friendships.flatMap((row) => [row.userId, row.friendId])]))
+    }
+
+    const statsWhere: Prisma.PlayerGameStatsWhereInput = {
+      gameDefinition: { key: game.key },
+      user: { status: "ACTIVE" },
+      bestScore: { gt: 0n },
+      ...(userIds ? { userId: { in: userIds } } : {}),
+    }
+    const [total, rows, currentStat] = await Promise.all([
+      this.prisma.playerGameStats.count({ where: statsWhere }),
+      this.prisma.playerGameStats.findMany({
+      where: statsWhere,
+      orderBy: [{ bestScore: "desc" }, { updatedAt: "asc" }, { userId: "asc" }],
+      take: limit,
+      select: {
+        userId: true,
+        bestScore: true,
+        gamesPlayed: true,
+        wins: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            profile: {
+              select: {
+                displayName: true,
+                avatarUrl: true,
+                avatarFrameKey: true,
+                nameEffectKey: true,
+                countryCode: true,
+                elo: true,
+              },
+            },
+          },
+        },
+      },
+      }),
+      this.prisma.playerGameStats.findUnique({
+        where: { userId_gameDefinitionId: { userId, gameDefinitionId: game.id } },
+        select: { bestScore: true },
+      }),
+    ])
+
+    let previousScore: bigint | null = null
+    let previousRank = 0
+    const items = rows.map((row, index) => {
+      const rank = previousScore === row.bestScore ? previousRank : index + 1
+      previousScore = row.bestScore
+      previousRank = rank
+      const profile = row.user.profile
+      return {
+        memberKey: row.userId,
+        playerId: row.userId,
+        score: row.bestScore,
+        rank,
+        metadata: null,
+        player: {
+          playerId: row.userId,
+          ulid: row.userId,
+          username: row.user.username,
+          displayName: profile?.displayName ?? row.user.username,
+          avatarUrl: profile?.avatarUrl ?? null,
+          avatarFrameKey: profile?.avatarFrameKey ?? null,
+          nameEffectKey: profile?.nameEffectKey ?? null,
+          countryCode: profile?.countryCode ?? null,
+          elo: profile?.elo ?? null,
+          eloRankName: "Unranked",
+          giftStats: { received: 0, roses: 0, value: 0 },
+        },
+        gamesPlayed: row.gamesPlayed,
+        wins: row.wins,
+      }
+    })
+    const current = items.find((item) => item.playerId === userId)
+    let currentUserRank: number | null = current?.rank ?? null
+    if (!currentUserRank && currentStat && currentStat.bestScore > 0n) {
+      currentUserRank = (await this.prisma.playerGameStats.count({
+        where: { ...statsWhere, bestScore: { gt: currentStat.bestScore } },
+      })) + 1
+    }
+
+    return this.serialize({
+      game: { key: game.key, name: game.name },
+      scope,
+      period: "ALL_TIME",
+      leaderboard: {
+        key: `game:${game.key}:all_time`,
+        name: `${game.name} · All time`,
+        memberType: "PLAYER",
+        period: "ALL_TIME",
+        direction: "DESCENDING",
+        rewards: [],
+      },
+      season: null,
+      items,
+      pagination: { total, limit, offset: 0, nextOffset: null },
+      currentUserRank,
+    })
   }
 
   async members(key: string, dto: LeaderboardMembersDto) {

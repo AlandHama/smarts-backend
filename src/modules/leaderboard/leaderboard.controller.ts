@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger"
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { UserResponseDto } from "../auth/dtos/user-response.dto"
-import { LeaderboardMembersDto, LeaderboardQueryDto } from "./dtos"
+import { GameLeaderboardQueryDto, LeaderboardMembersDto, LeaderboardQueryDto } from "./dtos"
 import { LeaderboardService } from "./leaderboard.service"
 
 @ApiTags("Leaderboards")
@@ -15,6 +15,12 @@ export class LeaderboardController {
   @Get()
   @ApiOperation({ summary: "List active leaderboard definitions" })
   definitions() { return this.leaderboardService.listDefinitions(false) }
+
+  @Get("games/:gameKey")
+  @ApiOperation({ summary: "List an all-time game leaderboard for global players or friends" })
+  gameLeaderboard(@Param("gameKey") gameKey: string, @Query() query: GameLeaderboardQueryDto, @CurrentUser() user: UserResponseDto) {
+    return this.leaderboardService.gameLeaderboard(gameKey, query, user.id)
+  }
 
   @Get(":key")
   @ApiOperation({ summary: "List the current season leaderboard with deterministic ranks" })
