@@ -195,7 +195,7 @@ export class RealtimeGateway implements OnModuleDestroy {
           : event === "domino.draw_tile" ? await this.domino.draw(state.userId, matchId, base) : await this.domino.pass(state.userId, matchId, base)
         this.send(client, snapshot.action?.accepted === false ? "domino.action.rejected" : "domino.action.accepted", snapshot)
         await this.broadcastDomino(matchId)
-      } catch (error) { this.send(client, "domino.error", { code: "ACTION_REJECTED", message: this.errorMessage(error) }) }
+      } catch (error) { this.send(client, "domino.error", { matchId, code: "ACTION_REJECTED", message: this.errorMessage(error) }) }
       return
     }
     if (event === "subscribe_player") {
