@@ -5,6 +5,7 @@ import { SettleMatchTransaction } from "../matches/transactions/settle-match-tra
 import { FraudService } from "../fraud/fraud.service"
 import { TileRushActionDto } from "./dtos/tile-rush.dto"
 import { TileRushActionResult, TileRushEngine, TileRushPlayerState, TileRushPolicy, TileRushPoint, TileRushSpecial } from "./engine/tile-rush-engine"
+import { syncCooperativeScores } from "../cooperative/cooperative-score-sync"
 
 const DEFAULT_POLICY: TileRushPolicy & Record<string, any> = {
   enabled: true,
@@ -160,6 +161,7 @@ export class TileRushService {
       await tx.match.update({ where: { id: matchId }, data: { metadata } })
       state = await this.advanceBots(tx, { ...match, metadata }, state, Date.now())
       await tx.match.update({ where: { id: matchId }, data: { metadata: this.withState(metadata, state) } })
+      await syncCooperativeScores(tx, matchId, Object.fromEntries(Object.entries(state.players).map(([id, player]) => [id, player.score])))
       return { ...this.project({ ...match, metadata }, participant.id, state), action: payload }
     })
     if ((response as any)?.expired) {

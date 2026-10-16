@@ -4,6 +4,7 @@ import { PrismaService } from "../../prisma.service"
 import { GemBlitzEngine, GemBlitzMove } from "./engine/gem-blitz-engine"
 import { GemBlitzMoveDto } from "./dtos/gem-blitz.dto"
 import { SettleMatchTransaction } from "../matches/transactions/settle-match-transaction"
+import { syncCooperativeScores } from "../cooperative/cooperative-score-sync"
 
 const DEFAULT_POLICY = { enabled: true, boardSize: 7, durationSeconds: 75, rulesVersion: "gem-blitz.v1", bot: { enabled: true, reactionDelayMs: 4000, jitterMs: 2000, skill: 0.32, maxMoves: 14 }, scoring: { scoreCap: 250000 } }
 const MAX_REPLAY_EVENTS = 100
@@ -151,6 +152,7 @@ export class GemBlitzService {
       await tx.match.update({ where: { id: matchId }, data: { metadata } })
       state = await this.advanceBots(tx, { ...match, metadata }, state, Date.now())
       if (state !== this.readState(metadata)) await tx.match.update({ where: { id: matchId }, data: { metadata: this.withState(metadata, state) } })
+      await syncCooperativeScores(tx, matchId, Object.fromEntries(Object.entries(state.players).map(([id, player]) => [id, player.score])))
       return { ...this.project({ ...match, metadata }, participant.id, state), move: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, animation: result.animation, reshuffled: result.reshuffled } }
     })
     if (response && (response as any).expired) {

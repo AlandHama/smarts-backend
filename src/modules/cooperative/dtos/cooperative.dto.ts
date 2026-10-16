@@ -10,6 +10,10 @@ export class QueuePartyDto {
   mode!: "RANDOM" | "RANKED"
 
   @IsOptional()
+  @IsIn(["random", "tile_rush", "word_dash", "gem_blitz"])
+  gameKey?: "random" | "tile_rush" | "word_dash" | "gem_blitz"
+
+  @IsOptional()
   @IsString()
   clientVersion?: string
 }

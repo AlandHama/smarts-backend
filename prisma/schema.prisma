@@ -2240,6 +2240,7 @@ model CooperativeQueueEntry {
   id              String   @id @default(uuid()) @db.Uuid
   partyId         String   @db.Uuid
   mode            String   @db.VarChar(16)
+  gameKey         String   @default("random") @db.VarChar(64)
   status          String   @default("SEARCHING") @db.VarChar(24)
   ratingSnapshot  Int      @default(0)
   levelSnapshot   Int      @default(1)

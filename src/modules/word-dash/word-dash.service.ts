@@ -8,6 +8,7 @@ import { generateWordDashBoard, WordDashBoard } from "./engine/word-dash-board-g
 import { WordDashDictionary } from "./engine/word-dash-dictionary"
 import { WordDashEngine, WordDashPlayerState } from "./engine/word-dash-engine"
 import { DEFAULT_WORD_DASH_POLICY, WordDashPolicy } from "./engine/word-dash-score"
+import { syncCooperativeParticipantScore } from "../cooperative/cooperative-score-sync"
 
 type MatchRow = any
 type StateRow = any
@@ -183,6 +184,7 @@ export class WordDashService {
     const submission = await tx.wordDashSubmission.create({ data: { matchId: match.id, matchParticipantId: participantId, sequence: dto.sequence, clientSubmissionId: dto.clientSubmissionId, tileIndexes: dto.tileIndexes as Prisma.InputJsonValue, reconstructedWord: result.word, accepted: true, scoreDelta: result.scoreDelta, comboAfter: result.combo, clientReleasedAt } })
     await tx.wordDashFoundWord.create({ data: { matchParticipantId: participantId, word: result.word, firstSequence: dto.sequence, scoreDelta: result.scoreDelta, path: dto.tileIndexes as Prisma.InputJsonValue, acceptedAt: now } })
     await tx.wordDashParticipantState.update({ where: { id: state.id }, data: nextState })
+    await syncCooperativeParticipantScore(tx, match.id, participantId, result.totalScore)
     await tx.matchEvent.create({ data: { matchId: match.id, participantId, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientSubmissionId, payload: { game: "word_dash", eventKind: "WORD_SUBMISSION", length: result.length, scoreDelta: result.scoreDelta, combo: result.combo, comboLabel: result.comboLabel } as Prisma.InputJsonValue, accepted: true, clientOccurredAt: clientReleasedAt } })
     return submission
   }

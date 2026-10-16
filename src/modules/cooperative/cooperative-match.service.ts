@@ -214,18 +214,20 @@ export class CooperativeMatchService {
     if ((ranked && !config.cooperativeRankedEnabled) || (!ranked && !config.cooperativeRandomEnabled)) return null
     const elapsed = Math.max(0, Math.floor((Date.now() - first.queuedAt.getTime()) / 1000))
     const windowSize = Math.min(config.maxRatingWindow, config.initialRatingWindow + Math.floor(elapsed / Math.max(1, config.ratingWidenIntervalSeconds)) * config.initialRatingWindow)
-    const second = entries.slice(1).find((candidate) => candidate.mode === first.mode && candidate.partyId !== first.partyId && Math.abs(candidate.ratingSnapshot - first.ratingSnapshot) <= windowSize && candidate.party.members.length > 0)
+    const second = entries.slice(1).find((candidate) => candidate.mode === first.mode && candidate.partyId !== first.partyId && Math.abs(candidate.ratingSnapshot - first.ratingSnapshot) <= windowSize && candidate.party.members.length > 0 && (candidate.gameKey === "random" || first.gameKey === "random" || candidate.gameKey === first.gameKey))
     const useBots = !second && (ranked ? config.cooperativeBotFillEnabled : config.cooperativeBotFillEnabled) && elapsed >= config.botFallbackDelaySeconds
     if (!second && !useBots) return null
 
-    const games = await tx.gameDefinition.findMany({ where: { active: true, configs: { some: { active: true } }, content: { some: { active: true } } }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
+    const games = await tx.gameDefinition.findMany({ where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { key: "word_dash" }, { key: "gem_blitz" }] }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     const eligibleLevel = Math.min(...[...first.party.members, ...(second ? second.party.members : [])].map((member) => member.user?.profile?.level ?? 1))
-    const eligibleGames = games.filter((candidate) => (candidate.configs[0]?.minimumPlayerLevel ?? 1) <= eligibleLevel)
+    const requestedGameKey = first.gameKey !== "random" ? first.gameKey : second && second.gameKey !== "random" ? second.gameKey : "random"
+    const eligibleGames = games.filter((candidate) => (candidate.configs[0]?.minimumPlayerLevel ?? 1) <= eligibleLevel && (requestedGameKey === "random" || candidate.key === requestedGameKey))
     const game = eligibleGames[Math.floor(Math.random() * eligibleGames.length)]
     const gameConfig = game?.configs[0]
     if (!game || !gameConfig) return null
     const content = await tx.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: Math.max(1, gameConfig.maxQuestions) })
-    if (!content.length) return null
+    const boardAuthoritative = game.key === "tile_rush" || game.key === "word_dash" || game.key === "gem_blitz"
+    if (!content.length && !boardAuthoritative) return null
 
     const now = new Date()
     const serverNonce = randomBytes(32).toString("base64url")
