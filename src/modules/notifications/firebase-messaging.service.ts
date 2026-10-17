@@ -104,6 +104,24 @@ export class FirebaseMessagingService {
             sound: "default",
           },
         },
+        // FCM delivers Apple notifications through APNs. Keep the APNs alert
+        // explicit instead of relying on Firebase to infer an iOS payload
+        // from the Android configuration. This gives iOS the banner, sound,
+        // badge, and correct push priority for every notification type.
+        apns: {
+          headers: {
+            "apns-push-type": "alert",
+            "apns-priority": "10",
+          },
+          payload: {
+            aps: {
+              alert: { title: message.title, body: message.body },
+              sound: "default",
+              badge: 1,
+              threadId: channelId,
+            },
+          },
+        },
         data,
       };
       const response = await messaging.sendEachForMulticast(payload);
