@@ -8,6 +8,7 @@ import { RegisterRequestDto } from "../../../../auth/dtos/register-request.dto"
 import { CreditWalletTransaction } from "../../../../economy/transactions/credit-wallet-transaction"
 import { writeAdminAudit } from "../../../../../common/helpers/admin-audit"
 import { writePlayerAudit } from "../../../../../common/helpers/player-audit"
+import { ContentSafetyService } from "../../../../content-safety/content-safety.service"
 
 export type CreateUserInput = RegisterRequestDto & {
   isSystemAdmin?: boolean
@@ -26,12 +27,17 @@ export type CreateUserInput = RegisterRequestDto & {
 
 @Injectable()
 export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, any> {
-  constructor(prisma: PrismaService, private readonly creditWalletTransaction: CreditWalletTransaction) {
+  constructor(prisma: PrismaService, private readonly creditWalletTransaction: CreditWalletTransaction, private readonly contentSafety: ContentSafetyService) {
     super(prisma)
   }
 
   protected async execute(dto: CreateUserInput, transaction: Prisma.TransactionClient) {
     try {
+      this.contentSafety.assertSafeText(dto.username, "Username")
+      this.contentSafety.assertSafeText(dto.displayName, "Display name")
+      this.contentSafety.assertSafeText(dto.firstName, "First name")
+      this.contentSafety.assertSafeText(dto.lastName, "Last name")
+      this.contentSafety.assertSafeText(dto.externalIdentity?.displayName, "Display name")
       const currencies = await transaction.currencyDefinition.findMany({
         where: { code: { in: ["MCN", "GLD"] }, active: true },
         select: { id: true, code: true },

@@ -5,10 +5,11 @@ import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { UpdateProfileDto } from "../dtos/update-profile.dto"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
+import { ContentSafetyService } from "../../content-safety/content-safety.service"
 
 @Injectable()
 export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string; dto: UpdateProfileDto }, void> {
-  constructor(prisma: PrismaService) {
+  constructor(prisma: PrismaService, private readonly contentSafety: ContentSafetyService) {
     super(prisma)
   }
 
@@ -18,6 +19,10 @@ export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string
     if (!profile) throw new NotFoundException("Player profile not found")
 
     const dto = data.dto
+    this.contentSafety.assertSafeText(dto.displayName, "Display name")
+    this.contentSafety.assertSafeText(dto.firstName, "First name")
+    this.contentSafety.assertSafeText(dto.lastName, "Last name")
+    this.contentSafety.assertSafeText(dto.bio, "Bio")
     const profileData: Prisma.PlayerProfileUpdateInput = {}
     if (dto.displayName !== undefined) profileData.displayName = dto.displayName.trim()
     if (dto.avatarUrl !== undefined) profileData.avatarUrl = dto.avatarUrl

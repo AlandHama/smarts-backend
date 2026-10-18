@@ -6,6 +6,7 @@ import { PrismaService } from "../../../prisma.service"
 import { UpdateUserProfileDto } from "../dtos/update-user-profile.dto"
 import { writeAdminAudit } from "../../../common/helpers/admin-audit"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
+import { ContentSafetyService } from "../../content-safety/content-safety.service"
 
 export interface UpdateUserProfileInput {
   userId: string
@@ -15,7 +16,7 @@ export interface UpdateUserProfileInput {
 
 @Injectable()
 export class UpdateUserProfileTransaction extends PrismaTransaction<UpdateUserProfileInput, void> {
-  constructor(prisma: PrismaService) {
+  constructor(prisma: PrismaService, private readonly contentSafety: ContentSafetyService) {
     super(prisma)
   }
 
@@ -27,6 +28,11 @@ export class UpdateUserProfileTransaction extends PrismaTransaction<UpdateUserPr
     if (!user || !user.profile) throw new NotFoundException("User profile not found")
 
     const dto = data.dto
+    this.contentSafety.assertSafeText(dto.username, "Username")
+    this.contentSafety.assertSafeText(dto.displayName, "Display name")
+    this.contentSafety.assertSafeText(dto.firstName, "First name")
+    this.contentSafety.assertSafeText(dto.lastName, "Last name")
+    this.contentSafety.assertSafeText(dto.bio, "Bio")
     const username = dto.username?.trim().toLowerCase()
     const email = dto.email === undefined || dto.email === null ? dto.email : dto.email.trim().toLowerCase()
 

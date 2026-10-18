@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common"
 import { PrismaService } from "../../../../prisma.service"
 import { CreateUserInput, CreateUserTransaction } from "./transactions/create-user-transaction"
 import { UpdateUserLastOnlineTransaction } from "./transactions/update-user-last-online-transaction"
+import { ContentSafetyService } from "../../../content-safety/content-safety.service"
 
 @Injectable()
 export class UsersService {
@@ -10,6 +11,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly createUserTransaction: CreateUserTransaction,
     private readonly updateUserLastOnlineTransaction: UpdateUserLastOnlineTransaction,
+    private readonly contentSafety: ContentSafetyService,
   ) {}
 
   findByUsername(username: string) {
@@ -27,7 +29,8 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id } })
   }
 
-  create(registerDto: CreateUserInput) {
+  async create(registerDto: CreateUserInput) {
+    if (registerDto.avatarUrl) await this.contentSafety.assertSafeImageUrl(registerDto.avatarUrl, "Avatar")
     return this.createUserTransaction.run(registerDto)
   }
 

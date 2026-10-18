@@ -13,6 +13,7 @@ import { UpdateFeedbackTransaction } from "./transactions/update-feedback-transa
 import { UpdatePlayerStorageTransaction } from "./transactions/update-player-storage-transaction"
 import { DeletePlayerStorageTransaction } from "./transactions/delete-player-storage-transaction"
 import { writePlayerAudit } from "../../common/helpers/player-audit"
+import { ContentSafetyService } from "../content-safety/content-safety.service"
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "image/avif"])
@@ -23,12 +24,13 @@ const ALLOWED_STAT_SUFFIXES = new Set(["games_played", "accuracy", "wins", "loss
 export class StorageService {
   private client?: S3Client
 
-  constructor(private readonly prisma: PrismaService, private readonly updatePlayerStorageTransaction: UpdatePlayerStorageTransaction, private readonly deletePlayerStorageTransaction: DeletePlayerStorageTransaction, private readonly createFeedbackTransaction: CreateFeedbackTransaction, private readonly updateFeedbackTransaction: UpdateFeedbackTransaction) {}
+  constructor(private readonly prisma: PrismaService, private readonly updatePlayerStorageTransaction: UpdatePlayerStorageTransaction, private readonly deletePlayerStorageTransaction: DeletePlayerStorageTransaction, private readonly createFeedbackTransaction: CreateFeedbackTransaction, private readonly updateFeedbackTransaction: UpdateFeedbackTransaction, private readonly contentSafety: ContentSafetyService) {}
 
   async upload(file: UploadedImage | undefined, dto: UploadFileDto, userId?: string, actorId?: string) {
     if (!file?.buffer) throw new BadRequestException("A file is required")
     if (file.size > MAX_FILE_BYTES) throw new BadRequestException("File must be 10 MB or smaller")
     if (!ALLOWED_IMAGE_TYPES.has(file.mimetype)) throw new BadRequestException("Only JPEG, PNG, WEBP, GIF, HEIC, HEIF, and AVIF images are supported")
+    if (this.isPlayerImagePurpose(dto.purpose)) await this.contentSafety.assertSafeImage(file.buffer, "Image")
 
     const bucket = this.required("S3_BUCKET")
     const key = this.buildKey(dto.purpose, userId, file.originalname, file.mimetype)
@@ -140,8 +142,9 @@ export class StorageService {
   }
 
   async updateStorage(userId: string, payload: PlayerStorageItemDto[]) {
-    const result = await this.updatePlayerStorageTransaction.run({ userId, payload })
     const profileUrl = payload.find((item) => item.key === "profile_url")
+    if (profileUrl?.value) await this.contentSafety.assertSafeImageUrl(profileUrl.value, "Avatar")
+    const result = await this.updatePlayerStorageTransaction.run({ userId, payload })
     if (profileUrl) {
       const isPublic = profileUrl.isPublic ?? profileUrl.is_public ?? false
       await this.prisma.playerProfile.updateMany({
@@ -213,6 +216,10 @@ export class StorageService {
     if (ALLOWED_STORAGE_KEYS.has(key)) return
     const suffix = key.split("_").slice(1).join("_")
     if (!/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(key) || !ALLOWED_STAT_SUFFIXES.has(suffix)) throw new BadRequestException(`Storage key "${key}" is not supported`)
+  }
+
+  private isPlayerImagePurpose(purpose: string) {
+    return new Set(["profile-picture", "player-avatar", "avatar", "chat-image", "chat-attachment", "group-image"]).has(purpose)
   }
 
   private order(value: string | undefined, fallback: number) { const parsed = value ? Number(value) : fallback + 1; return Number.isInteger(parsed) && parsed > 0 && parsed <= 10000 ? parsed : fallback + 1 }

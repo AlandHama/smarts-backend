@@ -9,6 +9,7 @@ import { LinkGoogleIdentityTransaction, UnlinkGoogleIdentityTransaction } from "
 import { UsersService } from "../../admin/access/users/users.service"
 import { TokenService } from "./token.service"
 import { FraudService } from "../../fraud/fraud.service"
+import { ContentSafetyService } from "../../content-safety/content-safety.service"
 
 @Injectable()
 export class GoogleAuthService {
@@ -22,10 +23,14 @@ export class GoogleAuthService {
     private readonly linkGoogleIdentityTransaction: LinkGoogleIdentityTransaction,
     private readonly unlinkGoogleIdentityTransaction: UnlinkGoogleIdentityTransaction,
     private readonly fraudService: FraudService,
+    private readonly contentSafety: ContentSafetyService,
   ) {}
 
   async login(idToken: string, request: any) {
-    const claims = await this.verifyIdToken(idToken)
+    let claims = await this.verifyIdToken(idToken)
+    // Google profile pictures are remote user-controlled media. Scan them
+    // before allowing a new account to persist the URL.
+    if (!(await this.usersService.findByIdentifier(claims.email)) && claims.avatarUrl) claims = await this.withSafeAvatar(claims)
     const user = await this.authenticateGoogleTransaction.run({ claims })
     if (user.status === "BANNED") throw new UnauthorizedException("User is banned")
     if (user.status !== "ACTIVE") throw new UnauthorizedException("User is inactive")
@@ -83,8 +88,18 @@ export class GoogleAuthService {
   }
 
   async link(userId: string, idToken: string) {
-    const claims = await this.verifyIdToken(idToken)
+    const claims = await this.withSafeAvatar(await this.verifyIdToken(idToken))
     return this.linkGoogleIdentityTransaction.run({ userId, claims })
+  }
+
+  private async withSafeAvatar(claims: GoogleIdentityClaims) {
+    if (!claims.avatarUrl) return claims
+    try {
+      await this.contentSafety.assertSafeImageUrl(claims.avatarUrl, "Avatar")
+      return claims
+    } catch {
+      return { ...claims, avatarUrl: null }
+    }
   }
 
   getLinkStatus(userId: string) {

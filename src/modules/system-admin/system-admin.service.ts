@@ -101,6 +101,7 @@ import { GoogleAuthService } from "../auth/services/google-auth.service";
 import { UpdateGoogleAuthConfigDto } from "../auth/dtos/google-auth.dto";
 import { CryptoRewardsService } from "../crypto-rewards/crypto-rewards.service";
 import { CryptoAdminDecisionDto, CryptoPayoutVerificationDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
+import { ContentSafetyService } from "../content-safety/content-safety.service";
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
@@ -133,6 +134,7 @@ export class SystemAdminService implements OnModuleInit {
     private readonly referralsService: ReferralsService,
     private readonly googleAuthService: GoogleAuthService,
     private readonly cryptoRewardsService: CryptoRewardsService,
+    private readonly contentSafety: ContentSafetyService,
   ) {}
 
   async onModuleInit() {
@@ -1359,6 +1361,7 @@ export class SystemAdminService implements OnModuleInit {
     actorId: string,
     dto: UpdateUserProfileDto,
   ) {
+    if (dto.avatarUrl !== undefined && dto.avatarUrl !== null) await this.contentSafety.assertSafeImageUrl(dto.avatarUrl, "Avatar");
     await this.updateUserProfileTransaction.run({ userId, actorId, dto });
     return this.getUser(userId, true);
   }

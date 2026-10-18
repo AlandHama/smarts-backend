@@ -5,9 +5,10 @@ import { CreateUserTransaction } from "./transactions/create-user-transaction"
 import { UpdateUserLastOnlineTransaction } from "./transactions/update-user-last-online-transaction"
 import { UsersService } from "./users.service"
 import { EconomyModule } from "../../../economy/economy.module"
+import { ContentSafetyModule } from "../../../content-safety/content-safety.module"
 
 @Module({
-  imports: [EconomyModule],
+  imports: [EconomyModule, ContentSafetyModule],
   providers: [UsersService, CreateUserTransaction, ChangePasswordTransaction, UpdateUserLastOnlineTransaction],
   exports: [UsersService, CreateUserTransaction, ChangePasswordTransaction, UpdateUserLastOnlineTransaction],
 })

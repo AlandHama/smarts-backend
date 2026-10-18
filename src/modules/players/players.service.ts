@@ -8,6 +8,7 @@ import { AddXpTransaction } from "./transactions/add-xp-transaction"
 import { RecordResultTransaction } from "./transactions/record-result-transaction"
 import { UpdateEloTransaction } from "./transactions/update-elo-transaction"
 import { UpdateProfileTransaction } from "./transactions/update-profile-transaction"
+import { ContentSafetyService } from "../content-safety/content-safety.service"
 
 @Injectable()
 export class PlayersService {
@@ -18,6 +19,7 @@ export class PlayersService {
     private readonly addXpTransaction: AddXpTransaction,
     private readonly updateEloTransaction: UpdateEloTransaction,
     private readonly recordResultTransaction: RecordResultTransaction,
+    private readonly contentSafety: ContentSafetyService,
   ) {}
 
   async findById(userId: string): Promise<PlayerResponseDto> {
@@ -64,6 +66,7 @@ export class PlayersService {
   }
 
   async updatePublicProfile(userId: string, dto: UpdateProfileDto): Promise<PlayerResponseDto> {
+    if (dto.avatarUrl !== undefined && dto.avatarUrl !== null) await this.contentSafety.assertSafeImageUrl(dto.avatarUrl, "Avatar")
     await this.updateProfileTransaction.run({ userId, dto })
     return this.findById(userId)
   }

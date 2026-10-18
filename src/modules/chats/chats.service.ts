@@ -29,6 +29,7 @@ import {
 } from "./dtos"
 import { StorageService } from "../storage/storage.service"
 import { randomUUID } from "node:crypto"
+import { ContentSafetyService } from "../content-safety/content-safety.service"
 
 const MAX_VOICE_DURATION_MS = 60_000
 const MAX_VOICE_BYTES = 512 * 1024
@@ -73,6 +74,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
     private readonly chatPresence: ChatPresenceRegistry,
     private readonly storage: StorageService,
+    private readonly contentSafety: ContentSafetyService,
   ) {}
 
   onModuleInit() {
@@ -213,6 +215,8 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     this.assertEnabled(config)
     const cleanName = name.trim()
     if (!cleanName) throw new ForbiddenException("Group name is required")
+    this.contentSafety.assertSafeText(cleanName, "Group name")
+    if (imageUrl?.trim()) await this.contentSafety.assertSafeImageUrl(imageUrl.trim(), "Group image")
     const members = [...new Set(memberIds.filter((id) => id !== userId))]
     if (!members.length) throw new ForbiddenException("Add at least one friend to the group")
     if (members.length > 49) throw new ForbiddenException("A group can have at most 50 players")
@@ -277,6 +281,8 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     if (participant.conversation.type !== ChatConversationType.GROUP || participant.role !== ChatParticipantRole.ADMIN) throw new ForbiddenException("Only group admins can edit the group")
     const name = dto.name?.trim()
     if (dto.name !== undefined && !name) throw new ForbiddenException("Group name is required")
+    if (name) this.contentSafety.assertSafeText(name, "Group name")
+    if (dto.imageUrl?.trim()) await this.contentSafety.assertSafeImageUrl(dto.imageUrl.trim(), "Group image")
     const updated = await this.prisma.chatConversation.update({ where: { id: conversationId }, data: { ...(name === undefined ? {} : { name }), ...(dto.imageUrl === undefined ? {} : { imageUrl: dto.imageUrl?.trim() || null }) }, include: { participants: { include: { user: { select: publicUserSelect } } } } })
     return this.serializeConversation(updated, null, 0, userId)
   }
@@ -328,6 +334,7 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
     const cleanBody = body.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim()
     if (!cleanBody) throw new ForbiddenException("Message cannot be empty")
     if (cleanBody.length > config.maxMessageLength) throw new ForbiddenException(`Message is limited to ${config.maxMessageLength} characters`)
+    this.contentSafety.assertSafeText(cleanBody, "Chat message")
     if (!config.allowLinks && /(?:https?:\/\/|www\.)/i.test(cleanBody)) throw new ForbiddenException("Links are not allowed in chat")
     if (clientMessageId.length > 120) throw new ForbiddenException("Invalid client message id")
 
@@ -690,7 +697,10 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private serializeUser(user: any) {
-    return user ? { id: user.id, username: user.username, name: user.profile?.displayName || user.username, avatarUrl: user.profile?.avatarUrl ?? null } : null
+    if (!user) return null
+    const username = this.contentSafety.isSafeText(user.username) ? user.username : "Player"
+    const name = this.contentSafety.isSafeText(user.profile?.displayName) ? (user.profile?.displayName || username) : username
+    return { id: user.id, username, name, avatarUrl: user.profile?.avatarUrl ?? null }
   }
 
   private serializeConversation(conversation: any, otherUser: any, unreadCount: number, viewerId?: string) {
@@ -715,8 +725,12 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private serializeMessage(message: any) {
-    const voice = message.moderationState === ChatMessageState.VISIBLE ? this.voiceMetadata(message.metadata) : null
-    return { id: message.id, conversationId: message.conversationId, senderId: message.senderId, sender: this.serializeUser(message.sender), sequence: message.sequence, clientMessageId: message.clientMessageId, body: message.moderationState === ChatMessageState.REMOVED ? "Message removed by moderation" : message.body, type: voice ? "VOICE" : "TEXT", voice: voice ? { fileId: voice.fileId, durationMs: voice.durationMs, byteSize: voice.byteSize, mimeType: voice.mimeType, expiresAt: message.expiresAt.toISOString() } : null, createdAt: message.createdAt.toISOString(), expiresAt: message.expiresAt.toISOString(), state: message.moderationState }
+    const contentRemoved = message.moderationState === ChatMessageState.REMOVED || !this.contentSafety.isSafeText(message.body)
+    const voice = !contentRemoved && message.moderationState === ChatMessageState.VISIBLE ? this.voiceMetadata(message.metadata) : null
+    const body = contentRemoved
+      ? "Message removed by moderation"
+      : message.body
+    return { id: message.id, conversationId: message.conversationId, senderId: message.senderId, sender: this.serializeUser(message.sender), sequence: message.sequence, clientMessageId: message.clientMessageId, body, type: voice ? "VOICE" : "TEXT", voice: voice ? { fileId: voice.fileId, durationMs: voice.durationMs, byteSize: voice.byteSize, mimeType: voice.mimeType, expiresAt: message.expiresAt.toISOString() } : null, createdAt: message.createdAt.toISOString(), expiresAt: message.expiresAt.toISOString(), state: contentRemoved ? ChatMessageState.REMOVED : message.moderationState }
   }
 
   private voiceMetadata(value: unknown): { type?: string; fileId?: string; objectKey?: string; durationMs?: number; byteSize?: number; mimeType?: string } | null {
