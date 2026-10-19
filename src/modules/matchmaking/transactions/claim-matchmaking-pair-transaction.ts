@@ -148,7 +148,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     const now = new Date();
     const gameCandidates = isRandomCasualTicket(first)
       ? await transaction.gameDefinition.findMany({
-          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { key: "word_dash" }, { key: "domino" }, { content: { some: { active: true } } }] },
+          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { key: "word_dash" }, { key: "domino" }, { key: "perfect_timing" }, { content: { some: { active: true } } }] },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })
       : [await transaction.gameDefinition.findUnique({
@@ -160,8 +160,9 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       const minimumLevel = candidate.configs[0]?.minimumPlayerLevel ?? 1;
       if (eligibleLevel < minimumLevel) return false;
       const settings = candidate.configs[0]?.settings && typeof candidate.configs[0].settings === "object" && !Array.isArray(candidate.configs[0].settings) ? candidate.configs[0].settings as Record<string, any> : {};
-      const policyKey = candidate.key === "word_dash" ? "wordDashPolicy" : candidate.key === "tile_rush" ? "tileRushPolicy" : candidate.key === "domino" ? "dominoPolicy" : null;
+      const policyKey = candidate.key === "word_dash" ? "wordDashPolicy" : candidate.key === "tile_rush" ? "tileRushPolicy" : candidate.key === "domino" ? "dominoPolicy" : candidate.key === "perfect_timing" ? "perfectTimingPolicy" : null;
       const policy = policyKey ? settings[policyKey] as Record<string, any> | undefined : undefined;
+      if (candidate.key === "perfect_timing" && policy && (policy.killSwitch === true || !realTickets.every((ticket) => inPerfectTimingRollout(ticket.userId, Number(policy.rolloutPercentage ?? 100))))) return false;
       return !policy || (first.mode === MatchmakingTicketMode.CASUAL ? policy.casualEnabled !== false : policy.rankedEnabled !== false);
     });
     const game = eligibleGameCandidates.length
@@ -169,9 +170,9 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       : null;
     const config = game?.configs[0];
     if (!game || !config) return null;
-    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>)[game.key === "word_dash" ? "wordDashPolicy" : game.key === "tile_rush" ? "tileRushPolicy" : game.key === "domino" ? "dominoPolicy" : ""] : null;
-    if (!second && first.mode === MatchmakingTicketMode.RANKED && (game.key === "tile_rush" || game.key === "word_dash") && configuredPolicy?.rankedBotFallback !== true) return null;
-    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino";
+    const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>)[game.key === "word_dash" ? "wordDashPolicy" : game.key === "tile_rush" ? "tileRushPolicy" : game.key === "domino" ? "dominoPolicy" : game.key === "perfect_timing" ? "perfectTimingPolicy" : ""] : null;
+    if (!second && first.mode === MatchmakingTicketMode.RANKED && (game.key === "tile_rush" || game.key === "word_dash" || game.key === "perfect_timing") && configuredPolicy?.rankedBotFallback !== true) return null;
+    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino" || game.key === "perfect_timing";
     // Provision the human assignments in the same transaction as the match.
     // Previously a newly-created bot match had zero assignments until a
     // client won the start race and called /start, which allowed legacy game
@@ -227,12 +228,12 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         } as Prisma.InputJsonValue,
       },
     });
-    if (game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino") {
+    if (game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino" || game.key === "perfect_timing") {
       const players = realTickets.map((ticket) => ticket.userId);
       for (const playerId of players) {
         await transaction.analyticsEvent.create({
           data: {
-            eventName: game.key === "word_dash" ? "WORD_DASH_MATCH_FOUND" : game.key === "tile_rush" ? "TILE_RUSH_MATCH_FOUND" : "DOMINO_MATCH_FOUND",
+            eventName: game.key === "word_dash" ? "WORD_DASH_MATCH_FOUND" : game.key === "tile_rush" ? "TILE_RUSH_MATCH_FOUND" : game.key === "domino" ? "DOMINO_MATCH_FOUND" : "PERFECT_TIMING_MATCH_FOUND",
             occurredAt: now,
             matchId: match.id,
             playerId,
@@ -294,7 +295,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     });
     const participants = [];
     for (const ticket of realTickets) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: ticket.userId, participantType: "PLAYER" } }));
-    const requiredSeats = game.key === "domino" ? 4 : Math.max(2, participants.length + 1);
+    const requiredSeats = game.key === "domino" ? 4 : game.key === "perfect_timing" ? 2 : Math.max(2, participants.length + 1);
     while (participants.length < requiredSeats) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: "BOT", result: "PENDING" } }));
 
     const expiresAt = new Date(
@@ -348,4 +349,11 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       mode: matchMode,
     };
   }
+}
+
+function inPerfectTimingRollout(userId: string, percentage: number): boolean {
+  if (percentage >= 100) return true;
+  if (percentage <= 0) return false;
+  const bucket = createHash("sha256").update(`perfect-timing-rollout:${userId}`).digest("hex").slice(0, 8);
+  return (Number.parseInt(bucket, 16) / 0xffffffff) * 100 < percentage;
 }

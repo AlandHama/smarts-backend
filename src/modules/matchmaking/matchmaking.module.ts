@@ -18,9 +18,10 @@ import { GemBlitzModule } from "../gem-blitz/gem-blitz.module"
 import { TileRushModule } from "../tile-rush/tile-rush.module"
 import { WordDashModule } from "../word-dash/word-dash.module"
 import { DominoModule } from "../domino/domino.module"
+import { PerfectTimingModule } from "../perfect-timing/perfect-timing.module"
 
 @Module({
-  imports: [DatabaseModule, MatchesModule, EconomyModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule],
+  imports: [DatabaseModule, MatchesModule, EconomyModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, PerfectTimingModule],
   controllers: [MatchmakingController],
   providers: [MatchmakingService, MatchmakingWorkerService, EnqueuePlayerTransaction, HeartbeatTicketTransaction, CancelTicketTransaction, ExpireMatchmakingTicketsTransaction, ClaimMatchmakingPairTransaction, CreateFriendInviteTransaction, AcceptFriendInviteTransaction, RespondFriendInviteTransaction],
   exports: [MatchmakingService],

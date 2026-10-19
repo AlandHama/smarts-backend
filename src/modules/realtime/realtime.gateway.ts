@@ -17,6 +17,7 @@ import { GemBlitzService } from "../gem-blitz/gem-blitz.service"
 import { TileRushService } from "../tile-rush/tile-rush.service"
 import { WordDashService } from "../word-dash/word-dash.service"
 import { DominoService } from "../domino/domino.service"
+import { PerfectTimingService } from "../perfect-timing/perfect-timing.service"
 import { randomUUID } from "node:crypto"
 
 type ClientState = {
@@ -62,6 +63,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly tileRush: TileRushService,
     private readonly wordDash: WordDashService,
     private readonly domino: DominoService,
+    private readonly perfectTiming: PerfectTimingService,
   ) {
     // Gameplay actions push an immediate snapshot. This timer is only the
     // recovery/clock path, so polling every second needlessly re-queries and
@@ -196,6 +198,25 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.send(client, snapshot.action?.accepted === false ? "domino.action.rejected" : "domino.action.accepted", snapshot)
         await this.broadcastDomino(matchId)
       } catch (error) { this.send(client, "domino.error", { matchId, code: "ACTION_REJECTED", message: this.errorMessage(error) }) }
+      return
+    }
+    if (event === "perfect_timing.tap") {
+      const matchId = this.string(data.matchId)
+      if (!matchId || !state.matchIds.has(matchId)) return this.send(client, "perfect_timing.error", { code: "NOT_SUBSCRIBED", message: "Subscribe to the match first" })
+      try {
+        const snapshot = await this.perfectTiming.tap(state.userId, matchId, {
+          sequence: Number(data.sequence),
+          clientActionId: this.string(data.clientActionId) || randomUUID(),
+          clientTapMonotonicMs: Number(data.clientTapMonotonicMs ?? 0),
+          clientClockMs: data.clientClockMs == null ? undefined : Number(data.clientClockMs),
+          clientServerOffsetMs: data.clientServerOffsetMs == null ? undefined : Number(data.clientServerOffsetMs),
+          clientRoundTripMs: data.clientRoundTripMs == null ? undefined : Number(data.clientRoundTripMs),
+          clientRenderedMarkerX: data.clientRenderedMarkerX == null ? undefined : Number(data.clientRenderedMarkerX),
+          clientOccurredAt: typeof data.clientOccurredAt === "string" ? data.clientOccurredAt : undefined,
+        })
+        this.send(client, snapshot.tap?.accepted === false ? "perfect_timing.tap.rejected" : "perfect_timing.tap.accepted", snapshot)
+        await this.broadcastPerfectTiming(matchId)
+      } catch (error) { this.send(client, "perfect_timing.error", { matchId, code: "TAP_REJECTED", message: this.errorMessage(error) }) }
       return
     }
     if (event === "subscribe_player") {
@@ -572,6 +593,16 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.releaseFinishedMatch(client, state, matchId, snapshot)
         return
       }
+      if (game?.gameDefinition.key === "perfect_timing") {
+        const snapshot = await this.perfectTiming.snapshot(state.userId, matchId)
+        const key = JSON.stringify(snapshot)
+        if (force || state.lastSnapshots.get(`perfect-timing:${matchId}`) !== key) {
+          state.lastSnapshots.set(`perfect-timing:${matchId}`, key)
+          this.send(client, "perfect_timing.snapshot", snapshot)
+        }
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
+        return
+      }
       const snapshot = await this.matches.get(matchId, state.userId)
       const key = JSON.stringify(snapshot)
       const cacheKey = `match:${matchId}`
@@ -617,6 +648,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     state.lastSnapshots.delete(`tile-rush:${matchId}`)
     state.lastSnapshots.delete(`word-dash:${matchId}`)
     state.lastSnapshots.delete(`domino:${matchId}`)
+    state.lastSnapshots.delete(`perfect-timing:${matchId}`)
     state.lastSnapshots.delete(`match:${matchId}`)
     state.lastSnapshots.delete(`events:${matchId}`)
   }
@@ -671,6 +703,17 @@ export class RealtimeGateway implements OnModuleDestroy {
       try {
         const snapshot = await this.domino.snapshot(state.userId, matchId)
         this.send(client, "domino.snapshot", snapshot)
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
+      } catch { /* HTTP reconciliation remains available after a transient failure. */ }
+    }
+  }
+
+  private async broadcastPerfectTiming(matchId: string) {
+    for (const [client, state] of this.clients) {
+      if (!state.matchIds.has(matchId)) continue
+      try {
+        const snapshot = await this.perfectTiming.snapshot(state.userId, matchId)
+        this.send(client, "perfect_timing.snapshot", snapshot)
         this.releaseFinishedMatch(client, state, matchId, snapshot)
       } catch { /* HTTP reconciliation remains available after a transient failure. */ }
     }

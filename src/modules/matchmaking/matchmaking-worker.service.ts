@@ -8,6 +8,7 @@ import { GemBlitzService } from "../gem-blitz/gem-blitz.service"
 import { TileRushService } from "../tile-rush/tile-rush.service"
 import { WordDashService } from "../word-dash/word-dash.service"
 import { DominoService } from "../domino/domino.service"
+import { PerfectTimingService } from "../perfect-timing/perfect-timing.service"
 import { matchmakerBatchSize } from "./utilities/matchmaking-policy"
 
 @Injectable()
@@ -17,7 +18,7 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
   private running = false
   private ticks = 0
 
-  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction, private readonly botGameplay: BotGameplayService, private readonly gemBlitz: GemBlitzService, private readonly tileRush: TileRushService, private readonly wordDash: WordDashService, private readonly domino: DominoService) {}
+  constructor(private readonly expireTickets: ExpireMatchmakingTicketsTransaction, private readonly claimPair: ClaimMatchmakingPairTransaction, private readonly expireMatches: ExpireMatchTransaction, private readonly botGameplay: BotGameplayService, private readonly gemBlitz: GemBlitzService, private readonly tileRush: TileRushService, private readonly wordDash: WordDashService, private readonly domino: DominoService, private readonly perfectTiming: PerfectTimingService) {}
 
   onModuleInit() {
     void this.tick()
@@ -48,12 +49,14 @@ export class MatchmakingWorkerService implements OnModuleInit, OnModuleDestroy {
         await this.runStep("finalize expired Word Dash matches", () => this.wordDash.finalizeExpiredMatches())
         await this.runStep("advance Domino matches", () => this.domino.advanceBotMatches())
         await this.runStep("finalize expired Domino matches", () => this.domino.finalizeExpiredMatches())
+        await this.runStep("finalize expired Perfect Timing matches", () => this.perfectTiming.finalizeExpiredMatches())
       }
       if (settlementTick) {
         await this.runStep("retry Gem Blitz settlements", () => this.gemBlitz.retryPendingSettlements())
         await this.runStep("retry Tile Rush settlements", () => this.tileRush.retryPendingSettlements())
         await this.runStep("retry Word Dash settlements", () => this.wordDash.retryPendingSettlements())
         await this.runStep("retry Domino settlements", () => this.domino.retryPendingSettlements())
+        await this.runStep("retry Perfect Timing settlements", () => this.perfectTiming.retryPendingSettlements())
       }
       await this.runStep("expire matches", () => this.expireMatches.run())
       await this.runStep("advance bot matches", () => this.botGameplay.progressActiveMatches())

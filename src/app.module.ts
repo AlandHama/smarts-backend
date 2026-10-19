@@ -38,9 +38,10 @@ import { CryptoRewardsModule } from "./modules/crypto-rewards/crypto-rewards.mod
 import { WordDashModule } from "./modules/word-dash/word-dash.module"
 import { DominoModule } from "./modules/domino/domino.module"
 import { ContentSafetyModule } from "./modules/content-safety/content-safety.module"
+import { PerfectTimingModule } from "./modules/perfect-timing/perfect-timing.module"
 
 @Module({
-  imports: [ContentSafetyModule, DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, CooperativeModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule],
+  imports: [ContentSafetyModule, DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, CooperativeModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule, PerfectTimingModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

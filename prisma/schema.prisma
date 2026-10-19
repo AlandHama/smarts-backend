@@ -2622,37 +2622,39 @@ model GameConfig {
 }
 
 model Match {
-  id                  String                   @id @default(uuid()) @db.Uuid
-  gameDefinitionId    String                   @db.Uuid
-  gameConfigId        String                   @db.Uuid
-  mode                GameMode
-  status              MatchStatus              @default(CREATED)
-  serverNonce         String                   @unique @db.VarChar(128)
-  startedAt           DateTime?
-  endedAt             DateTime?
-  settledAt           DateTime?
-  createdByUserId     String                   @db.Uuid
-  metadata            Json?
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
-  gameDefinition      GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
-  gameConfig          GameConfig               @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
-  createdBy           User                     @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  participants        MatchParticipant[]
-  events              MatchEvent[]
-  settlement          MatchSettlement?
-  assignments         MatchContentAssignment[]
-  matchmakingTickets  MatchmakingTicket[]
-  matchmakingInvite   MatchmakingInvite?
-  rounds              MatchRound[]
-  rankingMatch        RankingMatch?
-  cooperativeMatch    CooperativeMatch?
-  dominoMatch         DominoMatchState?
-  wordDashMatch       WordDashMatch?
-  rematchRequests     RematchRequest[]         @relation("RematchOriginalMatch")
-  rematchCreatedFrom  RematchRequest?          @relation("RematchNewMatch")
-  wordDashSubmissions WordDashSubmission[]
-  dominoActions       DominoAction[]
+  id                   String                   @id @default(uuid()) @db.Uuid
+  gameDefinitionId     String                   @db.Uuid
+  gameConfigId         String                   @db.Uuid
+  mode                 GameMode
+  status               MatchStatus              @default(CREATED)
+  serverNonce          String                   @unique @db.VarChar(128)
+  startedAt            DateTime?
+  endedAt              DateTime?
+  settledAt            DateTime?
+  createdByUserId      String                   @db.Uuid
+  metadata             Json?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  gameDefinition       GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  gameConfig           GameConfig               @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
+  createdBy            User                     @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  participants         MatchParticipant[]
+  events               MatchEvent[]
+  settlement           MatchSettlement?
+  assignments          MatchContentAssignment[]
+  matchmakingTickets   MatchmakingTicket[]
+  matchmakingInvite    MatchmakingInvite?
+  rounds               MatchRound[]
+  rankingMatch         RankingMatch?
+  cooperativeMatch     CooperativeMatch?
+  dominoMatch          DominoMatchState?
+  wordDashMatch        WordDashMatch?
+  perfectTimingMatch   PerfectTimingMatch?
+  rematchRequests      RematchRequest[]         @relation("RematchOriginalMatch")
+  rematchCreatedFrom   RematchRequest?          @relation("RematchNewMatch")
+  wordDashSubmissions  WordDashSubmission[]
+  dominoActions        DominoAction[]
+  perfectTimingActions PerfectTimingAction[]
 
   @@index([status, createdAt])
   @@index([createdByUserId, status])
@@ -2804,27 +2806,29 @@ model RematchRequest {
 }
 
 model MatchParticipant {
-  id                     String                    @id @default(uuid()) @db.Uuid
-  matchId                String                    @db.Uuid
-  userId                 String?                   @db.Uuid
+  id                     String                         @id @default(uuid()) @db.Uuid
+  matchId                String                         @db.Uuid
+  userId                 String?                        @db.Uuid
   participantType        MatchParticipantType
   finalScore             Int?
-  answeredCount          Int                       @default(0)
-  result                 MatchParticipantResult    @default(PENDING)
+  answeredCount          Int                            @default(0)
+  result                 MatchParticipantResult         @default(PENDING)
   readyAt                DateTime?
   submittedAt            DateTime?
-  createdAt              DateTime                  @default(now())
-  updatedAt              DateTime                  @updatedAt
-  match                  Match                     @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  user                   User?                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
+  match                  Match                          @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user                   User?                          @relation(fields: [userId], references: [id], onDelete: Restrict)
   events                 MatchEvent[]
   assignments            MatchContentAssignment[]
-  winnerSettlement       MatchSettlement?          @relation("MatchSettlementWinner")
+  winnerSettlement       MatchSettlement?               @relation("MatchSettlementWinner")
   cooperativeParticipant CooperativeParticipant?
   wordDashState          WordDashParticipantState?
   wordDashSubmissions    WordDashSubmission[]
   wordDashFoundWords     WordDashFoundWord[]
   dominoActions          DominoAction[]
+  perfectTimingState     PerfectTimingParticipantState?
+  perfectTimingActions   PerfectTimingAction[]
 
   @@unique([matchId, userId])
   @@index([matchId, result])
@@ -3092,6 +3096,85 @@ model WordDashSubmission {
   @@unique([matchId, matchParticipantId, clientSubmissionId])
   @@unique([matchId, matchParticipantId, sequence])
   @@index([matchId, matchParticipantId, serverReceivedAt])
+}
+
+/// Server-owned deterministic timing schedule and lifecycle state.
+model PerfectTimingMatch {
+  id                 String                          @id @default(uuid()) @db.Uuid
+  matchId            String                          @unique @db.Uuid
+  seed               String                          @db.VarChar(128)
+  scheduleCommitment String                          @db.Char(64)
+  rulesVersion       String                          @db.VarChar(64)
+  policyVersion      String                          @db.VarChar(64)
+  roundCount         Int
+  currentRoundIndex  Int                             @default(0)
+  currentRoundStatus String                          @default("CREATED") @db.VarChar(32)
+  nextSequence       Int                             @default(1)
+  schedule           Json
+  roundResults       Json
+  stateHash          String                          @db.Char(64)
+  startedAt          DateTime?
+  roundStartedAt     DateTime?
+  roundDeadlineAt    DateTime?
+  nextRoundAt        DateTime?
+  endedAt            DateTime?
+  createdAt          DateTime                        @default(now())
+  updatedAt          DateTime                        @updatedAt
+  match              Match                           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participants       PerfectTimingParticipantState[]
+  actions            PerfectTimingAction[]
+
+  @@index([endedAt, createdAt])
+  @@index([roundDeadlineAt, currentRoundStatus])
+}
+
+/// Mutable verified score counters for one Perfect Timing participant.
+model PerfectTimingParticipantState {
+  id                   String             @id @default(uuid()) @db.Uuid
+  perfectTimingMatchId String             @db.Uuid
+  matchParticipantId   String             @unique @db.Uuid
+  score                Int                @default(0)
+  perfectCount         Int                @default(0)
+  greatCount           Int                @default(0)
+  goodCount            Int                @default(0)
+  missCount            Int                @default(0)
+  nextSequence         Int                @default(1)
+  lastTapAt            DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  perfectTimingMatch   PerfectTimingMatch @relation(fields: [perfectTimingMatchId], references: [id], onDelete: Cascade)
+  matchParticipant     MatchParticipant   @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
+
+  @@index([perfectTimingMatchId, score])
+}
+
+/// Idempotent audit journal for human, bot, and automatic-miss actions.
+model PerfectTimingAction {
+  id                     String             @id @default(uuid()) @db.Uuid
+  matchId                String             @db.Uuid
+  perfectTimingMatchId   String             @db.Uuid
+  matchParticipantId     String             @db.Uuid
+  roundIndex             Int
+  sequence               Int
+  clientActionId         String             @db.VarChar(128)
+  actionType             String             @db.VarChar(32)
+  accepted               Boolean            @default(false)
+  rejectionReason        String?            @db.VarChar(160)
+  judgement              String?            @db.VarChar(16)
+  timingErrorMs          Int?
+  scoreDelta             Int                @default(0)
+  estimatedTapAtServerMs BigInt?
+  payload                Json?
+  serverReceivedAt       DateTime           @default(now())
+  clientOccurredAt       DateTime?
+  match                  Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  perfectTimingMatch     PerfectTimingMatch @relation(fields: [perfectTimingMatchId], references: [id], onDelete: Cascade)
+  matchParticipant       MatchParticipant   @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, matchParticipantId, clientActionId])
+  @@unique([matchId, matchParticipantId, sequence])
+  @@index([matchId, roundIndex, accepted])
+  @@index([perfectTimingMatchId, serverReceivedAt])
 }
 
 model MatchEvent {

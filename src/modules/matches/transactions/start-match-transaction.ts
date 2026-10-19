@@ -92,7 +92,7 @@ export class StartMatchTransaction extends PrismaTransaction<
         };
       }
     }
-    if (match.gameDefinition.key === "word_dash" || match.gameDefinition.key === "domino") {
+    if (match.gameDefinition.key === "word_dash" || match.gameDefinition.key === "domino" || match.gameDefinition.key === "perfect_timing") {
       if (match.status === "CREATED") {
         await transaction.match.update({ where: { id: match.id }, data: { status: "STARTED", startedAt: now } });
         await transaction.matchRound.update({ where: { id: round.id }, data: { status: "STARTED", startedAt: now } });
