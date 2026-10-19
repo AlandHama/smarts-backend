@@ -260,8 +260,9 @@ export class PerfectTimingService {
     const highest = Math.max(...states.map((item: any) => item.score), 0)
     const winners = states.filter((item: any) => item.score === highest)
     const endedAt = new Date()
+    const finishedStateHash = this.stateHash(timing, { currentRoundStatus: "COMPLETE", endedAt: endedAt.toISOString() })
     await tx.match.update({ where: { id: match.id }, data: { status: "FINISHED", endedAt } })
-    await tx.perfectTimingMatch.update({ where: { id: timing.id }, data: { endedAt, currentRoundStatus: "COMPLETE", nextRoundAt: null } })
+    await tx.perfectTimingMatch.update({ where: { id: timing.id }, data: { endedAt, currentRoundStatus: "COMPLETE", nextRoundAt: null, stateHash: finishedStateHash } })
     await tx.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt } })
     for (const participant of match.participants) {
       const state = states.find((item: any) => item.matchParticipantId === participant.id)
