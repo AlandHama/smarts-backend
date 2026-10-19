@@ -42,7 +42,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     // A paid instant skip is a server-verified correct answer. Count it with
     // normal answers so a match made entirely from skips can still settle and
     // its accuracy/progression stats remain truthful.
-    const isBoardAuthoritative = lockedMatch.gameDefinition.key === "gem_blitz" || lockedMatch.gameDefinition.key === "tile_rush" || lockedMatch.gameDefinition.key === "word_dash" || lockedMatch.gameDefinition.key === "domino" || lockedMatch.gameDefinition.key === "perfect_timing"
+    const isBoardAuthoritative = lockedMatch.gameDefinition.key === "gem_blitz" || lockedMatch.gameDefinition.key === "tile_rush" || lockedMatch.gameDefinition.key === "word_dash" || lockedMatch.gameDefinition.key === "domino" || lockedMatch.gameDefinition.key === "perfect_timing" || lockedMatch.gameDefinition.key === "bomb_path"
     const acceptedAnswers = isBoardAuthoritative
       ? await transaction.matchEvent.count({ where: { matchId: lockedMatch.id, eventType: "SCORE_UPDATE", accepted: true } })
       : await transaction.matchEvent.count({ where: { matchId: lockedMatch.id, eventType: { in: ["ANSWER", "SKIP"] }, accepted: true } })

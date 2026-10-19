@@ -13,9 +13,10 @@ import { TileRushModule } from "../tile-rush/tile-rush.module"
 import { WordDashModule } from "../word-dash/word-dash.module"
 import { DominoModule } from "../domino/domino.module"
 import { PerfectTimingModule } from "../perfect-timing/perfect-timing.module"
+import { BombPathModule } from "../bomb-path/bomb-path.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, MatchesModule, MatchmakingModule, ChatsModule, SupportModule, CooperativeModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, PerfectTimingModule],
+  imports: [DatabaseModule, AuthModule, MatchesModule, MatchmakingModule, ChatsModule, SupportModule, CooperativeModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, PerfectTimingModule, BombPathModule],
   providers: [RealtimeGateway],
 })
 export class RealtimeModule {}

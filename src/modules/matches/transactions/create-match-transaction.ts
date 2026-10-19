@@ -27,7 +27,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
       if (!opponent || opponent.status !== "ACTIVE") throw new NotFoundException("Opponent not found or inactive")
       if ((opponent.profile?.level ?? 1) < config.minimumPlayerLevel) throw new ConflictException(`Opponent must reach level ${config.minimumPlayerLevel} to play ${game.name}`)
     }
-    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino" || game.key === "perfect_timing"
+    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino" || game.key === "perfect_timing" || game.key === "bomb_path"
     const activeContentCount = isBoardAuthoritative ? 1 : await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
     if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
 
@@ -37,7 +37,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
     const participants = [
       await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.userId, participantType: MatchParticipantType.PLAYER } }),
     ]
-    if (input.dto.mode === GameMode.BOT || (input.dto.mode === GameMode.PRACTICE && game.key === "perfect_timing")) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: MatchParticipantType.BOT, result: "PENDING" } }))
+    if (input.dto.mode === GameMode.BOT || (input.dto.mode === GameMode.PRACTICE && (game.key === "perfect_timing" || game.key === "bomb_path"))) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: MatchParticipantType.BOT, result: "PENDING" } }))
     else if (input.dto.opponentUserId) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.dto.opponentUserId, participantType: MatchParticipantType.PLAYER } }))
 
     if (isBoardAuthoritative) return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments: [] }

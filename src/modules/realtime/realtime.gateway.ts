@@ -18,6 +18,7 @@ import { TileRushService } from "../tile-rush/tile-rush.service"
 import { WordDashService } from "../word-dash/word-dash.service"
 import { DominoService } from "../domino/domino.service"
 import { PerfectTimingService } from "../perfect-timing/perfect-timing.service"
+import { BombPathService } from "../bomb-path/bomb-path.service"
 import { randomUUID } from "node:crypto"
 
 type ClientState = {
@@ -64,6 +65,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly wordDash: WordDashService,
     private readonly domino: DominoService,
     private readonly perfectTiming: PerfectTimingService,
+    private readonly bombPath: BombPathService,
   ) {
     // Gameplay actions push an immediate snapshot. This timer is only the
     // recovery/clock path, so polling every second needlessly re-queries and
@@ -217,6 +219,20 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.send(client, snapshot.tap?.accepted === false ? "perfect_timing.tap.rejected" : "perfect_timing.tap.accepted", snapshot)
         await this.broadcastPerfectTiming(matchId)
       } catch (error) { this.send(client, "perfect_timing.error", { matchId, code: "TAP_REJECTED", message: this.errorMessage(error) }) }
+      return
+    }
+    if (event === "bomb_path.step" || event === "bomb_path.complete") {
+      const matchId = this.string(data.matchId)
+      if (!matchId || !state.matchIds.has(matchId)) return this.send(client, "bomb_path.error", { code: "NOT_SUBSCRIBED", message: "Subscribe to the match first" })
+      try {
+        const pointValue = data.cell && typeof data.cell === "object" ? data.cell as Record<string, unknown> : {}
+        const common = { sequence: Number(data.sequence), roundIndex: Number(data.roundIndex), clientActionId: this.string(data.clientActionId) || randomUUID(), clientOccurredAt: typeof data.clientOccurredAt === "string" ? data.clientOccurredAt : undefined }
+        const snapshot = event === "bomb_path.step"
+          ? await this.bombPath.step(state.userId, matchId, { ...common, cell: { row: Number(pointValue.row), column: Number(pointValue.column) } })
+          : await this.bombPath.complete(state.userId, matchId, common)
+        this.send(client, snapshot.action?.accepted === false ? "bomb_path.step.rejected" : "bomb_path.step.accepted", snapshot)
+        await this.broadcastBombPath(matchId)
+      } catch (error) { this.send(client, "bomb_path.error", { matchId, code: "ACTION_REJECTED", message: this.errorMessage(error) }) }
       return
     }
     if (event === "subscribe_player") {
@@ -603,6 +619,16 @@ export class RealtimeGateway implements OnModuleDestroy {
         this.releaseFinishedMatch(client, state, matchId, snapshot)
         return
       }
+      if (game?.gameDefinition.key === "bomb_path") {
+        const snapshot = await this.bombPath.snapshot(state.userId, matchId)
+        const key = JSON.stringify(snapshot)
+        if (force || state.lastSnapshots.get(`bomb-path:${matchId}`) !== key) {
+          state.lastSnapshots.set(`bomb-path:${matchId}`, key)
+          this.send(client, "bomb_path.snapshot", snapshot)
+        }
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
+        return
+      }
       const snapshot = await this.matches.get(matchId, state.userId)
       const key = JSON.stringify(snapshot)
       const cacheKey = `match:${matchId}`
@@ -649,6 +675,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     state.lastSnapshots.delete(`word-dash:${matchId}`)
     state.lastSnapshots.delete(`domino:${matchId}`)
     state.lastSnapshots.delete(`perfect-timing:${matchId}`)
+    state.lastSnapshots.delete(`bomb-path:${matchId}`)
     state.lastSnapshots.delete(`match:${matchId}`)
     state.lastSnapshots.delete(`events:${matchId}`)
   }
@@ -714,6 +741,17 @@ export class RealtimeGateway implements OnModuleDestroy {
       try {
         const snapshot = await this.perfectTiming.snapshot(state.userId, matchId)
         this.send(client, "perfect_timing.snapshot", snapshot)
+        this.releaseFinishedMatch(client, state, matchId, snapshot)
+      } catch { /* HTTP reconciliation remains available after a transient failure. */ }
+    }
+  }
+
+  private async broadcastBombPath(matchId: string) {
+    for (const [client, state] of this.clients) {
+      if (!state.matchIds.has(matchId)) continue
+      try {
+        const snapshot = await this.bombPath.snapshot(state.userId, matchId)
+        this.send(client, "bomb_path.snapshot", snapshot)
         this.releaseFinishedMatch(client, state, matchId, snapshot)
       } catch { /* HTTP reconciliation remains available after a transient failure. */ }
     }
