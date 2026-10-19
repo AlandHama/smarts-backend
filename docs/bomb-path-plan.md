@@ -155,8 +155,8 @@ All values are policy defaults captured on the match, not Flutter constants.
 | 1 | 5 × 5 | 2 | 3,500 ms | 8,000 ms | obvious route and generous memory |
 | 2 | 6 × 6 | 4 | 3,000 ms | 8,000 ms | longer route and more alternatives |
 | 3 | 7 × 7 | 6 | 2,750 ms | 8,000 ms | more branching and less empty space |
-| 4 | 8 × 8 | 8 | 2,500 ms | 7,500 ms | denser hazards and longer route |
-| 5 | 9 × 9 | 10 | 2,000 ms | 7,500 ms | highest observation pressure |
+| 4 | 7 × 7 | 8 | 2,500 ms | 7,500 ms | denser hazards and longer route |
+| 5 | 7 × 7 | 10 | 2,000 ms | 7,500 ms | highest observation pressure |
 
 The default result/transition window is 900 ms. Expected match duration is
 approximately 30–45 seconds, excluding matchmaking and the final result.
@@ -703,7 +703,7 @@ rulesVersion
 generationVersion
 roundCount: 3..7
 gridSizeEarly: 5..7
-gridSizeLate: 5..9
+gridSizeLate: 5..7
 bombCountEarly: 1..5
 bombCountLate: 4..20
 memorizeDurationMs: 1200..6000
@@ -815,7 +815,7 @@ device class. Do not expose complete bomb maps in ordinary analytics.
 
 ### 14.3 Flutter and device
 
-- 5 × 5 and 9 × 9 grids fit narrow phones without overflow;
+- 5 × 5 through 7 × 7 grids fit narrow phones without overflow;
 - MEMORIZE displays bombs and PLAY hides them;
 - pointer-down must begin on the flag;
 - movement selects only orthogonal neighbors;

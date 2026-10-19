@@ -32,7 +32,7 @@ SELECT
   1.0, 100, 1000, 50, 0, 0, 0, 1, 250000, 0, 0, 0,
   '{"SUCCESS":1,"BOMB_HIT":0,"TIMEOUT":0,"INCOMPLETE":0}'::jsonb, 0, 8, 60, 0,
   0, false, 1.0, 1.0, 1.0,
-  '{"authoritative":true,"bombPathPolicy":{"enabled":true,"killSwitch":false,"rolloutPercentage":100,"visibleName":"Bomb Path","rulesVersion":"bomb-path.v1","generationVersion":"bomb-path-field.v1","policyVersion":"bomb-path-policy.v1","roundCount":5,"gridSizeEarly":5,"gridSizeLate":9,"bombCountEarly":2,"bombCountLate":10,"memorizeDurationMs":3500,"playDurationMs":8000,"roundResultDurationMs":900,"matchDurationSeconds":60,"baseRoundScore":100,"speedBonusMax":50,"efficiencyBonusMax":25,"orthogonalOnly":true,"casualEnabled":true,"rankedEnabled":false,"practiceEnabled":true,"casualBotEnabled":true,"rankedBotFallback":false,"bot":{"enabled":true,"reactionDelayMs":900,"stepDelayMs":420,"jitterMs":160,"errorRate":0.08,"skill":0.7}}}'::jsonb,
+  '{"authoritative":true,"bombPathPolicy":{"enabled":true,"killSwitch":false,"rolloutPercentage":100,"visibleName":"Bomb Path","rulesVersion":"bomb-path.v1","generationVersion":"bomb-path-field.v1","policyVersion":"bomb-path-policy.v1","roundCount":5,"gridSizeEarly":5,"gridSizeLate":7,"bombCountEarly":2,"bombCountLate":10,"memorizeDurationMs":3500,"playDurationMs":8000,"roundResultDurationMs":900,"matchDurationSeconds":60,"baseRoundScore":100,"speedBonusMax":50,"efficiencyBonusMax":25,"orthogonalOnly":true,"casualEnabled":true,"rankedEnabled":false,"practiceEnabled":true,"casualBotEnabled":true,"rankedBotFallback":false,"bot":{"enabled":true,"reactionDelayMs":900,"stepDelayMs":420,"jitterMs":160,"errorRate":0.08,"skill":0.7}}}'::jsonb,
   CURRENT_TIMESTAMP,
   CURRENT_TIMESTAMP
 FROM "GameDefinition"

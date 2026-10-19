@@ -49,7 +49,9 @@ export const DEFAULT_BOMB_PATH_POLICY: BombPathPolicy = {
   policyVersion: "bomb-path-policy.v1",
   roundCount: 5,
   gridSizeEarly: 5,
-  gridSizeLate: 9,
+  // Bomb Path uses a square board in v1. Keep the largest board at 7x7 so
+  // the mobile grid never exceeds the requested 7x9 visual ceiling.
+  gridSizeLate: 7,
   bombCountEarly: 2,
   bombCountLate: 10,
   memorizeDurationMs: 3500,
@@ -73,7 +75,7 @@ export function mergeBombPathPolicy(value: unknown): BombPathPolicy {
   const bot = source.bot && typeof source.bot === "object" ? source.bot : {}
   const policy: BombPathPolicy = { ...DEFAULT_BOMB_PATH_POLICY, ...source, bot: { ...DEFAULT_BOMB_PATH_POLICY.bot, ...bot } }
   if (!Number.isInteger(policy.roundCount) || policy.roundCount < 3 || policy.roundCount > 7) throw new Error("Bomb Path round count is invalid")
-  if (!Number.isInteger(policy.gridSizeEarly) || !Number.isInteger(policy.gridSizeLate) || policy.gridSizeEarly < 3 || policy.gridSizeLate < policy.gridSizeEarly || policy.gridSizeLate > 12) throw new Error("Bomb Path grid sizes are invalid")
+  if (!Number.isInteger(policy.gridSizeEarly) || !Number.isInteger(policy.gridSizeLate) || policy.gridSizeEarly < 3 || policy.gridSizeLate < policy.gridSizeEarly || policy.gridSizeLate > 7) throw new Error("Bomb Path grid sizes are invalid; the mobile board is capped at 7x7")
   if (!Number.isInteger(policy.bombCountEarly) || !Number.isInteger(policy.bombCountLate) || policy.bombCountEarly < 1 || policy.bombCountLate < policy.bombCountEarly) throw new Error("Bomb Path bomb counts are invalid")
   if (policy.rolloutPercentage < 0 || policy.rolloutPercentage > 100) throw new Error("Bomb Path rollout percentage is invalid")
   if (policy.memorizeDurationMs < 500 || policy.playDurationMs < 1000 || policy.roundResultDurationMs < 0) throw new Error("Bomb Path phase durations are invalid")
