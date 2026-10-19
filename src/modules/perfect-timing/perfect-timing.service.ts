@@ -6,7 +6,7 @@ import { SettleMatchTransaction } from "../matches/transactions/settle-match-tra
 import { FraudService } from "../fraud/fraud.service"
 import { PerfectTimingTapDto } from "./dtos/perfect-timing.dto"
 import { createPerfectTimingSchedule, evaluatePerfectTimingTap, markerPositionAt, perfectTimingScheduleCommitment, perfectTimingStateHash, PerfectTimingRoundSpec, targetCenterAt } from "./engine/perfect-timing-engine"
-import { DEFAULT_PERFECT_TIMING_POLICY, mergePerfectTimingPolicy, PerfectTimingJudgement, PerfectTimingMode, PerfectTimingPolicy, roundCountForMode } from "./engine/perfect-timing-score"
+import { DEFAULT_PERFECT_TIMING_POLICY, mergePerfectTimingPolicy, PerfectTimingJudgement, PerfectTimingMode, PerfectTimingPolicy } from "./engine/perfect-timing-score"
 
 type MatchRow = any
 type TimingRow = any
@@ -82,21 +82,21 @@ export class PerfectTimingService {
       timing = await this.advanceBot(tx, match, timing, policy, Date.now())
       timing = await this.advanceLifecycle(tx, match, timing, policy, Date.now())
       if (timing.endedAt || timing.currentRoundStatus !== "ACTIVE") {
-        return { projection: await this.project(tx, await this.loadMatch(tx, matchId), timing, participant.id, policy), tap: { accepted: false, sequence: dto.sequence, scoreDelta: 0, totalScore: state.score, reason: "ROUND_ALREADY_RESOLVED" }, finalized: Boolean(timing.endedAt) }
+        return { projection: await this.project(tx, await this.loadMatch(tx, matchId), timing, participant.id, policy), tap: { accepted: false, sequence: dto.sequence, scoreDelta: 0, totalScore: state.score, reason: "MATCH_ALREADY_RESOLVED" }, finalized: Boolean(timing.endedAt) }
       }
       const nowMs = Date.now()
-      const round = this.currentRound(timing)
-      const startedMs = timing.roundStartedAt?.getTime() ?? nowMs
-      const deadlineMs = timing.roundDeadlineAt?.getTime() ?? startedMs + round.durationMs
+      const challengeIndex = Math.min(state.nextSequence - 1, timing.roundCount - 1)
+      const challenge = this.challengeAt(timing, challengeIndex)
+      const startedMs = state.lastTapAt?.getTime() ?? timing.startedAt?.getTime() ?? nowMs
+      const deadlineMs = timing.roundDeadlineAt?.getTime() ?? startedMs + policy.matchDurationMs
       const estimatedTapMs = this.estimateTapServerMs(dto, nowMs, policy)
-      if (estimatedTapMs < startedMs || estimatedTapMs > deadlineMs) {
-        const rejected = await this.recordRejected(tx, match, timing, participant.id, dto, "TAP_OUTSIDE_ROUND_WINDOW", estimatedTapMs)
+      if (estimatedTapMs < (timing.startedAt?.getTime() ?? startedMs) || estimatedTapMs > deadlineMs) {
+        const rejected = await this.recordRejected(tx, match, timing, participant.id, dto, "TAP_OUTSIDE_MATCH_WINDOW", estimatedTapMs, challengeIndex)
         return { projection: await this.project(tx, match, timing, participant.id, policy), tap: this.actionProjection(rejected, state.score), finalized: false }
       }
-      const evaluation = evaluatePerfectTimingTap(round, estimatedTapMs, startedMs, policy)
-      const accepted = await this.recordAccepted(tx, match, timing, participant.id, dto, evaluation, estimatedTapMs)
+      const evaluation = evaluatePerfectTimingTap(challenge, estimatedTapMs, startedMs, policy)
+      const accepted = await this.recordAccepted(tx, match, timing, participant.id, dto, evaluation, estimatedTapMs, "TAP", challengeIndex)
       timing = await tx.perfectTimingMatch.findUniqueOrThrow({ where: { matchId } })
-      timing = await this.completeRoundIfReady(tx, match, timing, policy, nowMs)
       const updatedState = await tx.perfectTimingParticipantState.findUniqueOrThrow({ where: { matchParticipantId: participant.id } })
       const finalized = Boolean(timing.endedAt)
       if (finalized) match = await this.loadMatch(tx, matchId)
@@ -155,66 +155,35 @@ export class PerfectTimingService {
   }
 
   private async beginMatch(tx: Prisma.TransactionClient, match: MatchRow, timing: TimingRow, policy: PerfectTimingPolicy, now: Date) {
-    const firstRound = this.currentRound(timing)
     const startedAt = now
-    const updated = await tx.perfectTimingMatch.update({ where: { id: timing.id }, data: { startedAt, roundStartedAt: startedAt, roundDeadlineAt: new Date(now.getTime() + firstRound.durationMs), currentRoundStatus: "ACTIVE", stateHash: this.stateHash(timing, { startedAt: startedAt.toISOString(), currentRoundStatus: "ACTIVE" }) } })
+    const updated = await tx.perfectTimingMatch.update({ where: { id: timing.id }, data: { startedAt, roundStartedAt: startedAt, roundDeadlineAt: new Date(now.getTime() + policy.matchDurationMs), currentRoundStatus: "ACTIVE", stateHash: this.stateHash(timing, { startedAt: startedAt.toISOString(), currentRoundStatus: "ACTIVE", roundDeadlineAt: new Date(now.getTime() + policy.matchDurationMs).toISOString() }) } })
     await tx.match.update({ where: { id: match.id }, data: { status: "STARTED", startedAt } })
-    await tx.matchRound.updateMany({ where: { matchId: match.id, roundIndex: 1 }, data: { status: "STARTED", startedAt } })
-    await tx.analyticsEvent.create({ data: { eventName: "PERFECT_TIMING_MATCH_STARTED", occurredAt: now, matchId: match.id, playerId: match.createdByUserId, properties: { rulesVersion: policy.rulesVersion, policyVersion: policy.policyVersion, roundCount: timing.roundCount, mode: match.mode } as Prisma.InputJsonValue } })
+    await tx.analyticsEvent.create({ data: { eventName: "PERFECT_TIMING_MATCH_STARTED", occurredAt: now, matchId: match.id, playerId: match.createdByUserId, properties: { rulesVersion: policy.rulesVersion, policyVersion: policy.policyVersion, challengeCount: timing.roundCount, matchDurationMs: policy.matchDurationMs, mode: match.mode } as Prisma.InputJsonValue } })
     return updated
   }
 
   private async advanceLifecycle(tx: Prisma.TransactionClient, match: MatchRow, timing: TimingRow, policy: PerfectTimingPolicy, nowMs: number): Promise<TimingRow> {
     if (timing.currentRoundStatus === "ACTIVE" && timing.roundDeadlineAt && nowMs >= timing.roundDeadlineAt.getTime()) {
-      const participants = await tx.matchParticipant.findMany({ where: { matchId: match.id }, select: { id: true } })
-      for (const participant of participants) {
-        const action = await tx.perfectTimingAction.findFirst({ where: { matchId: match.id, matchParticipantId: participant.id, roundIndex: timing.currentRoundIndex, accepted: true } })
-        if (!action) await this.recordAutoMiss(tx, match, timing, participant.id, nowMs)
-      }
-      timing = await tx.perfectTimingMatch.findUniqueOrThrow({ where: { matchId: match.id } })
-      timing = await this.completeRoundIfReady(tx, match, timing, policy, nowMs)
-    }
-    if (timing.currentRoundStatus === "RESULT" && timing.nextRoundAt && nowMs >= timing.nextRoundAt.getTime()) {
-      if (timing.currentRoundIndex + 1 >= timing.roundCount) {
-        await this.finish(tx, match, timing, null, policy)
-        return tx.perfectTimingMatch.findUniqueOrThrow({ where: { matchId: match.id } })
-      }
-      const nextIndex = timing.currentRoundIndex + 1
-      const startedAt = new Date(nowMs)
-      const nextRound = (timing.schedule as PerfectTimingRoundSpec[])[nextIndex]
-      await tx.matchRound.updateMany({ where: { matchId: match.id, roundIndex: timing.currentRoundIndex + 1 }, data: { status: "STARTED", startedAt } })
-      return tx.perfectTimingMatch.update({ where: { id: timing.id }, data: { currentRoundIndex: nextIndex, currentRoundStatus: "ACTIVE", roundStartedAt: startedAt, roundDeadlineAt: new Date(nowMs + nextRound.durationMs), nextRoundAt: null, stateHash: this.stateHash(timing, { currentRoundIndex: nextIndex, currentRoundStatus: "ACTIVE", roundStartedAt: startedAt.toISOString() }) } })
+      await this.finish(tx, match, timing, null, policy)
+      return tx.perfectTimingMatch.findUniqueOrThrow({ where: { matchId: match.id } })
     }
     return timing
   }
 
-  private async completeRoundIfReady(tx: Prisma.TransactionClient, match: MatchRow, timing: TimingRow, policy: PerfectTimingPolicy, nowMs: number): Promise<TimingRow> {
-    if (timing.currentRoundStatus !== "ACTIVE") return timing
-    const participants = await tx.matchParticipant.findMany({ where: { matchId: match.id }, select: { id: true } })
-    const actions = await tx.perfectTimingAction.findMany({ where: { matchId: match.id, roundIndex: timing.currentRoundIndex, accepted: true }, select: { matchParticipantId: true } })
-    const acted = new Set(actions.map((item: any) => item.matchParticipantId))
-    if (acted.size < participants.length) return timing
-    const roundActions = await tx.perfectTimingAction.findMany({ where: { matchId: match.id, roundIndex: timing.currentRoundIndex, accepted: true }, select: { matchParticipantId: true, judgement: true, timingErrorMs: true, scoreDelta: true } })
-    const roundResult = { roundIndex: timing.currentRoundIndex, actions: roundActions }
-    const roundResults = [...this.jsonArray(timing.roundResults), roundResult]
-    const resultState = await tx.perfectTimingMatch.update({ where: { id: timing.id }, data: { currentRoundStatus: "RESULT", nextRoundAt: new Date(nowMs + policy.interRoundDurationMs), roundResults: roundResults as Prisma.InputJsonValue, stateHash: this.stateHash(timing, { currentRoundStatus: "RESULT", roundResults }) } })
-    await tx.matchRound.updateMany({ where: { matchId: match.id, roundIndex: timing.currentRoundIndex + 1 }, data: { status: "FINISHED", endedAt: new Date(nowMs) } })
-    return resultState
-  }
-
   private async advanceBot(tx: Prisma.TransactionClient, match: MatchRow, timing: TimingRow, policy: PerfectTimingPolicy, nowMs: number): Promise<TimingRow> {
     const bot = match.participants.find((item: any) => item.participantType === "BOT")
-    if (!bot || !policy.bot.enabled || timing.currentRoundStatus !== "ACTIVE" || !timing.roundStartedAt) return timing
-    const existing = await tx.perfectTimingAction.findFirst({ where: { matchId: match.id, matchParticipantId: bot.id, roundIndex: timing.currentRoundIndex, accepted: true } })
-    if (existing || nowMs < timing.roundStartedAt.getTime() + policy.bot.reactionDelayMs) return timing
-    const round = this.currentRound(timing)
-    const best = this.bestBotTap(round, timing.roundStartedAt.getTime(), policy, match.serverNonce, timing.currentRoundIndex)
+    if (!bot || !policy.bot.enabled || timing.currentRoundStatus !== "ACTIVE" || !timing.startedAt) return timing
+    if (timing.roundDeadlineAt && nowMs >= timing.roundDeadlineAt.getTime()) return timing
     const state = await tx.perfectTimingParticipantState.findUniqueOrThrow({ where: { matchParticipantId: bot.id } })
-    const dto = { sequence: state.nextSequence, clientActionId: `bot:${match.id}:${timing.currentRoundIndex}:${bot.id}`, clientTapMonotonicMs: 0 } as PerfectTimingTapDto
-    const evaluation = evaluatePerfectTimingTap(round, best, timing.roundStartedAt.getTime(), policy)
-    await this.recordAccepted(tx, match, timing, bot.id, dto, evaluation, best, "BOT_TAP")
-    const updated = await tx.perfectTimingMatch.findUniqueOrThrow({ where: { matchId: match.id } })
-    return this.completeRoundIfReady(tx, match, updated, policy, nowMs)
+    const challengeIndex = Math.min(state.nextSequence - 1, timing.roundCount - 1)
+    const challenge = this.challengeAt(timing, challengeIndex)
+    const startedAt = state.lastTapAt?.getTime() ?? timing.startedAt.getTime()
+    if (nowMs < startedAt + policy.bot.reactionDelayMs) return timing
+    const best = this.bestBotTap(challenge, startedAt, policy, match.serverNonce, challengeIndex)
+    const dto = { sequence: state.nextSequence, clientActionId: `bot:${match.id}:${challengeIndex}:${bot.id}`, clientTapMonotonicMs: 0 } as PerfectTimingTapDto
+    const evaluation = evaluatePerfectTimingTap(challenge, best, startedAt, policy)
+    await this.recordAccepted(tx, match, timing, bot.id, dto, evaluation, best, "BOT_TAP", challengeIndex)
+    return tx.perfectTimingMatch.findUniqueOrThrow({ where: { matchId: match.id } })
   }
 
   private bestBotTap(round: PerfectTimingRoundSpec, startedAt: number, policy: PerfectTimingPolicy, seed: string, roundIndex: number): number {
@@ -228,30 +197,23 @@ export class PerfectTimingService {
     return Math.max(startedAt, Math.min(startedAt + round.durationMs, bestTime + jitter))
   }
 
-  private async recordAccepted(tx: Prisma.TransactionClient, match: MatchRow, timing: TimingRow, participantId: string, dto: PerfectTimingTapDto, evaluation: { markerPosition: number; timingErrorMs: number; judgement: PerfectTimingJudgement; scoreDelta: number }, estimatedTapMs: number, actionType = "TAP") {
+  private async recordAccepted(tx: Prisma.TransactionClient, match: MatchRow, timing: TimingRow, participantId: string, dto: PerfectTimingTapDto, evaluation: { markerPosition: number; timingErrorMs: number; judgement: PerfectTimingJudgement; scoreDelta: number }, estimatedTapMs: number, actionType = "TAP", challengeIndex = timing.currentRoundIndex) {
     const now = new Date()
     const state = await tx.perfectTimingParticipantState.findUniqueOrThrow({ where: { matchParticipantId: participantId } })
     const counts = { perfectCount: state.perfectCount + (evaluation.judgement === "PERFECT" ? 1 : 0), greatCount: state.greatCount + (evaluation.judgement === "GREAT" ? 1 : 0), goodCount: state.goodCount + (evaluation.judgement === "GOOD" ? 1 : 0), missCount: state.missCount + (evaluation.judgement === "MISS" ? 1 : 0) }
-    const action = await tx.perfectTimingAction.create({ data: { matchId: match.id, perfectTimingMatchId: timing.id, matchParticipantId: participantId, roundIndex: timing.currentRoundIndex, sequence: dto.sequence, clientActionId: dto.clientActionId, actionType, accepted: true, judgement: evaluation.judgement, timingErrorMs: evaluation.timingErrorMs, scoreDelta: evaluation.scoreDelta, estimatedTapAtServerMs: BigInt(Math.round(estimatedTapMs)), payload: { markerPosition: evaluation.markerPosition, judgement: evaluation.judgement, timingErrorMs: evaluation.timingErrorMs, scoreDelta: evaluation.scoreDelta } as Prisma.InputJsonValue, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
+    const action = await tx.perfectTimingAction.create({ data: { matchId: match.id, perfectTimingMatchId: timing.id, matchParticipantId: participantId, roundIndex: challengeIndex, sequence: dto.sequence, clientActionId: dto.clientActionId, actionType, accepted: true, judgement: evaluation.judgement, timingErrorMs: evaluation.timingErrorMs, scoreDelta: evaluation.scoreDelta, estimatedTapAtServerMs: BigInt(Math.round(estimatedTapMs)), payload: { markerPosition: evaluation.markerPosition, judgement: evaluation.judgement, timingErrorMs: evaluation.timingErrorMs, scoreDelta: evaluation.scoreDelta, challengeIndex } as Prisma.InputJsonValue, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
     await tx.perfectTimingParticipantState.update({ where: { id: state.id }, data: { score: { increment: evaluation.scoreDelta }, ...counts, nextSequence: { increment: 1 }, lastTapAt: now } })
+    await tx.perfectTimingMatch.update({ where: { id: timing.id }, data: { stateHash: this.stateHash(timing, { challengeIndex, participantId, sequence: dto.sequence, score: state.score + evaluation.scoreDelta }) } })
     await tx.matchParticipant.update({ where: { id: participantId }, data: { answeredCount: { increment: 1 } } })
-    await tx.matchEvent.create({ data: { matchId: match.id, participantId, sequence: dto.sequence, eventType: "SCORE_UPDATE", clientEventId: dto.clientActionId, payload: { game: "perfect_timing", eventKind: actionType, roundIndex: timing.currentRoundIndex, judgement: evaluation.judgement, timingErrorMs: evaluation.timingErrorMs, scoreDelta: evaluation.scoreDelta, markerPosition: evaluation.markerPosition, timeTakenMs: evaluation.timingErrorMs } as Prisma.InputJsonValue, accepted: true, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
+    await tx.matchEvent.create({ data: { matchId: match.id, participantId, sequence: dto.sequence, eventType: "SCORE_UPDATE", clientEventId: dto.clientActionId, payload: { game: "perfect_timing", eventKind: actionType, challengeIndex, judgement: evaluation.judgement, timingErrorMs: evaluation.timingErrorMs, scoreDelta: evaluation.scoreDelta, markerPosition: evaluation.markerPosition, timeTakenMs: evaluation.timingErrorMs } as Prisma.InputJsonValue, accepted: true, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
     return action
   }
 
-  private async recordAutoMiss(tx: Prisma.TransactionClient, match: MatchRow, timing: TimingRow, participantId: string, nowMs: number) {
-    const state = await tx.perfectTimingParticipantState.findUniqueOrThrow({ where: { matchParticipantId: participantId } })
-    const dto = { sequence: state.nextSequence, clientActionId: `auto-miss:${match.id}:${timing.currentRoundIndex}:${participantId}`, clientTapMonotonicMs: 0 } as PerfectTimingTapDto
-    const action = await tx.perfectTimingAction.create({ data: { matchId: match.id, perfectTimingMatchId: timing.id, matchParticipantId: participantId, roundIndex: timing.currentRoundIndex, sequence: dto.sequence, clientActionId: dto.clientActionId, actionType: "AUTO_MISS", accepted: true, judgement: "MISS", timingErrorMs: null, scoreDelta: 0, payload: { judgement: "MISS", reason: "NO_TAP_BEFORE_DEADLINE" } as Prisma.InputJsonValue, serverReceivedAt: new Date(nowMs) } })
-    await tx.perfectTimingParticipantState.update({ where: { id: state.id }, data: { missCount: { increment: 1 }, nextSequence: { increment: 1 } } })
-    await tx.matchEvent.create({ data: { matchId: match.id, participantId, sequence: dto.sequence, eventType: "SCORE_UPDATE", clientEventId: dto.clientActionId, payload: { game: "perfect_timing", eventKind: "AUTO_MISS", roundIndex: timing.currentRoundIndex, judgement: "MISS", scoreDelta: 0, timeTakenMs: 0 } as Prisma.InputJsonValue, accepted: true, serverReceivedAt: new Date(nowMs) } })
-    return action
-  }
-
-  private async recordRejected(tx: Prisma.TransactionClient, match: MatchRow, timing: TimingRow, participantId: string, dto: PerfectTimingTapDto, reason: string, estimatedTapMs?: number) {
-    const action = await tx.perfectTimingAction.create({ data: { matchId: match.id, perfectTimingMatchId: timing.id, matchParticipantId: participantId, roundIndex: timing.currentRoundIndex, sequence: dto.sequence, clientActionId: dto.clientActionId, actionType: "TAP", accepted: false, rejectionReason: reason, estimatedTapAtServerMs: estimatedTapMs == null ? undefined : BigInt(Math.round(estimatedTapMs)), payload: { reason } as Prisma.InputJsonValue, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
+  private async recordRejected(tx: Prisma.TransactionClient, match: MatchRow, timing: TimingRow, participantId: string, dto: PerfectTimingTapDto, reason: string, estimatedTapMs?: number, challengeIndex = timing.currentRoundIndex) {
+    const action = await tx.perfectTimingAction.create({ data: { matchId: match.id, perfectTimingMatchId: timing.id, matchParticipantId: participantId, roundIndex: challengeIndex, sequence: dto.sequence, clientActionId: dto.clientActionId, actionType: "TAP", accepted: false, rejectionReason: reason, estimatedTapAtServerMs: estimatedTapMs == null ? undefined : BigInt(Math.round(estimatedTapMs)), payload: { reason, challengeIndex } as Prisma.InputJsonValue, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
     await tx.perfectTimingParticipantState.update({ where: { matchParticipantId: participantId }, data: { nextSequence: { increment: 1 } } })
-    await tx.matchEvent.create({ data: { matchId: match.id, participantId, sequence: dto.sequence, eventType: "SCORE_UPDATE", clientEventId: dto.clientActionId, payload: { game: "perfect_timing", eventKind: "TAP_REJECTED", roundIndex: timing.currentRoundIndex, reason, scoreDelta: 0 } as Prisma.InputJsonValue, accepted: false, rejectionReason: reason, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
+    await tx.perfectTimingMatch.update({ where: { id: timing.id }, data: { stateHash: this.stateHash(timing, { challengeIndex, participantId, sequence: dto.sequence, rejected: true, reason }) } })
+    await tx.matchEvent.create({ data: { matchId: match.id, participantId, sequence: dto.sequence, eventType: "SCORE_UPDATE", clientEventId: dto.clientActionId, payload: { game: "perfect_timing", eventKind: "TAP_REJECTED", challengeIndex, reason, scoreDelta: 0 } as Prisma.InputJsonValue, accepted: false, rejectionReason: reason, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
     return action
   }
 
@@ -269,7 +231,7 @@ export class PerfectTimingService {
       const result: MatchParticipantResult = forfeitingParticipantId === participant.id ? "FORFEIT" : forfeitingParticipantId ? "LOSS" : winners.length !== 1 ? "DRAW" : state?.score === highest ? "WIN" : "LOSS"
       await tx.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: state?.score ?? 0, result, submittedAt: endedAt } })
     }
-    await tx.analyticsEvent.create({ data: { eventName: "PERFECT_TIMING_MATCH_FINISHED", occurredAt: endedAt, matchId: match.id, properties: { winnerParticipantIds: winners.map((item: any) => item.matchParticipantId), policyVersion: policy.policyVersion, roundCount: timing.roundCount } as Prisma.InputJsonValue } })
+    await tx.analyticsEvent.create({ data: { eventName: "PERFECT_TIMING_MATCH_FINISHED", occurredAt: endedAt, matchId: match.id, properties: { winnerParticipantIds: winners.map((item: any) => item.matchParticipantId), policyVersion: policy.policyVersion, challengeCount: timing.roundCount } as Prisma.InputJsonValue } })
   }
 
   private async settleFinishedMatch(matchId: string) {
@@ -301,7 +263,6 @@ export class PerfectTimingService {
     const created = await tx.perfectTimingMatch.create({ data: { matchId: match.id, seed: match.serverNonce, scheduleCommitment: commitment, rulesVersion: policy.rulesVersion, policyVersion: policy.policyVersion, roundCount: schedule.length, schedule: schedule as unknown as Prisma.InputJsonValue, roundResults: [], stateHash: perfectTimingStateHash(initial) } })
     const participants = await tx.matchParticipant.findMany({ where: { matchId: match.id }, select: { id: true } })
     for (const participant of participants) await tx.perfectTimingParticipantState.create({ data: { perfectTimingMatchId: created.id, matchParticipantId: participant.id } })
-    for (let index = 2; index <= schedule.length; index += 1) await tx.matchRound.create({ data: { matchId: match.id, roundIndex: index, gameDefinitionId: match.gameDefinitionId, status: "CREATED", challengeSeedHash: perfectTimingStateHash({ seed: match.serverNonce, roundIndex: index }) } })
     return created
   }
 
@@ -309,16 +270,22 @@ export class PerfectTimingService {
     const states = await tx.perfectTimingParticipantState.findMany({ where: { perfectTimingMatchId: timing.id } })
     const self = states.find((item: any) => item.matchParticipantId === participantId)
     if (!self) throw new ConflictException("The Perfect Timing player state is unavailable")
-    const actions = await tx.perfectTimingAction.findMany({ where: { matchId: match.id, roundIndex: timing.currentRoundIndex, accepted: true }, orderBy: { serverReceivedAt: "asc" } })
+    const actions = await tx.perfectTimingAction.findMany({ where: { matchId: match.id, accepted: true }, orderBy: { serverReceivedAt: "desc" }, take: Math.max(match.participants.length * 2, 10) })
+    const latestActionByParticipant = new Map<string, any>()
+    for (const action of actions) if (!latestActionByParticipant.has(action.matchParticipantId)) latestActionByParticipant.set(action.matchParticipantId, action)
+    const challengeIndex = Math.min(Math.max(self.nextSequence - 1, 0), timing.roundCount - 1)
+    const challenge = this.challengeAt(timing, challengeIndex)
+    const challengeStartedAt = self.lastTapAt ?? timing.startedAt
     const finished = ["FINISHED", "REVIEW", "SETTLED"].includes(match.status)
     const participants = match.participants.map((item: any) => {
       const state = states.find((entry: any) => entry.matchParticipantId === item.id)
-      const action = actions.find((entry: any) => entry.matchParticipantId === item.id)
-      const publicAction = action && (timing.currentRoundStatus === "RESULT" || finished) ? this.actionProjection(action, state?.score ?? 0) : action && item.id === participantId ? this.actionProjection(action, state?.score ?? 0) : null
+      const action = latestActionByParticipant.get(item.id)
+      const publicAction = action ? this.actionProjection(action, state?.score ?? 0) : null
       return { participantId: item.id, userId: item.userId, participantType: item.participantType, name: item.user?.profile?.displayName ?? item.user?.username ?? "SMARTS bot", username: item.user?.username ?? null, avatarUrl: item.user?.profile?.avatarUrl ?? null, score: state?.score ?? 0, perfectCount: state?.perfectCount ?? 0, greatCount: state?.greatCount ?? 0, goodCount: state?.goodCount ?? 0, missCount: state?.missCount ?? 0, action: publicAction }
     })
-    const startedAtMs = timing.roundStartedAt?.getTime() ?? null
+    const startedAtMs = challengeStartedAt?.getTime() ?? null
     const remainingMilliseconds = timing.roundDeadlineAt ? Math.max(0, timing.roundDeadlineAt.getTime() - Date.now()) : 0
+    const challengeProjection = { current: self.nextSequence, total: timing.roundCount, status: timing.currentRoundStatus, spec: challenge, startedAt: challengeStartedAt, deadlineAt: timing.roundDeadlineAt, remainingMilliseconds, markerPosition: startedAtMs == null ? null : markerPositionAt(challenge, Date.now(), startedAtMs), targetCenter: startedAtMs == null ? challenge.targetCenter : targetCenterAt(challenge, Date.now(), startedAtMs) }
     return {
       matchId: match.id,
       gameKey: "perfect_timing",
@@ -327,14 +294,16 @@ export class PerfectTimingService {
       rulesVersion: timing.rulesVersion,
       policyVersion: timing.policyVersion,
       scheduleCommitment: timing.scheduleCommitment,
-      round: { current: timing.currentRoundIndex + 1, total: timing.roundCount, status: timing.currentRoundStatus, spec: (timing.schedule as PerfectTimingRoundSpec[])[timing.currentRoundIndex] ?? null, startedAt: timing.roundStartedAt, deadlineAt: timing.roundDeadlineAt, remainingMilliseconds, markerPosition: startedAtMs == null ? null : markerPositionAt(this.currentRound(timing), Date.now(), startedAtMs), targetCenter: startedAtMs == null ? this.currentRound(timing).targetCenter : targetCenterAt(this.currentRound(timing), Date.now(), startedAtMs) },
+      challenge: challengeProjection,
+      // Keep the old key for older clients while they roll forward.
+      round: challengeProjection,
       schedule: timing.schedule,
       roundResults: timing.roundResults,
       serverNow: new Date().toISOString(),
       serverNowMs: Date.now(),
       clock: { maxOffsetMs: policy.clockOffsetLimitMs, maxTapAgeMs: policy.maxTapAgeMs, maxTapLeadMs: policy.maxTapLeadMs },
       selfParticipantId: participantId,
-      self: { score: self.score, perfectCount: self.perfectCount, greatCount: self.greatCount, goodCount: self.goodCount, missCount: self.missCount, nextSequence: self.nextSequence, action: actions.find((item: any) => item.matchParticipantId === participantId) ? this.actionProjection(actions.find((item: any) => item.matchParticipantId === participantId), self.score) : null },
+      self: { score: self.score, perfectCount: self.perfectCount, greatCount: self.greatCount, goodCount: self.goodCount, missCount: self.missCount, nextSequence: self.nextSequence, action: latestActionByParticipant.has(participantId) ? this.actionProjection(latestActionByParticipant.get(participantId), self.score) : null },
       participants,
       result: finished ? { finalScores: participants.map((item: any) => ({ participantId: item.participantId, score: item.score })), practice: match.mode === "PRACTICE" } : null,
       stateHash: timing.stateHash,
@@ -343,7 +312,12 @@ export class PerfectTimingService {
 
   private actionProjection(action: any, totalScore: number) { return { accepted: action.accepted, sequence: action.sequence, roundIndex: action.roundIndex, judgement: action.judgement ?? undefined, timingErrorMs: action.timingErrorMs ?? undefined, scoreDelta: action.scoreDelta ?? 0, totalScore, reason: action.rejectionReason ?? undefined, actionType: action.actionType } }
 
-  private currentRound(timing: TimingRow): PerfectTimingRoundSpec { return (timing.schedule as PerfectTimingRoundSpec[])[timing.currentRoundIndex] }
+  private challengeAt(timing: TimingRow, index: number): PerfectTimingRoundSpec {
+    const schedule = timing.schedule as PerfectTimingRoundSpec[]
+    return schedule[Math.max(0, Math.min(index, schedule.length - 1))]
+  }
+
+  private currentRound(timing: TimingRow): PerfectTimingRoundSpec { return this.challengeAt(timing, timing.currentRoundIndex) }
 
   private policy(match: MatchRow): PerfectTimingPolicy {
     const settings = match.gameConfig?.settings && typeof match.gameConfig.settings === "object" && !Array.isArray(match.gameConfig.settings) ? match.gameConfig.settings as Record<string, unknown> : {}

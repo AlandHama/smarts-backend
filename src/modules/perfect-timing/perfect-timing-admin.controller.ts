@@ -41,7 +41,7 @@ export class PerfectTimingAdminController {
         scoreMultiplierForXp: previous?.scoreMultiplierForXp ?? 1, maxEloDelta: previous?.maxEloDelta ?? 100, soloEloScoreDivisor: previous?.soloEloScoreDivisor ?? 1000, soloEloMaxDelta: previous?.soloEloMaxDelta ?? 50,
         winnerBaseReward: previous?.winnerBaseReward ?? 0n, loserBaseReward: previous?.loserBaseReward ?? 0n, drawReward: previous?.drawReward ?? 0n, scoreRewardDivisor: previous?.scoreRewardDivisor ?? 1, scoreRewardCap: previous?.scoreRewardCap ?? 250000n,
         winnerRewardBonusMax: previous?.winnerRewardBonusMax ?? 0n, loserRewardBonusMax: previous?.loserRewardBonusMax ?? 0n, multiplayerRewardReference: previous?.multiplayerRewardReference ?? 0n,
-        correctAnswerPoints: { PERFECT: 100, GREAT: 75, GOOD: 40, MISS: 0 }, wrongAnswerPenaltyPercent: 0, maxAnswerTimeSeconds: Math.ceil(policy.roundDurationMs / 1000), maxMatchDurationSeconds: Math.ceil((policy.rankedRoundMax * (policy.roundDurationMs + policy.interRoundDurationMs)) / 1000), maxQuestions: 0,
+        correctAnswerPoints: { PERFECT: 100, GREAT: 75, GOOD: 40, MISS: 0 }, wrongAnswerPenaltyPercent: 0, maxAnswerTimeSeconds: Math.ceil(policy.roundDurationMs / 1000), maxMatchDurationSeconds: Math.ceil(policy.matchDurationMs / 1000), maxQuestions: 0,
         instantSkipPriceGld: previous?.instantSkipPriceGld ?? 0n, rankingEnabled: policy.rankedEnabled && !policy.killSwitch, rankingEloMultiplier: previous?.rankingEloMultiplier ?? 1, rankingLevelMultiplier: previous?.rankingLevelMultiplier ?? 1, rankingCoinMultiplier: previous?.rankingCoinMultiplier ?? 1,
         settings: this.jsonValue({ ...(previous ? this.objectValue(previous.settings) : {}), authoritative: true, perfectTimingPolicy: policy }),
       } })

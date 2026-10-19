@@ -6,7 +6,6 @@ import {
   PerfectTimingMovementModel,
   PerfectTimingPolicy,
   pointsForPerfectTiming,
-  roundCountForMode,
 } from "./perfect-timing-score"
 
 export interface PerfectTimingRoundSpec {
@@ -38,6 +37,11 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value))
 }
 
+function cycleElapsedMs(serverTimeMs: number, startedAtServerMs: number, durationMs: number): number {
+  const elapsed = serverTimeMs - startedAtServerMs
+  return ((elapsed % durationMs) + durationMs) % durationMs
+}
+
 function triangleWave(value: number): number {
   const phase = ((value % 1) + 1) % 1
   return phase <= 0.5 ? phase * 2 : 2 - phase * 2
@@ -51,7 +55,9 @@ function ease(model: PerfectTimingMovementModel, value: number): number {
 }
 
 export function createPerfectTimingSchedule(seed: string, policy: PerfectTimingPolicy, mode: PerfectTimingMode): PerfectTimingRoundSpec[] {
-  const count = roundCountForMode(policy, mode)
+  // The schedule is a deterministic challenge bank. Players consume it at
+  // their own pace until the shared match clock expires.
+  const count = policy.challengeCount
   return Array.from({ length: count }, (_, roundIndex) => {
     const progress = count <= 1 ? 0 : roundIndex / (count - 1)
     const targetWidth = progress < 0.34 ? policy.targetWidthEarly : progress < 0.67 ? policy.targetWidthMiddle : policy.targetWidthLate
@@ -72,7 +78,7 @@ export function createPerfectTimingSchedule(seed: string, policy: PerfectTimingP
 }
 
 export function markerPositionAt(round: PerfectTimingRoundSpec, serverTimeMs: number, roundStartedAtServerMs: number): number {
-  const elapsed = clamp(serverTimeMs - roundStartedAtServerMs, 0, round.durationMs)
+  const elapsed = cycleElapsedMs(serverTimeMs, roundStartedAtServerMs, round.durationMs)
   const progress = elapsed / round.durationMs
   const wave = ease(round.movementModel, triangleWave(round.startPhase + progress * round.speedCycles))
   return round.railStart + (round.railEnd - round.railStart) * clamp(wave, 0, 1)
@@ -80,7 +86,7 @@ export function markerPositionAt(round: PerfectTimingRoundSpec, serverTimeMs: nu
 
 export function targetCenterAt(round: PerfectTimingRoundSpec, serverTimeMs: number, roundStartedAtServerMs: number): number {
   if (round.movementModel !== "TARGET_DRIFT") return round.targetCenter
-  const elapsed = clamp(serverTimeMs - roundStartedAtServerMs, 0, round.durationMs)
+  const elapsed = cycleElapsedMs(serverTimeMs, roundStartedAtServerMs, round.durationMs)
   const drift = Math.sin((elapsed / round.durationMs) * Math.PI * 2 + round.startPhase * Math.PI * 2) * 0.12
   return clamp(round.targetCenter + drift, round.railStart + round.targetWidth / 2, round.railEnd - round.targetWidth / 2)
 }
@@ -108,7 +114,7 @@ function nearestTargetCrossingMs(round: PerfectTimingRoundSpec, tapOffsetMs: num
 }
 
 export function evaluatePerfectTimingTap(round: PerfectTimingRoundSpec, tapAtServerMs: number, roundStartedAtServerMs: number, policy: PerfectTimingPolicy): PerfectTimingEvaluation {
-  const tapOffsetMs = clamp(tapAtServerMs - roundStartedAtServerMs, 0, round.durationMs)
+  const tapOffsetMs = cycleElapsedMs(tapAtServerMs, roundStartedAtServerMs, round.durationMs)
   const nearest = nearestTargetCrossingMs(round, tapOffsetMs)
   const timingErrorMs = Math.round(Math.abs(tapOffsetMs - nearest))
   const judgement = classifyPerfectTiming(timingErrorMs, policy)

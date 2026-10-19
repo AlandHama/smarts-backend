@@ -26,6 +26,10 @@ export interface PerfectTimingPolicy {
   practiceRounds: number
   rankedRoundMin: number
   rankedRoundMax: number
+  /** Shared match clock. Challenges are consumed independently by each player. */
+  matchDurationMs: number
+  /** Deterministic challenge bank generated for the match. */
+  challengeCount: number
   roundDurationMs: number
   interRoundDurationMs: number
   perfectWindowMs: number
@@ -57,6 +61,8 @@ export const DEFAULT_PERFECT_TIMING_POLICY: PerfectTimingPolicy = {
   practiceRounds: 5,
   rankedRoundMin: 10,
   rankedRoundMax: 15,
+  matchDurationMs: 35000,
+  challengeCount: 100,
   roundDurationMs: 3000,
   interRoundDurationMs: 650,
   perfectWindowMs: 40,
@@ -93,6 +99,8 @@ export function mergePerfectTimingPolicy(value: unknown): PerfectTimingPolicy {
     throw new Error("Perfect Timing score windows are invalid")
   }
   if (!Number.isFinite(merged.rolloutPercentage) || merged.rolloutPercentage < 0 || merged.rolloutPercentage > 100) throw new Error("Perfect Timing rollout percentage must be between 0 and 100")
+  if (!Number.isFinite(merged.matchDurationMs) || merged.matchDurationMs < 5000 || merged.matchDurationMs > 5 * 60 * 1000) throw new Error("Perfect Timing match duration is invalid")
+  if (!Number.isInteger(merged.challengeCount) || merged.challengeCount < 10 || merged.challengeCount > 1000) throw new Error("Perfect Timing challenge count is invalid")
   if (merged.rankedRoundMin < 10 || merged.rankedRoundMax > 15 || merged.rankedRoundMin > merged.rankedRoundMax) throw new Error("Perfect Timing ranked round bounds are invalid")
   return merged
 }
