@@ -22,8 +22,9 @@ export class ForfeitMatchTransaction extends PrismaTransaction<{ matchId: string
     const acceptedFinish = await transaction.matchEvent.findFirst({ where: { matchId: match.id, participantId: participant.id, eventType: "FINISH", accepted: true }, select: { id: true } })
     if (acceptedFinish) return { matchId: match.id, status: match.status, result: "COMPLETED" }
     const previous = await transaction.matchEvent.findFirst({ where: { matchId: match.id, participantId: participant.id }, orderBy: { sequence: "desc" }, select: { sequence: true } })
-    await transaction.matchEvent.create({ data: { matchId: match.id, participantId: participant.id, roundId: round.id, sequence: (previous?.sequence ?? 0) + 1, eventType: "FORFEIT", clientEventId: `server-forfeit-${participant.id}-${Date.now()}`, accepted: true, payload: { submitted: true } as Prisma.InputJsonValue } })
-    await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "FORFEIT", submittedAt: new Date() } })
+    const now = new Date()
+    await transaction.matchEvent.create({ data: { matchId: match.id, participantId: participant.id, roundId: round.id, sequence: (previous?.sequence ?? 0) + 1, eventType: "FORFEIT", clientEventId: `server-forfeit-${participant.id}-${Date.now()}`, accepted: true, payload: { submitted: true, verified: true, terminationReason: "VOLUNTARY_FORFEIT" } as Prisma.InputJsonValue } })
+    await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "FORFEIT", submittedAt: now, lastActivityAt: now, disconnectGraceUntil: null, terminationReason: "VOLUNTARY_FORFEIT" } })
     await this.botGameplay.completeWithinTransaction({ matchId: match.id, userId: input.userId }, transaction)
     const otherPending = match.participants.some((item) => item.id !== participant.id && item.participantType === "PLAYER" && item.result === "PENDING")
     if (!otherPending) {

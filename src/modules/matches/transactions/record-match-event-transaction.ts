@@ -69,20 +69,24 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
       if (input.dto.payload && Object.keys(input.dto.payload).length) return this.reject(transaction, base, "This event type does not accept a payload")
     }
     if (input.dto.eventType === MatchEventType.FINISH) {
-      const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { submitted: true } } })
-      await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "COMPLETED", submittedAt: new Date() } })
+      const now = new Date()
+      const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { submitted: true, verified: true } } })
+      await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "COMPLETED", submittedAt: now, lastActivityAt: now, disconnectGraceUntil: null } })
       await this.botGameplay.completeWithinTransaction({ matchId: match.id, userId: input.userId }, transaction)
       await this.closeIfAllHumanParticipantsFinished(transaction, match.id)
       return event
     }
     if (input.dto.eventType === MatchEventType.FORFEIT || input.dto.eventType === MatchEventType.LEAVE) {
-      const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { submitted: true } } })
-      await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "FORFEIT", submittedAt: new Date() } })
+      const now = new Date()
+      const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { submitted: true, verified: true } } })
+      await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "FORFEIT", submittedAt: now, lastActivityAt: now, disconnectGraceUntil: null } })
       await this.botGameplay.completeWithinTransaction({ matchId: match.id, userId: input.userId }, transaction)
       await this.closeIfAllHumanParticipantsFinished(transaction, match.id)
       return event
     }
-    return transaction.matchEvent.create({ data: { ...base, accepted: true, payload: {} } })
+    const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { verified: true } } })
+    await transaction.matchParticipant.update({ where: { id: participant.id }, data: { lastActivityAt: new Date() } })
+    return event
   }
 
   private async emote(transaction: Prisma.TransactionClient, participant: any, base: any, payload?: Record<string, unknown>) {
@@ -105,7 +109,11 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     const answerCorrect = payload.answerCorrect
     const timeTakenMs = typeof payload.timeTakenMs === "number" ? payload.timeTakenMs : -1
     const usesLegacyLocalAnswer = LEGACY_LOCAL_GAME_KEYS.has(match.gameDefinition.key)
-    if (!isUuid(assignmentId) || token.length < 16 || token.length > 256 || (!usesLegacyLocalAnswer && !Number.isSafeInteger(selectedAnswerIndex)) || (usesLegacyLocalAnswer && typeof answerCorrect !== "boolean") || !Number.isSafeInteger(timeTakenMs)) return this.reject(transaction, base, "Answer payload is invalid")
+    // Any legacy answer that carries the client correctness flag stays on the
+    // compatibility path, even if an old mobile build also sends its 0/1
+    // placeholder index. That index is not evidence of server verification.
+    const usesLegacyClientCorrectness = usesLegacyLocalAnswer && typeof answerCorrect === "boolean"
+    if (!isUuid(assignmentId) || token.length < 16 || token.length > 256 || (!usesLegacyLocalAnswer && !Number.isSafeInteger(selectedAnswerIndex)) || (usesLegacyLocalAnswer && !usesLegacyClientCorrectness && !Number.isSafeInteger(selectedAnswerIndex)) || !Number.isSafeInteger(timeTakenMs)) return this.reject(transaction, base, "Answer payload is invalid")
 
     const assignment = await transaction.matchContentAssignment.findFirst({ where: { id: assignmentId, matchId: match.id, roundId, participantId: participant.id }, include: { contentItem: true } })
     if (!assignment || createHash("sha256").update(token).digest("hex") !== assignment.assignmentTokenHash) return this.reject(transaction, base, "Invalid assignment")
@@ -115,7 +123,7 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     if (timeTakenMs < 0 || timeTakenMs > (match.gameConfig?.maxAnswerTimeSeconds ?? 0) * 1000) return this.reject(transaction, base, "Answer time is outside the allowed window")
 
     const options = assignment.contentItem.options as unknown
-    if (!Array.isArray(options) || (!usesLegacyLocalAnswer && (selectedAnswerIndex < 0 || selectedAnswerIndex >= options.length))) return this.reject(transaction, base, "Selected answer is invalid")
+    if (!Array.isArray(options) || ((!usesLegacyClientCorrectness || !usesLegacyLocalAnswer) && (selectedAnswerIndex < 0 || selectedAnswerIndex >= options.length))) return this.reject(transaction, base, "Selected answer is invalid")
     const answeredCount = await transaction.matchContentAssignment.count({ where: { matchId: match.id, roundId, participantId: participant.id, answeredAt: { not: null } } })
     if (assignment.position !== answeredCount) return this.reject(transaction, base, "Assignments must be answered in order")
 
@@ -132,7 +140,7 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     // server-issued seed, so their UI does not use the generic content-item
     // option index. Keep the server score authoritative while accepting the
     // local correctness signal only for this explicit legacy allow-list.
-    const correct = usesLegacyLocalAnswer
+    const correct = usesLegacyClientCorrectness
       ? answerCorrect === true
       : selectedAnswerIndex === randomized.answerIndex
     const penalty = BigInt(Math.floor(correctPoints * (penaltyPercent / 100)))
@@ -142,8 +150,8 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     const after = before + points < 0n ? 0n : before + points
     if (after > 2147483647n) return this.reject(transaction, base, "Score exceeds the game limit")
 
-    const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, selectedAnswerIndex, correct, pointsEarned: points.toString(), timeTakenMs } } })
-    await transaction.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: Number(after), answeredCount: { increment: 1 } } })
+    const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, selectedAnswerIndex: selectedAnswerIndex >= 0 ? selectedAnswerIndex : null, correct, clientCorrectness: typeof answerCorrect === "boolean" ? answerCorrect : undefined, verified: !usesLegacyClientCorrectness, verificationMode: usesLegacyClientCorrectness ? "LEGACY_CLIENT_CORRECTNESS" : "SERVER_ASSIGNMENT" as const, pointsEarned: points.toString(), timeTakenMs } } })
+    await transaction.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: Number(after), answeredCount: { increment: 1 }, lastActivityAt: now } })
     await transaction.matchContentAssignment.update({ where: { id: assignment.id }, data: { answeredAt: now } })
     await this.updateCooperativeScore(transaction, participant.id, correct)
     return event
@@ -184,8 +192,8 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
       sourceType: WalletTransactionSourceType.PURCHASE,
       metadata: { reason: "INSTANT_SKIP", matchId: match.id, assignmentId: assignment.id, priceGld: price.toString() },
     }, transaction)
-    const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, correct: true, skipped: true, pointsEarned: correctPoints.toString(), timeTakenMs, gldPrice: price.toString() } } })
-    await transaction.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: Number(after), answeredCount: { increment: 1 } } })
+    const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, correct: true, skipped: true, verified: true, pointsEarned: correctPoints.toString(), timeTakenMs, gldPrice: price.toString() } } })
+    await transaction.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: Number(after), answeredCount: { increment: 1 }, lastActivityAt: now } })
     await transaction.matchContentAssignment.update({ where: { id: assignment.id }, data: { answeredAt: now } })
     await this.updateCooperativeScore(transaction, participant.id, true)
     return event

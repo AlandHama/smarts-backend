@@ -42,7 +42,7 @@ export class DominoService {
       match = await this.loadMatch(tx, matchId)
       let stateRow = await tx.dominoMatchState.findUnique({ where: { matchId } })
       const now = new Date()
-      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now } })
+      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now, lastActivityAt: now, disconnectGraceUntil: null } })
       const participants = await tx.matchParticipant.findMany({ where: { matchId }, select: { id: true, participantType: true, readyAt: true } })
       const ready = participants.filter((item: any) => item.participantType === "BOT" || item.readyAt)
       if (!stateRow && ready.length < participants.length) return { projection: this.project(match, null, participant.id, policy), waitingForPlayers: true, readyCount: ready.length, requiredCount: participants.length }
@@ -85,7 +85,7 @@ export class DominoService {
       const action = await tx.dominoAction.create({ data: { matchId, dominoMatchStateId: row.id, matchParticipantId: participant.id, sequence: dto.sequence, clientActionId: dto.clientActionId, actionType: type, accepted: applied.accepted, rejectionReason: applied.accepted ? undefined : applied.reason, payload: { tileKey: dto.tileKey ?? null, side: dto.side ?? null, chainHash: applied.state.chainHash, round: applied.round ?? null } as Prisma.InputJsonValue, clientOccurredAt: dto.clientOccurredAt ? new Date(dto.clientOccurredAt) : undefined } })
       await this.saveState(tx, row, applied.state)
       await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: { game: "domino", eventKind: type, accepted: applied.accepted, reason: applied.reason ?? null, tileKey: dto.tileKey ?? null, side: dto.side ?? null, chainHash: applied.state.chainHash, score: applied.state.scores[participant.id] ?? 0 } as Prisma.InputJsonValue, accepted: applied.accepted, rejectionReason: applied.accepted ? undefined : applied.reason } })
-      await tx.matchParticipant.update({ where: { id: participant.id }, data: { answeredCount: { increment: 1 }, finalScore: applied.state.scores[participant.id] ?? 0 } })
+      await tx.matchParticipant.update({ where: { id: participant.id }, data: { answeredCount: { increment: 1 }, finalScore: applied.state.scores[participant.id] ?? 0, lastActivityAt: new Date() } })
       if (applied.accepted && applied.round) await this.completeRound(tx, match, row, applied.state, applied.round.winnerParticipantId, policy)
       match = await this.loadMatch(tx, matchId)
       const finalRow = await tx.dominoMatchState.findUniqueOrThrow({ where: { matchId } })

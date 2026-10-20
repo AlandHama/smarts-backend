@@ -29,6 +29,21 @@ export class RematchService {
       const context = await this.loadSettledContext(tx, originalMatchId, userId);
       const opponent = context.participants.find((participant) => participant.userId !== userId);
       if (!opponent?.userId) throw new ConflictException("This match cannot be rematched");
+      if (context.participants.some((participant) => participant.result === "FORFEIT")) throw new ConflictException("A forfeited match cannot be rematched immediately");
+      const recentPairMatches = await tx.matchParticipant.findMany({
+        where: {
+          userId,
+          matchId: { not: originalMatchId },
+          match: {
+            mode: GameMode.CASUAL,
+            createdAt: { gte: new Date(Date.now() - 86400000) },
+            participants: { some: { userId: opponent.userId } },
+          },
+        },
+        select: { matchId: true },
+        distinct: ["matchId"],
+      });
+      if (recentPairMatches.length >= 3) throw new ConflictException("Rematch limit reached for this opponent today");
 
       const pendingReverse = await tx.rematchRequest.findFirst({
         where: { originalMatchId, requesterId: opponent.userId, recipientId: userId, status: RematchRequestStatus.PENDING },
@@ -96,6 +111,17 @@ export class RematchService {
 
       const context = await this.loadSettledContext(tx, request.originalMatchId, request.recipientId);
       if (!context.participants.some((participant) => participant.userId === request.requesterId)) throw new ConflictException("The original match is no longer eligible for a rematch");
+      if (context.participants.some((participant) => participant.result === "FORFEIT")) throw new ConflictException("A forfeited match cannot be rematched immediately");
+      const recentPairMatches = await tx.matchParticipant.findMany({
+        where: {
+          userId: request.recipientId,
+          matchId: { not: request.originalMatchId },
+          match: { mode: GameMode.CASUAL, createdAt: { gte: new Date(Date.now() - 86400000) }, participants: { some: { userId: request.requesterId } } },
+        },
+        select: { matchId: true },
+        distinct: ["matchId"],
+      });
+      if (recentPairMatches.length >= 3) throw new ConflictException("Rematch limit reached for this opponent today");
       const activeMatch = await tx.matchParticipant.findFirst({
         where: { userId: { in: [request.requesterId, request.recipientId] }, match: { status: { in: ["CREATED", "STARTED"] } } },
         select: { id: true },
@@ -178,7 +204,7 @@ export class RematchService {
         gameDefinitionId: true,
         gameDefinition: { select: { key: true, name: true } },
         settlement: { select: { id: true } },
-        participants: { select: { userId: true, participantType: true } },
+        participants: { select: { userId: true, participantType: true, result: true, rewardEligibility: true } },
       },
     });
     if (!match) throw new NotFoundException("Match not found");

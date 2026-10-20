@@ -3,11 +3,11 @@ import { Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
-import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
+import { SettleMatchTransaction } from "./settle-match-transaction"
 
 @Injectable()
 export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: number }> {
-  constructor(prisma: PrismaService, private readonly creditWallet: CreditWalletTransaction) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly settleMatch: SettleMatchTransaction) { super(prisma) }
 
   protected async execute(_: void, transaction: Prisma.TransactionClient) {
     const now = new Date()
@@ -35,28 +35,18 @@ export class ExpireMatchTransaction extends PrismaTransaction<void, { expired: n
         (participant) => participant.participantType === "PLAYER" && participant.result === "PENDING",
       ).length
       if (pendingHumans === 0) {
-        await transaction.matchParticipant.updateMany({ where: { matchId: match.id, result: "PENDING" }, data: { result: "COMPLETED", submittedAt: now } })
+        await transaction.matchParticipant.updateMany({ where: { matchId: match.id, participantType: "PLAYER", result: "PENDING" }, data: { result: "COMPLETED", submittedAt: now, lastActivityAt: now, disconnectGraceUntil: null } })
         await transaction.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt: now } })
         await transaction.match.update({ where: { id: match.id }, data: { status: "FINISHED", endedAt: now } })
+        const human = match.participants.find((participant) => participant.participantType === "PLAYER" && participant.userId)
+        if (human?.userId) await this.settleMatch.runWithinTransaction({ matchId: match.id, userId: human.userId, idempotencyKey: `match-timeout-settle:${match.id}` }, transaction)
         continue
       }
-      await transaction.matchParticipant.updateMany({ where: { matchId: match.id, result: "PENDING" }, data: { result: "FORFEIT", submittedAt: now } })
-      await transaction.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "CANCELLED", endedAt: now } })
-      await transaction.match.update({ where: { id: match.id }, data: { status: "CANCELLED", endedAt: now } })
-      if (match.rankingMatch?.status === "ACTIVE") {
-        for (const participant of match.participants) {
-          if (participant.participantType !== "PLAYER" || !participant.userId) continue
-          await this.creditWallet.runWithinTransaction({
-            userId: participant.userId,
-            currencyCode: "GLD",
-            amount: match.rankingMatch.stakeAmountGld,
-            sourceId: `${match.id}:ranking-cancel-refund:${participant.userId}`,
-            sourceType: "RANKING_MATCH_REFUND",
-            metadata: { matchId: match.id, reason: "ranking_match_cancelled" },
-          }, transaction)
-        }
-        await transaction.rankingMatch.update({ where: { id: match.rankingMatch.id }, data: { status: "REFUNDED", settledAt: now } })
-      }
+      await transaction.matchParticipant.updateMany({ where: { matchId: match.id, participantType: "PLAYER", result: "PENDING" }, data: { result: "FORFEIT", submittedAt: now, lastActivityAt: now, disconnectGraceUntil: null, terminationReason: "TIMEOUT" } })
+      await transaction.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt: now } })
+      await transaction.match.update({ where: { id: match.id }, data: { status: "FINISHED", endedAt: now } })
+      const human = match.participants.find((participant) => participant.participantType === "PLAYER" && participant.userId)
+      if (human?.userId) await this.settleMatch.runWithinTransaction({ matchId: match.id, userId: human.userId, idempotencyKey: `match-timeout-settle:${match.id}` }, transaction)
       expired += 1
     }
     return { expired }

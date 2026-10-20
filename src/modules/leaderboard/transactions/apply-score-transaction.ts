@@ -17,6 +17,8 @@ export type ApplyLeaderboardScoreInput = {
   metadata?: Record<string, unknown>
   actorId?: string
   reason?: string
+  /** Match rating losses may floor at zero instead of aborting settlement. */
+  allowFloorAtZero?: boolean
 }
 
 @Injectable()
@@ -50,7 +52,7 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
     // The source id is the caller's idempotency identity, so the board scope
     // is sufficient and deliberately keeps the value bounded.
     const scope = `leaderboard-score:${board.id}`
-    const requestHash = createHash("sha256").update(JSON.stringify({ boardId: board.id, seasonId: season.id, memberKey: member.memberKey, delta: input.delta.toString(), sourceId, sourceType: input.sourceType, metadata: input.metadata ?? null })).digest("hex")
+    const requestHash = createHash("sha256").update(JSON.stringify({ boardId: board.id, seasonId: season.id, memberKey: member.memberKey, delta: input.delta.toString(), sourceId, sourceType: input.sourceType, metadata: input.metadata ?? null, allowFloorAtZero: input.allowFloorAtZero === true })).digest("hex")
     let idempotency = await transaction.idempotencyKey.findUnique({ where: { scope_key: { scope, key: sourceId } } })
     if (!idempotency) {
       try {
@@ -81,11 +83,13 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
     const existingEvent = await transaction.leaderboardScoreEvent.findFirst({ where: { entryId: entry.id, sourceType: input.sourceType, sourceId } })
     if (existingEvent) return { leaderboardKey: board.key, seasonId: season.id, entryId: entry.id, memberKey: member.memberKey, scoreBefore: existingEvent.scoreBefore.toString(), scoreAfter: existingEvent.scoreAfter.toString(), delta: existingEvent.delta.toString(), eventId: existingEvent.id }
 
-    const scoreAfter = entry.score + input.delta
+    const requestedScoreAfter = entry.score + input.delta
+    const scoreAfter = input.allowFloorAtZero && requestedScoreAfter < 0n ? 0n : requestedScoreAfter
     if (scoreAfter < 0n) throw new BadRequestException("Leaderboard score cannot become negative")
+    const appliedDelta = scoreAfter - entry.score
     await transaction.leaderboardEntry.update({ where: { id: entry.id }, data: { score: scoreAfter, metadata: member.metadata as Prisma.InputJsonValue | undefined } })
-    const event = await transaction.leaderboardScoreEvent.create({ data: { entryId: entry.id, leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey, playerId: member.playerId, delta: input.delta, scoreBefore: entry.score, scoreAfter, sourceType: input.sourceType, sourceId, idempotencyKeyId: idempotency.id } })
-    const response = { leaderboardKey: board.key, seasonId: season.id, entryId: entry.id, memberKey: member.memberKey, scoreBefore: entry.score.toString(), scoreAfter: scoreAfter.toString(), delta: input.delta.toString(), eventId: event.id }
+    const event = await transaction.leaderboardScoreEvent.create({ data: { entryId: entry.id, leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey, playerId: member.playerId, delta: appliedDelta, scoreBefore: entry.score, scoreAfter, sourceType: input.sourceType, sourceId, idempotencyKeyId: idempotency.id } })
+    const response = { leaderboardKey: board.key, seasonId: season.id, entryId: entry.id, memberKey: member.memberKey, scoreBefore: entry.score.toString(), scoreAfter: scoreAfter.toString(), delta: appliedDelta.toString(), eventId: event.id }
     await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: response as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "LEADERBOARD_SCORE", entityType: "LeaderboardEntry", entityId: entry.id, reason: input.reason, metadata: { leaderboardKey: board.key, playerId: member.playerId, delta: input.delta.toString(), sourceId } })
     if (member.playerId) await writePlayerAudit(transaction, { userId: member.playerId, actorType: input.actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "LEADERBOARD_SCORE_APPLIED", entityType: "LeaderboardEntry", entityId: entry.id, summary: `${input.delta > 0n ? "Increased" : "Changed"} ${board.name} score by ${input.delta.toString()}`, changes: { score: { old: entry.score, new: scoreAfter }, delta: { old: 0n, new: input.delta } }, metadata: { leaderboardKey: board.key, seasonId: season.id, sourceId } })

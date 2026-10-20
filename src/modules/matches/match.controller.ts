@@ -17,6 +17,16 @@ export class MatchController {
   @ApiOperation({ summary: "Create a server-owned match and issue its challenge assignments" })
   create(@CurrentUser() user: UserResponseDto, @Body() dto: CreateMatchDto) { return this.matchService.create(user.id, dto) }
 
+  @Get("integrity-rules")
+  integrityRules() {
+    return {
+      disconnectGraceSeconds: 15,
+      forfeit: "Leaving an active match records a forfeit; ranked matches receive the configured rating penalty.",
+      rewardHold: "Rewards may be held for server review when play evidence, device signals, or account risk require it.",
+      review: "Held rewards are released or cancelled by review; changing devices does not reset progression.",
+    }
+  }
+
   @Get(":matchId")
   get(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto) { return this.matchService.get(matchId, user.id) }
 

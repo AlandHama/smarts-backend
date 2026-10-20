@@ -51,6 +51,14 @@ export class MatchService {
             metadata: { matchId, timeTakenMs },
           }).catch(() => undefined);
         }
+        if (dto.eventType === "ANSWER" && event.accepted === true && event.payload?.verificationMode === "LEGACY_CLIENT_CORRECTNESS") {
+          void this.fraudService.observe(userId, {
+            type: "CLIENT_CORRECTNESS_MISMATCH",
+            sourceType: "MATCH_ANSWER_LEGACY",
+            sourceId: dto.clientEventId,
+            metadata: { matchId, compatibilityPath: true },
+          }).catch(() => undefined);
+        }
         return this.serialize(value);
       });
   }

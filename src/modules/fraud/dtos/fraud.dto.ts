@@ -34,3 +34,11 @@ export class ObserveFraudDto {
   @IsOptional() @IsString() @MaxLength(255) sourceId?: string
   @IsOptional() @IsObject() metadata?: Record<string, unknown>
 }
+
+export class RegisterInstallDto {
+  @IsString() @MinLength(8) @MaxLength(180) installId!: string
+  @IsString() @MinLength(2) @MaxLength(24) platform!: string
+  @IsOptional() @IsString() @MaxLength(48) appVersion?: string
+  @IsOptional() @IsString() @MaxLength(32) attestationProvider?: string
+  @IsOptional() @IsString() @MaxLength(4096) attestationToken?: string
+}

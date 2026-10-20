@@ -113,7 +113,7 @@ export class GemBlitzService {
       const participant = this.authorize(match, userId)
       if (match.status !== "CREATED" && match.status !== "STARTED") throw new ConflictException("The match cannot be started")
       const now = new Date()
-      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now } })
+      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now, lastActivityAt: now, disconnectGraceUntil: null } })
       const readiness = await tx.matchParticipant.findMany({ where: { matchId }, select: { id: true, participantType: true, readyAt: true } })
       const ready = readiness.filter((item) => item.participantType === "BOT" || item.readyAt !== null)
       const existing = this.readState(match.metadata)
@@ -148,6 +148,7 @@ export class GemBlitzService {
       const next = { ...result.board.stateSnapshot, sequence: dto.sequence }
       state = { ...state, players: { ...state.players, [participant.id]: next }, replay: [...state.replay, { sequence: dto.sequence, participantId: participant.id, fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS) }
       await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: `gem-blitz:${participant.id}:${dto.sequence}`, payload: { fromRow: dto.fromRow, fromColumn: dto.fromColumn, toRow: dto.toRow, toColumn: dto.toColumn, scoreDelta: result.scoreDelta, cleared: result.cleared, cascades: result.cascades, speedCombo: result.speedCombo, specialCreated: result.specialCreated ?? null, fever: result.fever, events: result.events, animation: result.animation, score: next.score } as unknown as Prisma.InputJsonValue, accepted: true, clientOccurredAt: dto.clientTimestamp ? new Date(dto.clientTimestamp) : undefined } })
+      await tx.matchParticipant.update({ where: { id: participant.id }, data: { lastActivityAt: new Date() } })
       const metadata = this.withState(match.metadata, state)
       await tx.match.update({ where: { id: matchId }, data: { metadata } })
       state = await this.advanceBots(tx, { ...match, metadata }, state, Date.now())

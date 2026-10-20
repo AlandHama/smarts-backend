@@ -1,8 +1,9 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common"
+import { createHash, createHmac } from "node:crypto"
 import { FraudActionType, FraudCaseStatus, FraudProfileStatus, FraudRiskLevel, FraudSignalStatus, Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
-import { FraudActionDto, FraudProfilesQueryDto, UpdateFraudRuleDto } from "./dtos"
+import { FraudActionDto, FraudProfilesQueryDto, RegisterInstallDto, UpdateFraudRuleDto } from "./dtos"
 
 type ObserveInput = {
   type: string
@@ -13,6 +14,8 @@ type ObserveInput = {
 
 const DEFAULT_RULES = [
   { key: "MULTI_ACCOUNT_DEVICE", name: "Multi-account device", description: "Several player accounts share the same device fingerprint.", scoreDelta: 15, threshold: 3, windowSeconds: 86400, decayDays: 30, autoOpenScore: 60 },
+  { key: "INSTALL_ID_COLLISION", name: "Install identity collision", description: "The same install identity is presented by more than one account.", scoreDelta: 25, threshold: 1, windowSeconds: 86400, decayDays: 30, autoOpenScore: 60 },
+  { key: "NETWORK_ACCOUNT_CLUSTER", name: "Network account cluster", description: "Several accounts repeatedly present the same network identity.", scoreDelta: 20, threshold: 1, windowSeconds: 86400, decayDays: 30, autoOpenScore: 60 },
   { key: "RAPID_AD_REWARDS", name: "Rapid ad rewards", description: "Rewarded ads are granted too frequently in a short period.", scoreDelta: 12, threshold: 10, windowSeconds: 1800, decayDays: 7, autoOpenScore: 60 },
   { key: "IMPOSSIBLE_ANSWER_SPEED", name: "Impossible answer speed", description: "Repeated answers arrive below the configured human response window.", scoreDelta: 8, threshold: 5, windowSeconds: 3600, decayDays: 14, autoOpenScore: 70 },
   { key: "REFERRAL_DEVICE_MATCH", name: "Referral device match", description: "Referred accounts share a device fingerprint with their referrer.", scoreDelta: 20, threshold: 1, windowSeconds: 86400, decayDays: 30, autoOpenScore: 60 },
@@ -21,12 +24,53 @@ const DEFAULT_RULES = [
   { key: "TILE_RUSH_BOARD_HASH_MISMATCH", name: "Tile Rush board mismatch", description: "Tile Rush clients repeatedly submit a stale board hash.", scoreDelta: 8, threshold: 5, windowSeconds: 3600, decayDays: 14, autoOpenScore: 70 },
   { key: "TILE_RUSH_SCORE_VELOCITY", name: "Tile Rush score velocity", description: "Tile Rush score deltas exceed safe human-play thresholds.", scoreDelta: 10, threshold: 3, windowSeconds: 3600, decayDays: 14, autoOpenScore: 70 },
   { key: "ABNORMAL_SESSION_SWITCHING", name: "Abnormal session switching", description: "Frequent device/session changes are detected for one account.", scoreDelta: 8, threshold: 6, windowSeconds: 3600, decayDays: 14, autoOpenScore: 70 },
+  { key: "CLIENT_CORRECTNESS_MISMATCH", name: "Legacy client correctness", description: "A legacy client supplied correctness instead of a server-verifiable answer.", scoreDelta: 4, threshold: 10, windowSeconds: 86400, decayDays: 7, autoOpenScore: 70 },
+  { key: "REPEATED_MATCH_FORFEITS", name: "Repeated match forfeits", description: "A player repeatedly quits or forfeits active matches.", scoreDelta: 10, threshold: 3, windowSeconds: 86400, decayDays: 14, autoOpenScore: 60 },
+  { key: "SHORT_MATCH_REWARD_FARMING", name: "Short match reward farming", description: "A player repeatedly completes matches with almost no verified play.", scoreDelta: 12, threshold: 3, windowSeconds: 86400, decayDays: 14, autoOpenScore: 60 },
+  { key: "MATCH_XP_VELOCITY", name: "Match XP velocity", description: "Match progression exceeds the expected daily velocity.", scoreDelta: 15, threshold: 3, windowSeconds: 86400, decayDays: 14, autoOpenScore: 60 },
+  { key: "MATCH_GLD_VELOCITY", name: "Match GLD velocity", description: "Match GLD exceeds the expected daily velocity.", scoreDelta: 15, threshold: 3, windowSeconds: 86400, decayDays: 14, autoOpenScore: 60 },
+  { key: "SAME_OPPONENT_FARMING", name: "Same opponent farming", description: "Repeated matches against the same opponent inside a short window.", scoreDelta: 10, threshold: 4, windowSeconds: 86400, decayDays: 14, autoOpenScore: 60 },
+  { key: "BOT_REWARD_FARMING", name: "Bot reward farming", description: "Repeated bot matches are used to farm progression or currency.", scoreDelta: 8, threshold: 6, windowSeconds: 86400, decayDays: 14, autoOpenScore: 60 },
+  { key: "RANKED_QUIT_AVOIDANCE", name: "Ranked quit avoidance", description: "A player repeatedly quits ranked matches to avoid rating outcomes.", scoreDelta: 18, threshold: 2, windowSeconds: 86400, decayDays: 30, autoOpenScore: 60 },
   { key: "PAID_REWARD_REVIEW", name: "Paid reward review", description: "A paid reward request requires additional fraud review.", scoreDelta: 0, threshold: 60, windowSeconds: 86400, decayDays: 30, autoOpenScore: null },
 ]
 
 @Injectable()
 export class FraudService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async registerInstall(userId: string, dto: RegisterInstallDto, ipAddress?: string) {
+    const installIdHash = this.hashIdentity(dto.installId)
+    const attestationHash = dto.attestationToken ? createHash("sha256").update(dto.attestationToken).digest("hex") : null
+    const ipHash = ipAddress ? this.hashIdentity(ipAddress) : null
+    const existing = await this.prisma.playerInstall.findUnique({ where: { installIdHash }, select: { id: true, userId: true } })
+    const collisionUserIds = existing && existing.userId !== userId ? [existing.userId] : []
+    for (const relatedUserId of collisionUserIds) {
+      await Promise.all([
+        this.observe(userId, { type: "INSTALL_ID_COLLISION", sourceType: "PLAYER_INSTALL", sourceId: `${installIdHash}:${userId}:${relatedUserId}`, metadata: { relatedUserId } }),
+        this.observe(relatedUserId, { type: "INSTALL_ID_COLLISION", sourceType: "PLAYER_INSTALL", sourceId: `${installIdHash}:${relatedUserId}:${userId}`, metadata: { relatedUserId: userId } }),
+      ])
+    }
+    const row = await this.prisma.playerInstall.upsert({
+      where: { installIdHash },
+      create: { userId, installIdHash, platform: dto.platform.trim().toLowerCase(), appVersion: dto.appVersion?.trim() || null, attestationProvider: dto.attestationProvider?.trim() || null, attestationStatus: dto.attestationToken ? "PRESENT_UNVERIFIED" : "UNKNOWN", attestationHash, ipHash },
+      update: { platform: dto.platform.trim().toLowerCase(), appVersion: dto.appVersion?.trim() || undefined, attestationProvider: dto.attestationProvider?.trim() || undefined, attestationStatus: dto.attestationToken ? "PRESENT_UNVERIFIED" : undefined, attestationHash: attestationHash || undefined, ipHash: ipHash || undefined, lastSeenAt: new Date() },
+      select: { id: true, installIdHash: true, platform: true, attestationStatus: true, networkRisk: true, firstSeenAt: true, lastSeenAt: true },
+    })
+    if (ipHash) {
+      const relatedNetworkUsers = await this.prisma.playerInstall.findMany({ where: { ipHash, userId: { not: userId }, lastSeenAt: { gte: new Date(Date.now() - 86400000) } }, distinct: ["userId"], select: { userId: true }, take: 20 })
+      if (relatedNetworkUsers.length >= 3) {
+        const networkUsers = [userId, ...relatedNetworkUsers.map((item) => item.userId)]
+        await Promise.all(networkUsers.flatMap((targetUserId) => networkUsers.filter((otherUserId) => otherUserId !== targetUserId).map((otherUserId) => this.observe(targetUserId, { type: "NETWORK_ACCOUNT_CLUSTER", sourceType: "NETWORK_CLUSTER", sourceId: `${ipHash}:${targetUserId}:${otherUserId}`, metadata: { relatedAccountCount: relatedNetworkUsers.length, relatedUserId: otherUserId } }))))
+      }
+    }
+    return { accepted: true, installId: row.installIdHash, platform: row.platform, attestationStatus: row.attestationStatus, networkRisk: row.networkRisk, firstSeenAt: row.firstSeenAt, lastSeenAt: row.lastSeenAt }
+  }
+
+  private hashIdentity(value: string) {
+    const secret = process.env.INSTALL_ID_HASH_SECRET || process.env.JWT_SECRET || "smarts-install-risk-salt"
+    return createHmac("sha256", secret).update(value.trim()).digest("hex")
+  }
 
   async observe(userId: string, input: ObserveInput) {
     const key = input.type.trim().toUpperCase()

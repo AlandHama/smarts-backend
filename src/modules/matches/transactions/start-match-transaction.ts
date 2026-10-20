@@ -61,7 +61,7 @@ export class StartMatchTransaction extends PrismaTransaction<
       // safe when both players tap at the same time.
       await transaction.matchParticipant.update({
         where: { id: currentParticipant.id },
-        data: { readyAt: currentParticipant.readyAt ?? now },
+        data: { readyAt: currentParticipant.readyAt ?? now, lastActivityAt: now, disconnectGraceUntil: null },
       });
       const participants = await transaction.matchParticipant.findMany({
         where: { matchId: match.id },

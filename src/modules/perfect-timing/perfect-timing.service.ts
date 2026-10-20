@@ -50,7 +50,7 @@ export class PerfectTimingService {
       const policy = this.policy(match)
       let timing = await this.ensureState(tx, match, policy)
       const now = new Date()
-      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now } })
+      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now, lastActivityAt: now, disconnectGraceUntil: null } })
       const participants = await tx.matchParticipant.findMany({ where: { matchId }, select: { participantType: true, readyAt: true } })
       const readyCount = participants.filter((item: any) => item.participantType === "BOT" || item.readyAt !== null).length
       if (readyCount < participants.length) return { ...(await this.project(tx, match, timing, participant.id, policy)), waitingForPlayers: true, readyCount, requiredCount: participants.length }
@@ -204,7 +204,7 @@ export class PerfectTimingService {
     const action = await tx.perfectTimingAction.create({ data: { matchId: match.id, perfectTimingMatchId: timing.id, matchParticipantId: participantId, roundIndex: challengeIndex, sequence: dto.sequence, clientActionId: dto.clientActionId, actionType, accepted: true, judgement: evaluation.judgement, timingErrorMs: evaluation.timingErrorMs, scoreDelta: evaluation.scoreDelta, estimatedTapAtServerMs: BigInt(Math.round(estimatedTapMs)), payload: { markerPosition: evaluation.markerPosition, judgement: evaluation.judgement, timingErrorMs: evaluation.timingErrorMs, scoreDelta: evaluation.scoreDelta, challengeIndex } as Prisma.InputJsonValue, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
     await tx.perfectTimingParticipantState.update({ where: { id: state.id }, data: { score: { increment: evaluation.scoreDelta }, ...counts, nextSequence: { increment: 1 }, lastTapAt: now } })
     await tx.perfectTimingMatch.update({ where: { id: timing.id }, data: { stateHash: this.stateHash(timing, { challengeIndex, participantId, sequence: dto.sequence, score: state.score + evaluation.scoreDelta }) } })
-    await tx.matchParticipant.update({ where: { id: participantId }, data: { answeredCount: { increment: 1 } } })
+    await tx.matchParticipant.update({ where: { id: participantId }, data: { answeredCount: { increment: 1 }, lastActivityAt: now } })
     await tx.matchEvent.create({ data: { matchId: match.id, participantId, sequence: dto.sequence, eventType: "SCORE_UPDATE", clientEventId: dto.clientActionId, payload: { game: "perfect_timing", eventKind: actionType, challengeIndex, judgement: evaluation.judgement, timingErrorMs: evaluation.timingErrorMs, scoreDelta: evaluation.scoreDelta, markerPosition: evaluation.markerPosition, timeTakenMs: evaluation.timingErrorMs } as Prisma.InputJsonValue, accepted: true, clientOccurredAt: this.dateOrUndefined(dto.clientOccurredAt) } })
     return action
   }

@@ -21,11 +21,15 @@ import { StreaksModule } from "../streaks/streaks.module"
 import { WinStreaksModule } from "../win-streaks/win-streaks.module"
 import { NotificationsModule } from "../notifications/notifications.module"
 import { RematchService } from "./rematch.service"
+import { MatchIntegrityPolicyService } from "./match-integrity-policy.service"
+import { MatchRewardIntegrityAdminService } from "./match-reward-integrity-admin.service"
+import { MatchRewardIntegrityAdminController } from "./match-reward-integrity-admin.controller"
+import { SystemAdminGuard } from "../system-admin/system-admin.guard"
 
 @Module({
   imports: [DatabaseModule, GameModule, ProgressionModule, EconomyModule, LeaderboardModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, NotificationsModule],
-  controllers: [MatchController],
-  providers: [MatchService, RematchService, CreateMatchTransaction, RecordMatchEventTransaction, CompleteMatchTransaction, SettleMatchTransaction, StartMatchTransaction, ForfeitMatchTransaction, ExpireMatchTransaction, BotGameplayService],
-  exports: [MatchService, SettleMatchTransaction, ExpireMatchTransaction, BotGameplayService],
+  controllers: [MatchController, MatchRewardIntegrityAdminController],
+  providers: [SystemAdminGuard, MatchService, RematchService, MatchIntegrityPolicyService, MatchRewardIntegrityAdminService, CreateMatchTransaction, RecordMatchEventTransaction, CompleteMatchTransaction, SettleMatchTransaction, StartMatchTransaction, ForfeitMatchTransaction, ExpireMatchTransaction, BotGameplayService],
+  exports: [MatchService, MatchIntegrityPolicyService, SettleMatchTransaction, ExpireMatchTransaction, BotGameplayService],
 })
 export class MatchesModule {}

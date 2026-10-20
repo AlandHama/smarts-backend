@@ -52,7 +52,7 @@ export class BombPathService {
       const participant = this.authorize(match, userId)
       if (!["CREATED", "STARTED"].includes(match.status)) throw new ConflictException("The Bomb Path match cannot be started")
       const policy = this.policy(match)
-      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? new Date() } })
+      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? new Date(), lastActivityAt: new Date(), disconnectGraceUntil: null } })
       const readiness = await tx.matchParticipant.findMany({ where: { matchId }, select: { id: true, participantType: true, readyAt: true } })
       const readyCount = readiness.filter((item) => item.participantType === "BOT" || item.readyAt !== null).length
       let state = this.readState(match.metadata)
@@ -268,7 +268,7 @@ export class BombPathService {
     const endedAt = new Date()
     await tx.match.update({ where: { id: match.id }, data: { status: "FINISHED", endedAt, metadata: this.metadata(match.metadata, finished) } })
     await tx.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt } })
-    for (const item of match.participants) { const score = finished.players[item.id]?.score ?? 0; const result: MatchParticipantResult = forfeitingParticipantId === item.id ? "FORFEIT" : forfeitingParticipantId ? "WIN" : finished.winnerParticipantId === null ? "DRAW" : finished.winnerParticipantId === item.id ? "WIN" : "LOSS"; await tx.matchParticipant.update({ where: { id: item.id }, data: { finalScore: score, result, submittedAt: endedAt } }); await this.persistEvent(tx, match, item.id, 0, "bomb-path:terminal:" + item.id, "BOMB_PATH_TERMINAL", true, { accepted: true, outcome: "MATCH_FINISHED", totalScore: score }) }
+    for (const item of match.participants) { const score = finished.players[item.id]?.score ?? 0; const result: MatchParticipantResult = forfeitingParticipantId === item.id ? "FORFEIT" : forfeitingParticipantId ? "WIN" : finished.winnerParticipantId === null ? "DRAW" : finished.winnerParticipantId === item.id ? "WIN" : "LOSS"; await tx.matchParticipant.update({ where: { id: item.id }, data: { finalScore: score, result, submittedAt: endedAt, lastActivityAt: endedAt, disconnectGraceUntil: null, terminationReason: forfeitingParticipantId === item.id ? "VOLUNTARY_FORFEIT" : null } }); await this.persistEvent(tx, match, item.id, 0, "bomb-path:terminal:" + item.id, "BOMB_PATH_TERMINAL", true, { accepted: true, outcome: "MATCH_FINISHED", totalScore: score }) }
     await tx.analyticsEvent.create({ data: { eventName: "BOMB_PATH_MATCH_FINISHED", occurredAt: endedAt, matchId: match.id, properties: { winnerParticipantId: finished.winnerParticipantId, scores: Object.values(finished.players).map((player) => ({ participantId: player.participantId, score: player.score })), rulesVersion: policy.rulesVersion, policyVersion: policy.policyVersion, replayLength: finished.replay.length } as Prisma.InputJsonValue } })
   }
 
@@ -279,6 +279,7 @@ export class BombPathService {
   private async persistEvent(tx: Prisma.TransactionClient, match: MatchRow, participantId: string, sequence: number, clientEventId: string, eventType: string, accepted: boolean, payload: Record<string, unknown>, occurredAt?: string, rejectionReason?: string) {
     const roundId = match.rounds?.find((round: any) => round.status === "STARTED")?.id ?? match.rounds?.[0]?.id
     await tx.matchEvent.create({ data: { matchId: match.id, participantId, roundId, sequence, eventType: "SCORE_UPDATE", clientEventId, accepted, rejectionReason, payload: { game: "bomb_path", eventType, ...payload } as Prisma.InputJsonValue, clientOccurredAt: occurredAt && !Number.isNaN(Date.parse(occurredAt)) ? new Date(occurredAt) : undefined } })
+    if (accepted) await tx.matchParticipant.update({ where: { id: participantId }, data: { lastActivityAt: new Date() } })
   }
 
   private async saveState(tx: Prisma.TransactionClient, match: MatchRow, state: BombPathState) { state.stateHash = bombPathStateHash(state); await tx.match.update({ where: { id: match.id }, data: { metadata: this.metadata(match.metadata, state) } }) }

@@ -19,7 +19,7 @@ export class CompleteMatchTransaction extends PrismaTransaction<{ matchId: strin
     if (!participant) throw new NotFoundException("Player is not a participant in this match")
     if (match.settlement) return match.settlement.settlementJson
     if (match.status === "CANCELLED" || match.status === "REVIEW") throw new ConflictException("The match cannot be completed")
-    if (participant.result === "PENDING") await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "COMPLETED", submittedAt: new Date() } })
+    if (participant.result === "PENDING") await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "COMPLETED", submittedAt: new Date(), lastActivityAt: new Date(), disconnectGraceUntil: null } })
     await this.botGameplay.completeWithinTransaction({ matchId: match.id, userId: input.userId }, transaction)
     const humanPending = match.participants.some((item) => item.participantType === "PLAYER" && item.id !== participant.id && item.result === "PENDING")
     if (humanPending) {

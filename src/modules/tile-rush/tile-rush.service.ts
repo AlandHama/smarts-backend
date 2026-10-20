@@ -91,7 +91,7 @@ export class TileRushService {
       const participant = this.authorize(match, userId)
       if (match.status !== "CREATED" && match.status !== "STARTED") throw new ConflictException("The match cannot be started")
       const now = new Date()
-      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now } })
+      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now, lastActivityAt: now, disconnectGraceUntil: null } })
       const readiness = await tx.matchParticipant.findMany({ where: { matchId }, select: { id: true, participantType: true, readyAt: true } })
       const ready = readiness.filter((item) => item.participantType === "BOT" || item.readyAt !== null)
       const existingResult = this.repairState(this.readState(match.metadata), match)
@@ -157,6 +157,7 @@ export class TileRushService {
       // database/WAL volume. The bounded replay and authoritative metadata
       // already contain enough state to reconstruct the action.
       await tx.matchEvent.create({ data: { matchId, participantId: participant.id, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientActionId, payload: this.persistedActionPayload(payload) as Prisma.InputJsonValue, accepted: true, clientOccurredAt } })
+      await tx.matchParticipant.update({ where: { id: participant.id }, data: { lastActivityAt: new Date() } })
       const metadata = this.withState(match.metadata, state)
       await tx.match.update({ where: { id: matchId }, data: { metadata } })
       state = await this.advanceBots(tx, { ...match, metadata }, state, Date.now())

@@ -145,6 +145,24 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     const realTickets = [first, ...(second ? [second] : []), ...additional]
     if (!second && !(first.allowBotFallback && elapsedSeconds >= botFallbackSeconds()))
       return null;
+    const integrityProfiles = await transaction.fraudProfile.findMany({
+      where: { userId: { in: realTickets.map((ticket) => ticket.userId) } },
+      select: { userId: true, status: true, riskLevel: true },
+    })
+    const blockedForCompetitive = integrityProfiles.some((profile) => profile.status === "RESTRICTED" || profile.status === "SUSPENDED" || profile.status === "WATCH" || profile.riskLevel === "SUSPICIOUS" || profile.riskLevel === "HIGH" || profile.riskLevel === "CRITICAL")
+    if (blockedForCompetitive && first.isRankingMatch) return null
+    if (blockedForCompetitive && !second) return null
+    if (second) {
+      const recentPairMatches = await transaction.matchParticipant.findMany({
+        where: {
+          userId: first.userId,
+          match: { mode: MatchmakingTicketMode.CASUAL === first.mode ? "CASUAL" : "RANKED", createdAt: { gte: new Date(Date.now() - 86400000) }, participants: { some: { userId: second.userId } } },
+        },
+        select: { matchId: true },
+        distinct: ["matchId"],
+      })
+      if (recentPairMatches.length >= 3) return null
+    }
     const now = new Date();
     const gameCandidates = isRandomCasualTicket(first)
       ? await transaction.gameDefinition.findMany({
@@ -205,11 +223,14 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         ? GameMode.RANKED
         : GameMode.CASUAL
       : GameMode.BOT;
+    const integrityPolicy = await transaction.matchIntegrityPolicy.findFirst({ where: { active: true, OR: [{ scopeKey: `${game.key}:${matchMode}` }, { scopeKey: `${game.key}:ALL` }, { scopeKey: "global" }] }, orderBy: { version: "desc" }, select: { version: true, killSwitch: true } });
+    if (integrityPolicy?.killSwitch) return null;
     const match = await transaction.match.create({
       data: {
         gameDefinitionId: game.id,
         gameConfigId: config.id,
         mode: matchMode,
+        integrityPolicyVersion: `${game.key}:v${integrityPolicy?.version ?? 1}`,
         status: "CREATED",
         serverNonce,
         createdByUserId: first.userId,

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash } from "node:crypto"
-import { Prisma, MatchmakingTicketMode } from "@prisma/client"
+import { GameMode, Prisma, MatchmakingTicketMode } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
@@ -8,10 +8,11 @@ import { EnqueuePlayerDto } from "../dtos"
 import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 import { queueHeartbeatTimeoutSeconds, queueTtlSeconds } from "../utilities/matchmaking-policy"
+import { MatchIntegrityPolicyService } from "../../matches/match-integrity-policy.service"
 
 @Injectable()
 export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string; dto: EnqueuePlayerDto }, any> {
-  constructor(prisma: PrismaService, private readonly debitWallet: DebitWalletTransaction, private readonly creditWallet: CreditWalletTransaction) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly debitWallet: DebitWalletTransaction, private readonly creditWallet: CreditWalletTransaction, private readonly integrityPolicy: MatchIntegrityPolicyService) { super(prisma) }
 
   protected async execute(input: { userId: string; dto: EnqueuePlayerDto }, transaction: Prisma.TransactionClient) {
     const dto = input.dto
@@ -35,6 +36,12 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const now = new Date()
     const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { id: true, status: true, profile: { select: { level: true, elo: true, countryCode: true } } } })
     if (!user || user.status !== "ACTIVE") throw new BadRequestException("Player is not active")
+    const fraudProfile = await transaction.fraudProfile.findUnique({ where: { userId: input.userId }, select: { status: true, riskLevel: true } })
+    const rewardsHeld = Boolean(fraudProfile && (fraudProfile.status === "WATCH" || fraudProfile.riskLevel === "SUSPICIOUS" || fraudProfile.riskLevel === "HIGH" || fraudProfile.riskLevel === "CRITICAL"))
+    const rewardsRestricted = fraudProfile?.status === "RESTRICTED" || fraudProfile?.status === "SUSPENDED"
+    if (mode === MatchmakingTicketMode.RANKED && (rewardsHeld || rewardsRestricted)) throw new ConflictException("Ranked matchmaking is unavailable while reward integrity is under review")
+    const recentForfeit = await transaction.matchParticipant.findFirst({ where: { userId: input.userId, result: "FORFEIT", match: { createdAt: { gte: new Date(Date.now() - 600000) } } }, orderBy: { submittedAt: "desc" }, select: { id: true } })
+    if (recentForfeit) throw new ConflictException("Please wait a moment before joining another match after a forfeit")
     const playerLevel = user.profile?.level ?? 1
     // MatchmakingTicket keeps a required game relation for legacy/reporting
     // compatibility. Random casual tickets use a valid active game as a
@@ -49,6 +56,10 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
       : await transaction.gameDefinition.findUnique({ where: { key: requestedGameKey }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     const config = game?.configs[0]
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
+    await this.integrityPolicy.assertAvailable(game.key, mode as unknown as GameMode, [input.userId], transaction)
+    const progressionKeys = [...new Set([config.mainProgressionKey, config.eloProgressionKey])]
+    const validProgressions = await transaction.progressionDefinition.findMany({ where: { key: { in: progressionKeys }, active: true, tiers: { some: { step: 1, pointsThreshold: 0n } } }, select: { key: true } })
+    if (validProgressions.length !== progressionKeys.length) throw new ConflictException("This game reward configuration is incomplete")
     if (playerLevel < config.minimumPlayerLevel) throw new ConflictException(`Reach level ${config.minimumPlayerLevel} to unlock ${game.name}`)
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
     if (!activeContentCount && game.key !== "gem_blitz" && game.key !== "tile_rush" && game.key !== "word_dash" && game.key !== "domino" && game.key !== "perfect_timing" && game.key !== "bomb_path") throw new ConflictException("No active server content is configured for this game")
@@ -117,6 +128,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
 
     const idempotency = key ? await transaction.idempotencyKey.create({ data: { userId: input.userId, scope, key, requestHash, status: "PROCESSING" } }) : null
     const expiresAt = new Date(now.getTime() + queueTtlSeconds() * 1000)
+    const configuredBotFallback = mode === MatchmakingTicketMode.CASUAL && (Boolean(dto.allowBotFallback) || game.key === "domino" || (game.key === "perfect_timing" && configuredPolicy?.casualBotEnabled === true) || (game.key === "bomb_path" && configuredPolicy?.casualBotEnabled === true))
     const ticket = await transaction.matchmakingTicket.create({ data: {
       userId: input.userId,
       gameDefinitionId: game.id,
@@ -127,7 +139,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
       countryCodeSnapshot: user.profile?.countryCode?.trim().toUpperCase() || null,
       constraints: queueConstraints as Prisma.InputJsonValue | undefined,
       clientVersion: dto.clientVersion?.trim() || null,
-      allowBotFallback: mode === MatchmakingTicketMode.CASUAL && (Boolean(dto.allowBotFallback) || game.key === "domino" || (game.key === "perfect_timing" && configuredPolicy?.casualBotEnabled === true) || (game.key === "bomb_path" && configuredPolicy?.casualBotEnabled === true)),
+      allowBotFallback: configuredBotFallback && !rewardsHeld && !rewardsRestricted,
       rankingConfigId: rankingConfig?.id,
       rankingStakeAmount: rankingConfig?.stakeAmountGld,
       rankingEntryFee: rankingConfig?.entryFeeGld,

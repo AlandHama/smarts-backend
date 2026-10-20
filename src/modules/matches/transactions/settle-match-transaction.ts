@@ -12,6 +12,9 @@ import { botDisplayName } from "../utilities/bot-display-name"
 import { MissionsService } from "../../missions/missions.service"
 import { StreaksService } from "../../streaks/streaks.service"
 import { WinStreaksService } from "../../win-streaks/win-streaks.service"
+import { FraudService } from "../../fraud/fraud.service"
+import { deriveParticipantRewardEvidence, isAcceptedScoringEvent, rewardEligibilityForParticipant, type ParticipantRewardEvidence } from "./match-reward-integrity"
+import { normalizedMatchXp, rewardPolicy, type RewardPolicy } from "./match-reward-policy"
 
 type SettleInput = { matchId: string; userId: string; idempotencyKey: string }
 
@@ -25,6 +28,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     private readonly missions: MissionsService,
     private readonly streaks: StreaksService,
     private readonly winStreaks: WinStreaksService,
+    private readonly fraud: FraudService,
   ) { super(prisma) }
 
   protected async execute(input: SettleInput, transaction: Prisma.TransactionClient) {
@@ -43,9 +47,20 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     // normal answers so a match made entirely from skips can still settle and
     // its accuracy/progression stats remain truthful.
     const isBoardAuthoritative = lockedMatch.gameDefinition.key === "gem_blitz" || lockedMatch.gameDefinition.key === "tile_rush" || lockedMatch.gameDefinition.key === "word_dash" || lockedMatch.gameDefinition.key === "domino" || lockedMatch.gameDefinition.key === "perfect_timing" || lockedMatch.gameDefinition.key === "bomb_path"
-    const acceptedAnswers = isBoardAuthoritative
-      ? await transaction.matchEvent.count({ where: { matchId: lockedMatch.id, eventType: "SCORE_UPDATE", accepted: true } })
-      : await transaction.matchEvent.count({ where: { matchId: lockedMatch.id, eventType: { in: ["ANSWER", "SKIP"] }, accepted: true } })
+    const acceptedEvents = await transaction.matchEvent.findMany({
+      where: { matchId: lockedMatch.id, accepted: true },
+      orderBy: { serverReceivedAt: "asc" },
+      select: { participantId: true, eventType: true, payload: true, accepted: true, serverReceivedAt: true },
+    })
+    const acceptedEventsByParticipant = new Map<string, typeof acceptedEvents>()
+    for (const event of acceptedEvents) {
+      const events = acceptedEventsByParticipant.get(event.participantId) ?? []
+      events.push(event)
+      acceptedEventsByParticipant.set(event.participantId, events)
+    }
+    const evidenceByParticipant = new Map<string, ParticipantRewardEvidence>()
+    for (const participant of lockedMatch.participants) evidenceByParticipant.set(participant.id, deriveParticipantRewardEvidence(acceptedEventsByParticipant.get(participant.id) ?? [], isBoardAuthoritative))
+    const acceptedAnswers = [...evidenceByParticipant.values()].reduce((total, evidence) => total + evidence.acceptedActionCount, 0)
     if (!acceptedAnswers && !isPractice) {
       await transaction.match.update({ where: { id: lockedMatch.id }, data: { status: "REVIEW", endedAt: new Date() } })
       return { status: "REVIEW", matchId: lockedMatch.id, message: "No server-verified answers were recorded; competitive rewards were withheld" }
@@ -55,6 +70,14 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     // after an administrator activates a newer version. They must still settle
     // against that frozen configuration; other games keep the legacy guard.
     if (!config || (!config.active && !isBoardAuthoritative)) throw new BadRequestException("Game reward configuration is inactive")
+    if (!isPractice) {
+      const progressionKeys = [...new Set([config.mainProgressionKey, config.eloProgressionKey])]
+      const validProgressions = await transaction.progressionDefinition.findMany({ where: { key: { in: progressionKeys }, active: true, tiers: { some: { step: 1, pointsThreshold: 0n } } }, select: { key: true } })
+      if (validProgressions.length !== progressionKeys.length) {
+        await transaction.match.update({ where: { id: lockedMatch.id }, data: { status: "REVIEW", endedAt: new Date() } })
+        return { status: "REVIEW", matchId: lockedMatch.id, message: "Reward configuration is incomplete; settlement was held for review" }
+      }
+    }
     const cooperative = lockedMatch.cooperativeMatch
     const resetWinStreakOnNonWin = await this.winStreaks.shouldResetOnNonWin(transaction)
     const cooperativeRanked = cooperative?.mode === "RANKED"
@@ -66,6 +89,8 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     if (idem.status === "COMPLETED" && idem.responseJson) return idem.responseJson
 
     const scores = lockedMatch.participants.map((item) => ({ participant: item, score: BigInt(item.finalScore ?? 0) }))
+    const hasBotOpponent = lockedMatch.participants.some((item) => item.participantType === "BOT")
+    const ratedHumanMatch = !cooperative && !hasBotOpponent && (lockedMatch.mode === "RANKED" || Boolean(lockedMatch.rankingMatch))
     const teamScores = cooperative?.teams.map((team) => ({ teamId: team.id, score: team.score })) ?? []
     const highestTeamScore = teamScores.reduce((max, current) => Math.max(max, current.score), -Infinity)
     const topTeams = teamScores.filter((team) => team.score === highestTeamScore)
@@ -76,7 +101,10 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     const forfeited = scores.find((item) => item.participant.result === "FORFEIT")
     const winner = cooperative ? undefined : forfeited ? scores.find((item) => item.participant.id !== forfeited.participant.id) : winners.length === 1 ? winners[0] : undefined
     const draw = cooperative ? cooperativeDraw : !winner && !forfeited && scores.length > 1 && winners.length === scores.length
-    const policyVersion = `${lockedMatch.gameDefinition.key}:v${config.version}`
+    // Settlement must retain the exact integrity policy captured when the
+    // match was created, even if an administrator activates a newer policy
+    // before the match finishes.
+    const policyVersion = lockedMatch.integrityPolicyVersion ?? `${lockedMatch.gameDefinition.key}:v${config.version}`
     const results: any[] = []
 
     for (const item of scores) {
@@ -85,7 +113,51 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       const isWinner = cooperative ? Boolean(winnerTeamId && cooperativeParticipant?.teamId === winnerTeamId && !draw) : winner?.participant.id === item.participant.id
       const isDraw = draw
       const result = isWinner ? "WIN" : isDraw ? "DRAW" : item.participant.result === "FORFEIT" ? "FORFEIT" : "LOSS"
-      await transaction.matchParticipant.update({ where: { id: item.participant.id }, data: { result, submittedAt: item.participant.submittedAt ?? new Date() } })
+      const evidence = evidenceByParticipant.get(item.participant.id) ?? { acceptedActionCount: 0, acceptedScoringActionCount: 0, hasUnverifiedActions: false, verifiedPlayMilliseconds: 0, firstAcceptedAt: null, lastAcceptedAt: null }
+      const fraudProfile = item.participant.userId
+        ? await transaction.fraudProfile.findUnique({ where: { userId: item.participant.userId }, select: { status: true, riskLevel: true, score: true } })
+        : null
+      const fraudRestricted = fraudProfile?.status === "RESTRICTED" || fraudProfile?.status === "SUSPENDED"
+      const fraudHeld = !fraudRestricted && Boolean(fraudProfile && (fraudProfile.status === "WATCH" || fraudProfile.riskLevel === "SUSPICIOUS" || fraudProfile.riskLevel === "HIGH" || fraudProfile.riskLevel === "CRITICAL"))
+      const baseRewardEligibility = item.participant.userId
+        ? rewardEligibilityForParticipant({ isPractice, isBotOpponent: hasBotOpponent, isForfeit: result === "FORFEIT", hasUnverifiedActions: evidence.hasUnverifiedActions, acceptedScoringActionCount: evidence.acceptedScoringActionCount })
+        : "NONE"
+      // A forfeiture is never converted back into a reward hold by fraud
+      // scoring. This prevents a suspicious quitter from receiving capped XP.
+      const rewardEligibility = item.participant.userId
+        ? result === "FORFEIT" || fraudRestricted
+          ? "NONE"
+          : fraudHeld
+          ? "HELD"
+          : baseRewardEligibility
+        : "NONE"
+      const rewardHoldReason = isPractice
+        ? "PRACTICE_MATCH"
+        : result === "FORFEIT"
+        ? "FORFEIT"
+        : rewardEligibility === "PARTIAL"
+        ? "BOT_MATCH_CAP"
+        : rewardEligibility === "HELD"
+        ? fraudRestricted ? "FRAUD_RESTRICTED" : fraudHeld ? "FRAUD_REVIEW" : "LEGACY_CLIENT_CORRECTNESS"
+        : rewardEligibility === "NONE"
+        ? fraudRestricted ? "FRAUD_RESTRICTED" : "NO_VERIFIED_ACTIONS"
+        : null
+      await transaction.matchParticipant.update({
+        where: { id: item.participant.id },
+        data: {
+          result,
+          submittedAt: item.participant.submittedAt ?? new Date(),
+          acceptedActionCount: evidence.acceptedActionCount,
+          acceptedScoringActionCount: evidence.acceptedScoringActionCount,
+          verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds,
+          firstAcceptedAt: evidence.firstAcceptedAt,
+          lastAcceptedAt: evidence.lastAcceptedAt,
+          completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED",
+          terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null,
+          rewardEligibility,
+          rewardHoldReason,
+        },
+      })
       // Bots participate in the result calculation but never receive player
       // progression, wallet, leaderboard, or audit rewards.
       if (!player?.id) {
@@ -97,8 +169,15 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
           username: botDisplayName(lockedMatch.id, item.participant.id),
           participantType: item.participant.participantType,
           result,
+          completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED",
+          terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null,
           score: item.score.toString(),
           eloDelta: "0",
+          rewardEligibility: "NONE",
+          rewardHoldReason: "BOT_PARTICIPANT",
+          acceptedActionCount: evidence.acceptedActionCount,
+          acceptedScoringActionCount: evidence.acceptedScoringActionCount,
+          verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds,
           progression: null,
           eloProgression: null,
           wallet: null,
@@ -116,8 +195,15 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
           username: player.username,
           participantType: item.participant.participantType,
           result,
+          completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED",
+          terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null,
           score: item.score.toString(),
           eloDelta: "0",
+          rewardEligibility: "NONE",
+          rewardHoldReason,
+          acceptedActionCount: evidence.acceptedActionCount,
+          acceptedScoringActionCount: evidence.acceptedScoringActionCount,
+          verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds,
           progression: null,
           eloProgression: null,
           wallet: null,
@@ -127,43 +213,97 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         continue
       }
       const scoreDiff = winner && !isDraw ? item.score - (winner.participant.id === item.participant.id ? scores.find((candidate) => candidate.participant.id !== item.participant.id)?.score ?? 0n : winner.score) : 0n
-      const eloDelta = cooperativeRanked && cooperativePolicy?.cooperativeRewardsEnabled ? this.cooperativeEloDelta(cooperative, cooperativeParticipant, result, cooperativePolicy) : cooperative || item.participant.result === "FORFEIT" ? 0n : lockedMatch.mode === "SINGLE_PLAYER" || lockedMatch.mode === "BOT"
-        ? this.multiply(BigInt(Math.min(config.soloEloMaxDelta, Number(item.score / BigInt(config.soloEloScoreDivisor)))), config.rankingEnabled ? config.rankingEloMultiplier.toString() : "1")
-        : this.clamp(scoreDiff, -BigInt(config.maxEloDelta), BigInt(config.maxEloDelta))
-      const xp = this.multiply(this.multiply(item.score, config.scoreMultiplierForXp.toString()), config.rankingEnabled ? config.rankingLevelMultiplier.toString() : "1")
+      const forfeitPenalty = BigInt(Math.max(1, Math.floor(config.maxEloDelta / 2)))
+      const eloDelta = cooperativeRanked && cooperativePolicy?.cooperativeRewardsEnabled
+        ? this.cooperativeEloDelta(cooperative, cooperativeParticipant, result, cooperativePolicy)
+        : ratedHumanMatch && !fraudRestricted && !fraudHeld && (rewardEligibility === "FULL" || result === "FORFEIT")
+        ? forfeited
+          ? result === "FORFEIT" ? -forfeitPenalty : isWinner ? forfeitPenalty : 0n
+          : this.clamp(scoreDiff, -BigInt(config.maxEloDelta), BigInt(config.maxEloDelta))
+        : 0n
+      const policy = rewardPolicy(config, lockedMatch.gameDefinition.key)
+      const opponent = humanParticipants.find((candidate) => candidate.id !== item.participant.id)?.userId ?? null
+      const repeatedOpponent = item.participant.userId && opponent
+        ? await transaction.matchParticipant.count({ where: { userId: item.participant.userId, matchId: { not: lockedMatch.id }, match: { mode: { in: ["CASUAL", "BOT"] }, createdAt: { gte: new Date(Date.now() - 86400000) }, participants: { some: { userId: opponent } } } } })
+        : 0
+      const computedXp = rewardEligibility === "FULL" || rewardEligibility === "PARTIAL" || rewardEligibility === "HELD"
+        ? normalizedMatchXp(policy, item.score, result, hasBotOpponent, repeatedOpponent)
+        : 0n
       const rewardBase = isDraw ? config.drawReward : isWinner ? config.winnerBaseReward : config.loserBaseReward
       const rewardBonus = lockedMatch.mode === "SINGLE_PLAYER" || lockedMatch.mode === "BOT"
         ? this.min(config.scoreRewardCap, item.score / BigInt(config.scoreRewardDivisor))
         : isDraw ? 0n : this.min(isWinner ? config.winnerRewardBonusMax : config.loserRewardBonusMax, this.ratio(this.abs(scoreDiff), config.multiplayerRewardReference, isWinner ? config.winnerRewardBonusMax : config.loserRewardBonusMax))
       // Ranked entry matches distribute their explicitly configured pot. They
       // do not also mint the normal casual match reward.
-      const coinReward = lockedMatch.rankingMatch || cooperativeRanked
+      const computedCoinReward = rewardEligibility !== "FULL" || fraudHeld || fraudRestricted || lockedMatch.rankingMatch || cooperativeRanked
         ? 0n
-        : this.multiply(rewardBase + rewardBonus, config.rankingEnabled ? config.rankingCoinMultiplier.toString() : "1")
+        : this.diminish(this.multiply(rewardBase + rewardBonus, config.rankingEnabled ? config.rankingCoinMultiplier.toString() : "1"), policy.sameOpponentDiminishingFactor, repeatedOpponent)
+      let xp = rewardEligibility === "HELD" ? this.min(50n, computedXp) : computedXp
+      let coinReward = computedCoinReward
+      let xpCappedByDailyLimit = false
+      let gldCappedByDailyLimit = false
+      if (item.participant.userId && (xp > 0n || coinReward > 0n)) {
+        const capped = await this.applyDailyCaps(transaction, item.participant.userId, lockedMatch.gameDefinitionId, policy, xp, coinReward)
+        xpCappedByDailyLimit = capped.xp < xp
+        gldCappedByDailyLimit = capped.gld < coinReward
+        xp = capped.xp
+        coinReward = capped.gld
+      }
+      if (item.participant.userId && rewardEligibility === "HELD") {
+        await transaction.matchRewardHold.upsert({
+          where: { matchParticipantId: item.participant.id },
+          create: {
+            matchId: lockedMatch.id,
+            matchParticipantId: item.participant.id,
+            userId: item.participant.userId,
+            reason: rewardHoldReason ?? "REWARD_REVIEW",
+            heldXp: computedXp > xp ? computedXp - xp : 0n,
+            heldGld: computedCoinReward > coinReward ? computedCoinReward - coinReward : 0n,
+            heldElo: 0n,
+          },
+          update: {},
+        })
+      }
+      if (item.participant.userId) {
+        const fraudObservations: Array<{ type: string; metadata: Record<string, unknown> }> = []
+        if (result === "FORFEIT") fraudObservations.push({ type: "REPEATED_MATCH_FORFEITS", metadata: { gameKey: lockedMatch.gameDefinition.key, terminationReason: item.participant.terminationReason ?? "VOLUNTARY_FORFEIT" } })
+        if (lockedMatch.rankingMatch && result === "FORFEIT") fraudObservations.push({ type: "RANKED_QUIT_AVOIDANCE", metadata: { gameKey: lockedMatch.gameDefinition.key } })
+        if (evidence.acceptedActionCount <= 1 || evidence.verifiedPlayMilliseconds < 1000) fraudObservations.push({ type: "SHORT_MATCH_REWARD_FARMING", metadata: { gameKey: lockedMatch.gameDefinition.key, acceptedActionCount: evidence.acceptedActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds } })
+        if (hasBotOpponent) fraudObservations.push({ type: "BOT_REWARD_FARMING", metadata: { gameKey: lockedMatch.gameDefinition.key } })
+        if (repeatedOpponent >= 3) fraudObservations.push({ type: "SAME_OPPONENT_FARMING", metadata: { gameKey: lockedMatch.gameDefinition.key, repeatedOpponent } })
+        if (xpCappedByDailyLimit) fraudObservations.push({ type: "MATCH_XP_VELOCITY", metadata: { gameKey: lockedMatch.gameDefinition.key, requestedXp: computedXp.toString(), awardedXp: xp.toString() } })
+        if (gldCappedByDailyLimit) fraudObservations.push({ type: "MATCH_GLD_VELOCITY", metadata: { gameKey: lockedMatch.gameDefinition.key, requestedGld: computedCoinReward.toString(), awardedGld: coinReward.toString() } })
+        for (const observation of fraudObservations) {
+          await this.fraud.observe(item.participant.userId, { type: observation.type, sourceType: "MATCH_SETTLEMENT", sourceId: `${lockedMatch.id}:${item.participant.userId}:${observation.type}`, metadata: { matchId: lockedMatch.id, ...observation.metadata } }).catch(() => undefined)
+        }
+      }
 
-      const progression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.mainProgressionKey, amount: xp, sourceId: `${lockedMatch.id}:xp:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
-      const eloProgression = await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.eloProgressionKey, amount: eloDelta, sourceId: `${lockedMatch.id}:elo:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
-      const wallet = await this.creditWallet.runWithinTransaction({ userId: player.id, currencyCode: config.rewardCurrencyCode, amount: coinReward, sourceId: `${lockedMatch.id}:currency:${player.id}`, sourceType: WalletTransactionSourceType.MATCH, metadata: { matchId: lockedMatch.id, result, policyVersion } }, transaction)
-      const answerEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: isBoardAuthoritative ? "SCORE_UPDATE" : { in: ["ANSWER", "SKIP"] }, accepted: true }, select: { payload: true } })
+      const progression = xp > 0n ? await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.mainProgressionKey, amount: xp, sourceId: `${lockedMatch.id}:xp:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, rewardEligibility } }, transaction) : null
+      const eloProgression = eloDelta !== 0n ? await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.eloProgressionKey, amount: eloDelta, sourceId: `${lockedMatch.id}:elo:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, rewardEligibility } }, transaction) : null
+      const wallet = coinReward > 0n ? await this.creditWallet.runWithinTransaction({ userId: player.id, currencyCode: config.rewardCurrencyCode, amount: coinReward, sourceId: `${lockedMatch.id}:currency:${player.id}`, sourceType: WalletTransactionSourceType.MATCH, metadata: { matchId: lockedMatch.id, result, policyVersion, rewardEligibility } }, transaction) : null
+      const answerEvents = (acceptedEventsByParticipant.get(item.participant.id) ?? []).filter((event) => isAcceptedScoringEvent(event, isBoardAuthoritative))
       const answerSummary = answerEvents.reduce((summary, event) => {
         const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {}
         const timeTakenMs = typeof payload.timeTakenMs === "number" && Number.isSafeInteger(payload.timeTakenMs) && payload.timeTakenMs >= 0 ? payload.timeTakenMs : 0
         return { totalQuestions: summary.totalQuestions + 1, totalCorrect: summary.totalCorrect + (isBoardAuthoritative ? 1 : payload.correct === true ? 1 : 0), totalTimeMs: summary.totalTimeMs + BigInt(timeTakenMs) }
       }, { totalQuestions: 0, totalCorrect: 0, totalTimeMs: 0n })
       const engagementPayload = { matchId: lockedMatch.id, gameKey: lockedMatch.gameDefinition.key, mode: lockedMatch.mode, ranking: Boolean(lockedMatch.rankingMatch) }
-      await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:played`, payload: engagementPayload }, transaction)
-      await this.streaks.recordWithinTransaction({ userId: player.id, sourceId: lockedMatch.id, activityType: "MATCH_COMPLETED" }, transaction)
-      if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:won`, payload: engagementPayload }, transaction)
-      if (!isBoardAuthoritative && answerSummary.totalCorrect > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "CORRECT_ANSWER", sourceId: `${lockedMatch.id}:${player.id}:correct`, amount: answerSummary.totalCorrect, payload: engagementPayload }, transaction)
-      if (!isBoardAuthoritative && answerSummary.totalQuestions > 0 && answerSummary.totalCorrect === answerSummary.totalQuestions) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "PERFECT_MATCH", sourceId: `${lockedMatch.id}:${player.id}:perfect`, payload: engagementPayload }, transaction)
-      if (lockedMatch.gameDefinition.key === "gem_blitz") {
+      const grantGameplayCredit = rewardEligibility === "FULL"
+      if (grantGameplayCredit) {
+        await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:played`, payload: engagementPayload }, transaction)
+        await this.streaks.recordWithinTransaction({ userId: player.id, sourceId: lockedMatch.id, activityType: "MATCH_COMPLETED" }, transaction)
+        if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:won`, payload: engagementPayload }, transaction)
+        if (!isBoardAuthoritative && answerSummary.totalCorrect > 0) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "CORRECT_ANSWER", sourceId: `${lockedMatch.id}:${player.id}:correct`, amount: answerSummary.totalCorrect, payload: engagementPayload }, transaction)
+        if (!isBoardAuthoritative && answerSummary.totalQuestions > 0 && answerSummary.totalCorrect === answerSummary.totalQuestions) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "PERFECT_MATCH", sourceId: `${lockedMatch.id}:${player.id}:perfect`, payload: engagementPayload }, transaction)
+      }
+      if (grantGameplayCredit && lockedMatch.gameDefinition.key === "gem_blitz") {
         const gemEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: "SCORE_UPDATE", accepted: true }, select: { payload: true } })
         const specialEvents = gemEvents.filter((event) => { const payload = event.payload as any; return typeof payload?.specialCreated === "string" && payload.specialCreated.length > 0 })
         const comboEvents = gemEvents.filter((event) => { const payload = event.payload as any; return Number(payload?.cascades ?? 0) > 1 || Number(payload?.speedCombo ?? 0) > 1 })
         if (specialEvents.length) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "GEM_BLITZ_SPECIAL", sourceId: `${lockedMatch.id}:${player.id}:specials`, amount: specialEvents.length, payload: { ...engagementPayload, count: specialEvents.length } }, transaction)
         if (comboEvents.length) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "GEM_BLITZ_COMBO", sourceId: `${lockedMatch.id}:${player.id}:combos`, amount: comboEvents.length, payload: { ...engagementPayload, count: comboEvents.length } }, transaction)
       }
-      if (lockedMatch.gameDefinition.key === "tile_rush") {
+      if (grantGameplayCredit && lockedMatch.gameDefinition.key === "tile_rush") {
         const tileEvents = await transaction.matchEvent.findMany({ where: { matchId: lockedMatch.id, participantId: item.participant.id, eventType: "SCORE_UPDATE", accepted: true }, select: { payload: true } })
         const payloads = tileEvents.map((event) => event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, any> : {})
         const tilesCleared = payloads.reduce((total, payload) => total + (Array.isArray(payload.clearedCells) ? payload.clearedCells.length : 0), 0)
@@ -180,21 +320,23 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
           if (opponentScore != null && item.score - opponentScore < 100n) await this.missions.recordWithinTransaction({ userId: player.id, eventType: "TILE_RUSH_CLOSE_WIN", sourceId: `${lockedMatch.id}:${player.id}:close-win`, payload: engagementPayload }, transaction)
         }
       }
-      if (lockedMatch.rankingMatch || cooperativeRanked) {
+      if (grantGameplayCredit && (lockedMatch.rankingMatch || cooperativeRanked)) {
         await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:ranked-played`, payload: engagementPayload }, transaction)
         if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:ranked-won`, payload: engagementPayload }, transaction)
       }
-      const winStreak = await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary, resetWinStreakOnNonWin)
-      const cognitiveStats = await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary)
-      if (eloDelta > 0n && (winner?.participant.id === item.participant.id || (cooperativeRanked && isWinner))) {
+      const winStreak = grantGameplayCredit
+        ? await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary, resetWinStreakOnNonWin)
+        : { before: 0, after: 0 }
+      const cognitiveStats = grantGameplayCredit ? await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary) : null
+      if (eloDelta !== 0n && (ratedHumanMatch || cooperativeRanked) && rewardEligibility === "FULL") {
         const leaderboardKeys = this.getLeaderboardKeys(config)
-        for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
+        for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: eloDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
         const country = player.profile?.countryCode?.trim().toUpperCase()
         const opponent = humanParticipants.find((candidate) => candidate.id !== item.participant.id)?.user?.profile?.countryCode?.trim().toUpperCase()
-        if (country && country !== opponent) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: eloDelta, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
+        if (country && country !== opponent) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: eloDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       }
-      await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, changes: { result: { old: "PENDING", new: result }, scoreEarned: { old: 0n, new: item.score }, eloDelta: { old: 0n, new: eloDelta }, xpAwarded: { old: 0n, new: xp }, currencyReward: { old: 0n, new: coinReward } }, metadata: { gameKey: lockedMatch.gameDefinition.key, policyVersion } })
-      results.push({ playerId: player.id, username: player.username, result, score: item.score.toString(), eloDelta: eloDelta.toString(), progression, eloProgression, wallet, cognitiveStats, winStreakBefore: winStreak.before, winStreakAfter: winStreak.after })
+      await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, changes: { result: { old: "PENDING", new: result }, scoreEarned: { old: 0n, new: item.score }, eloDelta: { old: 0n, new: eloDelta }, xpAwarded: { old: 0n, new: xp }, currencyReward: { old: 0n, new: coinReward } }, metadata: { gameKey: lockedMatch.gameDefinition.key, policyVersion, rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds } })
+      results.push({ playerId: player.id, participantType: item.participant.participantType, username: player.username, result, completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED", terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null, score: item.score.toString(), eloDelta: eloDelta.toString(), rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds, progression, eloProgression, wallet, cognitiveStats, winStreakBefore: winStreak.before, winStreakAfter: winStreak.after })
     }
 
     const endedOpponentStreaks = results
@@ -204,9 +346,22 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       if (entry.result === "WIN" && endedOpponentStreaks.length) entry.endedOpponentStreaks = endedOpponentStreaks
     }
 
+    const holdRankedPayout = async (participant: any, amount: bigint, reason: string) => {
+      if (!participant.userId || amount <= 0n) return
+      await transaction.matchRewardHold.upsert({
+        where: { matchParticipantId: participant.id },
+        create: { matchId: lockedMatch.id, matchParticipantId: participant.id, userId: participant.userId, reason, heldXp: 0n, heldGld: amount, heldElo: 0n },
+        update: { heldGld: { increment: amount }, reason },
+      })
+      await transaction.matchParticipant.update({ where: { id: participant.id }, data: { rewardEligibility: "HELD", rewardHoldReason: reason } })
+      const resultEntry = results.find((entry) => entry.playerId === participant.userId)
+      if (resultEntry) { resultEntry.rewardEligibility = "HELD"; resultEntry.rewardHoldReason = reason }
+    }
+
     if (!isPractice && lockedMatch.rankingMatch) {
       if (winner?.participant.userId) {
-        await this.creditWallet.runWithinTransaction({
+        const winnerResult = results.find((entry) => entry.playerId === winner.participant.userId)
+        if (winnerResult?.rewardEligibility === "FULL") await this.creditWallet.runWithinTransaction({
           userId: winner.participant.userId,
           currencyCode: "GLD",
           amount: lockedMatch.rankingMatch.payoutAmountGld,
@@ -214,6 +369,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
           sourceType: WalletTransactionSourceType.RANKING_MATCH_PAYOUT,
           metadata: { matchId: lockedMatch.id, stakeAmountGld: lockedMatch.rankingMatch.stakeAmountGld.toString(), entryFeeGld: lockedMatch.rankingMatch.entryFeeGld.toString(), entryFeeGldMicros: lockedMatch.rankingMatch.entryFeeGldMicros.toString(), payoutAmountGld: lockedMatch.rankingMatch.payoutAmountGld.toString() },
         }, transaction)
+        else await holdRankedPayout(winner.participant, lockedMatch.rankingMatch.payoutAmountGld, "RANKED_PAYOUT_REVIEW")
         await transaction.rankingMatch.update({ where: { id: lockedMatch.rankingMatch.id }, data: { status: "SETTLED", winnerUserId: winner.participant.userId, settledAt: new Date() } })
       } else {
         // A draw returns each stake after retaining the configured entry fee.
@@ -230,8 +386,14 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       if (winnerTeamId && winningPlayers.length) {
         const perWinner = new Prisma.Decimal(cooperative.payoutAmountGld).div(winningPlayers.length)
         for (const item of winningPlayers) {
+          const itemResult = results.find((entry) => entry.playerId === item.userId)
+          const payoutAmount = BigInt(perWinner.floor().toFixed(0))
+          if (itemResult?.rewardEligibility !== "FULL") {
+            await holdRankedPayout(item, payoutAmount, "COOPERATIVE_RANKED_PAYOUT_REVIEW")
+            continue
+          }
           const sourceId = `${lockedMatch.id}:cooperative-payout:${item.userId}`
-          await this.creditWallet.runWithinTransaction({ userId: item.userId!, currencyCode: "GLD", amount: BigInt(perWinner.floor().toFixed(0)), amountDecimal: perWinner.toString(), sourceId, sourceType: WalletTransactionSourceType.RANKING_MATCH_PAYOUT, metadata: { matchId: lockedMatch.id, cooperative: true, mode: "RANKED", payoutAmountGld: perWinner.toString() } }, transaction)
+          await this.creditWallet.runWithinTransaction({ userId: item.userId!, currencyCode: "GLD", amount: payoutAmount, amountDecimal: perWinner.toString(), sourceId, sourceType: WalletTransactionSourceType.RANKING_MATCH_PAYOUT, metadata: { matchId: lockedMatch.id, cooperative: true, mode: "RANKED", payoutAmountGld: perWinner.toString() } }, transaction)
           const ledger = await transaction.walletTransaction.findFirst({ where: { sourceId, sourceType: WalletTransactionSourceType.RANKING_MATCH_PAYOUT }, orderBy: { createdAt: "desc" }, select: { id: true } })
           await transaction.cooperativeLedgerOperation.upsert({ where: { idempotencyKey: sourceId }, create: { cooperativeMatchId: cooperative.id, userId: item.userId!, operationType: "PAYOUT", amount: perWinner, walletTransactionId: ledger?.id, idempotencyKey: sourceId, status: "CAPTURED", metadata: { teamId: winnerTeamId } as Prisma.InputJsonValue }, update: { status: "CAPTURED", walletTransactionId: ledger?.id } })
         }
@@ -398,6 +560,42 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     return Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : minimum
   }
 
+  private async applyDailyCaps(
+    transaction: Prisma.TransactionClient,
+    userId: string,
+    gameDefinitionId: string,
+    policy: RewardPolicy,
+    requestedXp: bigint,
+    requestedGld: bigint,
+  ) {
+    const now = new Date()
+    const dayKey = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    // Serialize every reward settlement for this account/day, regardless of
+    // game. A per-game ledger row lock alone allows concurrent games to each
+    // observe the same remaining account-wide allowance.
+    const accountDayLock = `match-reward-day:${userId}:${dayKey.toISOString().slice(0, 10)}`
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${accountDayLock}, 0))`
+    const ledger = await transaction.matchRewardDailyLedger.upsert({
+      where: { userId_gameDefinitionId_dayKey: { userId, gameDefinitionId, dayKey } },
+      create: { userId, gameDefinitionId, dayKey },
+      update: {},
+    })
+    await transaction.$queryRaw`SELECT "id" FROM "MatchRewardDailyLedger" WHERE "id" = ${ledger.id} FOR UPDATE`
+    const lockedLedger = await transaction.matchRewardDailyLedger.findUniqueOrThrow({ where: { id: ledger.id } })
+    const accountTotals = await transaction.matchRewardDailyLedger.aggregate({ where: { userId, dayKey }, _sum: { xpAwarded: true, gldAwarded: true } })
+    const accountXp = accountTotals._sum.xpAwarded ?? 0n
+    const accountGld = accountTotals._sum.gldAwarded ?? 0n
+    const gameXpRemaining = policy.dailyGameXpCap > lockedLedger.xpAwarded ? policy.dailyGameXpCap - lockedLedger.xpAwarded : 0n
+    const accountXpRemaining = policy.dailyAccountXpCap > accountXp ? policy.dailyAccountXpCap - accountXp : 0n
+    const gldRemaining = policy.dailyGldCap > accountGld ? policy.dailyGldCap - accountGld : 0n
+    const xp = this.min(requestedXp, this.min(gameXpRemaining, accountXpRemaining))
+    const gld = this.min(requestedGld, gldRemaining)
+    if (xp > 0n || gld > 0n) {
+      await transaction.matchRewardDailyLedger.update({ where: { id: ledger.id }, data: { xpAwarded: { increment: xp }, gldAwarded: { increment: gld }, matchCount: { increment: 1 } } })
+    }
+    return { xp, gld }
+  }
+
   private abs(value: bigint) { return value < 0n ? -value : value }
   private min(a: bigint, b: bigint) { return a < b ? a : b }
   private clamp(value: bigint, minimum: bigint, maximum: bigint) { return value < minimum ? minimum : value > maximum ? maximum : value }
@@ -409,6 +607,11 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     const sign = value < 0n ? -1n : 1n
     const absolute = this.abs(value)
     return sign * ((absolute * scaled + scale / 2n) / scale)
+  }
+
+  private diminish(value: bigint, factor: number, repeats: number) {
+    if (value <= 0n || repeats <= 0) return value
+    return BigInt(Math.floor(Number(value) * Math.pow(factor, repeats)))
   }
 
   private getLeaderboardKeys(config: any) {

@@ -687,6 +687,10 @@ model User {
   fraudProfilesReviewed       FraudProfile[]               @relation("FraudProfileReviewer")
   fraudActions                FraudAction[]                @relation("FraudActionActor")
   fraudActionsForUser         FraudAction[]                @relation("FraudActionsForUser")
+  matchRewardDailyLedgers     MatchRewardDailyLedger[]
+  playerInstalls              PlayerInstall[]
+  matchRewardHolds            MatchRewardHold[]
+  reviewedMatchRewardHolds    MatchRewardHold[]          @relation("MatchRewardHoldReviewer")
   chatParticipants            ChatParticipant[]
   chatMessagesSent            ChatMessage[]                @relation("ChatMessageSender")
   createdChatConversations    ChatConversation[]           @relation("ChatConversationCreator")
@@ -2578,6 +2582,7 @@ model GameDefinition {
   rounds             MatchRound[]
   cooperativeMatches CooperativeMatch[]
   dailyChallenges    DailyChallenge[]
+  matchRewardDailyLedgers MatchRewardDailyLedger[]
 }
 
 model GameConfig {
@@ -2633,6 +2638,7 @@ model Match {
   settledAt            DateTime?
   createdByUserId      String                   @db.Uuid
   metadata             Json?
+  integrityPolicyVersion String                   @default("match-integrity-v3") @db.VarChar(64)
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
   gameDefinition       GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
@@ -2655,6 +2661,7 @@ model Match {
   wordDashSubmissions  WordDashSubmission[]
   dominoActions        DominoAction[]
   perfectTimingActions PerfectTimingAction[]
+  rewardHolds          MatchRewardHold[]
 
   @@index([status, createdAt])
   @@index([createdByUserId, status])
@@ -2812,6 +2819,17 @@ model MatchParticipant {
   participantType        MatchParticipantType
   finalScore             Int?
   answeredCount          Int                            @default(0)
+  acceptedActionCount    Int                            @default(0)
+  acceptedScoringActionCount Int                         @default(0)
+  verifiedPlayMilliseconds Int                          @default(0)
+  firstAcceptedAt        DateTime?
+  lastAcceptedAt         DateTime?
+  lastActivityAt         DateTime?
+  disconnectGraceUntil   DateTime?
+  completionState        String                         @default("PENDING") @db.VarChar(24)
+  terminationReason      String?                        @db.VarChar(48)
+  rewardEligibility      String                         @default("NONE") @db.VarChar(16)
+  rewardHoldReason       String?                        @db.VarChar(160)
   result                 MatchParticipantResult         @default(PENDING)
   readyAt                DateTime?
   submittedAt            DateTime?
@@ -2829,10 +2847,108 @@ model MatchParticipant {
   dominoActions          DominoAction[]
   perfectTimingState     PerfectTimingParticipantState?
   perfectTimingActions   PerfectTimingAction[]
+  rewardHold             MatchRewardHold?
 
   @@unique([matchId, userId])
   @@index([matchId, result])
+  @@index([matchId, rewardEligibility])
   @@index([userId, createdAt])
+}
+
+/// Atomic per-user daily reward counters. Settlement updates this row while
+/// holding the match lock, so retries and multiple devices cannot bypass the
+/// daily game/account caps.
+model MatchRewardDailyLedger {
+  id               String         @id @default(uuid()) @db.Uuid
+  userId           String         @db.Uuid
+  gameDefinitionId String         @db.Uuid
+  dayKey           DateTime       @db.Date
+  xpAwarded        BigInt         @default(0)
+  gldAwarded       BigInt         @default(0)
+  matchCount       Int            @default(0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameDefinition   GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gameDefinitionId, dayKey])
+  @@index([userId, dayKey])
+}
+
+/// A durable install identity is a risk signal, never an account identity.
+/// Progression and ownership remain attached to User, so changing devices is
+/// safe while clusters can still be investigated server-side.
+model PlayerInstall {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @db.Uuid
+  installIdHash       String   @unique @db.Char(64)
+  platform            String   @db.VarChar(24)
+  appVersion          String?  @db.VarChar(48)
+  attestationProvider String?  @db.VarChar(32)
+  attestationStatus   String   @default("UNKNOWN") @db.VarChar(24)
+  attestationHash     String?  @db.Char(64)
+  ipHash              String?  @db.Char(64)
+  networkRisk         String   @default("UNKNOWN") @db.VarChar(24)
+  firstSeenAt         DateTime @default(now())
+  lastSeenAt          DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lastSeenAt])
+  @@index([attestationStatus, lastSeenAt])
+  @@index([ipHash, lastSeenAt])
+}
+
+/// Amounts withheld by reward-integrity review are retained as a bounded,
+/// auditable ledger. Release/cancel actions are idempotent and admin-audited.
+model MatchRewardHold {
+  id                String   @id @default(uuid()) @db.Uuid
+  matchId           String   @db.Uuid
+  matchParticipantId String  @unique @db.Uuid
+  userId            String   @db.Uuid
+  status            String   @default("HELD") @db.VarChar(16)
+  reason            String   @db.VarChar(160)
+  heldXp            BigInt   @default(0)
+  heldGld           BigInt   @default(0)
+  heldElo           BigInt   @default(0)
+  reviewedById      String?  @db.Uuid
+  reviewedAt        DateTime?
+  reviewNote        String?  @db.VarChar(500)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  match             Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  matchParticipant  MatchParticipant  @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy        User?             @relation("MatchRewardHoldReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([userId, status])
+  @@index([matchId, status])
+}
+
+/// Versioned operational rollout policy. A policy is selected for new matches
+/// only; existing matches keep their captured integrityPolicyVersion.
+model MatchIntegrityPolicy {
+  id                 String   @id @default(uuid()) @db.Uuid
+  scopeKey           String   @db.VarChar(120)
+  gameKey            String?  @db.VarChar(64)
+  mode               String?  @db.VarChar(24)
+  version            Int      @default(1)
+  active             Boolean  @default(true)
+  killSwitch         Boolean  @default(false)
+  rolloutPercentage  Int      @default(100)
+  casualEnabled      Boolean  @default(true)
+  rankedEnabled      Boolean  @default(true)
+  practiceEnabled    Boolean  @default(true)
+  settings           Json?
+  createdById        String?  @db.Uuid
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([gameKey, mode, active])
+  @@index([active, rolloutPercentage])
+  @@unique([scopeKey, version])
 }
 
 /// Server-owned four-seat Domino state. Private hands and the boneyard remain

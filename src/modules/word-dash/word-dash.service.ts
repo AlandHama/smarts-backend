@@ -54,7 +54,7 @@ export class WordDashService {
       const policy = this.policy(match)
       let wordDash = await this.ensureState(tx, match, policy)
       const now = new Date()
-      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now } })
+      await tx.matchParticipant.update({ where: { id: participant.id }, data: { readyAt: participant.readyAt ?? now, lastActivityAt: now, disconnectGraceUntil: null } })
       const readiness = await tx.matchParticipant.findMany({ where: { matchId }, select: { id: true, participantType: true, readyAt: true } })
       const ready = readiness.filter((item: any) => item.participantType === "BOT" || item.readyAt !== null)
       const existingStarted = Boolean(wordDash.startedAt)
@@ -186,6 +186,7 @@ export class WordDashService {
     await tx.wordDashParticipantState.update({ where: { id: state.id }, data: nextState })
     await syncCooperativeParticipantScore(tx, match.id, participantId, result.totalScore)
     await tx.matchEvent.create({ data: { matchId: match.id, participantId, eventType: "SCORE_UPDATE", sequence: dto.sequence, clientEventId: dto.clientSubmissionId, payload: { game: "word_dash", eventKind: "WORD_SUBMISSION", length: result.length, scoreDelta: result.scoreDelta, combo: result.combo, comboLabel: result.comboLabel } as Prisma.InputJsonValue, accepted: true, clientOccurredAt: clientReleasedAt } })
+    await tx.matchParticipant.update({ where: { id: participantId }, data: { lastActivityAt: now } })
     return submission
   }
 
