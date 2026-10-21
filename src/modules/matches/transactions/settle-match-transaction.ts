@@ -324,10 +324,16 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:ranked-played`, payload: engagementPayload }, transaction)
         if (result === "WIN") await this.missions.recordWithinTransaction({ userId: player.id, eventType: "RANKED_MATCH_WON", sourceId: `${lockedMatch.id}:${player.id}:ranked-won`, payload: engagementPayload }, transaction)
       }
-      const winStreak = grantGameplayCredit
+      // PlayerGameStats is the source for the per-game all-time leaderboard.
+      // Eligible CASUAL human matches are deliberately included here; only
+      // PRACTICE, bot/reduced-evidence, forfeited, or held matches are
+      // excluded by rewardEligibility. This is separate from public Elo,
+      // which remains ranked-only below.
+      const gameLeaderboardEligible = grantGameplayCredit && !isPractice
+      const winStreak = gameLeaderboardEligible
         ? await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary, resetWinStreakOnNonWin)
         : { before: 0, after: 0 }
-      const cognitiveStats = grantGameplayCredit ? await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary) : null
+      const cognitiveStats = gameLeaderboardEligible ? await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary) : null
       if (eloDelta !== 0n && (ratedHumanMatch || cooperativeRanked) && rewardEligibility === "FULL") {
         const leaderboardKeys = this.getLeaderboardKeys(config)
         for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: eloDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)

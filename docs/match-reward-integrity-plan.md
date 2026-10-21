@@ -76,7 +76,7 @@ Before changing code, freeze these rules in an admin-managed policy version.
 | Mode | XP | GLD | Public Elo | Hidden matchmaking rating | Leaderboard |
 |---|---:|---:|---:|---:|---:|
 | Practice | No | No | No | No | No |
-| Casual versus human | Yes, subject to eligibility | Yes, subject to eligibility | No | Optional | No ranked leaderboard |
+| Casual versus human | Yes, subject to eligibility | Yes, subject to eligibility | No | Optional | Yes, per-game best-score leaderboard |
 | Casual versus bot | Reduced or capped XP | No GLD | No | No | No |
 | Ranked versus human | Yes | Ranked payout only | Yes | Yes | Yes |
 | Ranked versus bot | Disabled by default | Disabled | Disabled | Disabled | Disabled |
@@ -93,7 +93,7 @@ The forfeiting player receives:
 - zero GLD reward;
 - no `MATCH_COMPLETED` streak credit;
 - no win, perfect-match, correct-answer, or gameplay mission credit;
-- no leaderboard score;
+- no leaderboard score (including the per-game leaderboard);
 - no cognitive-skill update from the abandoned match;
 - a `FORFEIT` statistic increment;
 - a ranked rating loss according to the ranked rating policy.
@@ -235,6 +235,11 @@ For casual matches:
 - cap daily GLD earned from matches;
 - apply diminishing returns for repeated matches against the same opponent, bot, or account cluster;
 - keep ranked payouts separate from casual reward minting.
+
+Eligible casual human matches are included in the selected game's all-time
+best-score leaderboard. This is written from authoritative `PlayerGameStats`
+during settlement and does not grant public Elo or place bot/practice/held
+matches on the board.
 
 For all reward writes:
 
