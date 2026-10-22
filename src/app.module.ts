@@ -30,6 +30,7 @@ import { StreaksModule } from "./modules/streaks/streaks.module"
 import { ChatsModule } from "./modules/chats/chats.module"
 import { SupportModule } from "./modules/support/support.module"
 import { CooperativeModule } from "./modules/cooperative/cooperative.module"
+import { AllyModule } from "./modules/ally/ally.module"
 import { WinStreaksModule } from "./modules/win-streaks/win-streaks.module"
 import { DailyChallengesModule } from "./modules/daily-challenges/daily-challenges.module"
 import { GemBlitzModule } from "./modules/gem-blitz/gem-blitz.module"
@@ -42,7 +43,7 @@ import { PerfectTimingModule } from "./modules/perfect-timing/perfect-timing.mod
 import { BombPathModule } from "./modules/bomb-path/bomb-path.module"
 
 @Module({
-  imports: [ContentSafetyModule, DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, CooperativeModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule, PerfectTimingModule, BombPathModule],
+  imports: [ContentSafetyModule, DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, AllyModule, CooperativeModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule, PerfectTimingModule, BombPathModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

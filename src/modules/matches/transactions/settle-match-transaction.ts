@@ -15,6 +15,7 @@ import { WinStreaksService } from "../../win-streaks/win-streaks.service"
 import { FraudService } from "../../fraud/fraud.service"
 import { deriveParticipantRewardEvidence, isAcceptedScoringEvent, rewardEligibilityForParticipant, type ParticipantRewardEvidence } from "./match-reward-integrity"
 import { normalizedMatchXp, rewardPolicy, type RewardPolicy } from "./match-reward-policy"
+import { AllyService } from "../../ally/ally.service"
 
 type SettleInput = { matchId: string; userId: string; idempotencyKey: string }
 
@@ -29,6 +30,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     private readonly streaks: StreaksService,
     private readonly winStreaks: WinStreaksService,
     private readonly fraud: FraudService,
+    private readonly allies: AllyService,
   ) { super(prisma) }
 
   protected async execute(input: SettleInput, transaction: Prisma.TransactionClient) {
@@ -167,6 +169,8 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         results.push({
           playerId: item.participant.id,
           username: botDisplayName(lockedMatch.id, item.participant.id),
+          displayName: botDisplayName(lockedMatch.id, item.participant.id),
+          avatarUrl: null,
           participantType: item.participant.participantType,
           result,
           completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED",
@@ -193,6 +197,8 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         results.push({
           playerId: player.id,
           username: player.username,
+          displayName: player.profile?.displayName ?? player.username,
+          avatarUrl: player.profile?.avatarUrl ?? null,
           participantType: item.participant.participantType,
           result,
           completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED",
@@ -342,7 +348,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         if (country && country !== opponent) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: eloDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
       }
       await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, changes: { result: { old: "PENDING", new: result }, scoreEarned: { old: 0n, new: item.score }, eloDelta: { old: 0n, new: eloDelta }, xpAwarded: { old: 0n, new: xp }, currencyReward: { old: 0n, new: coinReward } }, metadata: { gameKey: lockedMatch.gameDefinition.key, policyVersion, rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds } })
-      results.push({ playerId: player.id, participantType: item.participant.participantType, username: player.username, result, completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED", terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null, score: item.score.toString(), eloDelta: eloDelta.toString(), rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds, progression, eloProgression, wallet, cognitiveStats, winStreakBefore: winStreak.before, winStreakAfter: winStreak.after })
+      results.push({ playerId: player.id, participantType: item.participant.participantType, username: player.username, displayName: player.profile?.displayName ?? player.username, avatarUrl: player.profile?.avatarUrl ?? null, result, completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED", terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null, score: item.score.toString(), eloDelta: eloDelta.toString(), rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds, progression, eloProgression, wallet, cognitiveStats, winStreakBefore: winStreak.before, winStreakAfter: winStreak.after })
     }
 
     const endedOpponentStreaks = results
@@ -432,6 +438,16 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
           data: { status: "READY", matchedAt: null, queuedAt: null, expiresAt: new Date(Date.now() + Number(cooperativePolicy?.partyIdleMinutes ?? 30) * 60_000) },
         })
       }
+      await this.allies.recordSettledCooperativeMatchWithinTransaction(transaction, {
+        matchId: lockedMatch.id,
+        mode: cooperative.mode,
+        botFilled: cooperative.botFilled,
+        participants: cooperative.participants.map((participant) => {
+          const result = results.find((entry) => entry.playerId === participant.userId)
+          return { userId: participant.userId, teamId: participant.teamId, result: result?.result ?? "LOSS", rewardEligibility: result?.rewardEligibility ?? "NONE" }
+        }),
+        teams: cooperative.teams.map((team) => ({ id: team.id, result: draw ? "DRAW" : team.id === winnerTeamId ? "WIN" : "LOSS" })),
+      })
     }
     const settlementJson = { status: "SETTLED", matchId: lockedMatch.id, mode: lockedMatch.mode, practice: isPractice, policyVersion, winnerPlayerId: winner?.participant.userId ?? null, draw, cooperative: !isPractice && cooperative ? { mode: cooperative.mode, winnerTeamId: winnerTeamId ?? null, entryFeeGld: cooperative.entryFeeGld, payoutAmountGld: cooperative.payoutAmountGld, teams: cooperative.teams.map((team) => ({ teamId: team.id, teamNumber: team.teamNumber, score: team.score, result: draw ? "DRAW" : team.id === winnerTeamId ? "WIN" : "LOSS" })) } : null, results }
     const settlement = await transaction.matchSettlement.create({ data: { matchId: lockedMatch.id, policyVersion, winnerParticipantId: winner?.participant.id, settlementJson: settlementJson as Prisma.InputJsonValue, idempotencyKeyId: idem.id } })

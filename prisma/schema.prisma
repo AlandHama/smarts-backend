@@ -690,7 +690,7 @@ model User {
   matchRewardDailyLedgers     MatchRewardDailyLedger[]
   playerInstalls              PlayerInstall[]
   matchRewardHolds            MatchRewardHold[]
-  reviewedMatchRewardHolds    MatchRewardHold[]          @relation("MatchRewardHoldReviewer")
+  reviewedMatchRewardHolds    MatchRewardHold[]            @relation("MatchRewardHoldReviewer")
   chatParticipants            ChatParticipant[]
   chatMessagesSent            ChatMessage[]                @relation("ChatMessageSender")
   createdChatConversations    ChatConversation[]           @relation("ChatConversationCreator")
@@ -722,11 +722,83 @@ model User {
   partyMemberships            PartyMember[]                @relation("PartyMemberUser")
   partyInvitesSent            PartyInvite[]                @relation("PartyInviteInviter")
   partyInvitesReceived        PartyInvite[]                @relation("PartyInviteInvitee")
+  alliesOwned                 Ally[]                       @relation("AllyOwner")
+  allyMembership              AllyMember?
+  allyRewardPayouts           AllyRewardPayout[]
   cooperativeParticipants     CooperativeParticipant[]
   cooperativeLedgerOperations CooperativeLedgerOperation[]
   dailyChallengeAttempts      DailyChallengeAttempt[]
   rematchRequestsSent         RematchRequest[]             @relation("RematchRequester")
   rematchRequestsReceived     RematchRequest[]             @relation("RematchRecipient")
+}
+
+/// Persistent cooperative group. Party remains the short-lived match lobby;
+/// Ally is the season-long identity used for verified co-op rankings.
+model Ally {
+  id            String             @id @default(uuid()) @db.Uuid
+  name          String             @unique @db.VarChar(80)
+  tag           String             @unique @db.VarChar(12)
+  description   String?            @db.VarChar(240)
+  emblemKey     String             @default("spark") @db.VarChar(32)
+  ownerId       String             @db.Uuid
+  status        String             @default("ACTIVE") @db.VarChar(16)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  owner         User               @relation("AllyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members       AllyMember[]
+  scoreEvents   AllyScoreEvent[]
+  rewardPayouts AllyRewardPayout[]
+
+  @@index([ownerId, status])
+  @@index([status, createdAt])
+}
+
+model AllyMember {
+  id       String   @id @default(uuid()) @db.Uuid
+  allyId   String   @db.Uuid
+  userId   String   @unique @db.Uuid
+  role     String   @default("MEMBER") @db.VarChar(16)
+  joinedAt DateTime @default(now())
+  ally     Ally     @relation(fields: [allyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([allyId, joinedAt])
+}
+
+model AllyScoreEvent {
+  id        String            @id @default(uuid()) @db.Uuid
+  allyId    String            @db.Uuid
+  seasonId  String            @db.Uuid
+  matchId   String            @db.Uuid
+  points    Int
+  mode      String            @db.VarChar(16)
+  reason    String            @db.VarChar(64)
+  createdAt DateTime          @default(now())
+  ally      Ally              @relation(fields: [allyId], references: [id], onDelete: Cascade)
+  season    LeaderboardSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  match     Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([allyId, seasonId, matchId])
+  @@index([seasonId, points])
+  @@index([matchId])
+}
+
+model AllyRewardPayout {
+  id        String            @id @default(uuid()) @db.Uuid
+  allyId    String            @db.Uuid
+  seasonId  String            @db.Uuid
+  userId    String            @db.Uuid
+  rank      Int
+  amount    BigInt
+  status    String            @default("GRANTED") @db.VarChar(16)
+  grantKey  String            @unique @db.VarChar(180)
+  createdAt DateTime          @default(now())
+  ally      Ally              @relation(fields: [allyId], references: [id], onDelete: Cascade)
+  season    LeaderboardSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([allyId, seasonId, userId])
+  @@index([seasonId, rank])
 }
 
 /// A provider identity is linked to a local account after the provider token
@@ -2306,6 +2378,19 @@ model CooperativeConfiguration {
   ratingWidenIntervalSeconds    Int      @default(15)
   confirmationTimeoutSeconds    Int      @default(15)
   disconnectGraceSeconds        Int      @default(30)
+  allyRankingEnabled            Boolean  @default(true)
+  allyRewardsEnabled            Boolean  @default(true)
+  allyRewardCurrencyCode        String   @default("GLD") @db.VarChar(32)
+  allyFirstRewardGld            Int      @default(500)
+  allySecondRewardGld           Int      @default(300)
+  allyThirdRewardGld            Int      @default(200)
+  allyMinimumQualifyingMatches  Int      @default(3)
+  allyRankedWinPoints           Int      @default(12)
+  allyRankedDrawPoints          Int      @default(7)
+  allyRankedLossPoints          Int      @default(4)
+  allyCasualWinPoints           Int      @default(6)
+  allyCasualDrawPoints          Int      @default(3)
+  allyCasualLossPoints          Int      @default(2)
   updatedById                   String?  @db.Uuid
   createdAt                     DateTime @default(now())
   updatedAt                     DateTime @updatedAt
@@ -2504,16 +2589,18 @@ model LeaderboardReward {
 }
 
 model LeaderboardSeason {
-  id            String                  @id @default(uuid()) @db.Uuid
-  leaderboardId String                  @db.Uuid
-  startsAt      DateTime
-  endsAt        DateTime
-  status        LeaderboardSeasonStatus @default(SCHEDULED)
-  resetAt       DateTime?
-  createdAt     DateTime                @default(now())
-  leaderboard   Leaderboard             @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
-  entries       LeaderboardEntry[]
-  scoreEvents   LeaderboardScoreEvent[]
+  id                String                  @id @default(uuid()) @db.Uuid
+  leaderboardId     String                  @db.Uuid
+  startsAt          DateTime
+  endsAt            DateTime
+  status            LeaderboardSeasonStatus @default(SCHEDULED)
+  resetAt           DateTime?
+  createdAt         DateTime                @default(now())
+  leaderboard       Leaderboard             @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  entries           LeaderboardEntry[]
+  scoreEvents       LeaderboardScoreEvent[]
+  allyScoreEvents   AllyScoreEvent[]
+  allyRewardPayouts AllyRewardPayout[]
 
   @@unique([leaderboardId, startsAt])
   @@index([leaderboardId, status, startsAt, endsAt])
@@ -2565,23 +2652,23 @@ model LeaderboardScoreEvent {
 }
 
 model GameDefinition {
-  id                 String              @id @default(uuid()) @db.Uuid
-  key                String              @unique @db.VarChar(64)
-  name               String              @db.VarChar(120)
-  active             Boolean             @default(true)
-  modePolicy         Json?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  configs            GameConfig[]
-  matches            Match[]
-  content            GameContentItem[]
-  gameStats          PlayerGameStats[]
-  matchmakingTickets MatchmakingTicket[]
-  matchmakingInvites MatchmakingInvite[]
-  rematchRequests    RematchRequest[]
-  rounds             MatchRound[]
-  cooperativeMatches CooperativeMatch[]
-  dailyChallenges    DailyChallenge[]
+  id                      String                   @id @default(uuid()) @db.Uuid
+  key                     String                   @unique @db.VarChar(64)
+  name                    String                   @db.VarChar(120)
+  active                  Boolean                  @default(true)
+  modePolicy              Json?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  configs                 GameConfig[]
+  matches                 Match[]
+  content                 GameContentItem[]
+  gameStats               PlayerGameStats[]
+  matchmakingTickets      MatchmakingTicket[]
+  matchmakingInvites      MatchmakingInvite[]
+  rematchRequests         RematchRequest[]
+  rounds                  MatchRound[]
+  cooperativeMatches      CooperativeMatch[]
+  dailyChallenges         DailyChallenge[]
   matchRewardDailyLedgers MatchRewardDailyLedger[]
 }
 
@@ -2627,41 +2714,42 @@ model GameConfig {
 }
 
 model Match {
-  id                   String                   @id @default(uuid()) @db.Uuid
-  gameDefinitionId     String                   @db.Uuid
-  gameConfigId         String                   @db.Uuid
-  mode                 GameMode
-  status               MatchStatus              @default(CREATED)
-  serverNonce          String                   @unique @db.VarChar(128)
-  startedAt            DateTime?
-  endedAt              DateTime?
-  settledAt            DateTime?
-  createdByUserId      String                   @db.Uuid
-  metadata             Json?
+  id                     String                   @id @default(uuid()) @db.Uuid
+  gameDefinitionId       String                   @db.Uuid
+  gameConfigId           String                   @db.Uuid
+  mode                   GameMode
+  status                 MatchStatus              @default(CREATED)
+  serverNonce            String                   @unique @db.VarChar(128)
+  startedAt              DateTime?
+  endedAt                DateTime?
+  settledAt              DateTime?
+  createdByUserId        String                   @db.Uuid
+  metadata               Json?
   integrityPolicyVersion String                   @default("match-integrity-v3") @db.VarChar(64)
-  createdAt            DateTime                 @default(now())
-  updatedAt            DateTime                 @updatedAt
-  gameDefinition       GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
-  gameConfig           GameConfig               @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
-  createdBy            User                     @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  participants         MatchParticipant[]
-  events               MatchEvent[]
-  settlement           MatchSettlement?
-  assignments          MatchContentAssignment[]
-  matchmakingTickets   MatchmakingTicket[]
-  matchmakingInvite    MatchmakingInvite?
-  rounds               MatchRound[]
-  rankingMatch         RankingMatch?
-  cooperativeMatch     CooperativeMatch?
-  dominoMatch          DominoMatchState?
-  wordDashMatch        WordDashMatch?
-  perfectTimingMatch   PerfectTimingMatch?
-  rematchRequests      RematchRequest[]         @relation("RematchOriginalMatch")
-  rematchCreatedFrom   RematchRequest?          @relation("RematchNewMatch")
-  wordDashSubmissions  WordDashSubmission[]
-  dominoActions        DominoAction[]
-  perfectTimingActions PerfectTimingAction[]
-  rewardHolds          MatchRewardHold[]
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  gameDefinition         GameDefinition           @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  gameConfig             GameConfig               @relation(fields: [gameConfigId], references: [id], onDelete: Restrict)
+  createdBy              User                     @relation("MatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  participants           MatchParticipant[]
+  events                 MatchEvent[]
+  settlement             MatchSettlement?
+  assignments            MatchContentAssignment[]
+  matchmakingTickets     MatchmakingTicket[]
+  matchmakingInvite      MatchmakingInvite?
+  rounds                 MatchRound[]
+  rankingMatch           RankingMatch?
+  cooperativeMatch       CooperativeMatch?
+  dominoMatch            DominoMatchState?
+  wordDashMatch          WordDashMatch?
+  perfectTimingMatch     PerfectTimingMatch?
+  rematchRequests        RematchRequest[]         @relation("RematchOriginalMatch")
+  rematchCreatedFrom     RematchRequest?          @relation("RematchNewMatch")
+  wordDashSubmissions    WordDashSubmission[]
+  dominoActions          DominoAction[]
+  perfectTimingActions   PerfectTimingAction[]
+  rewardHolds            MatchRewardHold[]
+  allyScoreEvents        AllyScoreEvent[]
 
   @@index([status, createdAt])
   @@index([createdByUserId, status])
@@ -2813,41 +2901,41 @@ model RematchRequest {
 }
 
 model MatchParticipant {
-  id                     String                         @id @default(uuid()) @db.Uuid
-  matchId                String                         @db.Uuid
-  userId                 String?                        @db.Uuid
-  participantType        MatchParticipantType
-  finalScore             Int?
-  answeredCount          Int                            @default(0)
-  acceptedActionCount    Int                            @default(0)
-  acceptedScoringActionCount Int                         @default(0)
-  verifiedPlayMilliseconds Int                          @default(0)
-  firstAcceptedAt        DateTime?
-  lastAcceptedAt         DateTime?
-  lastActivityAt         DateTime?
-  disconnectGraceUntil   DateTime?
-  completionState        String                         @default("PENDING") @db.VarChar(24)
-  terminationReason      String?                        @db.VarChar(48)
-  rewardEligibility      String                         @default("NONE") @db.VarChar(16)
-  rewardHoldReason       String?                        @db.VarChar(160)
-  result                 MatchParticipantResult         @default(PENDING)
-  readyAt                DateTime?
-  submittedAt            DateTime?
-  createdAt              DateTime                       @default(now())
-  updatedAt              DateTime                       @updatedAt
-  match                  Match                          @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  user                   User?                          @relation(fields: [userId], references: [id], onDelete: Restrict)
-  events                 MatchEvent[]
-  assignments            MatchContentAssignment[]
-  winnerSettlement       MatchSettlement?               @relation("MatchSettlementWinner")
-  cooperativeParticipant CooperativeParticipant?
-  wordDashState          WordDashParticipantState?
-  wordDashSubmissions    WordDashSubmission[]
-  wordDashFoundWords     WordDashFoundWord[]
-  dominoActions          DominoAction[]
-  perfectTimingState     PerfectTimingParticipantState?
-  perfectTimingActions   PerfectTimingAction[]
-  rewardHold             MatchRewardHold?
+  id                         String                         @id @default(uuid()) @db.Uuid
+  matchId                    String                         @db.Uuid
+  userId                     String?                        @db.Uuid
+  participantType            MatchParticipantType
+  finalScore                 Int?
+  answeredCount              Int                            @default(0)
+  acceptedActionCount        Int                            @default(0)
+  acceptedScoringActionCount Int                            @default(0)
+  verifiedPlayMilliseconds   Int                            @default(0)
+  firstAcceptedAt            DateTime?
+  lastAcceptedAt             DateTime?
+  lastActivityAt             DateTime?
+  disconnectGraceUntil       DateTime?
+  completionState            String                         @default("PENDING") @db.VarChar(24)
+  terminationReason          String?                        @db.VarChar(48)
+  rewardEligibility          String                         @default("NONE") @db.VarChar(16)
+  rewardHoldReason           String?                        @db.VarChar(160)
+  result                     MatchParticipantResult         @default(PENDING)
+  readyAt                    DateTime?
+  submittedAt                DateTime?
+  createdAt                  DateTime                       @default(now())
+  updatedAt                  DateTime                       @updatedAt
+  match                      Match                          @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user                       User?                          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  events                     MatchEvent[]
+  assignments                MatchContentAssignment[]
+  winnerSettlement           MatchSettlement?               @relation("MatchSettlementWinner")
+  cooperativeParticipant     CooperativeParticipant?
+  wordDashState              WordDashParticipantState?
+  wordDashSubmissions        WordDashSubmission[]
+  wordDashFoundWords         WordDashFoundWord[]
+  dominoActions              DominoAction[]
+  perfectTimingState         PerfectTimingParticipantState?
+  perfectTimingActions       PerfectTimingAction[]
+  rewardHold                 MatchRewardHold?
 
   @@unique([matchId, userId])
   @@index([matchId, result])
@@ -2903,24 +2991,24 @@ model PlayerInstall {
 /// Amounts withheld by reward-integrity review are retained as a bounded,
 /// auditable ledger. Release/cancel actions are idempotent and admin-audited.
 model MatchRewardHold {
-  id                String   @id @default(uuid()) @db.Uuid
-  matchId           String   @db.Uuid
-  matchParticipantId String  @unique @db.Uuid
-  userId            String   @db.Uuid
-  status            String   @default("HELD") @db.VarChar(16)
-  reason            String   @db.VarChar(160)
-  heldXp            BigInt   @default(0)
-  heldGld           BigInt   @default(0)
-  heldElo           BigInt   @default(0)
-  reviewedById      String?  @db.Uuid
-  reviewedAt        DateTime?
-  reviewNote        String?  @db.VarChar(500)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  match             Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  matchParticipant  MatchParticipant  @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
-  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reviewedBy        User?             @relation("MatchRewardHoldReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  id                 String           @id @default(uuid()) @db.Uuid
+  matchId            String           @db.Uuid
+  matchParticipantId String           @unique @db.Uuid
+  userId             String           @db.Uuid
+  status             String           @default("HELD") @db.VarChar(16)
+  reason             String           @db.VarChar(160)
+  heldXp             BigInt           @default(0)
+  heldGld            BigInt           @default(0)
+  heldElo            BigInt           @default(0)
+  reviewedById       String?          @db.Uuid
+  reviewedAt         DateTime?
+  reviewNote         String?          @db.VarChar(500)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  match              Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  matchParticipant   MatchParticipant @relation(fields: [matchParticipantId], references: [id], onDelete: Cascade)
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy         User?            @relation("MatchRewardHoldReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([userId, status])
@@ -2930,25 +3018,25 @@ model MatchRewardHold {
 /// Versioned operational rollout policy. A policy is selected for new matches
 /// only; existing matches keep their captured integrityPolicyVersion.
 model MatchIntegrityPolicy {
-  id                 String   @id @default(uuid()) @db.Uuid
-  scopeKey           String   @db.VarChar(120)
-  gameKey            String?  @db.VarChar(64)
-  mode               String?  @db.VarChar(24)
-  version            Int      @default(1)
-  active             Boolean  @default(true)
-  killSwitch         Boolean  @default(false)
-  rolloutPercentage  Int      @default(100)
-  casualEnabled      Boolean  @default(true)
-  rankedEnabled      Boolean  @default(true)
-  practiceEnabled    Boolean  @default(true)
-  settings           Json?
-  createdById        String?  @db.Uuid
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                String   @id @default(uuid()) @db.Uuid
+  scopeKey          String   @db.VarChar(120)
+  gameKey           String?  @db.VarChar(64)
+  mode              String?  @db.VarChar(24)
+  version           Int      @default(1)
+  active            Boolean  @default(true)
+  killSwitch        Boolean  @default(false)
+  rolloutPercentage Int      @default(100)
+  casualEnabled     Boolean  @default(true)
+  rankedEnabled     Boolean  @default(true)
+  practiceEnabled   Boolean  @default(true)
+  settings          Json?
+  createdById       String?  @db.Uuid
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
+  @@unique([scopeKey, version])
   @@index([gameKey, mode, active])
   @@index([active, rolloutPercentage])
-  @@unique([scopeKey, version])
 }
 
 /// Server-owned four-seat Domino state. Private hands and the boneyard remain

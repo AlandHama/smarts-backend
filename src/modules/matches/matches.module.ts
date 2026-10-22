@@ -25,9 +25,10 @@ import { MatchIntegrityPolicyService } from "./match-integrity-policy.service"
 import { MatchRewardIntegrityAdminService } from "./match-reward-integrity-admin.service"
 import { MatchRewardIntegrityAdminController } from "./match-reward-integrity-admin.controller"
 import { SystemAdminGuard } from "../system-admin/system-admin.guard"
+import { AllyModule } from "../ally/ally.module"
 
 @Module({
-  imports: [DatabaseModule, GameModule, ProgressionModule, EconomyModule, LeaderboardModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, NotificationsModule],
+  imports: [DatabaseModule, GameModule, ProgressionModule, EconomyModule, LeaderboardModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, NotificationsModule, AllyModule],
   controllers: [MatchController, MatchRewardIntegrityAdminController],
   providers: [SystemAdminGuard, MatchService, RematchService, MatchIntegrityPolicyService, MatchRewardIntegrityAdminService, CreateMatchTransaction, RecordMatchEventTransaction, CompleteMatchTransaction, SettleMatchTransaction, StartMatchTransaction, ForfeitMatchTransaction, ExpireMatchTransaction, BotGameplayService],
   exports: [MatchService, MatchIntegrityPolicyService, SettleMatchTransaction, ExpireMatchTransaction, BotGameplayService],

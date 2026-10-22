@@ -56,4 +56,17 @@ export class CooperativePolicyDto {
   @IsOptional() @IsInt() @Min(5) @Max(300) ratingWidenIntervalSeconds?: number
   @IsOptional() @IsInt() @Min(5) @Max(120) confirmationTimeoutSeconds?: number
   @IsOptional() @IsInt() @Min(5) @Max(180) disconnectGraceSeconds?: number
+  @IsOptional() allyRankingEnabled?: boolean
+  @IsOptional() allyRewardsEnabled?: boolean
+  @IsOptional() @IsString() @IsIn(["GLD"]) allyRewardCurrencyCode?: string
+  @IsOptional() @IsInt() @Min(0) @Max(1000000000) allyFirstRewardGld?: number
+  @IsOptional() @IsInt() @Min(0) @Max(1000000000) allySecondRewardGld?: number
+  @IsOptional() @IsInt() @Min(0) @Max(1000000000) allyThirdRewardGld?: number
+  @IsOptional() @IsInt() @Min(1) @Max(100) allyMinimumQualifyingMatches?: number
+  @IsOptional() @IsInt() @Min(0) @Max(1000) allyRankedWinPoints?: number
+  @IsOptional() @IsInt() @Min(0) @Max(1000) allyRankedDrawPoints?: number
+  @IsOptional() @IsInt() @Min(0) @Max(1000) allyRankedLossPoints?: number
+  @IsOptional() @IsInt() @Min(0) @Max(1000) allyCasualWinPoints?: number
+  @IsOptional() @IsInt() @Min(0) @Max(1000) allyCasualDrawPoints?: number
+  @IsOptional() @IsInt() @Min(0) @Max(1000) allyCasualLossPoints?: number
 }

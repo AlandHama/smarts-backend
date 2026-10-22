@@ -16,12 +16,102 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { api } from "../lib/api";
 
-type Policy = { enabled: boolean; randomEnabled: boolean; rankedEnabled: boolean; cooperativePartyEnabled: boolean; cooperativeRandomEnabled: boolean; cooperativeBotFillEnabled: boolean; cooperativeRankedEnabled: boolean; cooperativeVoiceEnabled: boolean; cooperativeRewardsEnabled: boolean; allowSoloParty: boolean; botFillEnabled: boolean; rankedBotFillEnabled: boolean; rewardsEnabled: boolean; hardeningAlertsEnabled: boolean; partyIdleMinutes: number; inviteExpiryMinutes: number; queueTimeoutSeconds: number; minLevel: number; minElo: number; minCompletedMatches: number; rankedEntryFeeGld: string; rankedStakeAmountGld: string; rankedPayoutPercent: number; rankedEloBaseDelta: number; rankedEloMaxDelta: number; rankedPartyRatingSpread: number; settlementRetryLimit: number; botAccuracyPercent: number; botPaceMultiplier: string; voiceEnabled: boolean; botFallbackDelaySeconds: number; initialRatingWindow: number; maxRatingWindow: number; ratingWidenIntervalSeconds: number; confirmationTimeoutSeconds: number; disconnectGraceSeconds: number };
-type Overview = { policy: Policy; parties: number; readyParties: number; queued: number; activeInvites: number; foundMatches: number; liveMatches: number; botMatchesLast24Hours: number; rankedSettlements: number; failedSettlements: number; pendingDebits: number };
-type Team = { name: string; score: number; participants: { displayName: string; participantType: string }[] };
-type CoopMatch = { matchId: string; status: string; mode: string; botFilled: boolean; match?: { game?: { key?: string; name?: string }; status?: string }; teams: Team[]; createdAt: string };
-type Settlement = { matchId: string; status: string; mode: string; entryFeeGld?: string; payoutAmountGld?: string; settlementAttempts?: { status: string; error?: string }[] };
-type Metrics = { total: number; random: number; ranked: number; settled: number; abandoned: number; failedSettlements: number; ledgerOperations: number; ledgerAmount?: string };
+type Policy = {
+  enabled: boolean;
+  randomEnabled: boolean;
+  rankedEnabled: boolean;
+  cooperativePartyEnabled: boolean;
+  cooperativeRandomEnabled: boolean;
+  cooperativeBotFillEnabled: boolean;
+  cooperativeRankedEnabled: boolean;
+  cooperativeVoiceEnabled: boolean;
+  cooperativeRewardsEnabled: boolean;
+  allowSoloParty: boolean;
+  botFillEnabled: boolean;
+  rankedBotFillEnabled: boolean;
+  rewardsEnabled: boolean;
+  hardeningAlertsEnabled: boolean;
+  partyIdleMinutes: number;
+  inviteExpiryMinutes: number;
+  queueTimeoutSeconds: number;
+  minLevel: number;
+  minElo: number;
+  minCompletedMatches: number;
+  rankedEntryFeeGld: string;
+  rankedStakeAmountGld: string;
+  rankedPayoutPercent: number;
+  rankedEloBaseDelta: number;
+  rankedEloMaxDelta: number;
+  rankedPartyRatingSpread: number;
+  settlementRetryLimit: number;
+  botAccuracyPercent: number;
+  botPaceMultiplier: string;
+  voiceEnabled: boolean;
+  botFallbackDelaySeconds: number;
+  initialRatingWindow: number;
+  maxRatingWindow: number;
+  ratingWidenIntervalSeconds: number;
+  confirmationTimeoutSeconds: number;
+  disconnectGraceSeconds: number;
+  allyRankingEnabled: boolean;
+  allyRewardsEnabled: boolean;
+  allyRewardCurrencyCode: string;
+  allyFirstRewardGld: number;
+  allySecondRewardGld: number;
+  allyThirdRewardGld: number;
+  allyMinimumQualifyingMatches: number;
+  allyRankedWinPoints: number;
+  allyRankedDrawPoints: number;
+  allyRankedLossPoints: number;
+  allyCasualWinPoints: number;
+  allyCasualDrawPoints: number;
+  allyCasualLossPoints: number;
+};
+type Overview = {
+  policy: Policy;
+  parties: number;
+  readyParties: number;
+  queued: number;
+  activeInvites: number;
+  foundMatches: number;
+  liveMatches: number;
+  botMatchesLast24Hours: number;
+  rankedSettlements: number;
+  failedSettlements: number;
+  pendingDebits: number;
+};
+type Team = {
+  name: string;
+  score: number;
+  participants: { displayName: string; participantType: string }[];
+};
+type CoopMatch = {
+  matchId: string;
+  status: string;
+  mode: string;
+  botFilled: boolean;
+  match?: { game?: { key?: string; name?: string }; status?: string };
+  teams: Team[];
+  createdAt: string;
+};
+type Settlement = {
+  matchId: string;
+  status: string;
+  mode: string;
+  entryFeeGld?: string;
+  payoutAmountGld?: string;
+  settlementAttempts?: { status: string; error?: string }[];
+};
+type Metrics = {
+  total: number;
+  random: number;
+  ranked: number;
+  settled: number;
+  abandoned: number;
+  failedSettlements: number;
+  ledgerOperations: number;
+  ledgerAmount?: string;
+};
 
 export function CooperativeMatchesView() {
   const [data, setData] = useState<Overview | null>(null);
@@ -34,25 +124,579 @@ export function CooperativeMatchesView() {
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
 
-  const load = async () => { setLoading(true); try { const [value, live, ledger, report] = await Promise.all([api<Overview>("/cooperative/overview"), api<CoopMatch[]>("/cooperative/matches?limit=30"), api<Settlement[]>("/cooperative/settlements?limit=30"), api<Metrics>("/cooperative/metrics")]); setData(value); setDraft(value.policy); setMatches(live); setSettlements(ledger); setMetrics(report); } catch (e) { setError(e instanceof Error ? e.message : "Unable to load cooperative policy"); } finally { setLoading(false); } };
-  useEffect(() => { void load(); }, []);
-  const set = <K extends keyof Policy>(key: K, value: Policy[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
-  const save = async () => { if (!draft) return; setSaving(true); setError(""); setMessage(""); try { const payload = { enabled: draft.enabled, randomEnabled: draft.randomEnabled, rankedEnabled: draft.rankedEnabled, cooperativePartyEnabled: draft.cooperativePartyEnabled, cooperativeRandomEnabled: draft.cooperativeRandomEnabled, cooperativeBotFillEnabled: draft.cooperativeBotFillEnabled, cooperativeRankedEnabled: draft.cooperativeRankedEnabled, cooperativeVoiceEnabled: draft.cooperativeVoiceEnabled, cooperativeRewardsEnabled: draft.cooperativeRewardsEnabled, allowSoloParty: draft.allowSoloParty, botFillEnabled: draft.botFillEnabled, rankedBotFillEnabled: draft.rankedBotFillEnabled, rewardsEnabled: draft.rewardsEnabled, hardeningAlertsEnabled: draft.hardeningAlertsEnabled, partyIdleMinutes: draft.partyIdleMinutes, inviteExpiryMinutes: draft.inviteExpiryMinutes, queueTimeoutSeconds: draft.queueTimeoutSeconds, minLevel: draft.minLevel, minElo: draft.minElo, minCompletedMatches: draft.minCompletedMatches, rankedEntryFeeGld: draft.rankedEntryFeeGld, rankedStakeAmountGld: draft.rankedStakeAmountGld, rankedPayoutPercent: draft.rankedPayoutPercent, rankedEloBaseDelta: draft.rankedEloBaseDelta, rankedEloMaxDelta: draft.rankedEloMaxDelta, rankedPartyRatingSpread: draft.rankedPartyRatingSpread, settlementRetryLimit: draft.settlementRetryLimit, botAccuracyPercent: draft.botAccuracyPercent, botPaceMultiplier: draft.botPaceMultiplier, voiceEnabled: draft.voiceEnabled, botFallbackDelaySeconds: draft.botFallbackDelaySeconds, initialRatingWindow: draft.initialRatingWindow, maxRatingWindow: draft.maxRatingWindow, ratingWidenIntervalSeconds: draft.ratingWidenIntervalSeconds, confirmationTimeoutSeconds: draft.confirmationTimeoutSeconds, disconnectGraceSeconds: draft.disconnectGraceSeconds }; const value = await api<Policy>("/cooperative/policy", { method: "PUT", body: JSON.stringify(payload) }); setDraft(value); setData((current) => current ? { ...current, policy: value } : current); setMessage("Cooperative policy saved"); } catch (e) { setError(e instanceof Error ? e.message : "Unable to save policy"); } finally { setSaving(false); } };
-  if (loading) return <Stack alignItems="center" sx={{ py: 10 }}><CircularProgress /></Stack>;
-  if (!draft || !data) return <Alert severity="error">{error || "Cooperative policy unavailable"}</Alert>;
-  const numeric = (key: keyof Policy, min = 0, step = 1) => <TextField fullWidth type="number" label={label(key)} value={draft[key]} inputProps={{ min, step }} onChange={(event) => set(key, Number(event.target.value) as Policy[typeof key])} />;
-  return <Stack spacing={3}>
-    <Stack direction="row" spacing={1.5} alignItems="center"><GroupsRoundedIcon color="primary" sx={{ fontSize: 42 }} /><Box><Typography variant="h4" fontWeight={850}>Cooperative matches</Typography><Typography color="text.secondary">Manage private two-player parties, queue policy, invitations, and the cooperative rollout.</Typography></Box></Stack>
-    {error && <Alert severity="error">{error}</Alert>}{message && <Alert severity="success">{message}</Alert>}
-    <Grid container spacing={2}>{[["Parties", data.parties], ["Ready parties", data.readyParties], ["Searching queues", data.queued], ["Live co-op matches", data.liveMatches], ["Matches found", data.foundMatches], ["Bot fills · 24h", data.botMatchesLast24Hours], ["Active invites", data.activeInvites], ["Ranked settled", data.rankedSettlements], ["Settlement failures", data.failedSettlements], ["Unreconciled debits", data.pendingDebits]].map(([name, value]) => <Grid item xs={12} sm={6} md={3} key={String(name)}><Card sx={{ p: 2.5 }}><Typography color="text.secondary" variant="body2">{name}</Typography><Typography variant="h4" fontWeight={850}>{value}</Typography></Card></Grid>)}</Grid>
-    <Card><Stack spacing={2.5} sx={{ p: { xs: 2.5, md: 4 } }}><Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between"><Box><Typography variant="h6" fontWeight={800}>Party and queue policy</Typography><Typography variant="body2" color="text.secondary">These controls are read by the server when a player creates a party or enters a queue.</Typography></Box><FormControlLabel control={<Switch checked={draft.enabled} onChange={(e) => set("enabled", e.target.checked)} />} label="Cooperative enabled" /></Stack>
-      <Stack direction={{ xs: "column", md: "row" }} spacing={2}><FormControlLabel control={<Switch checked={draft.cooperativePartyEnabled} onChange={(e) => set("cooperativePartyEnabled", e.target.checked)} />} label="Party feature flag" /><FormControlLabel control={<Switch checked={draft.cooperativeRandomEnabled} onChange={(e) => set("cooperativeRandomEnabled", e.target.checked)} />} label="Random queue" /><FormControlLabel control={<Switch checked={draft.cooperativeRankedEnabled} onChange={(e) => set("cooperativeRankedEnabled", e.target.checked)} />} label="Ranked queue" /><FormControlLabel control={<Switch checked={draft.cooperativeBotFillEnabled} onChange={(e) => set("cooperativeBotFillEnabled", e.target.checked)} />} label="Bot fill" /><FormControlLabel control={<Switch checked={draft.cooperativeRewardsEnabled} onChange={(e) => set("cooperativeRewardsEnabled", e.target.checked)} />} label="Rewards" /><FormControlLabel control={<Switch checked={draft.cooperativeVoiceEnabled} onChange={(e) => set("cooperativeVoiceEnabled", e.target.checked)} />} label="Voice chat" /><FormControlLabel control={<Switch checked={draft.hardeningAlertsEnabled} onChange={(e) => set("hardeningAlertsEnabled", e.target.checked)} />} label="Ops alerts" /></Stack>
-      <Grid container spacing={2}><Grid item xs={12} md={4}>{numeric("partyIdleMinutes", 5)}</Grid><Grid item xs={12} md={4}>{numeric("inviteExpiryMinutes", 1)}</Grid><Grid item xs={12} md={4}>{numeric("queueTimeoutSeconds", 15)}</Grid><Grid item xs={12} md={4}>{numeric("minLevel", 1)}</Grid><Grid item xs={12} md={4}>{numeric("minElo", 0)}</Grid><Grid item xs={12} md={4}>{numeric("minCompletedMatches", 0)}</Grid><Grid item xs={12} md={4}>{numeric("botFallbackDelaySeconds", 5)}</Grid><Grid item xs={12} md={4}>{numeric("initialRatingWindow", 25)}</Grid><Grid item xs={12} md={4}>{numeric("maxRatingWindow", 25)}</Grid><Grid item xs={12} md={4}>{numeric("ratingWidenIntervalSeconds", 5)}</Grid><Grid item xs={12} md={4}>{numeric("confirmationTimeoutSeconds", 5)}</Grid><Grid item xs={12} md={4}>{numeric("disconnectGraceSeconds", 5)}</Grid><Grid item xs={12} md={4}>{numeric("rankedEloBaseDelta", 1)}</Grid><Grid item xs={12} md={4}>{numeric("rankedEloMaxDelta", 1)}</Grid><Grid item xs={12} md={4}>{numeric("rankedPayoutPercent", 1)}</Grid><Grid item xs={12} md={4}>{numeric("rankedPartyRatingSpread", 0)}</Grid><Grid item xs={12} md={4}>{numeric("settlementRetryLimit", 1)}</Grid><Grid item xs={12} md={4}>{numeric("botAccuracyPercent", 1)}</Grid><Grid item xs={12} md={4}><TextField fullWidth type="number" label="Ranked entry fee GLD" value={draft.rankedEntryFeeGld} inputProps={{ min: 0, step: "0.01" }} onChange={(e) => set("rankedEntryFeeGld", e.target.value)} /></Grid><Grid item xs={12} md={4}><TextField fullWidth type="number" label="Ranked stake GLD" value={draft.rankedStakeAmountGld} inputProps={{ min: 0, step: "0.01" }} onChange={(e) => set("rankedStakeAmountGld", e.target.value)} /></Grid></Grid>
-      <Button onClick={() => void save()} variant="contained" startIcon={<SaveRoundedIcon />} disabled={saving} sx={{ alignSelf: "flex-end" }}>Save policy</Button>
-    </Stack></Card>
-    <Card sx={{ p: { xs: 2.5, md: 4 } }}><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography variant="h6" fontWeight={800}>Live cooperative matches</Typography><Typography color="text.secondary">Server-selected games, team scores, bot fallback, and lifecycle state.</Typography></Box><Button onClick={() => void load()} size="small">Refresh</Button></Stack><Stack spacing={1.5} sx={{ mt: 2 }}>{matches.length === 0 ? <Typography color="text.secondary">No cooperative matches have been created yet.</Typography> : matches.map((match) => <Box key={match.matchId} sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover" }}><Stack direction={{ xs: "column", md: "row" }} spacing={2} justifyContent="space-between"><Box><Typography fontWeight={800}>{match.match?.game?.name || match.match?.game?.key || "Random challenge"}</Typography><Typography variant="body2" color="text.secondary">{match.status} · {match.botFilled ? "bot fill" : "two parties"} · {match.matchId.slice(0, 8)}</Typography></Box><Stack direction="row" spacing={2}>{match.teams.map((team) => <Box key={team.name}><Typography variant="body2" color="text.secondary">{team.name}</Typography><Typography fontWeight={900}>{team.score} pts</Typography></Box>)}</Stack></Stack></Box>)}</Stack></Card>
-    <Card sx={{ p: { xs: 2.5, md: 4 } }}><Typography variant="h6" fontWeight={800}>Ranked operations & reconciliation</Typography><Typography color="text.secondary">Team settlement, GLD ledger activity, abandonment, and worker failures for the last 30 days.</Typography>{metrics && <Grid container spacing={2} sx={{ mt: 1, mb: 2 }}>{[["Total", metrics.total], ["Random", metrics.random], ["Ranked", metrics.ranked], ["Settled", metrics.settled], ["Forfeits", metrics.abandoned], ["Ledger ops", metrics.ledgerOperations]].map(([name, value]) => <Grid item xs={6} md={2} key={String(name)}><Typography variant="body2" color="text.secondary">{name}</Typography><Typography variant="h6" fontWeight={850}>{value}</Typography></Grid>)}</Grid>}<Stack spacing={1}>{settlements.slice(0, 10).map((row) => <Box key={row.matchId} sx={{ p: 1.5, borderRadius: 2, bgcolor: "action.hover" }}><Stack direction="row" justifyContent="space-between"><Typography fontWeight={750}>{row.mode} · {row.matchId.slice(0, 8)}</Typography><Typography color={row.status === "SETTLED" ? "success.main" : "warning.main"}>{row.status}</Typography></Stack><Typography variant="body2" color="text.secondary">Entry {row.entryFeeGld || "0"} GLD · payout pool {row.payoutAmountGld || "0"} GLD · attempts {row.settlementAttempts?.length || 0}</Typography></Box>)}</Stack></Card>
-  </Stack>;
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [value, live, ledger, report] = await Promise.all([
+        api<Overview>("/cooperative/overview"),
+        api<CoopMatch[]>("/cooperative/matches?limit=30"),
+        api<Settlement[]>("/cooperative/settlements?limit=30"),
+        api<Metrics>("/cooperative/metrics"),
+      ]);
+      setData(value);
+      setDraft(value.policy);
+      setMatches(live);
+      setSettlements(ledger);
+      setMetrics(report);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Unable to load cooperative policy",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  const set = <K extends keyof Policy>(key: K, value: Policy[K]) =>
+    setDraft((current) => (current ? { ...current, [key]: value } : current));
+  const save = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload = {
+        enabled: draft.enabled,
+        randomEnabled: draft.randomEnabled,
+        rankedEnabled: draft.rankedEnabled,
+        cooperativePartyEnabled: draft.cooperativePartyEnabled,
+        cooperativeRandomEnabled: draft.cooperativeRandomEnabled,
+        cooperativeBotFillEnabled: draft.cooperativeBotFillEnabled,
+        cooperativeRankedEnabled: draft.cooperativeRankedEnabled,
+        cooperativeVoiceEnabled: draft.cooperativeVoiceEnabled,
+        cooperativeRewardsEnabled: draft.cooperativeRewardsEnabled,
+        allowSoloParty: draft.allowSoloParty,
+        botFillEnabled: draft.botFillEnabled,
+        rankedBotFillEnabled: draft.rankedBotFillEnabled,
+        rewardsEnabled: draft.rewardsEnabled,
+        hardeningAlertsEnabled: draft.hardeningAlertsEnabled,
+        partyIdleMinutes: draft.partyIdleMinutes,
+        inviteExpiryMinutes: draft.inviteExpiryMinutes,
+        queueTimeoutSeconds: draft.queueTimeoutSeconds,
+        minLevel: draft.minLevel,
+        minElo: draft.minElo,
+        minCompletedMatches: draft.minCompletedMatches,
+        rankedEntryFeeGld: draft.rankedEntryFeeGld,
+        rankedStakeAmountGld: draft.rankedStakeAmountGld,
+        rankedPayoutPercent: draft.rankedPayoutPercent,
+        rankedEloBaseDelta: draft.rankedEloBaseDelta,
+        rankedEloMaxDelta: draft.rankedEloMaxDelta,
+        rankedPartyRatingSpread: draft.rankedPartyRatingSpread,
+        settlementRetryLimit: draft.settlementRetryLimit,
+        botAccuracyPercent: draft.botAccuracyPercent,
+        botPaceMultiplier: draft.botPaceMultiplier,
+        voiceEnabled: draft.voiceEnabled,
+        botFallbackDelaySeconds: draft.botFallbackDelaySeconds,
+        initialRatingWindow: draft.initialRatingWindow,
+        maxRatingWindow: draft.maxRatingWindow,
+        ratingWidenIntervalSeconds: draft.ratingWidenIntervalSeconds,
+        confirmationTimeoutSeconds: draft.confirmationTimeoutSeconds,
+        disconnectGraceSeconds: draft.disconnectGraceSeconds,
+        allyRankingEnabled: draft.allyRankingEnabled,
+        allyRewardsEnabled: draft.allyRewardsEnabled,
+        allyRewardCurrencyCode: draft.allyRewardCurrencyCode,
+        allyFirstRewardGld: draft.allyFirstRewardGld,
+        allySecondRewardGld: draft.allySecondRewardGld,
+        allyThirdRewardGld: draft.allyThirdRewardGld,
+        allyMinimumQualifyingMatches: draft.allyMinimumQualifyingMatches,
+        allyRankedWinPoints: draft.allyRankedWinPoints,
+        allyRankedDrawPoints: draft.allyRankedDrawPoints,
+        allyRankedLossPoints: draft.allyRankedLossPoints,
+        allyCasualWinPoints: draft.allyCasualWinPoints,
+        allyCasualDrawPoints: draft.allyCasualDrawPoints,
+        allyCasualLossPoints: draft.allyCasualLossPoints,
+      };
+      const value = await api<Policy>("/cooperative/policy", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      setDraft(value);
+      setData((current) => (current ? { ...current, policy: value } : current));
+      setMessage("Cooperative and Ally policies saved");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to save policy");
+    } finally {
+      setSaving(false);
+    }
+  };
+  if (loading)
+    return (
+      <Stack alignItems="center" sx={{ py: 10 }}>
+        <CircularProgress />
+      </Stack>
+    );
+  if (!draft || !data)
+    return (
+      <Alert severity="error">
+        {error || "Cooperative policy unavailable"}
+      </Alert>
+    );
+  const numeric = (key: keyof Policy, min = 0, step = 1) => (
+    <TextField
+      fullWidth
+      type="number"
+      label={label(key)}
+      value={draft[key]}
+      inputProps={{ min, step }}
+      onChange={(event) =>
+        set(key, Number(event.target.value) as Policy[typeof key])
+      }
+    />
+  );
+  return (
+    <Stack spacing={3}>
+      <Stack direction="row" spacing={1.5} alignItems="center">
+        <GroupsRoundedIcon color="primary" sx={{ fontSize: 42 }} />
+        <Box>
+          <Typography variant="h4" fontWeight={850}>
+            Cooperative matches
+          </Typography>
+          <Typography color="text.secondary">
+            Manage private two-player parties, queue policy, invitations, and
+            the cooperative rollout.
+          </Typography>
+        </Box>
+      </Stack>
+      {error && <Alert severity="error">{error}</Alert>}
+      {message && <Alert severity="success">{message}</Alert>}
+      <Grid container spacing={2}>
+        {[
+          ["Parties", data.parties],
+          ["Ready parties", data.readyParties],
+          ["Searching queues", data.queued],
+          ["Live co-op matches", data.liveMatches],
+          ["Matches found", data.foundMatches],
+          ["Bot fills · 24h", data.botMatchesLast24Hours],
+          ["Active invites", data.activeInvites],
+          ["Ranked settled", data.rankedSettlements],
+          ["Settlement failures", data.failedSettlements],
+          ["Unreconciled debits", data.pendingDebits],
+        ].map(([name, value]) => (
+          <Grid item xs={12} sm={6} md={3} key={String(name)}>
+            <Card sx={{ p: 2.5 }}>
+              <Typography color="text.secondary" variant="body2">
+                {name}
+              </Typography>
+              <Typography variant="h4" fontWeight={850}>
+                {value}
+              </Typography>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+      <Card>
+        <Stack spacing={2.5} sx={{ p: { xs: 2.5, md: 4 } }}>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+          >
+            <Box>
+              <Typography variant="h6" fontWeight={800}>
+                Party and queue policy
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                These controls are read by the server when a player creates a
+                party or enters a queue.
+              </Typography>
+            </Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.enabled}
+                  onChange={(e) => set("enabled", e.target.checked)}
+                />
+              }
+              label="Cooperative enabled"
+            />
+          </Stack>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.cooperativePartyEnabled}
+                  onChange={(e) =>
+                    set("cooperativePartyEnabled", e.target.checked)
+                  }
+                />
+              }
+              label="Party feature flag"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.cooperativeRandomEnabled}
+                  onChange={(e) =>
+                    set("cooperativeRandomEnabled", e.target.checked)
+                  }
+                />
+              }
+              label="Random queue"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.cooperativeRankedEnabled}
+                  onChange={(e) =>
+                    set("cooperativeRankedEnabled", e.target.checked)
+                  }
+                />
+              }
+              label="Ranked queue"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.cooperativeBotFillEnabled}
+                  onChange={(e) =>
+                    set("cooperativeBotFillEnabled", e.target.checked)
+                  }
+                />
+              }
+              label="Bot fill"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.cooperativeRewardsEnabled}
+                  onChange={(e) =>
+                    set("cooperativeRewardsEnabled", e.target.checked)
+                  }
+                />
+              }
+              label="Rewards"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.cooperativeVoiceEnabled}
+                  onChange={(e) =>
+                    set("cooperativeVoiceEnabled", e.target.checked)
+                  }
+                />
+              }
+              label="Voice chat"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.hardeningAlertsEnabled}
+                  onChange={(e) =>
+                    set("hardeningAlertsEnabled", e.target.checked)
+                  }
+                />
+              }
+              label="Ops alerts"
+            />
+          </Stack>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={4}>
+              {numeric("partyIdleMinutes", 5)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("inviteExpiryMinutes", 1)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("queueTimeoutSeconds", 15)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("minLevel", 1)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("minElo", 0)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("minCompletedMatches", 0)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("botFallbackDelaySeconds", 5)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("initialRatingWindow", 25)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("maxRatingWindow", 25)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("ratingWidenIntervalSeconds", 5)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("confirmationTimeoutSeconds", 5)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("disconnectGraceSeconds", 5)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("rankedEloBaseDelta", 1)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("rankedEloMaxDelta", 1)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("rankedPayoutPercent", 1)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("rankedPartyRatingSpread", 0)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("settlementRetryLimit", 1)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              {numeric("botAccuracyPercent", 1)}
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Ranked entry fee GLD"
+                value={draft.rankedEntryFeeGld}
+                inputProps={{ min: 0, step: "0.01" }}
+                onChange={(e) => set("rankedEntryFeeGld", e.target.value)}
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Ranked stake GLD"
+                value={draft.rankedStakeAmountGld}
+                inputProps={{ min: 0, step: "0.01" }}
+                onChange={(e) => set("rankedStakeAmountGld", e.target.value)}
+              />
+            </Grid>
+          </Grid>
+          <Button
+            onClick={() => void save()}
+            variant="contained"
+            startIcon={<SaveRoundedIcon />}
+            disabled={saving}
+            sx={{ alignSelf: "flex-end" }}
+          >
+            Save policy
+          </Button>
+        </Stack>
+      </Card>
+      <Card>
+        <Stack spacing={2.5} sx={{ p: { xs: 2.5, md: 4 } }}>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            spacing={2}
+          >
+            <Box>
+              <Typography variant="h6" fontWeight={800}>
+                Ally ranking policy
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Server-owned monthly scoring and GLD podium rewards. Changes
+                apply to newly settled co-op matches and the next season
+                payout.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={draft.allyRankingEnabled}
+                    onChange={(e) =>
+                      set("allyRankingEnabled", e.target.checked)
+                    }
+                  />
+                }
+                label="Ranking"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={draft.allyRewardsEnabled}
+                    onChange={(e) =>
+                      set("allyRewardsEnabled", e.target.checked)
+                    }
+                  />
+                }
+                label="GLD rewards"
+              />
+            </Stack>
+          </Stack>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={3}>
+              <TextField
+                fullWidth
+                label="Reward currency"
+                value={draft.allyRewardCurrencyCode}
+                onChange={(e) =>
+                  set("allyRewardCurrencyCode", e.target.value.toUpperCase())
+                }
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              {numeric("allyFirstRewardGld", 0)}
+            </Grid>
+            <Grid item xs={12} md={3}>
+              {numeric("allySecondRewardGld", 0)}
+            </Grid>
+            <Grid item xs={12} md={3}>
+              {numeric("allyThirdRewardGld", 0)}
+            </Grid>
+            <Grid item xs={12} md={3}>
+              {numeric("allyMinimumQualifyingMatches", 1)}
+            </Grid>
+          </Grid>
+          <Typography variant="subtitle2" fontWeight={800}>
+            Points per verified co-op result
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={4}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Ranked
+              </Typography>
+              <Stack direction="row" spacing={1}>
+                <TextField fullWidth type="number" label="Win" value={draft.allyRankedWinPoints} onChange={(e) => set("allyRankedWinPoints", Number(e.target.value))} />
+                <TextField fullWidth type="number" label="Draw" value={draft.allyRankedDrawPoints} onChange={(e) => set("allyRankedDrawPoints", Number(e.target.value))} />
+                <TextField fullWidth type="number" label="Loss" value={draft.allyRankedLossPoints} onChange={(e) => set("allyRankedLossPoints", Number(e.target.value))} />
+              </Stack>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Casual
+              </Typography>
+              <Stack direction="row" spacing={1}>
+                <TextField fullWidth type="number" label="Win" value={draft.allyCasualWinPoints} onChange={(e) => set("allyCasualWinPoints", Number(e.target.value))} />
+                <TextField fullWidth type="number" label="Draw" value={draft.allyCasualDrawPoints} onChange={(e) => set("allyCasualDrawPoints", Number(e.target.value))} />
+                <TextField fullWidth type="number" label="Loss" value={draft.allyCasualLossPoints} onChange={(e) => set("allyCasualLossPoints", Number(e.target.value))} />
+              </Stack>
+            </Grid>
+          </Grid>
+        </Stack>
+      </Card>
+      <Card sx={{ p: { xs: 2.5, md: 4 } }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+        >
+          <Box>
+            <Typography variant="h6" fontWeight={800}>
+              Live cooperative matches
+            </Typography>
+            <Typography color="text.secondary">
+              Server-selected games, team scores, bot fallback, and lifecycle
+              state.
+            </Typography>
+          </Box>
+          <Button onClick={() => void load()} size="small">
+            Refresh
+          </Button>
+        </Stack>
+        <Stack spacing={1.5} sx={{ mt: 2 }}>
+          {matches.length === 0 ? (
+            <Typography color="text.secondary">
+              No cooperative matches have been created yet.
+            </Typography>
+          ) : (
+            matches.map((match) => (
+              <Box
+                key={match.matchId}
+                sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover" }}
+              >
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={2}
+                  justifyContent="space-between"
+                >
+                  <Box>
+                    <Typography fontWeight={800}>
+                      {match.match?.game?.name ||
+                        match.match?.game?.key ||
+                        "Random challenge"}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {match.status} ·{" "}
+                      {match.botFilled ? "bot fill" : "two parties"} ·{" "}
+                      {match.matchId.slice(0, 8)}
+                    </Typography>
+                  </Box>
+                  <Stack direction="row" spacing={2}>
+                    {match.teams.map((team) => (
+                      <Box key={team.name}>
+                        <Typography variant="body2" color="text.secondary">
+                          {team.name}
+                        </Typography>
+                        <Typography fontWeight={900}>
+                          {team.score} pts
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Stack>
+              </Box>
+            ))
+          )}
+        </Stack>
+      </Card>
+      <Card sx={{ p: { xs: 2.5, md: 4 } }}>
+        <Typography variant="h6" fontWeight={800}>
+          Ranked operations & reconciliation
+        </Typography>
+        <Typography color="text.secondary">
+          Team settlement, GLD ledger activity, abandonment, and worker failures
+          for the last 30 days.
+        </Typography>
+        {metrics && (
+          <Grid container spacing={2} sx={{ mt: 1, mb: 2 }}>
+            {[
+              ["Total", metrics.total],
+              ["Random", metrics.random],
+              ["Ranked", metrics.ranked],
+              ["Settled", metrics.settled],
+              ["Forfeits", metrics.abandoned],
+              ["Ledger ops", metrics.ledgerOperations],
+            ].map(([name, value]) => (
+              <Grid item xs={6} md={2} key={String(name)}>
+                <Typography variant="body2" color="text.secondary">
+                  {name}
+                </Typography>
+                <Typography variant="h6" fontWeight={850}>
+                  {value}
+                </Typography>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+        <Stack spacing={1}>
+          {settlements.slice(0, 10).map((row) => (
+            <Box
+              key={row.matchId}
+              sx={{ p: 1.5, borderRadius: 2, bgcolor: "action.hover" }}
+            >
+              <Stack direction="row" justifyContent="space-between">
+                <Typography fontWeight={750}>
+                  {row.mode} · {row.matchId.slice(0, 8)}
+                </Typography>
+                <Typography
+                  color={
+                    row.status === "SETTLED" ? "success.main" : "warning.main"
+                  }
+                >
+                  {row.status}
+                </Typography>
+              </Stack>
+              <Typography variant="body2" color="text.secondary">
+                Entry {row.entryFeeGld || "0"} GLD · payout pool{" "}
+                {row.payoutAmountGld || "0"} GLD · attempts{" "}
+                {row.settlementAttempts?.length || 0}
+              </Typography>
+            </Box>
+          ))}
+        </Stack>
+      </Card>
+    </Stack>
+  );
 }
 
-function label(key: string) { return key.replace(/([A-Z])/g, " $1").replace(/^./, (value) => value.toUpperCase()); }
+function label(key: string) {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (value) => value.toUpperCase());
+}
