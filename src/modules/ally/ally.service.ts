@@ -45,6 +45,52 @@ export class AllyService {
     return this.join(userId, ally.id)
   }
 
+  async leave(userId: string) {
+    const membership = await this.prisma.allyMember.findUnique({
+      where: { userId },
+      select: { allyId: true, role: true },
+    })
+    if (!membership) return this.me(userId)
+
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.allyMember.delete({ where: { userId } })
+
+      const remaining = await transaction.allyMember.findMany({
+        where: { allyId: membership.allyId },
+        orderBy: { joinedAt: "asc" },
+        select: { id: true, userId: true, role: true },
+      })
+
+      if (!remaining.length) {
+        // Keep the Ally and its historical score events intact, but make an
+        // empty Ally unavailable for new members and future scoring.
+        await transaction.ally.update({
+          where: { id: membership.allyId },
+          data: { status: "INACTIVE" },
+        })
+        return
+      }
+
+      const ally = await transaction.ally.findUniqueOrThrow({
+        where: { id: membership.allyId },
+        select: { ownerId: true },
+      })
+      if (ally.ownerId === userId || membership.role === "OWNER") {
+        const nextOwner = remaining[0]
+        await transaction.ally.update({
+          where: { id: membership.allyId },
+          data: { ownerId: nextOwner.userId },
+        })
+        await transaction.allyMember.update({
+          where: { id: nextOwner.id },
+          data: { role: "OWNER" },
+        })
+      }
+    })
+
+    return this.me(userId)
+  }
+
   async me(userId: string) {
     await this.settleExpiredSeasons()
     const config = await this.policy()
@@ -123,10 +169,10 @@ export class AllyService {
   private async rankingRows(boardId: string, seasonId: string, userId?: string, currentAllyId?: string) {
     const entries = await this.prisma.leaderboardEntry.findMany({ where: { leaderboardId: boardId, seasonId }, orderBy: [{ score: "desc" }, { updatedAt: "asc" }], take: 100 })
     const allyIds = entries.map((entry) => entry.memberKey)
-    const allies = await this.prisma.ally.findMany({ where: { id: { in: allyIds } }, include: { members: { select: { userId: true } } } })
+    const allies = await this.prisma.ally.findMany({ where: { id: { in: allyIds }, status: "ACTIVE" }, include: { members: { select: { userId: true } } } })
     const allyMap = new Map(allies.map((ally) => [ally.id, ally]))
-    const rows = entries.map((entry, index) => {
-      const ally = allyMap.get(entry.memberKey)
+    const rows = entries.filter((entry) => allyMap.has(entry.memberKey)).map((entry, index) => {
+      const ally = allyMap.get(entry.memberKey)!
       return { rank: index + 1, allyId: entry.memberKey, name: ally?.name ?? "Ally", tag: ally?.tag ?? "", emblemKey: ally?.emblemKey ?? "spark", score: Number(entry.score), memberCount: ally?.members.length ?? 0, isCurrent: entry.memberKey === currentAllyId }
     })
     let currentRank: number | null = null
