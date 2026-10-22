@@ -83,11 +83,35 @@ export class ConfigService {
   }
 
   publish(dto: PublishRewardPolicyDto) {
+    if (dto.key.trim().toLowerCase() === "admob-units") {
+      this.validateAdMobUnits(dto.publicConfig)
+    }
     if (this.containsSensitivePublicValue(dto.publicConfig)) throw new BadRequestException("Critical reward and verification values must remain server-side")
     return this.publishTransaction.run(dto)
   }
 
   deactivate(key: string) { return this.deactivateTransaction.run(key) }
+
+  private validateAdMobUnits(value: Record<string, unknown>) {
+    const formats = ["interstitial", "nativeAdvanced", "rewarded", "rewardedInterstitial", "banner"]
+    const readSet = (name: string, production: boolean) => {
+      const set = value[name]
+      if (!set || typeof set !== "object" || Array.isArray(set)) {
+        throw new BadRequestException(`admob-units.${name} must be an object`)
+      }
+      for (const format of formats) {
+        const id = (set as Record<string, unknown>)[format]
+        if (typeof id !== "string" || !/^ca-app-pub-\d{16}\/\d{10}$/.test(id)) {
+          throw new BadRequestException(`admob-units.${name}.${format} is not a valid AdMob ad unit ID`)
+        }
+        if (production && !id.startsWith("ca-app-pub-8983099053290719/")) {
+          throw new BadRequestException(`admob-units.production.${format} belongs to a different AdMob publisher`)
+        }
+      }
+    }
+    readSet("production", true)
+    readSet("development", false)
+  }
 
   private containsSensitivePublicValue(value: unknown, path = ""): boolean {
     if (Array.isArray(value)) return value.some((item) => this.containsSensitivePublicValue(item, path))

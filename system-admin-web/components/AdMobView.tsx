@@ -68,11 +68,11 @@ type RewardPolicy = {
 
 const defaultAdUnitConfig: AdUnitConfig = {
   production: {
-    interstitial: "ca-app-pub-3854108193312211/1673351615",
-    nativeAdvanced: "ca-app-pub-3854108193312211/4475250130",
-    rewarded: "ca-app-pub-3854108193312211/807s1239008",
-    rewardedInterstitial: "ca-app-pub-3854108193312211/2096498807",
-    banner: "ca-app-pub-3854108193312211/3126034083",
+    interstitial: "ca-app-pub-8983099053290719/9176726097",
+    nativeAdvanced: "ca-app-pub-8983099053290719/6322631341",
+    rewarded: "ca-app-pub-8983099053290719/1441706307",
+    rewardedInterstitial: "ca-app-pub-8983099053290719/7863644423",
+    banner: "ca-app-pub-8983099053290719/5245219948",
   },
   development: {
     interstitial: "ca-app-pub-3940256099942544/1033173712",
@@ -127,21 +127,29 @@ export function AdMobView() {
         const policy = policies.find((item) => item.key === "admob-units");
         if (!policy) return;
         const publicConfig = policy.publicConfig || {};
-        const readSet = (value: unknown, fallback: AdUnitSet): AdUnitSet => {
+        const isValidAdUnitId = (value: unknown, production: boolean) =>
+          typeof value === "string" &&
+          /^ca-app-pub-\d{16}\/\d{10}$/.test(value) &&
+          (!production || value.startsWith("ca-app-pub-8983099053290719/"));
+        const readSet = (
+          value: unknown,
+          fallback: AdUnitSet,
+          production: boolean,
+        ): AdUnitSet => {
           if (!value || typeof value !== "object") return fallback;
           const source = value as Record<string, unknown>;
           return Object.fromEntries(
             adUnitFields.map(([key]) => [
               key,
-              typeof source[key] === "string" && source[key]
+              isValidAdUnitId(source[key], production)
                 ? source[key]
                 : fallback[key],
             ]),
           ) as AdUnitSet;
         };
         setAdUnitConfig((current) => ({
-          production: readSet(publicConfig.production, current.production),
-          development: readSet(publicConfig.development, current.development),
+          production: readSet(publicConfig.production, current.production, true),
+          development: readSet(publicConfig.development, current.development, false),
         }));
       })
       .catch(() => undefined);
