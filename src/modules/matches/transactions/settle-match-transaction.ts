@@ -13,7 +13,7 @@ import { MissionsService } from "../../missions/missions.service"
 import { StreaksService } from "../../streaks/streaks.service"
 import { WinStreaksService } from "../../win-streaks/win-streaks.service"
 import { FraudService } from "../../fraud/fraud.service"
-import { deriveParticipantRewardEvidence, isAcceptedScoringEvent, rewardEligibilityForParticipant, type ParticipantRewardEvidence } from "./match-reward-integrity"
+import { deriveParticipantRewardEvidence, isAcceptedScoringEvent, rewardEligibilityForParticipant, shouldHoldRewardForFraud, type ParticipantRewardEvidence } from "./match-reward-integrity"
 import { normalizedMatchXp, rewardPolicy, type RewardPolicy } from "./match-reward-policy"
 import { AllyService } from "../../ally/ally.service"
 
@@ -93,6 +93,11 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     const scores = lockedMatch.participants.map((item) => ({ participant: item, score: BigInt(item.finalScore ?? 0) }))
     const hasBotOpponent = lockedMatch.participants.some((item) => item.participantType === "BOT")
     const ratedHumanMatch = !cooperative && !hasBotOpponent && (lockedMatch.mode === "RANKED" || Boolean(lockedMatch.rankingMatch))
+    // Casual human-vs-human matches also contribute to the public weekly and
+    // monthly boards. Keep this separate from Elo progression: casual play
+    // earns leaderboard points, but must not silently change a player's Elo
+    // rating or ranked progression.
+    const casualLeaderboardMatch = !cooperative && !hasBotOpponent && lockedMatch.mode === "CASUAL"
     const teamScores = cooperative?.teams.map((team) => ({ teamId: team.id, score: team.score })) ?? []
     const highestTeamScore = teamScores.reduce((max, current) => Math.max(max, current.score), -Infinity)
     const topTeams = teamScores.filter((team) => team.score === highestTeamScore)
@@ -123,7 +128,11 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       // WATCH/SUSPICIOUS is an observation state, not enough by itself to
       // withhold every match reward. Reserve automatic holds for the existing
       // high-risk threshold; restricted/suspended accounts remain blocked.
-      const fraudHeld = !fraudRestricted && Boolean(fraudProfile && fraudProfile.score >= 60)
+      const fraudHeld = !fraudRestricted && shouldHoldRewardForFraud({
+        fraudScore: fraudProfile?.score,
+        acceptedActionCount: evidence.acceptedActionCount,
+        isForfeit: result === "FORFEIT",
+      })
       const baseRewardEligibility = item.participant.userId
         ? rewardEligibilityForParticipant({ isPractice, isBotOpponent: hasBotOpponent, isForfeit: result === "FORFEIT", acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount })
         : "NONE"
@@ -260,6 +269,11 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
           ? result === "FORFEIT" ? -forfeitPenalty : isWinner ? forfeitPenalty : 0n
           : this.clamp(scoreDiff, -BigInt(config.maxEloDelta), BigInt(config.maxEloDelta))
         : 0n
+      const leaderboardDelta = ratedHumanMatch || cooperativeRanked
+        ? eloDelta
+        : casualLeaderboardMatch && !fraudRestricted && !fraudHeld && rewardEligibility === "FULL"
+        ? this.clamp(scoreDiff, -BigInt(config.maxEloDelta), BigInt(config.maxEloDelta))
+        : 0n
       const policy = rewardPolicy(config, lockedMatch.gameDefinition.key)
       const opponent = humanParticipants.find((candidate) => candidate.id !== item.participant.id)?.userId ?? null
       const repeatedOpponent = item.participant.userId && opponent
@@ -374,12 +388,12 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         : { before: 0, after: 0 }
       const cognitiveEligible = !isPractice && result !== "FORFEIT" && rewardEligibility !== "NONE" && evidence.acceptedActionCount > 0
       const cognitiveStats = cognitiveEligible ? await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary) : null
-      if (eloDelta !== 0n && (ratedHumanMatch || cooperativeRanked) && rewardEligibility === "FULL") {
+      if (leaderboardDelta !== 0n && (ratedHumanMatch || cooperativeRanked || casualLeaderboardMatch) && rewardEligibility === "FULL") {
         const leaderboardKeys = this.getLeaderboardKeys(config)
-        for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: eloDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
+        for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: leaderboardDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, matchMode: lockedMatch.mode, leaderboardDelta: leaderboardDelta.toString() } }, transaction)
         const country = player.profile?.countryCode?.trim().toUpperCase()
         const opponent = humanParticipants.find((candidate) => candidate.id !== item.participant.id)?.user?.profile?.countryCode?.trim().toUpperCase()
-        if (country && country !== opponent) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: eloDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)
+        if (country && country !== opponent) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: leaderboardDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, matchMode: lockedMatch.mode, leaderboardDelta: leaderboardDelta.toString() } }, transaction)
       }
       await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, changes: { result: { old: "PENDING", new: result }, scoreEarned: { old: 0n, new: item.score }, eloDelta: { old: 0n, new: eloDelta }, xpAwarded: { old: 0n, new: xp }, currencyReward: { old: 0n, new: coinReward } }, metadata: { gameKey: lockedMatch.gameDefinition.key, policyVersion, rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds } })
       results.push({ playerId: player.id, participantType: item.participant.participantType, username: player.username, displayName: player.profile?.displayName ?? player.username, avatarUrl: player.profile?.avatarUrl ?? null, result, completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED", terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null, score: item.score.toString(), eloDelta: eloDelta.toString(), rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds, progression, eloProgression, wallet, cognitiveStats, winStreakBefore: winStreak.before, winStreakAfter: winStreak.after })
@@ -671,8 +685,13 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
   }
 
   private getLeaderboardKeys(config: any) {
-    const keys = (config.settings as Record<string, any> | null)?.leaderboardKeys
-    if (!keys?.playerWeekly || !keys?.playerMonthly || !keys?.countryWeekly || !keys?.countryMonthly) throw new BadRequestException("Leaderboard keys are not configured for this game")
+    // Older and newly introduced game configs do not always copy the shared
+    // board keys into their game-specific settings. These are the canonical
+    // server-owned boards, while an explicit per-game override remains
+    // supported for administrators.
+    const defaults = { playerWeekly: "players_weekly", playerMonthly: "players_monthly", countryWeekly: "countryweekly", countryMonthly: "countrymonthly" }
+    const configured = (config.settings as Record<string, any> | null)?.leaderboardKeys
+    const keys = { ...defaults, ...(configured && typeof configured === "object" ? configured : {}) }
     return keys as { playerWeekly: string; playerMonthly: string; countryWeekly: string; countryMonthly: string }
   }
 }

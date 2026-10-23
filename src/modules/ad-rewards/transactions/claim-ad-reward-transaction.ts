@@ -81,12 +81,15 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
     if (!claim || claim.user.status !== "ACTIVE")
       throw new NotFoundException("Ad reward claim not found");
     if (input.trustedVerification) {
-      if (
-        !["ADMOB_SSV", "CLIENT_EVENT"].includes(
-          input.trustedVerification.source,
-        ) ||
-        claim.provider !== "admob"
-      )
+      const source = input.trustedVerification.source;
+      const validClientProvider = ["admob", "startio"].includes(
+        claim.provider,
+      );
+      const validProvider =
+        source === "CLIENT_EVENT"
+          ? validClientProvider
+          : source === "ADMOB_SSV" && claim.provider === "admob";
+      if (!validProvider)
         throw new UnauthorizedException("Invalid ad provider");
     } else {
       if (!input.signature)

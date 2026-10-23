@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger"
 import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator"
 
 export class CreateAdImpressionDto {
-  @ApiProperty({ example: "admob" })
+  @ApiProperty({ example: "startio" })
   @IsString()
   @MaxLength(40)
   provider!: string
@@ -18,7 +18,7 @@ export class ClaimAdRewardDto {
   @IsUUID()
   claimId!: string
 
-  @ApiProperty({ example: "admob-event-123" })
+  @ApiProperty({ example: "startio-event-123" })
   @IsString()
   @MinLength(1)
   @MaxLength(255)

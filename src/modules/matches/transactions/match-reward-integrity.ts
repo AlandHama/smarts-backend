@@ -83,3 +83,24 @@ export function rewardEligibilityForParticipant(input: {
   if (input.acceptedActionCount < 1 && input.acceptedScoringActionCount < 1) return "NONE"
   return input.isBotOpponent ? "PARTIAL" : "FULL"
 }
+
+/**
+ * A risk score is accumulated across an account's history. It is not, by
+ * itself, proof that the current match is fraudulent. Holding every later
+ * match once that score crosses the review threshold made normal players see
+ * the review banner forever (especially after bot/legacy compatibility
+ * matches). Only a very short, high-risk match should be held automatically;
+ * restricted accounts are handled separately by settlement.
+ */
+export function shouldHoldRewardForFraud(input: {
+  fraudScore: number | null | undefined
+  acceptedActionCount: number
+  isForfeit: boolean
+}): boolean {
+  return Boolean(
+    !input.isForfeit &&
+      input.fraudScore != null &&
+      input.fraudScore >= 60 &&
+      input.acceptedActionCount <= 1,
+  )
+}

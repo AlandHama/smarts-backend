@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 
-import { deriveParticipantRewardEvidence, rewardEligibilityForParticipant } from "./match-reward-integrity"
+import { deriveParticipantRewardEvidence, rewardEligibilityForParticipant, shouldHoldRewardForFraud } from "./match-reward-integrity"
 import { normalizedMatchXp, rewardPolicy } from "./match-reward-policy"
 
 /** Framework-neutral Phase 2 integrity vectors. */
@@ -16,6 +16,9 @@ export function runMatchRewardIntegrityVectors() {
   assert.equal(evidence.hasUnverifiedActions, true)
   assert.equal(rewardEligibilityForParticipant({ isPractice: false, isBotOpponent: false, isForfeit: false, acceptedActionCount: 2, acceptedScoringActionCount: 0 }), "FULL")
   assert.equal(rewardEligibilityForParticipant({ isPractice: false, isBotOpponent: true, isForfeit: false, acceptedActionCount: 1, acceptedScoringActionCount: 1 }), "PARTIAL")
+  assert.equal(shouldHoldRewardForFraud({ fraudScore: 85, acceptedActionCount: 12, isForfeit: false }), false)
+  assert.equal(shouldHoldRewardForFraud({ fraudScore: 85, acceptedActionCount: 1, isForfeit: false }), true)
+  assert.equal(shouldHoldRewardForFraud({ fraudScore: 85, acceptedActionCount: 1, isForfeit: true }), false)
 
   const policy = rewardPolicy({ settings: null, scoreRewardCap: 500n }, "gem_blitz")
   const xp = normalizedMatchXp(policy, 15000n, "WIN", false, 0)

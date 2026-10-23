@@ -41,7 +41,13 @@ export class VerifyAdImpressionTransaction extends PrismaTransaction<
     } catch (error) {
       policy = { version: "gld-ad-reward-matrix", privateConfig: {} };
     }
-    const allowedProviders = policy.privateConfig.allowedProviders ?? ["admob"];
+    const configuredProviders =
+      policy.privateConfig.allowedProviders ?? ["startio", "admob"];
+    // Existing deployments may still have an `admob` policy saved. Treat it
+    // as a migration-compatible policy so the Start.io client can switch over
+    // without requiring an emergency admin config edit.
+    const allowedProviders = new Set(configuredProviders);
+    if (allowedProviders.has("admob")) allowedProviders.add("startio");
     const allowedFormats = policy.privateConfig.allowedAdFormats ?? [
       "rewarded",
     ];
@@ -50,7 +56,7 @@ export class VerifyAdImpressionTransaction extends PrismaTransaction<
       select: { id: true },
     });
     if (
-      !allowedProviders.includes(provider) ||
+      !allowedProviders.has(provider) ||
       (!allowedFormats.includes(adFormat) && !configuredPlacement)
     )
       throw new BadRequestException("This ad reward placement is not enabled");
