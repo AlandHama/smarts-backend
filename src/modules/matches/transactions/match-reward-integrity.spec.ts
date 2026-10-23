@@ -14,8 +14,8 @@ export function runMatchRewardIntegrityVectors() {
   assert.equal(evidence.acceptedActionCount, 2)
   assert.equal(evidence.acceptedScoringActionCount, 1)
   assert.equal(evidence.hasUnverifiedActions, true)
-  assert.equal(rewardEligibilityForParticipant({ isPractice: false, isBotOpponent: false, isForfeit: false, hasUnverifiedActions: true, acceptedScoringActionCount: 0 }), "HELD")
-  assert.equal(rewardEligibilityForParticipant({ isPractice: false, isBotOpponent: true, isForfeit: false, acceptedScoringActionCount: 1 }), "PARTIAL")
+  assert.equal(rewardEligibilityForParticipant({ isPractice: false, isBotOpponent: false, isForfeit: false, acceptedActionCount: 2, acceptedScoringActionCount: 0 }), "FULL")
+  assert.equal(rewardEligibilityForParticipant({ isPractice: false, isBotOpponent: true, isForfeit: false, acceptedActionCount: 1, acceptedScoringActionCount: 1 }), "PARTIAL")
 
   const policy = rewardPolicy({ settings: null, scoreRewardCap: 500n }, "gem_blitz")
   const xp = normalizedMatchXp(policy, 15000n, "WIN", false, 0)

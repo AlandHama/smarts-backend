@@ -36,8 +36,8 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const now = new Date()
     const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { id: true, status: true, profile: { select: { level: true, elo: true, countryCode: true } } } })
     if (!user || user.status !== "ACTIVE") throw new BadRequestException("Player is not active")
-    const fraudProfile = await transaction.fraudProfile.findUnique({ where: { userId: input.userId }, select: { status: true, riskLevel: true } })
-    const rewardsHeld = Boolean(fraudProfile && (fraudProfile.status === "WATCH" || fraudProfile.riskLevel === "SUSPICIOUS" || fraudProfile.riskLevel === "HIGH" || fraudProfile.riskLevel === "CRITICAL"))
+    const fraudProfile = await transaction.fraudProfile.findUnique({ where: { userId: input.userId }, select: { status: true, score: true } })
+    const rewardsHeld = Boolean(fraudProfile && fraudProfile.score >= 60)
     const rewardsRestricted = fraudProfile?.status === "RESTRICTED" || fraudProfile?.status === "SUSPENDED"
     if (mode === MatchmakingTicketMode.RANKED && (rewardsHeld || rewardsRestricted)) throw new ConflictException("Ranked matchmaking is unavailable while reward integrity is under review")
     const strikeThreshold = forfeitStrikeThreshold()

@@ -120,9 +120,12 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         ? await transaction.fraudProfile.findUnique({ where: { userId: item.participant.userId }, select: { status: true, riskLevel: true, score: true } })
         : null
       const fraudRestricted = fraudProfile?.status === "RESTRICTED" || fraudProfile?.status === "SUSPENDED"
-      const fraudHeld = !fraudRestricted && Boolean(fraudProfile && (fraudProfile.status === "WATCH" || fraudProfile.riskLevel === "SUSPICIOUS" || fraudProfile.riskLevel === "HIGH" || fraudProfile.riskLevel === "CRITICAL"))
+      // WATCH/SUSPICIOUS is an observation state, not enough by itself to
+      // withhold every match reward. Reserve automatic holds for the existing
+      // high-risk threshold; restricted/suspended accounts remain blocked.
+      const fraudHeld = !fraudRestricted && Boolean(fraudProfile && fraudProfile.score >= 60)
       const baseRewardEligibility = item.participant.userId
-        ? rewardEligibilityForParticipant({ isPractice, isBotOpponent: hasBotOpponent, isForfeit: result === "FORFEIT", hasUnverifiedActions: evidence.hasUnverifiedActions, acceptedScoringActionCount: evidence.acceptedScoringActionCount })
+        ? rewardEligibilityForParticipant({ isPractice, isBotOpponent: hasBotOpponent, isForfeit: result === "FORFEIT", acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount })
         : "NONE"
       // A forfeiture is never converted back into a reward hold by fraud
       // scoring. This prevents a suspicious quitter from receiving capped XP.
@@ -161,8 +164,11 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         },
       })
       // Bots participate in the result calculation but never receive player
-      // progression, wallet, leaderboard, or audit rewards.
-      if (!player?.id) {
+      // progression, wallet, leaderboard, or audit rewards. The participant
+      // type is authoritative here. Do not infer a bot from a missing user
+      // relation: doing that can turn a real player's result into a generated
+      // bot name with a misleading zero score in the results screen.
+      if (item.participant.participantType === "BOT") {
         // Bots do not receive rewards, but their authoritative result still
         // belongs in the settlement projection so clients can render the
         // opponent's final score and name.
@@ -179,6 +185,33 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
           eloDelta: "0",
           rewardEligibility: "NONE",
           rewardHoldReason: "BOT_PARTICIPANT",
+          acceptedActionCount: evidence.acceptedActionCount,
+          acceptedScoringActionCount: evidence.acceptedScoringActionCount,
+          verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds,
+          progression: null,
+          eloProgression: null,
+          wallet: null,
+        })
+        continue
+      }
+      // PLAYER rows should always have a user because MatchParticipant.userId
+      // is created from the matchmaking ticket. Keep any unexpected data
+      // problem visible as a player result rather than silently rewriting it
+      // as a bot result.
+      if (!player?.id || !item.participant.userId) {
+        results.push({
+          playerId: item.participant.userId ?? item.participant.id,
+          participantType: "PLAYER",
+          username: item.participant.userId ?? "Opponent",
+          displayName: "Opponent",
+          avatarUrl: null,
+          result,
+          completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED",
+          terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null,
+          score: item.score.toString(),
+          eloDelta: "0",
+          rewardEligibility: "NONE",
+          rewardHoldReason: "PLAYER_IDENTITY_UNAVAILABLE",
           acceptedActionCount: evidence.acceptedActionCount,
           acceptedScoringActionCount: evidence.acceptedScoringActionCount,
           verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds,
@@ -339,7 +372,8 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       const winStreak = gameLeaderboardEligible
         ? await this.updateStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary, resetWinStreakOnNonWin)
         : { before: 0, after: 0 }
-      const cognitiveStats = gameLeaderboardEligible ? await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary) : null
+      const cognitiveEligible = !isPractice && result !== "FORFEIT" && rewardEligibility !== "NONE" && evidence.acceptedActionCount > 0
+      const cognitiveStats = cognitiveEligible ? await this.updateCognitiveStats(transaction, lockedMatch, item.participant, result, item.score, answerSummary) : null
       if (eloDelta !== 0n && (ratedHumanMatch || cooperativeRanked) && rewardEligibility === "FULL") {
         const leaderboardKeys = this.getLeaderboardKeys(config)
         for (const leaderboardKey of [leaderboardKeys.playerWeekly, leaderboardKeys.playerMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, playerId: player.id, delta: eloDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion } }, transaction)

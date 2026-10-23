@@ -71,11 +71,15 @@ export function rewardEligibilityForParticipant(input: {
   isPractice: boolean
   isBotOpponent: boolean
   isForfeit: boolean
-  hasUnverifiedActions?: boolean
+  acceptedActionCount: number
   acceptedScoringActionCount: number
 }): RewardEligibility {
   if (input.isPractice || input.isForfeit) return "NONE"
-  if (input.hasUnverifiedActions) return "HELD"
-  if (input.acceptedScoringActionCount < 1) return "NONE"
+  // Legacy/local games may carry a client correctness flag, but the server
+  // still validates the assignment, token, answer order, timing, and score
+  // mutation before accepting the action. Do not hold every match merely
+  // because that compatibility field is present. Fraud signals continue to
+  // record the legacy path and can still trigger a risk-based hold below.
+  if (input.acceptedActionCount < 1 && input.acceptedScoringActionCount < 1) return "NONE"
   return input.isBotOpponent ? "PARTIAL" : "FULL"
 }

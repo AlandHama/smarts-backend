@@ -147,9 +147,9 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       return null;
     const integrityProfiles = await transaction.fraudProfile.findMany({
       where: { userId: { in: realTickets.map((ticket) => ticket.userId) } },
-      select: { userId: true, status: true, riskLevel: true },
+      select: { userId: true, status: true, score: true },
     })
-    const blockedForCompetitive = integrityProfiles.some((profile) => profile.status === "RESTRICTED" || profile.status === "SUSPENDED" || profile.status === "WATCH" || profile.riskLevel === "SUSPICIOUS" || profile.riskLevel === "HIGH" || profile.riskLevel === "CRITICAL")
+    const blockedForCompetitive = integrityProfiles.some((profile) => profile.status === "RESTRICTED" || profile.status === "SUSPENDED" || profile.score >= 60)
     if (blockedForCompetitive && first.isRankingMatch) return null
     if (blockedForCompetitive && !second) return null
     if (second) {
