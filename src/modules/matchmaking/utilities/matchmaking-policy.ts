@@ -8,3 +8,6 @@ export function queueHeartbeatTimeoutSeconds() { return environmentSeconds("MATC
 export function botFallbackSeconds() { return environmentSeconds("MATCHMAKING_BOT_FALLBACK_SECONDS", 20, 10, 300) }
 export function matchmakerBatchSize() { return environmentSeconds("MATCHMAKING_BATCH_SIZE", 20, 1, 100) }
 export function friendInviteTtlSeconds() { return environmentSeconds("MATCHMAKING_FRIEND_INVITE_TTL_SECONDS", 120, 30, 3600) }
+export function forfeitStrikeThreshold() { return environmentSeconds("MATCHMAKING_FORFEIT_STRIKE_THRESHOLD", 5, 1, 20) }
+export function forfeitStrikeWindowSeconds() { return environmentSeconds("MATCHMAKING_FORFEIT_STRIKE_WINDOW_SECONDS", 86400, 3600, 604800) }
+export function forfeitCooldownSeconds() { return environmentSeconds("MATCHMAKING_FORFEIT_COOLDOWN_SECONDS", 600, 60, 3600) }

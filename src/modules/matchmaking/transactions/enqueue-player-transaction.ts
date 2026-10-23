@@ -7,7 +7,7 @@ import { PrismaService } from "../../../prisma.service"
 import { EnqueuePlayerDto } from "../dtos"
 import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
-import { queueHeartbeatTimeoutSeconds, queueTtlSeconds } from "../utilities/matchmaking-policy"
+import { forfeitCooldownSeconds, forfeitStrikeThreshold, forfeitStrikeWindowSeconds, queueHeartbeatTimeoutSeconds, queueTtlSeconds } from "../utilities/matchmaking-policy"
 import { MatchIntegrityPolicyService } from "../../matches/match-integrity-policy.service"
 
 @Injectable()
@@ -40,8 +40,26 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const rewardsHeld = Boolean(fraudProfile && (fraudProfile.status === "WATCH" || fraudProfile.riskLevel === "SUSPICIOUS" || fraudProfile.riskLevel === "HIGH" || fraudProfile.riskLevel === "CRITICAL"))
     const rewardsRestricted = fraudProfile?.status === "RESTRICTED" || fraudProfile?.status === "SUSPENDED"
     if (mode === MatchmakingTicketMode.RANKED && (rewardsHeld || rewardsRestricted)) throw new ConflictException("Ranked matchmaking is unavailable while reward integrity is under review")
-    const recentForfeit = await transaction.matchParticipant.findFirst({ where: { userId: input.userId, result: "FORFEIT", match: { createdAt: { gte: new Date(Date.now() - 600000) } } }, orderBy: { submittedAt: "desc" }, select: { id: true } })
-    if (recentForfeit) throw new ConflictException("Please wait a moment before joining another match after a forfeit")
+    const strikeThreshold = forfeitStrikeThreshold()
+    const forfeits = await transaction.matchParticipant.findMany({
+      where: {
+        userId: input.userId,
+        result: "FORFEIT",
+        submittedAt: { gte: new Date(now.getTime() - forfeitStrikeWindowSeconds() * 1000) },
+      },
+      orderBy: { submittedAt: "desc" },
+      take: strikeThreshold,
+      select: { submittedAt: true },
+    })
+    const latestForfeitAt = forfeits[0]?.submittedAt
+    const cooldownDuration = forfeitCooldownSeconds()
+    if (forfeits.length >= strikeThreshold && latestForfeitAt) {
+      const cooldownEndsAt = new Date(latestForfeitAt.getTime() + cooldownDuration * 1000)
+      if (cooldownEndsAt > now) {
+        const remainingSeconds = Math.ceil((cooldownEndsAt.getTime() - now.getTime()) / 1000)
+        throw new ConflictException(`Please wait ${remainingSeconds} seconds before joining another match after ${strikeThreshold} forfeits`)
+      }
+    }
     const playerLevel = user.profile?.level ?? 1
     // MatchmakingTicket keeps a required game relation for legacy/reporting
     // compatibility. Random casual tickets use a valid active game as a
