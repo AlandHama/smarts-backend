@@ -152,21 +152,15 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     const blockedForCompetitive = integrityProfiles.some((profile) => profile.status === "RESTRICTED" || profile.status === "SUSPENDED" || profile.score >= 60)
     if (blockedForCompetitive && first.isRankingMatch) return null
     if (blockedForCompetitive && !second) return null
-    if (second) {
-      const recentPairMatches = await transaction.matchParticipant.findMany({
-        where: {
-          userId: first.userId,
-          match: { mode: MatchmakingTicketMode.CASUAL === first.mode ? "CASUAL" : "RANKED", createdAt: { gte: new Date(Date.now() - 86400000) }, participants: { some: { userId: second.userId } } },
-        },
-        select: { matchId: true },
-        distinct: ["matchId"],
-      })
-      if (recentPairMatches.length >= 3) return null
-    }
+    // Do not hard-block a pair because they have recently faced each other.
+    // The old guard returned null after three matches and left the same two
+    // tickets SEARCHING indefinitely (and could starve every newer ticket in
+    // the queue). Settlement already applies the same-opponent fraud signal
+    // and reward dampening, so matchmaking must remain available here.
     const now = new Date();
     const gameCandidates = isRandomCasualTicket(first)
       ? await transaction.gameDefinition.findMany({
-          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "tile_rush" }, { key: "word_dash" }, { key: "domino" }, { key: "perfect_timing" }, { key: "bomb_path" }, { content: { some: { active: true } } }] },
+          where: { active: true, configs: { some: { active: true } }, OR: [{ key: "gem_blitz" }, { key: "tile_rush" }, { key: "word_dash" }, { key: "domino" }, { key: "perfect_timing" }, { key: "bomb_path" }, { content: { some: { active: true } } }] },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })
       : [await transaction.gameDefinition.findUnique({
@@ -317,7 +311,13 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     });
     const participants = [];
     for (const ticket of realTickets) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: ticket.userId, participantType: "PLAYER" } }));
-    const requiredSeats = game.key === "domino" ? 4 : (game.key === "perfect_timing" || game.key === "bomb_path") ? 2 : Math.max(2, participants.length + 1);
+    // A real two-player queue match must contain exactly the two queued
+    // players. The previous `participants.length + 1` rule added a bot even
+    // when two humans had already been paired; unordered participant reads
+    // could then make clients show that bot and its zero score as the rival.
+    // Keep bot filling only for a genuinely solo fallback, while Domino
+    // still fills its four seats as required by its rules.
+    const requiredSeats = game.key === "domino" ? 4 : 2;
     while (participants.length < requiredSeats) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: "BOT", result: "PENDING" } }));
 
     const expiresAt = new Date(

@@ -90,7 +90,9 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     if (idem.requestHash !== requestHash) throw new ConflictException("The settlement idempotency key is invalid")
     if (idem.status === "COMPLETED" && idem.responseJson) return idem.responseJson
 
-    const scores = lockedMatch.participants.map((item) => ({ participant: item, score: BigInt(item.finalScore ?? 0) }))
+    const scores = lockedMatch.participants
+      .map((item) => ({ participant: item, score: BigInt(item.finalScore ?? 0) }))
+      .sort((left, right) => Number(left.participant.participantType === "BOT") - Number(right.participant.participantType === "BOT"))
     const hasBotOpponent = lockedMatch.participants.some((item) => item.participantType === "BOT")
     const ratedHumanMatch = !cooperative && !hasBotOpponent && (lockedMatch.mode === "RANKED" || Boolean(lockedMatch.rankingMatch))
     // Casual human-vs-human matches also contribute to the public weekly and

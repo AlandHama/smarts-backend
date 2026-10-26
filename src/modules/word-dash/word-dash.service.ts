@@ -255,7 +255,10 @@ export class WordDashService {
     const states = await tx.wordDashParticipantState.findMany({ where: { wordDashMatchId: wordDash.id } })
     const self = states.find((item: any) => item.matchParticipantId === participantId)
     if (!self) throw new ConflictException("The Word Dash player state is unavailable")
-    const opponentParticipant = match.participants.find((item: any) => item.id !== participantId)
+    // Matchmaking may have created a bot seat for older matches. Prefer the
+    // real queued opponent and only use a bot when no human rival exists.
+    const opponentParticipant = match.participants.find((item: any) => item.id !== participantId && item.participantType !== "BOT")
+      ?? match.participants.find((item: any) => item.id !== participantId)
     const opponent = opponentParticipant ? states.find((item: any) => item.matchParticipantId === opponentParticipant.id) : null
     const acceptedWords = await tx.wordDashFoundWord.findMany({ where: { matchParticipantId: participantId }, orderBy: { firstSequence: "asc" }, take: policy.maxAcceptedWordsPerPlayer, select: { word: true, path: true, scoreDelta: true, acceptedAt: true } })
     const ownWords = [...acceptedWords].reverse().slice(0, 20)

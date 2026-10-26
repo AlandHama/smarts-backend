@@ -67,7 +67,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     // two random tickets are paired.
     const game = randomCasual
       ? await transaction.gameDefinition.findFirst({
-          where: { active: true, configs: { some: { active: true, minimumPlayerLevel: { lte: playerLevel } } }, OR: [{ key: "tile_rush" }, { key: "word_dash" }, { key: "domino" }, { key: "perfect_timing" }, { key: "bomb_path" }, { content: { some: { active: true } } }] },
+          where: { active: true, configs: { some: { active: true, minimumPlayerLevel: { lte: playerLevel } } }, OR: [{ key: "gem_blitz" }, { key: "tile_rush" }, { key: "word_dash" }, { key: "domino" }, { key: "perfect_timing" }, { key: "bomb_path" }, { content: { some: { active: true } } }] },
           orderBy: { key: "asc" },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })

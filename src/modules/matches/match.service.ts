@@ -174,6 +174,12 @@ export class MatchService {
     });
     if (!match) throw new NotFoundException("Match not found");
     const { rounds, gameConfig, rankingMatch, cooperativeMatch, ...matchWithoutRounds } = match;
+    // PostgreSQL does not guarantee relation row order. Keep human players
+    // before legacy bot seats so older clients that still read the first two
+    // participants cannot mistake a bot for the real opponent.
+    const orderedParticipants = [...match.participants].sort((left, right) =>
+      Number(left.participantType === "BOT") - Number(right.participantType === "BOT"),
+    );
     return this.serializeMatch({
       ...matchWithoutRounds,
       // Keep the authoritative game key explicit for mobile clients. Ranked
@@ -185,7 +191,7 @@ export class MatchService {
       // server only stores the commitment hash, so expose a bounded numeric
       // projection rather than the hash itself or the server nonce.
       challengeSeed: this.challengeSeedFromHash(rounds[0]?.challengeSeedHash),
-      participants: match.participants.map((participant) =>
+      participants: orderedParticipants.map((participant) =>
         this.publicParticipant(participant, userId, undefined, match.id),
       ),
       // Assignment tokens are derived on demand for the authenticated
