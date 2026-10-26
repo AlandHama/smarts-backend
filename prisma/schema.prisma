@@ -2042,8 +2042,8 @@ model EngagementEvent {
   @@index([userId, eventType, createdAt])
 }
 
-/// Append-only, server-owned analytics envelope. Player clients never write
-/// this table directly; producers use the AnalyticsEventService.
+/// Short-lived, server-owned analytics envelope. Player clients never write
+/// this table directly; durable reporting is stored in aggregate buckets.
 model AnalyticsEvent {
   id           String   @id @default(uuid()) @db.Uuid
   eventName    String   @db.VarChar(120)
@@ -2066,6 +2066,7 @@ model AnalyticsEvent {
   // Aggregation scans filter by time first; the event-name-first index does
   // not support that access pattern as the table grows.
   @@index([occurredAt, eventName])
+  @@index([receivedAt])
 }
 
 /// Recomputable daily metric buckets. The aggregate is intentionally generic

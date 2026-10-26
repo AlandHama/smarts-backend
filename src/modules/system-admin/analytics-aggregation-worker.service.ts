@@ -7,7 +7,6 @@ const WORKER_KEY = "smarts.analytics.aggregate"
 const REFRESH_KEY = "server-events"
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000
 const TRANSACTION_TIMEOUT_MS = 120 * 1000
-const DAILY_REFRESH_DAYS = 2
 const HOURLY_REFRESH_HOURS = 12
 
 /** Recomputes recent event buckets so late-arriving events are corrected. */
@@ -39,11 +38,8 @@ export class AnalyticsAggregationWorkerService implements OnModuleInit, OnModule
     const startedAt = new Date()
 
     try {
-      // Only recent buckets can change because older events are immutable.
-      // The previous 3-day/48-hour windows made every refresh repeatedly scan
-      // the high-cardinality event table and generate a large rollback/WAL
-      // burst when the transaction hit Prisma's default timeout.
-      const dailyFrom = new Date(Date.now() - DAILY_REFRESH_DAYS * 24 * 60 * 60 * 1000)
+      // Only the open UTC day is mutable. Completed days remain durable in the
+      // aggregate table after their raw envelopes are compacted away.
       const hourlyFrom = new Date(Date.now() - HOURLY_REFRESH_HOURS * 60 * 60 * 1000)
       const now = new Date()
       let rows = 0
@@ -59,7 +55,7 @@ export class AnalyticsAggregationWorkerService implements OnModuleInit, OnModule
           create: { key: REFRESH_KEY, status: "RUNNING", startedAt },
           update: { status: "RUNNING", startedAt, error: null },
         })
-        await transaction.$executeRaw(Prisma.sql`DELETE FROM "AnalyticsDailyAggregate" WHERE "day" >= date_trunc('day', ${dailyFrom}::timestamp)::date`)
+        await transaction.$executeRaw(Prisma.sql`DELETE FROM "AnalyticsDailyAggregate" WHERE "day" = date_trunc('day', CURRENT_TIMESTAMP)::date`)
         await transaction.$executeRaw(Prisma.sql`DELETE FROM "AnalyticsHourlyAggregate" WHERE "hour" >= date_trunc('hour', ${hourlyFrom}::timestamp)`)
 
         const daily = await transaction.$executeRaw(Prisma.sql`
@@ -73,7 +69,7 @@ export class AnalyticsAggregationWorkerService implements OnModuleInit, OnModule
             count(*)::decimal,
             CURRENT_TIMESTAMP
           FROM "AnalyticsEvent"
-          WHERE "occurredAt" >= date_trunc('day', ${dailyFrom}::timestamp)
+          WHERE "occurredAt" >= date_trunc('day', CURRENT_TIMESTAMP)
             AND "occurredAt" <= ${now}
           GROUP BY 1, 2, 3, 4
         `)

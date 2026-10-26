@@ -79,7 +79,10 @@ export class AnalyticsReportingService {
     if (key === "economy") return this.sql(Prisma.sql`SELECT wt."sourceType"::text AS source, COUNT(*)::int AS entries, COALESCE(SUM(wt."exactAmount"),0)::numeric AS volume FROM "WalletTransaction" wt WHERE wt."createdAt" BETWEEN ${r.from} AND ${r.to} GROUP BY 1 ORDER BY 3 DESC LIMIT 50`)
     if (key === "support") return this.sql(Prisma.sql`SELECT t."ticketNumber", t.subject, t.status::text AS status, t.priority::text AS priority, t."createdAt", t."firstResponseAt", t."resolvedAt" FROM "SupportTicket" t WHERE t."createdAt" BETWEEN ${r.from} AND ${r.to} ORDER BY t."createdAt" DESC LIMIT 50`)
     if (key === "risk") return this.sql(Prisma.sql`SELECT f.id, f.type::text AS type, f.severity::text AS severity, f."createdAt", f."userId" FROM "FraudSignal" f WHERE f."createdAt" BETWEEN ${r.from} AND ${r.to} ORDER BY f."createdAt" DESC LIMIT 50`)
-    return this.sql(Prisma.sql`SELECT DATE_TRUNC('day', "createdAt") AS day, COUNT(*)::int AS value FROM "AnalyticsEvent" WHERE "createdAt" BETWEEN ${r.from} AND ${r.to} GROUP BY 1 ORDER BY 1`)
+    // Raw envelopes are intentionally retained for only a short operational
+    // window. Read the durable daily buckets so historical reports continue
+    // working after raw-event compaction.
+    return this.sql(Prisma.sql`SELECT "day", COALESCE(SUM("value"), 0)::int AS value FROM "AnalyticsDailyAggregate" WHERE "metricKey" LIKE 'event.%' AND "day" BETWEEN ${r.from}::date AND ${r.to}::date GROUP BY 1 ORDER BY 1`)
   }
 
   private kpis(key: ReportKey, totals: Record<string, number>, trend: Array<Record<string, unknown>>) {

@@ -2,32 +2,13 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import { Prisma } from "@prisma/client"
 
 import { PrismaService } from "../../prisma.service"
+import { analyticsStorageConfig } from "./analytics-storage.config"
 
 const LOCK_KEY = "smarts.database.retention"
 const INTERVAL_MS = 5 * 60 * 1000
-const BATCH_SIZE = 2_000
-const HIGH_VOLUME_BATCH_SIZE = 10_000
-const HIGH_VOLUME_ANALYTICS_RETENTION_HOURS = 2
-const ANALYTICS_RETENTION_DAYS = 7
-const HIGH_VOLUME_ANALYTICS_MAX_ROWS = 20_000
 const MATCH_EVENT_RETENTION_DAYS = 30
 const QUEUE_HISTORY_RETENTION_DAYS = 30
 const EXPORT_JOB_RETENTION_DAYS = 14
-
-// Per-action telemetry is useful for short-lived diagnostics, but it must not
-// be treated as an append-only product ledger. MatchEvent and the terminal
-// match summary retain the authoritative gameplay information.
-const HIGH_VOLUME_ANALYTICS_EVENTS = [
-  "GEM_BLITZ_MOVE_ACCEPTED",
-  "TILE_RUSH_PATH_ACCEPTED",
-  "TILE_RUSH_PATH_REJECTED",
-  "TILE_RUSH_SPECIAL_CREATED",
-  "TILE_RUSH_COLOR_CRUSH",
-  "TILE_RUSH_COMBO_REACHED",
-  "TILE_RUSH_COMBO_LOST",
-  "TILE_RUSH_LEAD_CHANGED",
-  "TILE_RUSH_BOARD_HASH_MISMATCH",
-] as const
 
 /**
  * Removes only disposable operational history in small batches. Match rows,
@@ -57,93 +38,107 @@ export class ResourceRetentionWorkerService implements OnModuleInit, OnModuleDes
     if (this.running) return { skipped: true, deleted: 0 }
     this.running = true
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
+      // Keep analytics cleanup independent. A failure in an unrelated
+      // retention target must never roll back the raw analytics purge.
+      const analyticsResult = await this.prisma.$transaction(async (tx) => {
         const lock = await tx.$queryRaw<Array<{ locked: boolean }>>(
           Prisma.sql`SELECT pg_try_advisory_xact_lock(hashtext(${LOCK_KEY})) AS locked`,
         )
         if (!lock[0]?.locked) return { skipped: true, deleted: 0 }
 
-        const highVolumeCutoff = new Date(Date.now() - HIGH_VOLUME_ANALYTICS_RETENTION_HOURS * 60 * 60 * 1000)
-        const analyticsCutoff = new Date(Date.now() - ANALYTICS_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-        const matchEventCutoff = new Date(Date.now() - MATCH_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-        const queueCutoff = new Date(Date.now() - QUEUE_HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-        const exportJobCutoff = new Date(Date.now() - EXPORT_JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+        const analyticsCutoff = new Date(Date.now() - analyticsStorageConfig.rawRetentionHours * 60 * 60 * 1000)
 
         let deleted = 0
-        // Per-action telemetry is retained only briefly. The old worker's
-        // 500-row pass was slower than production traffic, allowing this table
-        // to grow into millions of rows.
+        // AnalyticsEvent is a disposable raw buffer. Counts and dashboard
+        // metrics are materialized by the aggregation worker before this
+        // window expires, while match/settlement tables retain authoritative
+        // business history.
         deleted += await tx.$executeRaw(Prisma.sql`
           DELETE FROM "AnalyticsEvent"
           WHERE "id" IN (
             SELECT "id" FROM "AnalyticsEvent"
-            WHERE "eventName" IN (${Prisma.join(HIGH_VOLUME_ANALYTICS_EVENTS)})
-            AND "occurredAt" < ${highVolumeCutoff}
-            ORDER BY "occurredAt" ASC, "id" ASC
-            LIMIT ${HIGH_VOLUME_BATCH_SIZE}
+            WHERE "receivedAt" < ${analyticsCutoff}
+            ORDER BY "receivedAt" ASC
+            LIMIT ${analyticsStorageConfig.retentionBatchSize}
           )
         `)
+
+        // Time retention handles normal traffic. This second bounded delete
+        // handles traffic bursts or a temporarily paused worker and keeps the
+        // table within the storage budget regardless of event volume.
         deleted += await tx.$executeRaw(Prisma.sql`
           DELETE FROM "AnalyticsEvent"
           WHERE "id" IN (
             SELECT "id" FROM "AnalyticsEvent"
-            WHERE "occurredAt" < ${analyticsCutoff}
-            ORDER BY "occurredAt" ASC
-            LIMIT ${BATCH_SIZE}
-          )
-        `)
-        // Keep a hard row bound for the high-volume event family as a safety
-        // net if traffic spikes or the worker is temporarily unavailable.
-        deleted += await tx.$executeRaw(Prisma.sql`
-          DELETE FROM "AnalyticsEvent"
-          WHERE "id" IN (
-            SELECT "id" FROM "AnalyticsEvent"
-            WHERE "eventName" IN (${Prisma.join(HIGH_VOLUME_ANALYTICS_EVENTS)})
-            ORDER BY "occurredAt" DESC, "id" DESC
-            OFFSET ${HIGH_VOLUME_ANALYTICS_MAX_ROWS}
-            LIMIT ${HIGH_VOLUME_BATCH_SIZE}
-          )
-        `)
-        // Preserve the match, settlement, and final score while removing the
-        // high-cardinality action stream after its operational review window.
-        deleted += await tx.$executeRaw(Prisma.sql`
-          DELETE FROM "MatchEvent"
-          WHERE "id" IN (
-            SELECT event."id"
-            FROM "MatchEvent" event
-            JOIN "Match" match ON match."id" = event."matchId"
-            WHERE match."endedAt" < ${matchEventCutoff}
-              AND match."status" IN ('CANCELLED', 'SETTLED')
-              AND event."serverReceivedAt" < ${matchEventCutoff}
-            ORDER BY event."serverReceivedAt" ASC
-            LIMIT ${BATCH_SIZE}
-          )
-        `)
-        deleted += await tx.$executeRaw(Prisma.sql`
-          DELETE FROM "AnalyticsExportJob"
-          WHERE "id" IN (
-            SELECT "id" FROM "AnalyticsExportJob"
-            WHERE "expiresAt" < ${exportJobCutoff}
-            ORDER BY "expiresAt" ASC
-            LIMIT ${BATCH_SIZE}
-          )
-        `)
-        deleted += await tx.$executeRaw(Prisma.sql`
-          DELETE FROM "CooperativeQueueEntry"
-          WHERE "id" IN (
-            SELECT "id" FROM "CooperativeQueueEntry"
-            WHERE "status" IN ('CANCELLED', 'SETTLED', 'EXPIRED')
-              AND "queuedAt" < ${queueCutoff}
-            ORDER BY "queuedAt" ASC
-            LIMIT ${BATCH_SIZE}
+            ORDER BY "receivedAt" DESC
+            OFFSET ${analyticsStorageConfig.rawMaxRows}
+            LIMIT ${analyticsStorageConfig.retentionBatchSize}
           )
         `)
 
         return { skipped: false, deleted }
       }, { maxWait: 5_000, timeout: 20_000 })
 
-      if (result.deleted > 0) this.logger.log(`Database retention removed ${result.deleted} disposable rows`)
-      return result
+      if (analyticsResult.skipped) return analyticsResult
+
+      let deleted = analyticsResult.deleted
+      try {
+        const otherResult = await this.prisma.$transaction(async (tx) => {
+          const lock = await tx.$queryRaw<Array<{ locked: boolean }>>(
+            Prisma.sql`SELECT pg_try_advisory_xact_lock(hashtext(${LOCK_KEY})) AS locked`,
+          )
+          if (!lock[0]?.locked) return { skipped: true, deleted: 0 }
+
+          const matchEventCutoff = new Date(Date.now() - MATCH_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+          const queueCutoff = new Date(Date.now() - QUEUE_HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+          const exportJobCutoff = new Date(Date.now() - EXPORT_JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+          let deleted = 0
+
+          // Preserve the match, settlement, and final score while removing the
+          // high-cardinality match-event stream after its operational review
+          // window. Match summaries remain authoritative.
+          deleted += await tx.$executeRaw(Prisma.sql`
+            DELETE FROM "MatchEvent"
+            WHERE "id" IN (
+              SELECT event."id"
+              FROM "MatchEvent" event
+              JOIN "Match" match ON match."id" = event."matchId"
+              WHERE match."endedAt" < ${matchEventCutoff}
+                AND match."status" IN ('CANCELLED', 'SETTLED')
+                AND event."serverReceivedAt" < ${matchEventCutoff}
+              ORDER BY event."serverReceivedAt" ASC
+              LIMIT ${analyticsStorageConfig.retentionBatchSize}
+            )
+          `)
+          deleted += await tx.$executeRaw(Prisma.sql`
+            DELETE FROM "AnalyticsExportJob"
+            WHERE "id" IN (
+              SELECT "id" FROM "AnalyticsExportJob"
+              WHERE "expiresAt" < ${exportJobCutoff}
+              ORDER BY "expiresAt" ASC
+              LIMIT ${analyticsStorageConfig.retentionBatchSize}
+            )
+          `)
+          deleted += await tx.$executeRaw(Prisma.sql`
+            DELETE FROM "CooperativeQueueEntry"
+            WHERE "id" IN (
+              SELECT "id" FROM "CooperativeQueueEntry"
+              WHERE "status" IN ('CANCELLED', 'SETTLED', 'EXPIRED')
+                AND "queuedAt" < ${queueCutoff}
+              ORDER BY "queuedAt" ASC
+              LIMIT ${analyticsStorageConfig.retentionBatchSize}
+            )
+          `)
+
+          return { skipped: false, deleted }
+        }, { maxWait: 5_000, timeout: 20_000 })
+        deleted += otherResult.deleted
+      } catch (error) {
+        this.logger.warn(`Secondary retention pass failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+
+      if (deleted > 0) this.logger.log(`Database retention removed ${deleted} disposable rows`)
+      return { skipped: false, deleted }
     } catch (error) {
       this.logger.warn(`Database retention pass failed: ${error instanceof Error ? error.message : String(error)}`)
       return { skipped: false, deleted: 0 }
