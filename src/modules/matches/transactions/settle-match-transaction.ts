@@ -16,6 +16,7 @@ import { FraudService } from "../../fraud/fraud.service"
 import { deriveParticipantRewardEvidence, isAcceptedScoringEvent, rewardEligibilityForParticipant, shouldHoldRewardForFraud, type ParticipantRewardEvidence } from "./match-reward-integrity"
 import { normalizedMatchXp, rewardPolicy, type RewardPolicy } from "./match-reward-policy"
 import { AllyService } from "../../ally/ally.service"
+import { isAuthoritativeBoardGame } from "../utilities/server-content"
 
 type SettleInput = { matchId: string; userId: string; idempotencyKey: string }
 
@@ -48,7 +49,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     // A paid instant skip is a server-verified correct answer. Count it with
     // normal answers so a match made entirely from skips can still settle and
     // its accuracy/progression stats remain truthful.
-    const isBoardAuthoritative = lockedMatch.gameDefinition.key === "gem_blitz" || lockedMatch.gameDefinition.key === "tile_rush" || lockedMatch.gameDefinition.key === "word_dash" || lockedMatch.gameDefinition.key === "domino" || lockedMatch.gameDefinition.key === "perfect_timing" || lockedMatch.gameDefinition.key === "bomb_path"
+    const isBoardAuthoritative = isAuthoritativeBoardGame(lockedMatch.gameDefinition.key)
     const acceptedEvents = await transaction.matchEvent.findMany({
       where: { matchId: lockedMatch.id, accepted: true },
       orderBy: { serverReceivedAt: "asc" },

@@ -5,6 +5,7 @@ import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { CreateFriendInviteDto } from "../dtos"
 import { friendInviteTtlSeconds } from "../utilities/matchmaking-policy"
+import { isAuthoritativeBoardGame } from "../../matches/utilities/server-content"
 
 @Injectable()
 export class CreateFriendInviteTransaction extends PrismaTransaction<{ userId: string; dto: CreateFriendInviteDto }, any> {
@@ -19,8 +20,10 @@ export class CreateFriendInviteTransaction extends PrismaTransaction<{ userId: s
     const game = await transaction.gameDefinition.findUnique({ where: { key: input.dto.gameKey.trim().toLowerCase() }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     if (!game || !game.active || !game.configs[0]) throw new NotFoundException("Game definition or configuration is inactive")
     if (users.some((user) => (user.profile?.level ?? 1) < game.configs[0].minimumPlayerLevel)) throw new ConflictException(`Both players must reach level ${game.configs[0].minimumPlayerLevel} to play ${game.name}`)
-    const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
-    if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
+    if (!isAuthoritativeBoardGame(game.key)) {
+      const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
+      if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
+    }
     const pending = await transaction.matchmakingInvite.findFirst({ where: { OR: [{ inviterId: input.userId, inviteeId: input.dto.friendId }, { inviterId: input.dto.friendId, inviteeId: input.userId }], status: "PENDING", expiresAt: { gt: new Date() } } })
     if (pending) throw new ConflictException("A friend match invite is already pending")
     const now = new Date()

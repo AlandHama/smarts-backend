@@ -2,6 +2,18 @@ import { createHash } from "node:crypto"
 
 export const MAX_SERVER_CONTENT_PER_MATCH = 100
 
+/** Games whose board/challenge is generated and verified by its own engine. */
+export function isAuthoritativeBoardGame(gameKey: string): boolean {
+  return [
+    "gem_blitz",
+    "tile_rush",
+    "word_dash",
+    "domino",
+    "perfect_timing",
+    "bomb_path",
+  ].includes(gameKey.trim().toLowerCase())
+}
+
 type ContentIdentity = {
   id: string
   contentType?: unknown

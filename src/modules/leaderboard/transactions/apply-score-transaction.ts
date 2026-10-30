@@ -87,9 +87,37 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
     const scoreAfter = input.allowFloorAtZero && requestedScoreAfter < 0n ? 0n : requestedScoreAfter
     if (scoreAfter < 0n) throw new BadRequestException("Leaderboard score cannot become negative")
     const appliedDelta = scoreAfter - entry.score
+    const passedEntries = board.memberType === LeaderboardMemberType.PLAYER && member.playerId && appliedDelta > 0n
+      ? await transaction.leaderboardEntry.findMany({
+          where: {
+            leaderboardId: board.id,
+            seasonId: season.id,
+            playerId: { not: member.playerId },
+            score: { gte: entry.score, lt: scoreAfter },
+          },
+          select: { playerId: true },
+          take: 25,
+        })
+      : []
     await transaction.leaderboardEntry.update({ where: { id: entry.id }, data: { score: scoreAfter, metadata: member.metadata as Prisma.InputJsonValue | undefined } })
     const event = await transaction.leaderboardScoreEvent.create({ data: { entryId: entry.id, leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey, playerId: member.playerId, delta: appliedDelta, scoreBefore: entry.score, scoreAfter, sourceType: input.sourceType, sourceId, idempotencyKeyId: idempotency.id } })
     const response = { leaderboardKey: board.key, seasonId: season.id, entryId: entry.id, memberKey: member.memberKey, scoreBefore: entry.score.toString(), scoreAfter: scoreAfter.toString(), delta: appliedDelta.toString(), eventId: event.id }
+    if (passedEntries.length && member.playerId) {
+      await transaction.outboxEvent.create({
+        data: {
+          eventType: "leaderboard.rival-passed",
+          aggregateType: "LeaderboardScoreEvent",
+          aggregateId: event.id,
+          payload: {
+            userIds: passedEntries.map((item) => item.playerId).filter((value): value is string => Boolean(value)),
+            overtakerName: member.playerName,
+            leaderboardName: board.name,
+            leaderboardKey: board.key,
+            score: scoreAfter.toString(),
+          } as Prisma.InputJsonValue,
+        },
+      })
+    }
     await transaction.idempotencyKey.update({ where: { id: idempotency.id }, data: { status: "COMPLETED", responseJson: response as unknown as Prisma.InputJsonValue, completedAt: new Date() } })
     if (input.actorId) await writeAdminAudit(transaction, { actorId: input.actorId, action: "LEADERBOARD_SCORE", entityType: "LeaderboardEntry", entityId: entry.id, reason: input.reason, metadata: { leaderboardKey: board.key, playerId: member.playerId, delta: input.delta.toString(), sourceId } })
     if (member.playerId) await writePlayerAudit(transaction, { userId: member.playerId, actorType: input.actorId ? PlayerAuditActorType.ADMIN : PlayerAuditActorType.SYSTEM, action: "LEADERBOARD_SCORE_APPLIED", entityType: "LeaderboardEntry", entityId: entry.id, summary: `${input.delta > 0n ? "Increased" : "Changed"} ${board.name} score by ${input.delta.toString()}`, changes: { score: { old: entry.score, new: scoreAfter }, delta: { old: 0n, new: input.delta } }, metadata: { leaderboardKey: board.key, seasonId: season.id, sourceId } })
@@ -99,14 +127,14 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
   private async resolveMember(transaction: Prisma.TransactionClient, memberType: LeaderboardMemberType, input: ApplyLeaderboardScoreInput) {
     if (memberType === LeaderboardMemberType.PLAYER) {
       if (!input.playerId) throw new BadRequestException("A player id is required for a player leaderboard")
-      const user = await transaction.user.findUnique({ where: { id: input.playerId }, select: { id: true, status: true, profile: { select: { countryCode: true } } } })
+      const user = await transaction.user.findUnique({ where: { id: input.playerId }, select: { id: true, status: true, username: true, profile: { select: { countryCode: true, displayName: true } } } })
       if (!user) throw new NotFoundException("Player not found")
       if (user.status === "BANNED") throw new BadRequestException("Banned players cannot receive leaderboard score")
-      return { memberKey: user.id, playerId: user.id, metadata: user.profile?.countryCode ? { countryCode: user.profile.countryCode } : undefined }
+      return { memberKey: user.id, playerId: user.id, playerName: user.profile?.displayName || user.username, metadata: user.profile?.countryCode ? { countryCode: user.profile.countryCode } : undefined }
     }
     if (input.playerId) throw new BadRequestException("Country and generic leaderboards cannot have a player id")
     const memberKey = input.memberKey?.trim().toUpperCase()
     if (!memberKey || (memberType === LeaderboardMemberType.COUNTRY && !/^[A-Z]{2}$/.test(memberKey))) throw new BadRequestException("A normalized ISO country code is required")
-    return { memberKey, playerId: undefined, metadata: memberType === LeaderboardMemberType.COUNTRY ? { countryCode: memberKey } : undefined }
+    return { memberKey, playerId: undefined, playerName: undefined, metadata: memberType === LeaderboardMemberType.COUNTRY ? { countryCode: memberKey } : undefined }
   }
 }

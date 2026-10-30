@@ -5,7 +5,7 @@ import { Prisma, GameMode, MatchParticipantType } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { CreateMatchDto } from "../dtos"
-import { createAssignmentToken, MAX_SERVER_CONTENT_PER_MATCH, randomizeAnswerOptions, selectServerContent } from "../utilities/server-content"
+import { createAssignmentToken, isAuthoritativeBoardGame, MAX_SERVER_CONTENT_PER_MATCH, randomizeAnswerOptions, selectServerContent } from "../utilities/server-content"
 import { MatchIntegrityPolicyService } from "../match-integrity-policy.service"
 
 @Injectable()
@@ -45,7 +45,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
       })
       if (recentPairMatches.length >= 3) throw new ConflictException("This opponent pair has reached the daily casual match limit")
     }
-    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino" || game.key === "perfect_timing" || game.key === "bomb_path"
+    const isBoardAuthoritative = isAuthoritativeBoardGame(game.key)
     const activeContentCount = isBoardAuthoritative ? 1 : await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
     if (!activeContentCount) throw new ConflictException("No active server content is configured for this game")
 

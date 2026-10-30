@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { GameMode, MatchParticipantType, Prisma, WalletTransactionSourceType } from "@prisma/client"
 import { createHash, randomBytes } from "node:crypto"
-import { createAssignmentToken } from "../matches/utilities/server-content"
+import { createAssignmentToken, isAuthoritativeBoardGame } from "../matches/utilities/server-content"
 
 import { PrismaService } from "../../prisma.service"
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
@@ -248,7 +248,7 @@ export class CooperativeMatchService {
     const gameConfig = game?.configs[0]
     if (!game || !gameConfig) return null
     const content = await tx.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: Math.max(1, gameConfig.maxQuestions) })
-    const boardAuthoritative = game.key === "tile_rush" || game.key === "word_dash" || game.key === "gem_blitz"
+    const boardAuthoritative = isAuthoritativeBoardGame(game.key)
     if (!content.length && !boardAuthoritative) return null
 
     const now = new Date()

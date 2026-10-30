@@ -19,6 +19,7 @@ import { RegisterDeviceTokenDto, SendGlobalNotificationDto } from "./dtos";
 export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotificationsService.name);
   private timer?: NodeJS.Timeout;
+  private engagementTimer?: NodeJS.Timeout;
   private processing = false;
 
   constructor(
@@ -31,10 +32,16 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       void this.processOutbox();
     }, 5000);
     this.timer.unref?.();
+    this.engagementTimer = setInterval(() => {
+      void this.processEngagementNotifications();
+    }, 15 * 60 * 1000);
+    this.engagementTimer.unref?.();
+    void this.processEngagementNotifications();
   }
 
   onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
+    if (this.engagementTimer) clearInterval(this.engagementTimer);
   }
 
   async listForUser(userId: string) {
@@ -149,22 +156,32 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     title: string;
     body: string;
     data?: Record<string, string>;
+    /** Optional server-side idempotency key for scheduled engagement reminders. */
+    dedupeKey?: string;
     enabled?: boolean;
     pushEnabled?: boolean;
   }) {
     if (input.enabled === false) return null;
-    const notification = await this.prisma.notification.create({
-      data: {
-        userId: input.recipientId,
-        notificationType: input.notificationType,
-        title: input.title.slice(0, 160),
-        body: input.body.slice(0, 500),
-        data: input.data as Prisma.InputJsonValue | undefined,
-        status: NotificationStatus.DISPATCHED,
-        pushStatus: input.pushEnabled === false ? NotificationPushStatus.SKIPPED : NotificationPushStatus.PENDING,
-        dispatchedAt: new Date(),
-      },
-    });
+    const notificationData = {
+      ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
+      userId: input.recipientId,
+      notificationType: input.notificationType,
+      title: input.title.slice(0, 160),
+      body: input.body.slice(0, 500),
+      data: input.data as Prisma.InputJsonValue | undefined,
+      status: NotificationStatus.DISPATCHED,
+      pushStatus: input.pushEnabled === false ? NotificationPushStatus.SKIPPED : NotificationPushStatus.PENDING,
+      dispatchedAt: new Date(),
+    };
+    let notification;
+    try {
+      notification = await this.prisma.notification.create({ data: notificationData });
+    } catch (error) {
+      if (input.dedupeKey && (error as { code?: string }).code === "P2002") {
+        return this.prisma.notification.findUnique({ where: { dedupeKey: input.dedupeKey } });
+      }
+      throw error;
+    }
     if (input.pushEnabled === false) return notification;
     try {
       const push = await this.firebaseMessaging.sendToUsers([input.recipientId], {
@@ -180,6 +197,81 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       await this.prisma.notification.update({ where: { id: notification.id }, data: { pushStatus: NotificationPushStatus.FAILED, pushAttemptedAt: new Date(), pushFailureReason: "Push delivery failed" } }).catch(() => undefined);
     }
     return notification;
+  }
+
+  private async processEngagementNotifications() {
+    try {
+      const daily = await this.prisma.dailyChallengeConfiguration.findUnique({ where: { key: "default" } });
+      if (daily?.enabled) {
+        const local = this.localClock(daily.timezone);
+        const challenge = await this.prisma.dailyChallenge.findUnique({
+          where: { dateKey: local.dateKey },
+          select: { id: true, status: true },
+        });
+        if (challenge?.status === "PUBLISHED" && local.hour >= 9) {
+          const users = await this.prisma.user.findMany({
+            where: {
+              status: "ACTIVE",
+              dailyChallengeAttempts: { none: { challengeId: challenge.id } },
+            },
+            select: { id: true },
+            take: 1000,
+          });
+          for (const user of users) {
+            await this.createPlayerNotification({
+              recipientId: user.id,
+              notificationType: "engagement.daily-challenge.ready",
+              title: "Your daily circuit is ready",
+              body: "A fresh SMARTS challenge is waiting. Can you top today’s score?",
+              data: { route: "/daily-challenge", dateKey: local.dateKey },
+              dedupeKey: `daily-challenge-ready:${local.dateKey}:${user.id}`,
+            });
+          }
+        }
+      }
+
+      const streakConfig = await this.prisma.streakConfiguration.findUnique({ where: { key: "default" } });
+      if (streakConfig?.enabled) {
+        const local = this.localClock(streakConfig.timezone);
+        if (local.hour >= 18) {
+          const yesterday = new Date(`${local.dateKey}T00:00:00.000Z`);
+          yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+          const streaks = await this.prisma.playerDailyStreak.findMany({
+            where: { currentDays: { gt: 0 }, lastQualifiedDate: yesterday },
+            select: { userId: true, currentDays: true },
+            take: 1000,
+          });
+          for (const streak of streaks) {
+            await this.createPlayerNotification({
+              recipientId: streak.userId,
+              notificationType: "engagement.streak.expiring",
+              title: "Your streak is about to expire",
+              body: `Play one match today to keep your ${streak.currentDays}-day streak alive.`,
+              data: { route: "/notifications", streakDays: String(streak.currentDays) },
+              dedupeKey: `streak-expiring:${local.dateKey}:${streak.userId}`,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Engagement notification scan failed: ${String(error)}`);
+    }
+  }
+
+  private localClock(timezone: string) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone || "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return {
+      dateKey: `${values.year}-${values.month}-${values.day}`,
+      hour: Number(values.hour ?? 0),
+    };
   }
 
   /** Durable inbox + push notification for the independent support center. */
@@ -417,6 +509,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     ) as Record<string, Prisma.JsonValue>;
     const userIds = new Set<string>();
     if (typeof payload.userId === "string") userIds.add(payload.userId);
+    if (Array.isArray(payload.userIds)) {
+      for (const userId of payload.userIds) {
+        if (typeof userId === "string") userIds.add(userId);
+      }
+    }
     if (event.eventType === "MATCH_SETTLED" && Array.isArray(payload.results)) {
       for (const result of payload.results) {
         if (result && typeof result === "object" && !Array.isArray(result)) {
@@ -443,6 +540,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       admins.forEach((admin) => userIds.add(admin.id));
     }
     if (!userIds.size) return;
+    // Recipient IDs are routing metadata only. Do not persist or send the
+    // complete recipient list to every player in a fan-out notification.
+    const { userIds: _recipientIds, ...notificationPayload } = payload;
     const title =
       event.eventType === "mission.completed"
         ? String(payload.title ?? "Mission complete")
@@ -479,6 +579,14 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
                               : event.eventType ===
                                 "matchmaking.friend-invite.created"
                               ? "Game invite"
+                              : event.eventType === "leaderboard.rival-passed"
+                                ? "You were passed on the leaderboard"
+                                : event.eventType === "ally.nearby-rank"
+                                  ? "Your Ally is close to moving up"
+                                  : event.eventType === "engagement.daily-challenge.ready"
+                                    ? "Your daily circuit is ready"
+                                    : event.eventType === "engagement.streak.expiring"
+                                      ? "Your streak is about to expire"
                               : "Account activity";
     const body =
       event.eventType === "mission.completed" || event.eventType === "achievement.completed"
@@ -516,6 +624,14 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
                               : event.eventType ===
                                 "matchmaking.friend-invite.created"
                               ? `${String(payload.inviterName ?? "A friend")} invited you to play ${String(payload.gameName ?? "a game")}.`
+                              : event.eventType === "leaderboard.rival-passed"
+                                ? `${String(payload.overtakerName ?? "A rival")} just moved ahead of you on ${String(payload.leaderboardName ?? "the leaderboard")}. Take your place back.`
+                                : event.eventType === "ally.nearby-rank"
+                                  ? `One more strong win could move ${String(payload.allyName ?? "your Ally")} up the leaderboard.`
+                                  : event.eventType === "engagement.daily-challenge.ready"
+                                    ? "A fresh SMARTS challenge is waiting. Can you top today’s score?"
+                                    : event.eventType === "engagement.streak.expiring"
+                                      ? `Play one match today to keep your ${String(payload.streakDays ?? "")}‑day streak alive.`
                               : "A server event was processed for your account.";
     await this.prisma.notification.createMany({
       data: [...userIds].map((userId) => ({
@@ -524,7 +640,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         notificationType: event.eventType,
         title,
         body,
-        data: { ...payload, outboxEventId: event.id } as Prisma.InputJsonValue,
+        data: { ...notificationPayload, outboxEventId: event.id } as Prisma.InputJsonValue,
         status: NotificationStatus.DISPATCHED,
         pushStatus: NotificationPushStatus.PENDING,
         dispatchedAt: new Date(),
@@ -533,6 +649,21 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     });
 
     const pushBody = this.pushBody(event.eventType, body);
+    const pushData: Record<string, string> = {
+      notificationType: event.eventType,
+      outboxEventId: event.id,
+    };
+    for (const [key, value] of Object.entries(notificationPayload)) {
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        pushData[key] = String(value);
+      }
+    }
+    if (typeof payload.route === "string") pushData.route = payload.route;
+    else if (event.eventType === "matchmaking.friend-invite.created") pushData.route = "/notifications";
+    else if (event.eventType === "leaderboard.rival-passed") pushData.route = "/leaderboards";
+    else if (event.eventType === "ally.nearby-rank") pushData.route = "/cooperative/party";
+    else if (event.eventType === "engagement.daily-challenge.ready") pushData.route = "/daily-challenge";
+    else if (event.eventType === "engagement.streak.expiring") pushData.route = "/notifications";
     let push = {
       configured: this.firebaseMessaging.isConfigured(),
       deviceCount: 0,
@@ -548,6 +679,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           notificationType: event.eventType,
           title,
           body: pushBody,
+          data: pushData,
         },
         { throwOnTransientFailure: false },
       );

@@ -155,7 +155,7 @@ export class RealtimeGateway implements OnModuleDestroy {
         const snapshot = await this.gemBlitz.move(state.userId, matchId, { sequence: Number(data.sequence), fromRow: Number(data.fromRow), fromColumn: Number(data.fromColumn), toRow: Number(data.toRow), toColumn: Number(data.toColumn), clientTimestamp: typeof data.clientTimestamp === "string" ? data.clientTimestamp : undefined })
         this.send(client, "gem_blitz.move.accepted", snapshot)
         await this.broadcastGemBlitz(matchId)
-      } catch (error) { this.send(client, "gem_blitz.error", { code: "MOVE_REJECTED", message: this.errorMessage(error) }) }
+      } catch (error) { this.send(client, "gem_blitz.error", { matchId, code: "MOVE_REJECTED", message: this.errorMessage(error) }) }
       return
     }
     if (event === "tile_rush.action") {

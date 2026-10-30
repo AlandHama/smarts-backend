@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../prisma.service";
 import { CompleteMatchDto, CreateMatchDto, MatchEventDto } from "./dtos";
-import { createAssignmentToken, randomizeAnswerOptions } from "./utilities/server-content";
+import { createAssignmentToken, isAuthoritativeBoardGame, randomizeAnswerOptions } from "./utilities/server-content";
 import { CreateMatchTransaction } from "./transactions/create-match-transaction";
 import { RecordMatchEventTransaction } from "./transactions/record-match-event-transaction";
 import { CompleteMatchTransaction } from "./transactions/complete-match-transaction";
@@ -94,7 +94,7 @@ export class MatchService {
     if (
       lifecycle &&
       (lifecycle.status === "CREATED" || lifecycle.status === "STARTED") &&
-      lifecycle.gameDefinition.key !== "word_dash" && lifecycle.gameDefinition.key !== "domino" && lifecycle.gameDefinition.key !== "perfect_timing" && lifecycle.gameDefinition.key !== "bomb_path"
+      !isAuthoritativeBoardGame(lifecycle.gameDefinition.key)
     ) {
       await this.startMatch.run({ matchId, userId });
     }

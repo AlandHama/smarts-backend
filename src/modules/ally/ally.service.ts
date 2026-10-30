@@ -152,6 +152,7 @@ export class AllyService {
         throw error
       }
       let entry = await transaction.leaderboardEntry.findUnique({ where: { leaderboardId_seasonId_memberKey: { leaderboardId: board.id, seasonId: season.id, memberKey: allyId } } })
+      let nextScore = BigInt(points)
       if (!entry) {
         try {
           entry = await transaction.leaderboardEntry.create({ data: { leaderboardId: board.id, seasonId: season.id, memberKey: allyId, score: BigInt(points), metadata: { allyId } } })
@@ -159,9 +160,43 @@ export class AllyService {
           if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error
           entry = await transaction.leaderboardEntry.findUniqueOrThrow({ where: { leaderboardId_seasonId_memberKey: { leaderboardId: board.id, seasonId: season.id, memberKey: allyId } } })
           await transaction.leaderboardEntry.update({ where: { id: entry.id }, data: { score: { increment: BigInt(points) } } })
+          nextScore = entry.score + BigInt(points)
         }
       } else {
         await transaction.leaderboardEntry.update({ where: { id: entry.id }, data: { score: { increment: BigInt(points) } } })
+        nextScore = entry.score + BigInt(points)
+      }
+
+      if (won) {
+        const entries = await transaction.leaderboardEntry.findMany({
+          where: { leaderboardId: board.id, seasonId: season.id },
+          orderBy: [{ score: "desc" }, { updatedAt: "asc" }],
+          take: 100,
+          select: { memberKey: true, score: true },
+        })
+        const currentIndex = entries.findIndex((item) => item.memberKey === allyId)
+        const nextAlly = currentIndex > 0 ? entries[currentIndex - 1] : null
+        const maxWinPoints = BigInt(Math.max(config.allyRankedWinPoints, config.allyCasualWinPoints))
+        if (nextAlly && nextAlly.score - nextScore <= maxWinPoints) {
+          const ally = await transaction.ally.findUnique({ where: { id: allyId }, select: { name: true } })
+          const members = await transaction.allyMember.findMany({ where: { allyId }, select: { userId: true } })
+          if (ally && members.length) {
+            await transaction.outboxEvent.create({
+              data: {
+                eventType: "ally.nearby-rank",
+                aggregateType: "Ally",
+                aggregateId: allyId,
+                payload: {
+                  userIds: members.map((member) => member.userId),
+                  allyName: ally.name,
+                  seasonId: season.id,
+                  rank: currentIndex + 1,
+                  scoreGap: (nextAlly.score - nextScore).toString(),
+                } as Prisma.InputJsonValue,
+              },
+            })
+          }
+        }
       }
     }
   }

@@ -10,6 +10,7 @@ import {
 } from "../utilities/matchmaking-policy";
 import {
   createAssignmentToken,
+  isAuthoritativeBoardGame,
   MAX_SERVER_CONTENT_PER_MATCH,
   selectServerContent,
 } from "../../matches/utilities/server-content";
@@ -185,7 +186,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     if (!game || !config) return null;
     const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>)[game.key === "word_dash" ? "wordDashPolicy" : game.key === "tile_rush" ? "tileRushPolicy" : game.key === "domino" ? "dominoPolicy" : game.key === "perfect_timing" ? "perfectTimingPolicy" : game.key === "bomb_path" ? "bombPathPolicy" : ""] : null;
     if (!second && first.mode === MatchmakingTicketMode.RANKED && (game.key === "tile_rush" || game.key === "word_dash" || game.key === "perfect_timing" || game.key === "bomb_path") && configuredPolicy?.rankedBotFallback !== true) return null;
-    const isBoardAuthoritative = game.key === "gem_blitz" || game.key === "tile_rush" || game.key === "word_dash" || game.key === "domino" || game.key === "perfect_timing" || game.key === "bomb_path";
+    const isBoardAuthoritative = isAuthoritativeBoardGame(game.key);
     // Provision the human assignments in the same transaction as the match.
     // Previously a newly-created bot match had zero assignments until a
     // client won the start race and called /start, which allowed legacy game

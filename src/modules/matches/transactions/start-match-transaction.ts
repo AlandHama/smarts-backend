@@ -10,6 +10,7 @@ import { PrismaTransaction } from "../../../common/helpers/prisma-transaction";
 import { PrismaService } from "../../../prisma.service";
 import {
   createAssignmentToken,
+  isAuthoritativeBoardGame,
   MAX_SERVER_CONTENT_PER_MATCH,
   randomizeAnswerOptions,
   selectServerContent,
@@ -92,7 +93,7 @@ export class StartMatchTransaction extends PrismaTransaction<
         };
       }
     }
-    if (match.gameDefinition.key === "word_dash" || match.gameDefinition.key === "domino" || match.gameDefinition.key === "perfect_timing" || match.gameDefinition.key === "bomb_path") {
+    if (isAuthoritativeBoardGame(match.gameDefinition.key)) {
       if (match.status === "CREATED") {
         await transaction.match.update({ where: { id: match.id }, data: { status: "STARTED", startedAt: now } });
         await transaction.matchRound.update({ where: { id: round.id }, data: { status: "STARTED", startedAt: now } });

@@ -9,6 +9,7 @@ import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-
 import { CreditWalletTransaction } from "../../economy/transactions/credit-wallet-transaction"
 import { forfeitCooldownSeconds, forfeitStrikeThreshold, forfeitStrikeWindowSeconds, queueHeartbeatTimeoutSeconds, queueTtlSeconds } from "../utilities/matchmaking-policy"
 import { MatchIntegrityPolicyService } from "../../matches/match-integrity-policy.service"
+import { isAuthoritativeBoardGame } from "../../matches/utilities/server-content"
 
 @Injectable()
 export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string; dto: EnqueuePlayerDto }, any> {
@@ -80,7 +81,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     if (validProgressions.length !== progressionKeys.length) throw new ConflictException("This game reward configuration is incomplete")
     if (playerLevel < config.minimumPlayerLevel) throw new ConflictException(`Reach level ${config.minimumPlayerLevel} to unlock ${game.name}`)
     const activeContentCount = await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
-    if (!activeContentCount && game.key !== "gem_blitz" && game.key !== "tile_rush" && game.key !== "word_dash" && game.key !== "domino" && game.key !== "perfect_timing" && game.key !== "bomb_path") throw new ConflictException("No active server content is configured for this game")
+    if (!activeContentCount && !isAuthoritativeBoardGame(game.key)) throw new ConflictException("No active server content is configured for this game")
     if (mode === MatchmakingTicketMode.RANKED && !config.rankingEnabled) throw new BadRequestException("Ranked matchmaking is disabled for this game")
     const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>)[game.key === "word_dash" ? "wordDashPolicy" : game.key === "tile_rush" ? "tileRushPolicy" : game.key === "domino" ? "dominoPolicy" : game.key === "perfect_timing" ? "perfectTimingPolicy" : game.key === "bomb_path" ? "bombPathPolicy" : ""] : null
     if (game.key === "perfect_timing" && configuredPolicy && (configuredPolicy.killSwitch === true || !inPerfectTimingRollout(input.userId, Number(configuredPolicy.rolloutPercentage ?? 100)))) throw new ConflictException("Perfect Timing is not available in the current rollout")
