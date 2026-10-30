@@ -238,6 +238,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
           grossAdRevenueUsdMicros: true,
           rewardBackingUsdMicros: true,
           reserveAddedUsdMicros: true,
+          companyShareUsdMicros: true,
         },
         _count: { id: true },
       }),
@@ -286,6 +287,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
           rewardBackingUsdMicros:
             revenueTotals._sum.rewardBackingUsdMicros ?? 0n,
           reserveAddedUsdMicros: revenueTotals._sum.reserveAddedUsdMicros ?? 0n,
+          companyProfitUsdMicros: revenueTotals._sum.companyShareUsdMicros ?? 0n,
           snapshots: revenueTotals._count.id,
         },
         manualBacking: {
@@ -519,6 +521,24 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
         create: { singletonKey: "default" },
         update: {},
       });
+      const baseConfig = getGldConfig();
+      const playerAllocation =
+        dto.admobPlayerRewardAllocationBps ??
+        before.admobPlayerRewardAllocationBps ??
+        baseConfig.playerRewardAllocationBps;
+      const reserveAllocation =
+        dto.admobReserveAllocationBps ??
+        before.admobReserveAllocationBps ??
+        baseConfig.reserveAllocationBps;
+      const companyAllocation =
+        dto.admobCompanyProfitAllocationBps ??
+        before.admobCompanyProfitAllocationBps ??
+        baseConfig.companyAllocationBps;
+      if (playerAllocation + reserveAllocation + companyAllocation !== 10_000) {
+        throw new BadRequestException(
+          "AdMob player, reserve, and company allocations must total exactly 100%",
+        );
+      }
       const updated = await tx.gldAdminControl.update({
         where: { id: before.id },
         data: {
@@ -546,9 +566,21 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
           ...(dto.adMaxRewardPerClaim === undefined
             ? {}
             : { adMaxRewardPerClaim: BigInt(dto.adMaxRewardPerClaim) }),
+          ...(dto.admobPlayerRewardAllocationBps === undefined
+            ? {}
+            : {
+                admobPlayerRewardAllocationBps:
+                  dto.admobPlayerRewardAllocationBps,
+              }),
           ...(dto.admobReserveAllocationBps === undefined
             ? {}
             : { admobReserveAllocationBps: dto.admobReserveAllocationBps }),
+          ...(dto.admobCompanyProfitAllocationBps === undefined
+            ? {}
+            : {
+                admobCompanyProfitAllocationBps:
+                  dto.admobCompanyProfitAllocationBps,
+              }),
           ...(dto.giftBurnBps === undefined
             ? {}
             : { giftBurnBps: dto.giftBurnBps }),
@@ -577,7 +609,11 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
             giftsPaused: before.giftsPaused,
             paidRewardsPaused: before.paidRewardsPaused,
             gldTransferFeeBps: before.gldTransferFeeBps,
+            admobPlayerRewardAllocationBps:
+              before.admobPlayerRewardAllocationBps,
             admobReserveAllocationBps: before.admobReserveAllocationBps,
+            admobCompanyProfitAllocationBps:
+              before.admobCompanyProfitAllocationBps,
           },
           after: {
             emissionsPaused: updated.emissionsPaused,
@@ -585,7 +621,11 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
             giftsPaused: updated.giftsPaused,
             paidRewardsPaused: updated.paidRewardsPaused,
             gldTransferFeeBps: updated.gldTransferFeeBps,
+            admobPlayerRewardAllocationBps:
+              updated.admobPlayerRewardAllocationBps,
             admobReserveAllocationBps: updated.admobReserveAllocationBps,
+            admobCompanyProfitAllocationBps:
+              updated.admobCompanyProfitAllocationBps,
           },
         },
       });

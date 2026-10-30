@@ -46,7 +46,9 @@ type GldData = {
     adDailyGldCap: string | null;
     adMaxValidatedAds: number | null;
     adMaxRewardPerClaim: string | null;
+    admobPlayerRewardAllocationBps: number | null;
     admobReserveAllocationBps: number | null;
+    admobCompanyProfitAllocationBps: number | null;
     giftBurnBps: number | null;
     paidRewardSafetyMarginBps: number | null;
     paidRewardDailyRequestLimit: number | null;
@@ -58,6 +60,7 @@ type GldData = {
     grossAdRevenueUsdMicros: string;
     reserveAddedUsdMicros: string;
     rewardBackingUsdMicros: string;
+    companyShareUsdMicros: string;
     recognitionStatus: string;
   }>;
   manualBackings: Array<{
@@ -78,6 +81,7 @@ type GldData = {
       grossAdRevenueUsdMicros: string;
       rewardBackingUsdMicros: string;
       reserveAddedUsdMicros: string;
+      companyProfitUsdMicros: string;
       snapshots: number;
     };
     manualBacking: { totalUsdMicros: string; count: number };
@@ -171,7 +175,9 @@ export function GldEconomyView() {
     giftBurnBps: "10000",
     paidRewardSafetyMarginBps: "12000",
     paidRewardDailyRequestLimit: "3",
-    admobReserveAllocationPercent: "20",
+    admobPlayerRewardAllocationPercent: "33.33",
+    admobReserveAllocationPercent: "33.33",
+    admobCompanyProfitAllocationPercent: "33.34",
   });
   const [policySaving, setPolicySaving] = useState(false);
   const [adRewardPolicies, setAdRewardPolicies] = useState<GldAdRewardPolicy[]>(
@@ -228,7 +234,19 @@ export function GldEconomyView() {
         admobReserveAllocationPercent: (
           Number(
             next.controls.admobReserveAllocationBps ??
-              Number(next.config.reserveAllocationBps ?? 2000),
+              Number(next.config.reserveAllocationBps ?? 3333),
+          ) / 100
+        ).toString(),
+        admobPlayerRewardAllocationPercent: (
+          Number(
+            next.controls.admobPlayerRewardAllocationBps ??
+              Number(next.config.playerRewardAllocationBps ?? 3333),
+          ) / 100
+        ).toString(),
+        admobCompanyProfitAllocationPercent: (
+          Number(
+            next.controls.admobCompanyProfitAllocationBps ??
+              Number(next.config.companyAllocationBps ?? 3334),
           ) / 100
         ).toString(),
       });
@@ -315,6 +333,7 @@ export function GldEconomyView() {
     });
   const savePolicy = async () => {
     const whole = (value: string) => /^\d+$/.test(value.trim());
+    const percent = (value: string) => /^\d+(?:\.\d{1,2})?$/.test(value.trim());
     if (
       !whole(policy.adDailyGldCap) ||
       !whole(policy.adMaxRewardPerClaim) ||
@@ -322,7 +341,9 @@ export function GldEconomyView() {
       !whole(policy.giftBurnBps) ||
       !whole(policy.paidRewardSafetyMarginBps) ||
       !whole(policy.paidRewardDailyRequestLimit) ||
-      !/^\d+(?:\.\d{1,2})?$/.test(policy.admobReserveAllocationPercent.trim())
+      !percent(policy.admobPlayerRewardAllocationPercent) ||
+      !percent(policy.admobReserveAllocationPercent) ||
+      !percent(policy.admobCompanyProfitAllocationPercent)
     ) {
       setError("GLD policy values must be non-negative numbers.");
       return;
@@ -336,6 +357,12 @@ export function GldEconomyView() {
     const reserveAllocationPercent = Number(
       policy.admobReserveAllocationPercent,
     );
+    const playerRewardAllocationPercent = Number(
+      policy.admobPlayerRewardAllocationPercent,
+    );
+    const companyProfitAllocationPercent = Number(
+      policy.admobCompanyProfitAllocationPercent,
+    );
     if (
       numbers[0] < 1 ||
       numbers[0] > 1000 ||
@@ -344,11 +371,33 @@ export function GldEconomyView() {
       numbers[2] > 100000 ||
       numbers[3] < 1 ||
       numbers[3] > 1000 ||
+      playerRewardAllocationPercent < 0 ||
+      playerRewardAllocationPercent > 100 ||
       reserveAllocationPercent < 0 ||
-      reserveAllocationPercent > 100
+      reserveAllocationPercent > 100 ||
+      companyProfitAllocationPercent < 0 ||
+      companyProfitAllocationPercent > 100
     ) {
       setError(
         "Check the GLD policy limits: ads, burn BPS, margin BPS, and daily requests.",
+      );
+      return;
+    }
+    const playerRewardAllocationBps = Math.round(
+      playerRewardAllocationPercent * 100,
+    );
+    const reserveAllocationBps = Math.round(reserveAllocationPercent * 100);
+    const companyProfitAllocationBps = Math.round(
+      companyProfitAllocationPercent * 100,
+    );
+    if (
+      playerRewardAllocationBps +
+        reserveAllocationBps +
+        companyProfitAllocationBps !==
+      10_000
+    ) {
+      setError(
+        "Player GLD, reserve, and company profit allocations must total exactly 100%.",
       );
       return;
     }
@@ -363,7 +412,9 @@ export function GldEconomyView() {
           giftBurnBps: numbers[1],
           paidRewardSafetyMarginBps: numbers[2],
           paidRewardDailyRequestLimit: numbers[3],
-          admobReserveAllocationBps: Math.round(reserveAllocationPercent * 100),
+          admobPlayerRewardAllocationBps: playerRewardAllocationBps,
+          admobReserveAllocationBps: reserveAllocationBps,
+          admobCompanyProfitAllocationBps: companyProfitAllocationBps,
         }),
       });
       setData((current) => (current ? { ...current, controls } : current));
@@ -578,6 +629,10 @@ export function GldEconomyView() {
               [
                 "Paid reward costs",
                 usdValue(data.metrics.paidRewardCosts.totalUsdMicros),
+              ],
+              [
+                "Company profit",
+                usdValue(data.metrics.revenue.companyProfitUsdMicros),
               ],
             ].map(([label, value]) => (
               <Grid key={label} size={{ xs: 12, sm: 6, lg: 4 }}>
@@ -804,9 +859,10 @@ export function GldEconomyView() {
             </Typography>
             <Typography variant="body2" color="text.secondary">
               These values are persisted on Railway and enforced by the server.
-              BPS values use 100 basis points per 1%. AdMob reserve allocation
-              is the share of recognized, eligible AdMob profit added to the
-              USD reserve.
+              BPS values use 100 basis points per 1%. Recognized, eligible
+              AdMob profit is split between player GLD backing, the USD
+              reserve, and company profit. These three allocations must total
+              exactly 100%.
             </Typography>
             <Grid container spacing={2} sx={{ mt: 1 }}>
               {(
@@ -818,8 +874,16 @@ export function GldEconomyView() {
                   ["Paid reward margin (BPS)", "paidRewardSafetyMarginBps"],
                   ["Paid reward daily limit", "paidRewardDailyRequestLimit"],
                   [
+                    "AdMob player GLD allocation (%)",
+                    "admobPlayerRewardAllocationPercent",
+                  ],
+                  [
                     "AdMob reserve allocation (%)",
                     "admobReserveAllocationPercent",
+                  ],
+                  [
+                    "Company profit allocation (%)",
+                    "admobCompanyProfitAllocationPercent",
                   ],
                 ] as const
               ).map(([label, key]) => (
@@ -838,7 +902,7 @@ export function GldEconomyView() {
                     }
                     inputProps={{
                       min: 0,
-                      step: key === "admobReserveAllocationPercent" ? 0.01 : 1,
+                      step: key.endsWith("AllocationPercent") ? 0.01 : 1,
                     }}
                   />
                 </Grid>
@@ -1142,6 +1206,7 @@ export function GldEconomyView() {
                   <TableCell align="right">Gross</TableCell>
                   <TableCell align="right">Reserve</TableCell>
                   <TableCell align="right">Player backing</TableCell>
+                  <TableCell align="right">Company profit</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1162,6 +1227,9 @@ export function GldEconomyView() {
                     </TableCell>
                     <TableCell align="right">
                       {usdValue(row.rewardBackingUsdMicros)}
+                    </TableCell>
+                    <TableCell align="right">
+                      {usdValue(row.companyShareUsdMicros)}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -5,9 +5,10 @@ const DEFAULTS = {
   smoothingFactorBps: 500,
   maxIncreaseBps: 250,
   maxDecreaseBps: 250,
-  playerRewardAllocationBps: 4_000,
-  reserveAllocationBps: 2_000,
-  companyAllocationBps: 4_000,
+  // Integer BPS require one side to carry the rounding remainder.
+  playerRewardAllocationBps: 3_333,
+  reserveAllocationBps: 3_333,
+  companyAllocationBps: 3_334,
   recognitionHaircutBps: 8_000,
   adCostsUsdMicros: 0n,
   minimumDailyEmission: 0n,
@@ -119,21 +120,35 @@ export function applyGldPolicyOverrides<T extends ReturnType<typeof getGldConfig
     adDailyGldCap?: bigint | null
     adMaxValidatedAds?: number | null
     adMaxRewardPerClaim?: bigint | null
+    admobPlayerRewardAllocationBps?: number | null
     admobReserveAllocationBps?: number | null
+    admobCompanyProfitAllocationBps?: number | null
     giftBurnBps?: number | null
     paidRewardSafetyMarginBps?: number | null
     paidRewardDailyRequestLimit?: number | null
   } | null | undefined,
 ): T {
   if (!overrides) return config
-  return {
+  const next = {
     ...config,
     adDailyGldCap: overrides.adDailyGldCap ?? config.adDailyGldCap,
     adMaxValidatedAds: overrides.adMaxValidatedAds ?? config.adMaxValidatedAds,
     adMaxRewardPerClaim: overrides.adMaxRewardPerClaim ?? config.adMaxRewardPerClaim,
+    playerRewardAllocationBps:
+      overrides.admobPlayerRewardAllocationBps ?? config.playerRewardAllocationBps,
     reserveAllocationBps: overrides.admobReserveAllocationBps ?? config.reserveAllocationBps,
+    companyAllocationBps:
+      overrides.admobCompanyProfitAllocationBps ?? config.companyAllocationBps,
     giftBurnBps: overrides.giftBurnBps ?? config.giftBurnBps,
     paidRewardSafetyMarginBps: overrides.paidRewardSafetyMarginBps ?? config.paidRewardSafetyMarginBps,
     paidRewardDailyRequestLimit: overrides.paidRewardDailyRequestLimit ?? config.paidRewardDailyRequestLimit,
   }
+  const allocationTotal =
+    next.playerRewardAllocationBps +
+    next.reserveAllocationBps +
+    next.companyAllocationBps
+  if (allocationTotal !== 10_000) {
+    throw new Error("GLD AdMob allocations must total exactly 10000 BPS")
+  }
+  return next
 }

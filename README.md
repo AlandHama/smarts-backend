@@ -174,9 +174,9 @@ GLD_MAX_PRICE_USD_MICROS=100000000000
 GLD_SMOOTHING_FACTOR_BPS=500
 GLD_MAX_PRICE_INCREASE_BPS=250
 GLD_MAX_PRICE_DECREASE_BPS=250
-GLD_PLAYER_REWARD_ALLOCATION_BPS=4000
-GLD_RESERVE_ALLOCATION_BPS=2000
-GLD_COMPANY_ALLOCATION_BPS=4000
+GLD_PLAYER_REWARD_ALLOCATION_BPS=3333
+GLD_RESERVE_ALLOCATION_BPS=3333
+GLD_COMPANY_ALLOCATION_BPS=3334
 GLD_RECOGNITION_HAIRCUT_BPS=8000
 GLD_DAILY_AD_COSTS_USD_MICROS=0
 GLD_MIN_DAILY_EMISSION=0
@@ -200,9 +200,13 @@ GLD_RECALCULATION_INTERVAL_MINUTES=30
 GLD recalculates immediately when the service starts and then every 30 minutes
 by default. Set the interval as low as 1 minute when needed.
 
-The three allocation values must total `10000` BPS. AdMob revenue is only
-materialized after a two-day maturity delay and only when the connected AdMob
-account reports USD; zero earnings create no phantom GLD backing.
+The three allocation values must total `10000` BPS. The default
+`3333/3333/3334` split represents 33.33% player GLD backing, 33.33% reserve,
+and 33.34% company profit because allocations use whole basis points. These
+values can also be changed from the GLD policy settings in System Admin. AdMob
+revenue is only materialized after a two-day maturity delay and only when the
+connected AdMob account reports USD; zero earnings create no phantom GLD
+backing.
 
 Paid reward safety margin must be greater than `10000` BPS. The default `12000`
 charges a 20% GLD fee above the reserve-cost conversion. When a paid reward is
