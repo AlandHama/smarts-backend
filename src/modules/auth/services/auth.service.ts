@@ -7,6 +7,7 @@ import { UsersService } from "../../admin/access/users/users.service"
 import { AuthCredentialsRequestDto, ChangePasswordRequestDto, LoginResponseDto, RegisterRequestDto } from "../dtos"
 import { TokenService } from "./token.service"
 import { FraudService } from "../../fraud/fraud.service"
+import { SignupPolicyService } from "./signup-policy.service"
 
 @Injectable()
 export class AuthService {
@@ -18,6 +19,7 @@ export class AuthService {
     private readonly changePasswordTransaction: ChangePasswordTransaction,
     private readonly tokenService: TokenService,
     private readonly fraudService: FraudService,
+    private readonly signupPolicy: SignupPolicyService,
   ) {}
 
   async login(dto: AuthCredentialsRequestDto, request: any): Promise<LoginResponseDto> {
@@ -41,6 +43,7 @@ export class AuthService {
   }
 
   async register(dto: RegisterRequestDto, request: any): Promise<LoginResponseDto> {
+    await this.signupPolicy.assertEnabled()
     const user = await this.usersService.create(dto)
     const token = await this.tokenService.generateAuthToken(user, request, this.isMobile(request))
     await this.usersService.updateLastOnline(user.id)

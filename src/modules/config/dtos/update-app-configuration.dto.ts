@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger"
-import { IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength } from "class-validator"
+import { IsBoolean, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength } from "class-validator"
 
 export class UpdateAppConfigurationDto {
   @ApiProperty({ example: "1.2.0" })
@@ -22,4 +22,9 @@ export class UpdateAppConfigurationDto {
   @IsUrl({ protocols: ["https"], require_protocol: true })
   @MaxLength(1000)
   playStoreUrl?: string
+
+  @ApiPropertyOptional({ description: "Allow new player accounts to be created from mobile and public authentication endpoints", default: true })
+  @IsOptional()
+  @IsBoolean()
+  signupEnabled?: boolean
 }

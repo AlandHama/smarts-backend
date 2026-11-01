@@ -10,6 +10,7 @@ import { UsersService } from "../../admin/access/users/users.service"
 import { TokenService } from "./token.service"
 import { FraudService } from "../../fraud/fraud.service"
 import { ContentSafetyService } from "../../content-safety/content-safety.service"
+import { SignupPolicyService } from "./signup-policy.service"
 
 @Injectable()
 export class GoogleAuthService {
@@ -24,13 +25,16 @@ export class GoogleAuthService {
     private readonly unlinkGoogleIdentityTransaction: UnlinkGoogleIdentityTransaction,
     private readonly fraudService: FraudService,
     private readonly contentSafety: ContentSafetyService,
+    private readonly signupPolicy: SignupPolicyService,
   ) {}
 
   async login(idToken: string, request: any) {
     let claims = await this.verifyIdToken(idToken)
+    const existingUser = await this.usersService.findByIdentifier(claims.email)
+    if (!existingUser) await this.signupPolicy.assertEnabled()
     // Google profile pictures are remote user-controlled media. Scan them
     // before allowing a new account to persist the URL.
-    if (!(await this.usersService.findByIdentifier(claims.email)) && claims.avatarUrl) claims = await this.withSafeAvatar(claims)
+    if (!existingUser && claims.avatarUrl) claims = await this.withSafeAvatar(claims)
     const user = await this.authenticateGoogleTransaction.run({ claims })
     if (user.status === "BANNED") throw new UnauthorizedException("User is banned")
     if (user.status !== "ACTIVE") throw new UnauthorizedException("User is inactive")

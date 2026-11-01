@@ -51,6 +51,7 @@ export class ConfigService {
         productionVersion: true,
         developmentVersion: true,
         playStoreUrl: true,
+        signupEnabled: true,
       },
     })
   }
@@ -62,16 +63,19 @@ export class ConfigService {
         productionVersion: dto.productionVersion.trim(),
         developmentVersion: dto.developmentVersion.trim(),
         playStoreUrl: dto.playStoreUrl?.trim() || undefined,
+        signupEnabled: dto.signupEnabled ?? true,
       },
       update: {
         productionVersion: dto.productionVersion.trim(),
         developmentVersion: dto.developmentVersion.trim(),
         ...(dto.playStoreUrl?.trim() ? { playStoreUrl: dto.playStoreUrl.trim() } : {}),
+        ...(dto.signupEnabled === undefined ? {} : { signupEnabled: dto.signupEnabled }),
       },
       select: {
         productionVersion: true,
         developmentVersion: true,
         playStoreUrl: true,
+        signupEnabled: true,
       },
     })
   }

@@ -16,6 +16,7 @@ import { GoogleAuthService } from "./services/google-auth.service"
 import { AuthenticateGoogleTransaction } from "./transactions/authenticate-google-transaction"
 import { LinkGoogleIdentityTransaction, UnlinkGoogleIdentityTransaction } from "./transactions/manage-google-identity-transaction"
 import { FraudModule } from "../fraud/fraud.module"
+import { SignupPolicyService } from "./services/signup-policy.service"
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { FraudModule } from "../fraud/fraud.module"
   controllers: [AuthController],
   providers: [
     AuthService,
+    SignupPolicyService,
     TokenService,
     GoogleAuthService,
     AuthenticateGoogleTransaction,
@@ -37,6 +39,6 @@ import { FraudModule } from "../fraud/fraud.module"
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
-  exports: [AuthService, TokenService, GoogleAuthService, JwtStrategy, PassportModule, JwtModule],
+  exports: [AuthService, TokenService, GoogleAuthService, SignupPolicyService, JwtStrategy, PassportModule, JwtModule],
 })
 export class AuthModule {}

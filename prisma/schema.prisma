@@ -876,6 +876,7 @@ model AppConfiguration {
   productionVersion  String   @default("1.0.0") @db.VarChar(32)
   developmentVersion String   @default("1.0.0") @db.VarChar(32)
   playStoreUrl       String   @default("https://play.google.com/store/apps/details?id=com.pheonix.gaemverse") @db.Text
+  signupEnabled      Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
