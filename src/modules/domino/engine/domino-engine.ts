@@ -10,12 +10,13 @@ export type DominoPolicy = {
   rulesVersion: string; scoreVersion: string; seatCount: number; handSize: number; boneyardSize: number
   targetScore: number; maxRounds: number; roundDurationSeconds: number; matchDurationSeconds: number
 }
+export type DominoRoundResult = { roundNumber: number; winnerParticipantId: string; points: number; blocked: boolean; pipTotals: Record<string, number> }
 export type DominoState = {
   status: "ACTIVE" | "ROUND_COMPLETE" | "FINISHED"; seed: string; roundNumber: number; currentSeat: number
   participantIds: string[]; hands: Record<string, DominoTile[]>; boneyard: DominoTile[]; chain: DominoPlacedTile[]
   leftOpenValue: number | null; rightOpenValue: number | null; scores: Record<string, number>; roundScores: Record<string, number>
   nextSequence: Record<string, number>; consecutivePasses: number; chainHash: string; startedAt: string; endsAt: string
-  matchEndsAt: string; roundWinnerParticipantId?: string | null; botNextActionAt?: Record<string, number>
+  matchEndsAt: string; roundWinnerParticipantId?: string | null; lastRoundResult?: DominoRoundResult; botNextActionAt?: Record<string, number>
 }
 
 const tile = (a: number, b: number): DominoTile => ({ tileKey: `${a}-${b}`, a, b })
@@ -74,6 +75,7 @@ export function createNextRoundState(previous: DominoState, seed: string, policy
   const next = createInitialState(previous.participantIds, seed, policy, now)
   next.roundNumber = previous.roundNumber + 1
   next.scores = { ...previous.scores }
+  next.lastRoundResult = previous.lastRoundResult
   next.chainHash = computeChainHash(next)
   return next
 }
@@ -100,6 +102,7 @@ export function scoreRound(state: DominoState, winnerParticipantId: string | nul
   state.scores[winner] = (state.scores[winner] ?? 0) + Math.max(1, points)
   state.roundScores = Object.fromEntries(state.participantIds.map((id) => [id, id === winner ? Math.max(1, points) : 0]))
   state.roundWinnerParticipantId = winner
+  state.lastRoundResult = { roundNumber: state.roundNumber, winnerParticipantId: winner, points: Math.max(1, points), blocked, pipTotals: values }
   state.status = "ROUND_COMPLETE"
   return { winnerParticipantId: winner, points, blocked, pipTotals: values }
 }
