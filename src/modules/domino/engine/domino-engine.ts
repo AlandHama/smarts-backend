@@ -90,7 +90,11 @@ export function legalMoves(state: DominoState, participantId: string) {
 }
 
 function orient(value: DominoTile, side: DominoSide, open: number | null): DominoTile {
-  if (open === null || side === "LEFT") return value
+  if (open === null) return value
+  // The chain is stored from LEFT to RIGHT. A left placement therefore has
+  // to end at the previous left open value, while a right placement has to
+  // start at the previous right open value.
+  if (side === "LEFT") return value.b === open ? value : { tileKey: value.tileKey, a: value.b, b: value.a }
   return value.a === open ? value : { tileKey: value.tileKey, a: value.b, b: value.a }
 }
 
@@ -134,7 +138,7 @@ export function applyAction(input: DominoState, participantId: string, action: {
     hand.splice(hand.findIndex((value) => value.tileKey === selected.tileKey), 1)
     const placedTile = { ...placed, side, orientation: placed.a === placed.b ? "VERTICAL" : "HORIZONTAL", playedByParticipantId: participantId } as DominoPlacedTile
     state.chain = side === "LEFT" ? [placedTile, ...state.chain] : [...state.chain, placedTile]
-    if (side === "LEFT") state.leftOpenValue = placed.b
+    if (side === "LEFT") state.leftOpenValue = placed.a
     else state.rightOpenValue = placed.b
     state.consecutivePasses = 0
     state.currentSeat = (seat + 1) % state.participantIds.length
