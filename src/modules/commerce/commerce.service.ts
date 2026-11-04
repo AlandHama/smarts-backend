@@ -18,6 +18,7 @@ import { catalogGldPrice } from "./catalog-gld-pricing"
 import { avatarFramePreset } from "./avatar-frame-presets"
 import { nameEffectPreset } from "./name-effect-presets"
 import { FraudService } from "../fraud/fraud.service"
+import { CryptoRewardsService } from "../crypto-rewards/crypto-rewards.service"
 
 @Injectable()
 export class CommerceService {
@@ -31,6 +32,7 @@ export class CommerceService {
     private readonly creditWallet: CreditWalletTransaction,
     private readonly debitWallet: DebitWalletTransaction,
     private readonly fraudService: FraudService,
+    private readonly cryptoRewards: CryptoRewardsService,
   ) {}
 
   async listCatalog(key: string, includeInactive = false) {
@@ -184,6 +186,7 @@ export class CommerceService {
   revokeInventory(userId: string, dto: InventoryMutationDto, actorId: string) { return this.revokeInventoryTransaction.run({ userId, assetKey: dto.assetKey, variationKey: dto.variationKey, quantity: dto.quantity, sourceId: dto.sourceId, metadata: { actorId, reason: dto.reason } }) }
 
   async getPaidRewardQuote(assetKey: string, variationKey?: string) {
+    await this.cryptoRewards.assertRewardsOpen()
     return this.prisma.$transaction(async (tx) => {
       const asset = await tx.assetDefinition.findUnique({ where: { key: this.assetKey(assetKey) } })
       if (!asset || !asset.active) throw new NotFoundException("Asset definition not found or inactive")
@@ -195,6 +198,7 @@ export class CommerceService {
   }
 
   async requestPaidReward(userId: string, dto: PaidRewardRequestDto) {
+    await this.cryptoRewards.assertRewardsOpen()
     await this.fraudService.assertRewardAllowed(userId)
     const result = await this.prisma.$transaction(async (tx) => {
       const requester = await tx.user.findUnique({

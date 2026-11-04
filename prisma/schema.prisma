@@ -1786,6 +1786,7 @@ model CryptoRewardConfig {
   holdExpiryHours       Int      @default(72)
   minProviderReserveUsd Decimal? @db.Decimal(30, 6)
   requireAdminApproval  Boolean  @default(true)
+  rewardsOpeningAt      DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

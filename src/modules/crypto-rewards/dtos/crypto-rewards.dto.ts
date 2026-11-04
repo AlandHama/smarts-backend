@@ -1,5 +1,5 @@
 import { Type } from "class-transformer"
-import { IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from "class-validator"
+import { IsBoolean, IsDateString, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from "class-validator"
 
 import { CRYPTO_REWARD_CURRENCIES, CryptoRewardCurrency } from "../crypto-rewards.config"
 
@@ -56,6 +56,8 @@ export class CryptoPayoutVerificationDto {
 
 export class UpdateCryptoRewardConfigDto {
   @IsOptional() @IsBoolean() enabled?: boolean
+  /** Shared opening time for the in-app rewards and crypto rewards sections. */
+  @IsOptional() @IsDateString() rewardsOpeningAt?: string | null
   @IsOptional() @IsString() @MaxLength(1000) changeReason?: string
   @IsOptional() @IsString() @Matches(/^\d+(?:\.\d{1,6})?$/) usdtSolGldRate?: string
   @IsOptional() @IsString() @Matches(/^\d+(?:\.\d{1,6})?$/) usdcSolGldRate?: string

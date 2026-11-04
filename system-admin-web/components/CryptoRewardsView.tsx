@@ -31,6 +31,8 @@ import { api } from "../lib/api";
 
 type CryptoConfig = {
   enabled: boolean;
+  rewardsOpeningAt?: string | null;
+  rewardsOpen: boolean;
   networkCode: string;
   currencies: string[];
   assets: Array<{ code: string; symbol: string; name: string; networkCode: string; networkLabel: string; category: string; rate: string; rateConfigured: boolean }>;
@@ -121,6 +123,7 @@ type ProviderHealth = {
 
 type ConfigForm = {
   enabled: boolean;
+  rewardsOpeningAt: string;
   usdtSolGldRate: string;
   usdcSolGldRate: string;
   assetRates: Record<string, string>;
@@ -156,6 +159,7 @@ const statuses = [
 
 const emptyForm: ConfigForm = {
   enabled: false,
+  rewardsOpeningAt: "",
   usdtSolGldRate: "0",
   usdcSolGldRate: "0",
   assetRates: {},
@@ -170,6 +174,14 @@ const emptyForm: ConfigForm = {
   minProviderReserveUsd: "0",
   requireAdminApproval: true,
   changeReason: "",
+};
+
+const localDateTimeValue = (value?: string | null) => {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
 };
 
 const humanize = (value: string) =>
@@ -223,6 +235,7 @@ export function CryptoRewardsView({
       setProviderHealth(health);
       setForm({
         enabled: nextConfig.enabled,
+        rewardsOpeningAt: localDateTimeValue(nextConfig.rewardsOpeningAt),
         usdtSolGldRate: nextConfig.usdtSolGldPerUnit,
         usdcSolGldRate: nextConfig.usdcSolGldPerUnit,
         assetRates: Object.fromEntries((nextConfig.assets || []).map((asset) => [asset.code, asset.rate || "0"])),
@@ -267,6 +280,7 @@ export function CryptoRewardsView({
         method: "PATCH",
         body: JSON.stringify({
           enabled: form.enabled,
+          rewardsOpeningAt: form.rewardsOpeningAt ? new Date(form.rewardsOpeningAt).toISOString() : null,
           usdtSolGldRate: form.usdtSolGldRate.trim(),
           usdcSolGldRate: form.usdcSolGldRate.trim(),
           assetRates: form.assetRates,
@@ -353,7 +367,7 @@ export function CryptoRewardsView({
       {message && <Alert severity="success" onClose={() => setMessage("")}>{message}</Alert>}
 
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 3 }}><Card><CardContent><Typography color="text.secondary">Feature</Typography><Typography variant="h6" fontWeight={850}>{config?.enabled ? "Enabled" : "Paused"}</Typography><Chip size="small" color={config?.enabled ? "success" : "default"} label={config?.enabled ? "Accepting requests" : "Not accepting new requests"} sx={{ mt: 1 }} /></CardContent></Card></Grid>
+        <Grid size={{ xs: 12, md: 3 }}><Card><CardContent><Typography color="text.secondary">Feature</Typography><Typography variant="h6" fontWeight={850}>{config?.enabled ? "Enabled" : "Paused"}</Typography><Chip size="small" color={config?.enabled && config?.rewardsOpen ? "success" : "default"} label={!config?.enabled ? "Not accepting new requests" : config?.rewardsOpen ? "Live" : "Scheduled"} sx={{ mt: 1 }} />{config?.rewardsOpeningAt && !config.rewardsOpen && <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>Opens {date(config.rewardsOpeningAt)}</Typography>}</CardContent></Card></Grid>
         <Grid size={{ xs: 12, md: 3 }}><Card><CardContent><Typography color="text.secondary">Provider</Typography><Typography variant="h6" fontWeight={850}>{config?.providerEnvironment === "production" ? "Live" : "Sandbox"}</Typography><Chip size="small" color={config?.providerConfigured ? "success" : "warning"} label={config?.providerConfigured ? "Configured" : "Configuration incomplete"} sx={{ mt: 1 }} /></CardContent></Card></Grid>
         <Grid size={{ xs: 12, md: 3 }}><Card><CardContent><Typography color="text.secondary">Requests shown</Typography><Typography variant="h4" fontWeight={900}>{requests.length}</Typography><Typography variant="caption" color="text.secondary">{counts.PENDING_ADMIN_APPROVAL || 0} awaiting approval</Typography></CardContent></Card></Grid>
         <Grid size={{ xs: 12, md: 3 }}><Card><CardContent><Typography color="text.secondary">Verification</Typography><Typography variant="h6" fontWeight={850}>{config?.requirePayoutVerification ? "Manual 2FA" : "Provider default"}</Typography><Typography variant="caption" color="text.secondary">Never expose provider credentials in the console</Typography></CardContent></Card></Grid>
@@ -369,6 +383,7 @@ export function CryptoRewardsView({
             <Divider />
             <Grid container spacing={2}>
               {(config?.assets || []).map((asset) => <Grid key={asset.code} size={{ xs: 12, sm: 6, md: 3 }}><TextField fullWidth label={`${asset.symbol} · ${asset.networkLabel}`} value={form.assetRates[asset.code] ?? asset.rate ?? "0"} onChange={(event) => updateAssetRate(asset.code, event.target.value)} helperText={`GLD per 1 ${asset.code} · ${asset.name}`} /></Grid>)}
+              <Grid size={{ xs: 12, sm: 6, md: 6 }}><TextField fullWidth label="Rewards opening date (optional)" type="datetime-local" value={form.rewardsOpeningAt} onChange={(event) => update("rewardsOpeningAt", event.target.value)} helperText="Players see a live countdown until this server time. Leave empty to open immediately." InputLabelProps={{ shrink: true }} /></Grid>
               <Grid size={{ xs: 6, md: 3 }}><TextField fullWidth label="Platform fee (bps)" type="number" value={form.platformFeeBps} onChange={(event) => update("platformFeeBps", event.target.value)} inputProps={{ min: 0, max: 10000 }} /></Grid>
               <Grid size={{ xs: 6, md: 3 }}><TextField fullWidth label="Quote lifetime (seconds)" type="number" value={form.quoteTtlSeconds} onChange={(event) => update("quoteTtlSeconds", event.target.value)} inputProps={{ min: 60, max: 86400 }} /></Grid>
               <Grid size={{ xs: 6, md: 3 }}><TextField fullWidth label="Maximum fee drift (bps)" type="number" value={form.maxQuoteDriftBps} onChange={(event) => update("maxQuoteDriftBps", event.target.value)} inputProps={{ min: 0, max: 10000 }} /></Grid>
