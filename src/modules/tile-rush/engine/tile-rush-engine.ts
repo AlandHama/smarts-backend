@@ -301,8 +301,18 @@ export class TileRushEngine {
     const validCandidate = () => this.findAutomaticMatches().length === 0 && this.findPlayablePath() !== null
 
     const tryRepairFrom = (base: number[][]) => {
-      for (const path of this.repairPathCandidates()) {
-        for (let tile = 0; tile < this.tileTypes; tile += 1) {
+      const paths = this.repairPathCandidates()
+      for (let index = paths.length - 1; index > 0; index -= 1) {
+        const swap = this.random.nextInt(index + 1)
+        ;[paths[index], paths[swap]] = [paths[swap], paths[index]]
+      }
+      const tiles = Array.from({ length: this.tileTypes }, (_, index) => index)
+      for (let index = tiles.length - 1; index > 0; index -= 1) {
+        const swap = this.random.nextInt(index + 1)
+        ;[tiles[index], tiles[swap]] = [tiles[swap], tiles[index]]
+      }
+      for (const path of paths) {
+        for (const tile of tiles) {
           restore(base)
           for (const point of path) this.boardCells[point.row][point.column] = tile
           if (validCandidate()) return true
