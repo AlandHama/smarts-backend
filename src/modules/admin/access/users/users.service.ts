@@ -38,7 +38,7 @@ export class UsersService {
     return this.updateUserLastOnlineTransaction.run(userId)
   }
 
-  toResponse(user: { id: string; username: string; firstName: string | null; lastName: string | null; email: string | null; status: string; isSystemAdmin?: boolean }) {
+  toResponse(user: { id: string; username: string; firstName: string | null; lastName: string | null; email: string | null; status: string; accountOrigin?: string; isSystemAdmin?: boolean; onboardingCompletedAt?: Date | null }) {
     return {
       id: user.id,
       username: user.username,
@@ -46,7 +46,10 @@ export class UsersService {
       lastName: user.lastName,
       email: user.email,
       status: user.status,
+      accountOrigin: user.accountOrigin ?? "WHITELABEL",
+      isGuest: user.accountOrigin === "GUEST",
       isSystemAdmin: user.isSystemAdmin ?? false,
+      onboardingCompleted: Boolean(user.onboardingCompletedAt),
     }
   }
 }

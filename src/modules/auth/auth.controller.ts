@@ -7,7 +7,7 @@ import { SessionResponseDto } from "../admin/access/sessions/dtos/session-respon
 import { SessionsService } from "../admin/access/sessions/sessions.service"
 import { AuthService } from "./services/auth.service"
 import { TokenService } from "./services/token.service"
-import { AuthCredentialsRequestDto, ChangePasswordRequestDto, GoogleAuthRequestDto, LoginResponseDto, RefreshTokenRequestDto, RegisterRequestDto, UserResponseDto, ValidateTokenRequestDto } from "./dtos"
+import { AuthCredentialsRequestDto, ChangePasswordRequestDto, GoogleAuthRequestDto, LoginResponseDto, RefreshTokenRequestDto, RegisterRequestDto, UpgradeGuestRequestDto, UserResponseDto, ValidateTokenRequestDto } from "./dtos"
 import { GoogleAuthService } from "./services/google-auth.service"
 
 @ApiTags("Auth")
@@ -32,6 +32,20 @@ export class AuthController {
   @ApiOperation({ summary: "Register a user and create a session" })
   register(@Body() dto: RegisterRequestDto, @Req() request: any): Promise<LoginResponseDto> {
     return this.authService.register(dto, request)
+  }
+
+  @SkipAuth()
+  @Post("guest")
+  @ApiOperation({ summary: "Create an immediately playable guest account" })
+  guest(@Req() request: any): Promise<LoginResponseDto> {
+    return this.authService.createGuest(request)
+  }
+
+  @Post("guest/upgrade")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Upgrade the current guest account while preserving its progress and rewards" })
+  upgradeGuest(@CurrentUser() user: UserResponseDto, @Body() dto: UpgradeGuestRequestDto, @Req() request: any): Promise<LoginResponseDto> {
+    return this.authService.upgradeGuest(user.id, dto, request)
   }
 
   @SkipAuth()
@@ -82,6 +96,13 @@ export class AuthController {
   @ApiOperation({ summary: "Get the authenticated user" })
   me(@CurrentUser() user: UserResponseDto) {
     return this.authService.me(user.id)
+  }
+
+  @Post("onboarding/complete")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Mark the authenticated player's first-time onboarding as complete" })
+  completeOnboarding(@CurrentUser() user: UserResponseDto) {
+    return this.authService.completeOnboarding(user.id)
   }
 
   @Post("logout")

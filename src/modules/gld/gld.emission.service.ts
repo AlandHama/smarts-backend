@@ -26,8 +26,9 @@ export class GldEmissionService {
     const dateKey = new Date().toISOString().slice(0, 10);
     const controls = await transaction.gldAdminControl.findUnique({
       where: { singletonKey: "default" },
-      select: { emissionsPaused: true, adDailyGldCap: true, adMaxValidatedAds: true, adMaxRewardPerClaim: true },
+      select: { emissionsPaused: true, adDailyGldCap: true, adMaxValidatedAds: true, adMaxRewardPerClaim: true, guestAdRewardMultiplierBps: true },
     });
+    const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { accountOrigin: true } });
     const effectiveConfig = applyGldPolicyOverrides(config, controls);
     const state = await transaction.gldEconomyState.findFirst({ orderBy: { updatedAt: "desc" }, select: { health: true } });
     const playerState = await transaction.gldPlayerDailyAdState.findUnique({
@@ -50,6 +51,7 @@ export class GldEmissionService {
     let amount = exact
       ? base
       : base.mul(curveMultiplier.toString()).mul(healthMultiplier.toString()).div(100_000_000);
+    amount = this.applyGuestMultiplier(amount, user?.accountOrigin === "GUEST", controls?.guestAdRewardMultiplierBps);
     const maxClaim = new Prisma.Decimal(effectiveConfig.adMaxRewardPerClaim.toString());
     if (amount.gt(maxClaim)) amount = maxClaim;
     if (amount.gt(remainingCap)) amount = remainingCap;
@@ -76,6 +78,8 @@ export class GldEmissionService {
     const curveMultiplier = curve?.multiplierBps ?? 0;
     const exact = Boolean(input.exactAmount || input.baseAmountDecimal !== undefined);
     let amount = exact ? base : base.mul(curveMultiplier.toString()).mul(healthMultiplier.toString()).div(100_000_000);
+    const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { accountOrigin: true } });
+    amount = this.applyGuestMultiplier(amount, user?.accountOrigin === "GUEST", controls.guestAdRewardMultiplierBps);
     const maxClaim = new Prisma.Decimal(effectiveConfig.adMaxRewardPerClaim.toString());
     if (amount.gt(maxClaim)) amount = maxClaim;
     const earned = lockedPlayer.gldEarnedDecimal ?? new Prisma.Decimal(lockedPlayer.gldEarned.toString());
@@ -112,6 +116,12 @@ export class GldEmissionService {
     const normalized = String(value).trim();
     if (!/^\d+(?:\.\d{1,6})?$/.test(normalized)) throw new BadRequestException("Ad reward amount must be a positive number with up to 6 decimals");
     return new Prisma.Decimal(normalized);
+  }
+
+  private applyGuestMultiplier(amount: Prisma.Decimal, isGuest: boolean, configuredBps?: number | null) {
+    if (!isGuest) return amount;
+    const multiplierBps = Number.isInteger(configuredBps) && configuredBps! >= 0 && configuredBps! <= 10_000 ? configuredBps! : 2_500;
+    return amount.mul(multiplierBps.toString()).div(10_000);
   }
 
   private async gldPrice(transaction: Prisma.TransactionClient) {

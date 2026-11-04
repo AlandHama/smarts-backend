@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common"
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common"
 import { Prisma, CryptoPayoutHoldStatus, CryptoPayoutRequestStatus, PlayerAuditActorType, WalletTransactionSourceType } from "@prisma/client"
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto"
 
@@ -33,6 +33,7 @@ export class CryptoRewardsService {
   }
 
   async validateAddress(userId: string, input: { currencyCode: CryptoRewardCurrency; networkCode: string; destinationAddress: string }) {
+    await this.assertRegisteredPlayer(userId)
     this.assertPlayerAsset(input.currencyCode, input.networkCode)
     const asset = this.assertCurrency(input.currencyCode, input.networkCode)
     this.assertDestinationAddress(input.destinationAddress, asset.addressKind, asset.networkLabel)
@@ -45,6 +46,7 @@ export class CryptoRewardsService {
   }
 
   async quote(userId: string, input: CryptoRewardQuoteDto) {
+    await this.assertRegisteredPlayer(userId)
     await this.fraud.assertRewardAllowed(userId)
     this.assertPlayerAsset(input.currencyCode, input.networkCode)
     const asset = this.assertCurrency(input.currencyCode, input.networkCode)
@@ -79,6 +81,7 @@ export class CryptoRewardsService {
   }
 
   async createRequest(userId: string, input: CreateCryptoPayoutRequestDto) {
+    await this.assertRegisteredPlayer(userId)
     if (!input.acknowledged) throw new BadRequestException("You must acknowledge the payout terms")
     const key = input.idempotencyKey.trim()
     if (!key) throw new BadRequestException("Idempotency key is required")
@@ -118,6 +121,11 @@ export class CryptoRewardsService {
 
   async listPlayerRequests(userId: string) { const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 50 }); return rows.map((row) => this.serializeRequest(row)) }
   async getPlayerRequest(userId: string, id: string) { const row = await this.prisma.cryptoPayoutRequest.findFirst({ where: { id, userId } }); if (!row) throw new NotFoundException("Crypto payout request not found"); return this.serializeRequest(row) }
+
+  private async assertRegisteredPlayer(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { accountOrigin: true } })
+    if (user?.accountOrigin === "GUEST") throw new ForbiddenException("Create an account before withdrawing crypto rewards")
+  }
 
   async cancel(userId: string, id: string) {
     return this.prisma.$transaction(async (tx) => {

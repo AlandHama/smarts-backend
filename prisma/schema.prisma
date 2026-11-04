@@ -21,6 +21,7 @@ enum UserStatus {
 enum AccountOrigin {
   WHITELABEL
   GOOGLE
+  GUEST
 }
 
 enum SessionStatus {
@@ -615,6 +616,7 @@ model User {
   accountOrigin               AccountOrigin                @default(WHITELABEL)
   isSystemAdmin               Boolean                      @default(false)
   lastOnline                  DateTime?
+  onboardingCompletedAt       DateTime?
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
   sessions                    Session[]
@@ -3803,6 +3805,7 @@ model GldAdminControl {
   admobPlayerRewardAllocationBps Int?
   admobReserveAllocationBps   Int?
   admobCompanyProfitAllocationBps Int?
+  guestAdRewardMultiplierBps   Int      @default(2500)
   giftBurnBps                 Int?
   paidRewardSafetyMarginBps   Int?
   paidRewardDailyRequestLimit Int?

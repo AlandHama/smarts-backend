@@ -581,6 +581,9 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
                 admobCompanyProfitAllocationBps:
                   dto.admobCompanyProfitAllocationBps,
               }),
+          ...(dto.guestAdRewardMultiplierBps === undefined
+            ? {}
+            : { guestAdRewardMultiplierBps: dto.guestAdRewardMultiplierBps }),
           ...(dto.giftBurnBps === undefined
             ? {}
             : { giftBurnBps: dto.giftBurnBps }),
@@ -614,6 +617,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
             admobReserveAllocationBps: before.admobReserveAllocationBps,
             admobCompanyProfitAllocationBps:
               before.admobCompanyProfitAllocationBps,
+            guestAdRewardMultiplierBps: before.guestAdRewardMultiplierBps,
           },
           after: {
             emissionsPaused: updated.emissionsPaused,
@@ -626,6 +630,7 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
             admobReserveAllocationBps: updated.admobReserveAllocationBps,
             admobCompanyProfitAllocationBps:
               updated.admobCompanyProfitAllocationBps,
+            guestAdRewardMultiplierBps: updated.guestAdRewardMultiplierBps,
           },
         },
       });

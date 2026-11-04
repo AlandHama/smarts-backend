@@ -8,6 +8,7 @@ import sharp, { type OutputInfo } from "sharp"
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const IMAGE_FETCH_TIMEOUT_MS = 8_000
+const MAX_IMAGE_REDIRECTS = 3
 const UNSAFE_IMAGE_THRESHOLD = 0.45
 const UNSAFE_SEXY_THRESHOLD = 0.62
 
@@ -133,17 +134,39 @@ export class ContentSafetyService {
     } catch {
       throw new UnprocessableEntityException("Avatar URL is invalid")
     }
-    if (url.protocol !== "https:" && !(url.protocol === "http:" && process.env.NODE_ENV !== "production")) {
-      throw new UnprocessableEntityException("Avatar URL must use HTTPS")
-    }
-    await this.assertPublicHost(url.hostname)
 
-    const response = await fetch(url, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
-      headers: { Accept: "image/*" },
-    }).catch(() => null)
-    if (!response || !response.ok || response.status >= 300) throw new UnprocessableEntityException("Avatar image could not be checked")
+    // SMARTS public storage URLs redirect to a short-lived object-store URL.
+    // Follow those redirects explicitly so every hop is checked for HTTPS and
+    // public DNS resolution; blindly using fetch's automatic redirect mode
+    // would reintroduce an SSRF path through user-controlled image URLs.
+    let response: Response | null = null
+    for (let redirectCount = 0; redirectCount <= MAX_IMAGE_REDIRECTS; redirectCount += 1) {
+      if (url.protocol !== "https:" && !(url.protocol === "http:" && process.env.NODE_ENV !== "production")) {
+        throw new UnprocessableEntityException("Avatar URL must use HTTPS")
+      }
+      await this.assertPublicHost(url.hostname)
+
+      response = await fetch(url, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
+        headers: { Accept: "image/*" },
+      }).catch(() => null)
+
+      if (!response) throw new UnprocessableEntityException("Avatar image could not be checked")
+      if (response.status < 300 || response.status >= 400) break
+
+      const location = response.headers.get("location")
+      if (!location || redirectCount === MAX_IMAGE_REDIRECTS) {
+        throw new UnprocessableEntityException("Avatar image could not be checked")
+      }
+      try {
+        url = new URL(location, url)
+      } catch {
+        throw new UnprocessableEntityException("Avatar image could not be checked")
+      }
+    }
+
+    if (!response || !response.ok) throw new UnprocessableEntityException("Avatar image could not be checked")
     if (!response.headers.get("content-type")?.toLowerCase().startsWith("image/")) throw new UnprocessableEntityException("Avatar URL must point to an image")
     const length = Number(response.headers.get("content-length") ?? 0)
     if (length > MAX_IMAGE_BYTES) throw new UnprocessableEntityException("Avatar image is too large")

@@ -19,7 +19,7 @@ export class EnsureSystemAdminTransaction extends PrismaTransaction<EnsureSystem
 
   protected async execute(dto: EnsureSystemAdminInput, transaction: Prisma.TransactionClient) {
     const username = dto.username.trim().toLowerCase()
-    const lookupEmail = (dto.lookupEmail ?? dto.email).trim().toLowerCase()
+    const lookupEmail = (dto.lookupEmail ?? dto.email ?? "").trim().toLowerCase()
     const existing = await transaction.user.findFirst({
       where: { OR: [{ username }, { email: lookupEmail }] },
       select: { id: true, isSystemAdmin: true },

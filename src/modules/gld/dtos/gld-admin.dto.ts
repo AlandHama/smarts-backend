@@ -13,6 +13,7 @@ export class UpdateGldControlsDto {
   @ApiPropertyOptional({ description: "AdMob revenue allocation used to back player GLD rewards in basis points (100 = 1%)" }) @IsOptional() @IsInt() @Min(0) @Max(10000) admobPlayerRewardAllocationBps?: number
   @ApiPropertyOptional({ description: "AdMob revenue allocation added to the USD reserve in basis points (100 = 1%)" }) @IsOptional() @IsInt() @Min(0) @Max(10000) admobReserveAllocationBps?: number
   @ApiPropertyOptional({ description: "AdMob revenue allocation recorded as company profit in basis points (100 = 1%)" }) @IsOptional() @IsInt() @Min(0) @Max(10000) admobCompanyProfitAllocationBps?: number
+  @ApiPropertyOptional({ description: "Guest ad reward multiplier in basis points. 2500 means guests receive 25% of the normal reward." }) @IsOptional() @IsInt() @Min(0) @Max(10000) guestAdRewardMultiplierBps?: number
   @ApiPropertyOptional({ description: "Gift burn basis points" }) @IsOptional() @IsInt() @Min(0) @Max(10000) giftBurnBps?: number
   @ApiPropertyOptional({ description: "Paid reward safety margin basis points" }) @IsOptional() @IsInt() @Min(10001) @Max(100000) paidRewardSafetyMarginBps?: number
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(1000) paidRewardDailyRequestLimit?: number

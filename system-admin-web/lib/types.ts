@@ -7,7 +7,7 @@ export interface AdminUser {
   firstName: string | null;
   lastName: string | null;
   status: UserStatus;
-  accountOrigin?: "WHITELABEL" | "GOOGLE" | string;
+  accountOrigin?: "WHITELABEL" | "GOOGLE" | "GUEST" | string;
   isSystemAdmin: boolean;
   createdAt: string;
   lastOnline: string | null;
@@ -457,8 +457,18 @@ export interface SystemAdminAnalytics {
   devices: Array<{ type: string; users: number; sessions: number }>;
   deviceInsights?: {
     platforms: Array<{ type: string; users: number; sessions: number }>;
-    operatingSystems: Array<{ name: string; version: string; users: number; sessions: number }>;
-    models: Array<{ manufacturer: string; model: string; users: number; sessions: number }>;
+    operatingSystems: Array<{
+      name: string;
+      version: string;
+      users: number;
+      sessions: number;
+    }>;
+    models: Array<{
+      manufacturer: string;
+      model: string;
+      users: number;
+      sessions: number;
+    }>;
   };
   gameplay: {
     averageMatchDurationSeconds: number;

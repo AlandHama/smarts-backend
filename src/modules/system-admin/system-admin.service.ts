@@ -253,6 +253,7 @@ export class SystemAdminService implements OnModuleInit {
           lastName: true,
           status: true,
           isSystemAdmin: true,
+          accountOrigin: true,
           createdAt: true,
           lastOnline: true,
           profile: {

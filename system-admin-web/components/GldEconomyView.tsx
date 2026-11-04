@@ -49,6 +49,7 @@ type GldData = {
     admobPlayerRewardAllocationBps: number | null;
     admobReserveAllocationBps: number | null;
     admobCompanyProfitAllocationBps: number | null;
+    guestAdRewardMultiplierBps: number | null;
     giftBurnBps: number | null;
     paidRewardSafetyMarginBps: number | null;
     paidRewardDailyRequestLimit: number | null;
@@ -178,6 +179,7 @@ export function GldEconomyView() {
     admobPlayerRewardAllocationPercent: "33.33",
     admobReserveAllocationPercent: "33.33",
     admobCompanyProfitAllocationPercent: "33.34",
+    guestAdRewardMultiplierPercent: "25",
   });
   const [policySaving, setPolicySaving] = useState(false);
   const [adRewardPolicies, setAdRewardPolicies] = useState<GldAdRewardPolicy[]>(
@@ -249,6 +251,9 @@ export function GldEconomyView() {
               Number(next.config.companyAllocationBps ?? 3334),
           ) / 100
         ).toString(),
+        guestAdRewardMultiplierPercent: (
+          Number(next.controls.guestAdRewardMultiplierBps ?? 2500) / 100
+        ).toString(),
       });
     } catch (reason) {
       setError(
@@ -260,7 +265,9 @@ export function GldEconomyView() {
   };
   const saveAdRewardPolicy = async () => {
     if (!/^\d+(?:\.\d{1,6})?$/.test(adRewardForm.rewardAmount.trim())) {
-      setError("Ad reward amount must be a non-negative number with up to 6 decimals.");
+      setError(
+        "Ad reward amount must be a non-negative number with up to 6 decimals.",
+      );
       return;
     }
     setAdRewardSaving(true);
@@ -343,7 +350,8 @@ export function GldEconomyView() {
       !whole(policy.paidRewardDailyRequestLimit) ||
       !percent(policy.admobPlayerRewardAllocationPercent) ||
       !percent(policy.admobReserveAllocationPercent) ||
-      !percent(policy.admobCompanyProfitAllocationPercent)
+      !percent(policy.admobCompanyProfitAllocationPercent) ||
+      !percent(policy.guestAdRewardMultiplierPercent)
     ) {
       setError("GLD policy values must be non-negative numbers.");
       return;
@@ -376,7 +384,9 @@ export function GldEconomyView() {
       reserveAllocationPercent < 0 ||
       reserveAllocationPercent > 100 ||
       companyProfitAllocationPercent < 0 ||
-      companyProfitAllocationPercent > 100
+      companyProfitAllocationPercent > 100 ||
+      Number(policy.guestAdRewardMultiplierPercent) < 0 ||
+      Number(policy.guestAdRewardMultiplierPercent) > 100
     ) {
       setError(
         "Check the GLD policy limits: ads, burn BPS, margin BPS, and daily requests.",
@@ -415,6 +425,9 @@ export function GldEconomyView() {
           admobPlayerRewardAllocationBps: playerRewardAllocationBps,
           admobReserveAllocationBps: reserveAllocationBps,
           admobCompanyProfitAllocationBps: companyProfitAllocationBps,
+          guestAdRewardMultiplierBps: Math.round(
+            Number(policy.guestAdRewardMultiplierPercent) * 100,
+          ),
         }),
       });
       setData((current) => (current ? { ...current, controls } : current));
@@ -859,10 +872,9 @@ export function GldEconomyView() {
             </Typography>
             <Typography variant="body2" color="text.secondary">
               These values are persisted on Railway and enforced by the server.
-              BPS values use 100 basis points per 1%. Recognized, eligible
-              AdMob profit is split between player GLD backing, the USD
-              reserve, and company profit. These three allocations must total
-              exactly 100%.
+              BPS values use 100 basis points per 1%. Recognized, eligible AdMob
+              profit is split between player GLD backing, the USD reserve, and
+              company profit. These three allocations must total exactly 100%.
             </Typography>
             <Grid container spacing={2} sx={{ mt: 1 }}>
               {(
@@ -884,6 +896,10 @@ export function GldEconomyView() {
                   [
                     "Company profit allocation (%)",
                     "admobCompanyProfitAllocationPercent",
+                  ],
+                  [
+                    "Guest ad reward multiplier (%)",
+                    "guestAdRewardMultiplierPercent",
                   ],
                 ] as const
               ).map(([label, key]) => (

@@ -10,7 +10,8 @@ import { writeAdminAudit } from "../../../../../common/helpers/admin-audit"
 import { writePlayerAudit } from "../../../../../common/helpers/player-audit"
 import { ContentSafetyService } from "../../../../content-safety/content-safety.service"
 
-export type CreateUserInput = RegisterRequestDto & {
+export type CreateUserInput = Omit<RegisterRequestDto, "email"> & {
+  email?: string | null
   isSystemAdmin?: boolean
   actorId?: string
   reason?: string
@@ -22,7 +23,9 @@ export type CreateUserInput = RegisterRequestDto & {
     avatarUrl?: string | null
   }
   avatarUrl?: string | null
-  accountOrigin?: "WHITELABEL" | "GOOGLE"
+  accountOrigin?: "WHITELABEL" | "GOOGLE" | "GUEST"
+  onboardingCompletedAt?: Date | null
+  skipSignupBonus?: boolean
 }
 
 @Injectable()
@@ -66,8 +69,9 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
           passwordHash: await HashHelper.encrypt(dto.password),
           firstName: dto.firstName?.trim() || null,
           lastName: dto.lastName?.trim() || null,
-          email: dto.email.trim().toLowerCase(),
+          email: dto.email?.trim().toLowerCase() || null,
           accountOrigin: dto.accountOrigin ?? "WHITELABEL",
+          onboardingCompletedAt: dto.onboardingCompletedAt ?? null,
           isSystemAdmin: dto.isSystemAdmin ?? false,
           profile: {
             create: {
@@ -129,7 +133,7 @@ export class CreateUserTransaction extends PrismaTransaction<CreateUserInput, an
       })
       const signupAmountText = process.env.SIGNUP_MCN_AMOUNT?.trim() || "1500"
       if (!/^\d+$/.test(signupAmountText)) throw new InternalServerErrorException("SIGNUP_MCN_AMOUNT must be a non-negative integer")
-      const signupAmount = BigInt(signupAmountText)
+      const signupAmount = dto.skipSignupBonus || dto.accountOrigin === "GUEST" ? 0n : BigInt(signupAmountText)
       if (signupAmount > 0n) {
         await this.creditWalletTransaction.runWithinTransaction({
           userId: user.id,

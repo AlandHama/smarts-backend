@@ -1,0 +1,4 @@
+ALTER TYPE "AccountOrigin" ADD VALUE IF NOT EXISTS 'GUEST';
+
+ALTER TABLE "GldAdminControl"
+ADD COLUMN "guestAdRewardMultiplierBps" INTEGER NOT NULL DEFAULT 2500;
