@@ -59,14 +59,14 @@ export function createInitialState(participantIds: string[], seed: string, polic
   const shuffled = shuffleDeck(createDeck(), seed)
   const hands: Record<string, DominoTile[]> = {}
   participantIds.forEach((id) => { hands[id] = shuffled.splice(0, policy.handSize) })
-  const boneyard = shuffled.slice(0, Math.max(0, policy.boneyardSize))
+  // Domino Duel deals the complete seven-tile hand. There is deliberately no
+  // boneyard in this ruleset; a player with no legal move passes automatically.
+  const boneyard: DominoTile[] = []
   const opening = openingTile(hands, participantIds)
-  const openingIndex = hands[opening.participantId].findIndex((value) => value.tileKey === opening.value.tileKey)
-  hands[opening.participantId].splice(openingIndex, 1)
   const startedAt = now.toISOString()
   const matchEndsAt = new Date(now.getTime() + policy.matchDurationSeconds * 1000).toISOString()
   const endsAt = new Date(now.getTime() + policy.roundDurationSeconds * 1000).toISOString()
-  const state: DominoState = { status: "ACTIVE", seed, roundNumber: 1, currentSeat: (opening.seat + 1) % participantIds.length, participantIds, hands, boneyard, chain: [{ ...opening.value, side: "CENTER", orientation: "HORIZONTAL", playedByParticipantId: opening.participantId }], leftOpenValue: opening.value.a, rightOpenValue: opening.value.b, scores: Object.fromEntries(participantIds.map((id) => [id, 0])), roundScores: Object.fromEntries(participantIds.map((id) => [id, 0])), nextSequence: Object.fromEntries(participantIds.map((id) => [id, 1])), consecutivePasses: 0, chainHash: "", startedAt, endsAt, matchEndsAt, botNextActionAt: {} }
+  const state: DominoState = { status: "ACTIVE", seed, roundNumber: 1, currentSeat: opening.seat, participantIds, hands, boneyard, chain: [], leftOpenValue: null, rightOpenValue: null, scores: Object.fromEntries(participantIds.map((id) => [id, 0])), roundScores: Object.fromEntries(participantIds.map((id) => [id, 0])), nextSequence: Object.fromEntries(participantIds.map((id) => [id, 1])), consecutivePasses: 0, chainHash: "", startedAt, endsAt, matchEndsAt, botNextActionAt: {} }
   state.chainHash = computeChainHash(state)
   return state
 }
@@ -87,6 +87,19 @@ export function legalMoves(state: DominoState, participantId: string) {
     if (tileFits(value, state.rightOpenValue)) moves.push({ tile: value, side: "RIGHT" })
   }
   return moves
+}
+
+/**
+ * Advances players that cannot connect a tile. This is kept in the engine so
+ * bot turns, API requests, and realtime snapshots all apply the same rule.
+ */
+export function skipBlockedTurns(state: DominoState) {
+  while (state.status === "ACTIVE" && legalMoves(state, state.participantIds[state.currentSeat]).length === 0) {
+    state.consecutivePasses += 1
+    state.currentSeat = (state.currentSeat + 1) % state.participantIds.length
+    if (state.consecutivePasses >= state.participantIds.length) return scoreRound(state, null, true)
+  }
+  return null
 }
 
 function orient(value: DominoTile, side: DominoSide, open: number | null): DominoTile {
@@ -120,11 +133,8 @@ export function applyAction(input: DominoState, participantId: string, action: {
   if (new Date(state.endsAt).getTime() <= now.getTime() || new Date(state.matchEndsAt).getTime() <= now.getTime()) return { accepted: false, reason: "TIME_EXPIRED", state }
   const hand = state.hands[participantId] ?? []
   if (action.type === "DRAW_TILE") {
-    if (legalMoves(state, participantId).length) return { accepted: false, reason: "LEGAL_MOVE_AVAILABLE", state }
-    if (!state.boneyard.length) return { accepted: false, reason: "BONEYARD_EMPTY", state }
-    hand.push(state.boneyard.shift() as DominoTile)
+    return { accepted: false, reason: "DRAW_DISABLED", state }
   } else if (action.type === "PASS") {
-    if (state.boneyard.length) return { accepted: false, reason: "DRAW_REQUIRED", state }
     if (legalMoves(state, participantId).length) return { accepted: false, reason: "LEGAL_MOVE_AVAILABLE", state }
     state.consecutivePasses += 1
     state.currentSeat = (seat + 1) % state.participantIds.length
