@@ -47,7 +47,8 @@ export function isDouble(value: DominoTile) { return value.a === value.b }
 export function tileFits(value: DominoTile, open: number | null) { return open === null || value.a === open || value.b === open }
 
 export function computeChainHash(state: Pick<DominoState, "chain" | "leftOpenValue" | "rightOpenValue" | "roundNumber">) {
-  return createHash("sha256").update(JSON.stringify({ chain: state.chain, left: state.leftOpenValue, right: state.rightOpenValue, round: state.roundNumber })).digest("hex")
+  const ends = exposedEnds(state)
+  return createHash("sha256").update(JSON.stringify({ chain: state.chain, left: ends.left, right: ends.right, round: state.roundNumber })).digest("hex")
 }
 
 function openingTile(hands: Record<string, DominoTile[]>, participantIds: string[]) {
@@ -81,12 +82,25 @@ export function createNextRoundState(previous: DominoState, seed: string, policy
 }
 
 export function legalMoves(state: DominoState, participantId: string) {
+  const ends = exposedEnds(state)
   const moves: Array<{ tile: DominoTile; side: DominoSide }> = []
   for (const value of state.hands[participantId] ?? []) {
-    if (tileFits(value, state.leftOpenValue)) moves.push({ tile: value, side: "LEFT" })
-    if (tileFits(value, state.rightOpenValue)) moves.push({ tile: value, side: "RIGHT" })
+    if (tileFits(value, ends.left)) moves.push({ tile: value, side: "LEFT" })
+    if (tileFits(value, ends.right)) moves.push({ tile: value, side: "RIGHT" })
   }
   return moves
+}
+
+/**
+ * The chain is the source of truth for exposed pips. Persisted endpoint
+ * fields are projections and may be stale in matches created by older rules.
+ */
+export function exposedEnds(state: Pick<DominoState, "chain" | "leftOpenValue" | "rightOpenValue">) {
+  if (!state.chain.length) return { left: null, right: null }
+  return {
+    left: state.chain[0].a,
+    right: state.chain[state.chain.length - 1].b,
+  }
 }
 
 /**
@@ -126,6 +140,9 @@ export function scoreRound(state: DominoState, winnerParticipantId: string | nul
 
 export function applyAction(input: DominoState, participantId: string, action: { type: DominoActionType; tileKey?: string; side?: DominoSide }, policy: DominoPolicy, now = new Date()) {
   const state = clone(input)
+  const ends = exposedEnds(state)
+  state.leftOpenValue = ends.left
+  state.rightOpenValue = ends.right
   const seat = state.participantIds.indexOf(participantId)
   if (seat < 0) return { accepted: false, reason: "NOT_A_PARTICIPANT", state }
   if (state.status !== "ACTIVE") return { accepted: false, reason: "ROUND_NOT_ACTIVE", state }
@@ -143,13 +160,19 @@ export function applyAction(input: DominoState, participantId: string, action: {
     const side = action.side
     const selected = hand.find((value) => value.tileKey === action.tileKey)
     if (!selected || !side) return { accepted: false, reason: "TILE_NOT_IN_HAND", state }
-    if (!tileFits(selected, side === "LEFT" ? state.leftOpenValue : state.rightOpenValue)) return { accepted: false, reason: "TILE_DOES_NOT_MATCH", state }
-    const placed = orient(selected, side, side === "LEFT" ? state.leftOpenValue : state.rightOpenValue)
+    if (!tileFits(selected, side === "LEFT" ? ends.left : ends.right)) return { accepted: false, reason: "TILE_DOES_NOT_MATCH", state }
+    const placed = orient(selected, side, side === "LEFT" ? ends.left : ends.right)
     hand.splice(hand.findIndex((value) => value.tileKey === selected.tileKey), 1)
-    const placedTile = { ...placed, side, orientation: placed.a === placed.b ? "VERTICAL" : "HORIZONTAL", playedByParticipantId: participantId } as DominoPlacedTile
-    state.chain = side === "LEFT" ? [placedTile, ...state.chain] : [...state.chain, placedTile]
-    if (side === "LEFT") state.leftOpenValue = placed.a
-    else state.rightOpenValue = placed.b
+    const placedTile = { ...placed, side: state.chain.length ? side : "CENTER", orientation: placed.a === placed.b ? "VERTICAL" : "HORIZONTAL", playedByParticipantId: participantId } as DominoPlacedTile
+    if (!state.chain.length) {
+      state.chain = [placedTile]
+      state.leftOpenValue = placed.a
+      state.rightOpenValue = placed.b
+    } else {
+      state.chain = side === "LEFT" ? [placedTile, ...state.chain] : [...state.chain, placedTile]
+      if (side === "LEFT") state.leftOpenValue = placed.a
+      else state.rightOpenValue = placed.b
+    }
     state.consecutivePasses = 0
     state.currentSeat = (seat + 1) % state.participantIds.length
     if (!hand.length) { state.chainHash = computeChainHash(state); return { accepted: true, state, round: scoreRound(state, participantId, false), event: { type: action.type, tileKey: selected.tileKey, side } } }
