@@ -34,7 +34,21 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
       let match = await this.loadMatch(tx, matchId)
       const participant = this.authorize(match, userId)
       const policy = this.policy(match)
-      let state = await this.state(tx, match, policy)
+      let stateRow = await tx.dominoMatchState.findUnique({ where: { matchId } })
+      if (!stateRow) {
+        // Generic match start can mark a match STARTED before the Domino
+        // start endpoint is reached. Do not let that race turn every polling
+        // request into a P2025/500. Initialize the authoritative board while
+        // holding the match lock, or return the normal waiting projection for
+        // a match that has not started yet.
+        if (match.status !== "STARTED") {
+          return { projection: this.project(match, null, participant.id, policy), finalized: false }
+        }
+        const ensured = await this.ensureStartedState(tx, match, policy)
+        match = ensured.match
+        stateRow = ensured.row
+      }
+      let state = stateRow.state as unknown as DominoState
       if (match.status === "STARTED") {
         state = await this.advanceRoundIfReady(tx, match, state, policy)
         if (state.status === "ACTIVE") {
@@ -57,7 +71,8 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
         if (state.status === "ACTIVE" && (Date.now() >= new Date(state.endsAt).getTime() || Date.now() >= new Date(state.matchEndsAt).getTime())) await this.finishMatch(tx, match, state, null, policy)
       }
       match = await this.loadMatch(tx, matchId)
-      state = await tx.dominoMatchState.findUniqueOrThrow({ where: { matchId } }).then((row: any) => row.state as DominoState)
+      const finalRow = await tx.dominoMatchState.findUnique({ where: { matchId } })
+      if (finalRow) state = finalRow.state as unknown as DominoState
       return { projection: this.project(match, state, participant.id, policy), finalized: ["FINISHED", "REVIEW", "SETTLED"].includes(match.status) }
     })
     if (result.finalized) await this.settleFinishedMatch(matchId)
@@ -103,7 +118,12 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
       const participant = this.authorize(match, userId)
       if (match.status !== "STARTED") throw new ConflictException("The Domino match is not active")
       const policy = this.policy(match)
-      const row = await tx.dominoMatchState.findUnique({ where: { matchId } })
+      let row = await tx.dominoMatchState.findUnique({ where: { matchId } })
+      if (!row) {
+        const ensured = await this.ensureStartedState(tx, match, policy)
+        match = ensured.match
+        row = ensured.row
+      }
       if (!row) throw new ConflictException("The Domino match has not started")
       let state = row.state as unknown as DominoState
       state = await this.advanceRoundIfReady(tx, match, state, policy)
@@ -155,10 +175,15 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
   async forfeit(userId: string, matchId: string) {
     const result = await this.prisma.$transaction(async (tx) => {
       await this.lockMatch(tx, matchId)
-      const match = await this.loadMatch(tx, matchId)
+      let match = await this.loadMatch(tx, matchId)
       const participant = this.authorize(match, userId)
       const policy = this.policy(match)
-      const row = await tx.dominoMatchState.findUnique({ where: { matchId } })
+      let row = await tx.dominoMatchState.findUnique({ where: { matchId } })
+      if (!row && match.status === "STARTED") {
+        const ensured = await this.ensureStartedState(tx, match, policy)
+        match = ensured.match
+        row = ensured.row
+      }
       if (!row) throw new ConflictException("The Domino match has not started")
       if (["FINISHED", "SETTLED", "REVIEW"].includes(match.status)) return { projection: this.project(match, row.state as unknown as DominoState, participant.id, policy), finalized: false }
       const state = row.state as unknown as DominoState
@@ -285,8 +310,50 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
     for (let index = participants.length; index < policy.seatCount; index += 1) await tx.matchParticipant.create({ data: { matchId: match.id, participantType: "BOT", result: "PENDING" } })
   }
 
+  private async ensureStartedState(tx: Prisma.TransactionClient, match: MatchRow, policy: DominoPolicy) {
+    await this.ensureSeats(tx, match, policy)
+    const currentMatch = await this.loadMatch(tx, match.id)
+    const now = new Date()
+    const participants = currentMatch.participants.slice().sort((a: any, b: any) => a.id.localeCompare(b.id))
+    const state = createInitialState(
+      participants.map((item: any) => item.id),
+      `${currentMatch.serverNonce}:domino:1`,
+      policy,
+      now,
+    )
+    const row = await tx.dominoMatchState.create({
+      data: {
+        matchId: currentMatch.id,
+        rulesVersion: policy.rulesVersion,
+        policyVersion: policy.scoreVersion,
+        seed: state.seed,
+        roundNumber: 1,
+        currentSeat: state.currentSeat,
+        nextSequence: 1,
+        leftOpenValue: state.leftOpenValue ?? 0,
+        rightOpenValue: state.rightOpenValue ?? 0,
+        chainHash: state.chainHash,
+        boneyardCount: state.boneyard.length,
+        state: state as unknown as Prisma.InputJsonValue,
+        replay: [] as unknown as Prisma.InputJsonValue,
+        startedAt: currentMatch.startedAt ?? now,
+        roundEndsAt: new Date(state.endsAt),
+        matchEndsAt: new Date(state.matchEndsAt),
+      },
+    })
+    const round = await tx.matchRound.findFirst({
+      where: { matchId: currentMatch.id, roundIndex: 1 },
+      orderBy: { createdAt: "asc" },
+    })
+    if (round) {
+      await tx.matchRound.update({ where: { id: round.id }, data: { status: "STARTED", startedAt: round.startedAt ?? currentMatch.startedAt ?? now } })
+    } else {
+      await tx.matchRound.create({ data: { matchId: currentMatch.id, roundIndex: 1, gameDefinitionId: currentMatch.gameDefinitionId, status: "STARTED", challengeSeedHash: state.chainHash, startedAt: currentMatch.startedAt ?? now } })
+    }
+    return { match: currentMatch, row }
+  }
+
   private policy(match: MatchRow): DominoPolicy { const settings = match.gameConfig?.settings && typeof match.gameConfig.settings === "object" && !Array.isArray(match.gameConfig.settings) ? match.gameConfig.settings as Record<string, any> : {}; const configured = settings.dominoPolicy && typeof settings.dominoPolicy === "object" ? settings.dominoPolicy : {}; const bounded = (value: unknown, fallback: number, minimum: number, maximum: number) => { const parsed = Number(value); return Number.isFinite(parsed) ? Math.min(maximum, Math.max(minimum, Math.floor(parsed))) : fallback }; const roundDurationSeconds = bounded(configured.roundDurationSeconds, DEFAULT_POLICY.roundDurationSeconds, 30, 900); return { ...DEFAULT_POLICY, ...configured, seatCount: 4, handSize: 7, boneyardSize: 0, targetScore: 51, maxRounds: bounded(configured.maxRounds, DEFAULT_POLICY.maxRounds, 1, 20), roundDurationSeconds, matchDurationSeconds: Math.max(roundDurationSeconds, bounded(configured.matchDurationSeconds, DEFAULT_POLICY.matchDurationSeconds, 60, 1800)) } }
-  private async state(tx: Prisma.TransactionClient, match: MatchRow, policy: DominoPolicy) { const existing = await tx.dominoMatchState.findUnique({ where: { matchId: match.id } }); if (existing) return existing.state as unknown as DominoState; return { status: "ACTIVE", participantIds: match.participants.map((item: any) => item.id), scores: {}, roundScores: {}, hands: {}, boneyard: [], chain: [], leftOpenValue: null, rightOpenValue: null, nextSequence: {}, chainHash: "", roundNumber: 1, currentSeat: 0, consecutivePasses: 0, seed: match.serverNonce, startedAt: new Date().toISOString(), endsAt: new Date(Date.now() + policy.roundDurationSeconds * 1000).toISOString(), matchEndsAt: new Date(Date.now() + policy.matchDurationSeconds * 1000).toISOString() } as unknown as DominoState }
   private async saveState(tx: Prisma.TransactionClient, row: any, state: DominoState, endedAt?: Date) { await tx.dominoMatchState.update({ where: { id: row.id }, data: { roundNumber: state.roundNumber, currentSeat: state.currentSeat, nextSequence: Math.max(...Object.values(state.nextSequence), 1), leftOpenValue: state.leftOpenValue ?? 0, rightOpenValue: state.rightOpenValue ?? 0, chainHash: state.chainHash, boneyardCount: state.boneyard.length, state: state as unknown as Prisma.InputJsonValue, replay: (state.chain ?? []) as unknown as Prisma.InputJsonValue, endedAt, roundEndsAt: new Date(state.endsAt), matchEndsAt: new Date(state.matchEndsAt) } }) }
   private project(match: MatchRow, state: DominoState | null, participantId: string, policy: DominoPolicy): any { if (!state || !state.participantIds?.length) return { gameKey: "domino", matchId: match.id, status: match.status, waitingForPlayers: true, players: match.participants.map((item: any, seat: number) => this.playerProjection(item, seat, null)) }; const now = Date.now(); const ends = exposedEnds(state); const transitionRemainingSeconds = state.status === "ROUND_COMPLETE" && state.nextRoundAt ? Math.max(0, Math.ceil((new Date(state.nextRoundAt).getTime() - now) / 1000)) : 0; return { gameKey: "domino", matchId: match.id, status: match.status, mode: match.mode, rulesVersion: policy.rulesVersion, scoreVersion: policy.scoreVersion, roundNumber: state.roundNumber, currentSeat: state.currentSeat, yourParticipantId: participantId, yourSeat: state.participantIds.indexOf(participantId), isYourTurn: state.participantIds[state.currentSeat] === participantId && state.status === "ACTIVE", nextSequence: state.nextSequence[participantId] ?? 1, chain: state.chain, openEnds: ends, yourHand: state.hands[participantId] ?? [], boneyardCount: state.boneyard.length, players: state.participantIds.map((id, seat) => { const item = match.participants.find((candidate: any) => candidate.id === id); return this.playerProjection(item, seat, state) }), scores: state.scores, roundScores: state.roundScores, lastRoundResult: state.lastRoundResult ?? null, roundTransition: state.status === "ROUND_COMPLETE" ? { nextRoundAt: state.nextRoundAt ?? null, remainingSeconds: transitionRemainingSeconds, result: state.lastRoundResult ?? null } : null, roundTransitionRemainingSeconds: transitionRemainingSeconds, targetScore: policy.targetScore, chainHash: state.chainHash, endsAt: state.endsAt, matchEndsAt: state.matchEndsAt, remainingSeconds: Math.max(0, Math.ceil((new Date(state.endsAt).getTime() - now) / 1000)), result: match.status === "FINISHED" || match.status === "SETTLED" ? { winnerParticipantId: state.participantIds.slice().sort((a, b) => (state.scores[b] ?? 0) - (state.scores[a] ?? 0))[0], scores: state.scores } : null }
   }
