@@ -15,22 +15,19 @@ export class DailyHintsService {
 
   async today(userId: string, language?: string) {
     const dateKey = this.todayKey();
-    const hint = await this.prisma.dailyHint.findFirst({
-      where: { dateKey, active: true },
-      select: { id: true, dateKey: true, translations: true },
-    });
-    if (!hint) return { available: false, dateKey, hint: null };
+    const selection = await this.selectionForDate(dateKey);
+    if (!selection) return { available: false, dateKey, hint: null };
 
     const view = await this.prisma.dailyHintView.findUnique({
-      where: { hintId_userId: { hintId: hint.id, userId } },
+      where: { dateKey_userId: { dateKey, userId } },
       select: { viewedAt: true },
     });
-    const copy = this.selectTranslation(hint.translations, language);
+    const copy = this.selectTranslation(selection.hint.translations, language);
     return {
       available: true,
-      dateKey: hint.dateKey,
+      dateKey,
       hint: {
-        id: hint.id,
+        id: selection.hint.id,
         title: copy.title,
         body: copy.body,
         alreadyViewed: Boolean(view),
@@ -40,11 +37,12 @@ export class DailyHintsService {
   }
 
   async markViewed(userId: string, hintId: string) {
-    const hint = await this.prisma.dailyHint.findFirst({ where: { id: hintId, active: true }, select: { id: true } });
-    if (!hint) throw new NotFoundException("Daily hint not found");
+    const dateKey = this.todayKey();
+    const selection = await this.selectionForDate(dateKey);
+    if (!selection || selection.hint.id !== hintId) throw new NotFoundException("Daily hint is not active today");
     await this.prisma.dailyHintView.upsert({
-      where: { hintId_userId: { hintId, userId } },
-      create: { hintId, userId },
+      where: { dateKey_userId: { dateKey, userId } },
+      create: { dateKey, hintId, userId },
       update: { viewedAt: new Date() },
     });
     return { updated: true };
@@ -52,33 +50,30 @@ export class DailyHintsService {
 
   async adminList(limit = 60) {
     return this.prisma.dailyHint.findMany({
-      orderBy: { dateKey: "desc" },
+      orderBy: { createdAt: "desc" },
       take: Math.max(1, Math.min(366, Number(limit) || 60)),
-      include: { _count: { select: { views: true } } },
+      include: { _count: { select: { views: true, selections: true } } },
     });
   }
 
   async adminCreate(dto: CreateDailyHintDto) {
-    const dateKey = this.validateDateKey(dto.dateKey);
     return this.prisma.dailyHint.create({
       data: {
-        dateKey,
         active: dto.active ?? true,
         translations: this.serializeTranslations(dto.translations),
       },
-      include: { _count: { select: { views: true } } },
+      include: { _count: { select: { views: true, selections: true } } },
     });
   }
 
   async adminUpdate(id: string, dto: UpdateDailyHintDto) {
     const data: Prisma.DailyHintUpdateInput = {};
-    if (dto.dateKey !== undefined) data.dateKey = this.validateDateKey(dto.dateKey);
     if (dto.active !== undefined) data.active = dto.active;
     if (dto.translations !== undefined) data.translations = this.serializeTranslations(dto.translations);
     return this.prisma.dailyHint.update({
       where: { id },
       data,
-      include: { _count: { select: { views: true } } },
+      include: { _count: { select: { views: true, selections: true } } },
     });
   }
 
@@ -87,11 +82,56 @@ export class DailyHintsService {
   }
 
   async forNotification(dateKey = this.todayKey()) {
-    const hint = await this.prisma.dailyHint.findFirst({
-      where: { dateKey, active: true },
-      select: { id: true, dateKey: true, translations: true },
+    const selection = await this.selectionForDate(dateKey);
+    if (!selection) return null;
+    return {
+      id: selection.hint.id,
+      dateKey,
+      translations: this.parseTranslations(selection.hint.translations),
+    };
+  }
+
+  /**
+   * Select one active hint for the UTC day and persist the choice. The unique
+   * date key makes this safe when the API and notification worker initialize
+   * the day concurrently; the losing request simply reads the winner's row.
+   */
+  private async selectionForDate(dateKey: string) {
+    const existing = await this.prisma.dailyHintSelection.findUnique({
+      where: { dateKey },
+      include: { hint: { select: { id: true, translations: true } } },
     });
-    return hint ? { ...hint, translations: this.parseTranslations(hint.translations) } : null;
+    if (existing) return existing;
+
+    const activeHints = await this.prisma.dailyHint.findMany({
+      where: { active: true },
+      select: { id: true, translations: true },
+    });
+    if (!activeHints.length) return null;
+
+    // Avoid repeating yesterday's hint when the pool contains another choice.
+    const previous = await this.prisma.dailyHintSelection.findFirst({
+      where: { dateKey: { lt: dateKey } },
+      orderBy: { dateKey: "desc" },
+      select: { hintId: true },
+    });
+    const candidates = activeHints.length > 1 && previous
+      ? activeHints.filter((hint) => hint.id !== previous.hintId)
+      : activeHints;
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)] ?? activeHints[0];
+
+    try {
+      return await this.prisma.dailyHintSelection.create({
+        data: { dateKey, hintId: chosen.id },
+        include: { hint: { select: { id: true, translations: true } } },
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code !== "P2002") throw error;
+      return this.prisma.dailyHintSelection.findUnique({
+        where: { dateKey },
+        include: { hint: { select: { id: true, translations: true } } },
+      });
+    }
   }
 
   selectTranslation(translations: unknown, language?: string): HintCopy {
@@ -127,14 +167,6 @@ export class DailyHintsService {
     const parsed = this.parseTranslations(input);
     if (!Object.keys(parsed).length) throw new BadRequestException("At least one complete daily hint translation is required");
     return parsed as Prisma.InputJsonValue;
-  }
-
-  private validateDateKey(dateKey: string) {
-    const value = dateKey.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new BadRequestException("dateKey must use YYYY-MM-DD");
-    const date = new Date(`${value}T00:00:00.000Z`);
-    if (Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== value) throw new BadRequestException("dateKey is not a valid calendar date");
-    return value;
   }
 
   private todayKey() {

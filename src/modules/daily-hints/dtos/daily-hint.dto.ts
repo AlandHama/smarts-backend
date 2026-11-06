@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsBoolean, IsObject, IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import { IsBoolean, IsObject, IsOptional } from "class-validator";
 
 export class DailyHintTranslationsDto {
   @ApiProperty({
@@ -15,11 +15,6 @@ export class DailyHintTranslationsDto {
 }
 
 export class CreateDailyHintDto extends DailyHintTranslationsDto {
-  @ApiProperty({ example: "2026-11-06" })
-  @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
-  dateKey!: string;
-
   @ApiPropertyOptional({ default: true })
   @IsOptional()
   @IsBoolean()
@@ -27,12 +22,6 @@ export class CreateDailyHintDto extends DailyHintTranslationsDto {
 }
 
 export class UpdateDailyHintDto {
-  @ApiPropertyOptional({ example: "2026-11-06" })
-  @IsOptional()
-  @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
-  dateKey?: string;
-
   @ApiPropertyOptional({ type: DailyHintTranslationsDto })
   @IsOptional()
   @IsObject()

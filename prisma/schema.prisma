@@ -3543,30 +3543,43 @@ model DailyChallengeAnswer {
   @@index([attemptId, answeredAt])
 }
 
-/// One server-authored hint published for a calendar day. Translations are
+/// One server-authored hint in the rotating daily hint pool. Translations are
 /// stored together so changing the app language never requires a client build.
 model DailyHint {
-  id           String          @id @default(uuid()) @db.Uuid
-  dateKey      String          @unique @db.VarChar(10)
-  active       Boolean         @default(true)
+  id           String               @id @default(uuid()) @db.Uuid
+  active       Boolean              @default(true)
   translations Json
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
   views        DailyHintView[]
+  selections   DailyHintSelection[]
 
-  @@index([active, dateKey])
+  @@index([active, createdAt])
+}
+
+/// The server's single hint choice for each UTC calendar day. A row is
+/// created lazily by the API/notification worker and then reused all day.
+model DailyHintSelection {
+  id         String    @id @default(uuid()) @db.Uuid
+  dateKey    String    @unique @db.VarChar(10)
+  hintId     String    @db.Uuid
+  selectedAt DateTime  @default(now())
+  hint       DailyHint @relation(fields: [hintId], references: [id], onDelete: Cascade)
+
+  @@index([hintId, dateKey])
 }
 
 /// Idempotent per-player acknowledgement for the daily hint dialog.
 model DailyHintView {
   id       String    @id @default(uuid()) @db.Uuid
+  dateKey  String    @db.VarChar(10)
   hintId   String    @db.Uuid
   userId   String    @db.Uuid
   viewedAt DateTime  @default(now())
   hint     DailyHint @relation(fields: [hintId], references: [id], onDelete: Cascade)
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([hintId, userId])
+  @@unique([dateKey, userId])
   @@index([userId, viewedAt])
 }
 
