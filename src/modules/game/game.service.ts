@@ -28,7 +28,22 @@ export class GameService {
     return this.serialize({ id: item.id, key: item.key, name: item.name, active: item.active, modePolicy: item.modePolicy, config: config ? { version: config.version, maxAnswerTimeSeconds: config.maxAnswerTimeSeconds, maxMatchDurationSeconds: config.maxMatchDurationSeconds, maxQuestions: config.maxQuestions, minimumPlayerLevel: config.minimumPlayerLevel, rankingEnabled: config.rankingEnabled } : null })
   }
 
-  updateConfig(gameKey: string, dto: UpdateGameConfigDto) { return this.updateConfigTransaction.run({ gameKey, dto }).then((item) => this.serialize(item)) }
+  async updateConfig(gameKey: string, dto: UpdateGameConfigDto) {
+    const config = await this.updateConfigTransaction.run({ gameKey, dto })
+    // Keep the admin write response identical to GET /game-config. The admin
+    // form replaces the edited row with this response; returning the raw
+    // GameConfig record (with gameDefinition nested) left the row without a
+    // key/config shape and made the UI appear to revert after saving.
+    const { gameDefinition, ...configFields } = config
+    return this.serialize({
+      id: gameDefinition.id,
+      key: gameDefinition.key,
+      name: gameDefinition.name,
+      active: gameDefinition.active,
+      modePolicy: gameDefinition.modePolicy,
+      config: configFields,
+    })
+  }
   createContent(dto: CreateGameContentDto) { return this.createContentTransaction.run(dto).then((item) => this.serialize(item)) }
 
   async importContent(dto: ImportGameContentDto) {

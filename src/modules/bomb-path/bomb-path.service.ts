@@ -389,9 +389,23 @@ export class BombPathService {
     const finished = this.timeoutState(state)
     if (forfeitingParticipantId) { finished.players[forfeitingParticipantId].roundStatus = "ABANDONED"; finished.winnerParticipantId = Object.keys(finished.players).find((id) => id !== forfeitingParticipantId) ?? null }
     const endedAt = new Date()
-    await tx.match.update({ where: { id: match.id }, data: { status: "FINISHED", endedAt, metadata: this.metadata(match.metadata, finished) } })
+    await tx.match.update({ where: { id: match.id }, data: { status: "FINISHED", endedAt } })
     await tx.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt } })
-    for (const item of match.participants) { const score = finished.players[item.id]?.score ?? 0; const result: MatchParticipantResult = forfeitingParticipantId === item.id ? "FORFEIT" : forfeitingParticipantId ? "WIN" : finished.winnerParticipantId === null ? "DRAW" : finished.winnerParticipantId === item.id ? "WIN" : "LOSS"; await tx.matchParticipant.update({ where: { id: item.id }, data: { finalScore: score, result, submittedAt: endedAt, lastActivityAt: endedAt, disconnectGraceUntil: null, terminationReason: forfeitingParticipantId === item.id ? "VOLUNTARY_FORFEIT" : null } }); await this.persistEvent(tx, match, item.id, 0, "bomb-path:terminal:" + item.id, "BOMB_PATH_TERMINAL", true, { accepted: true, outcome: "MATCH_FINISHED", totalScore: score }) }
+    for (const item of match.participants) {
+      const player = finished.players[item.id]
+      const score = player?.score ?? 0
+      const result: MatchParticipantResult = forfeitingParticipantId === item.id ? "FORFEIT" : forfeitingParticipantId ? "WIN" : finished.winnerParticipantId === null ? "DRAW" : finished.winnerParticipantId === item.id ? "WIN" : "LOSS"
+      await tx.matchParticipant.update({ where: { id: item.id }, data: { finalScore: score, result, submittedAt: endedAt, lastActivityAt: endedAt, disconnectGraceUntil: null, terminationReason: forfeitingParticipantId === item.id ? "VOLUNTARY_FORFEIT" : null } })
+      // Sequence 0 is already used by the human READY event. Writing the
+      // terminal marker at sequence 0 caused a unique-key failure exactly
+      // when a Bomb Path match finished, leaving clients stuck on the final
+      // round because every following snapshot failed.
+      const terminalSequence = Math.max(1, (player?.sequence ?? 0) + 1)
+      if (player) player.sequence = terminalSequence
+      await this.persistEvent(tx, match, item.id, terminalSequence, "bomb-path:terminal:" + item.id, "BOMB_PATH_TERMINAL", true, { accepted: true, outcome: "MATCH_FINISHED", totalScore: score })
+    }
+    finished.stateHash = bombPathStateHash(finished)
+    await tx.match.update({ where: { id: match.id }, data: { metadata: this.metadata(match.metadata, finished) } })
     await tx.analyticsEvent.create({ data: { eventName: "BOMB_PATH_MATCH_FINISHED", occurredAt: endedAt, matchId: match.id, properties: { winnerParticipantId: finished.winnerParticipantId, scores: Object.values(finished.players).map((player) => ({ participantId: player.participantId, score: player.score })), rulesVersion: policy.rulesVersion, policyVersion: policy.policyVersion, replayLength: finished.replay.length } as Prisma.InputJsonValue } })
   }
 

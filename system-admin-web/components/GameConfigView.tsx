@@ -157,7 +157,7 @@ export function GameConfigView() {
       {current && config && (
         <>
           <Card>
-            <form onSubmit={save}>
+            <form key={`${current.key}:${config.version}`} onSubmit={save}>
               <Stack spacing={3} sx={{ p: { xs: 2.5, md: 4 } }}>
                 <Stack
                   direction="row"

@@ -60,7 +60,29 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         AND (
           (
             ticket."allowBotFallback" = true
+            AND (
+              ticket."mode"::text <> ${MatchmakingTicketMode.CASUAL}
+              OR ticket."constraints"->>'randomGame' = 'true'
+              OR EXISTS (
+                SELECT 1
+                FROM "GameConfig" AS current_bot_config
+                WHERE current_bot_config."gameDefinitionId" = ticket."gameDefinitionId"
+                  AND current_bot_config."active" = true
+                  AND current_bot_config."casualBotFallbackEnabled" = true
+              )
+            )
             AND ticket."createdAt" <= NOW() - make_interval(secs => ticket."botFallbackDelaySeconds")
+          )
+          OR (
+            ticket."mode"::text = ${MatchmakingTicketMode.CASUAL}
+            AND EXISTS (
+              SELECT 1
+              FROM "GameConfig" AS bot_config
+              WHERE bot_config."gameDefinitionId" = ticket."gameDefinitionId"
+                AND bot_config."active" = true
+                AND bot_config."casualBotFallbackEnabled" = true
+                AND ticket."createdAt" <= NOW() - make_interval(secs => bot_config."casualBotFallbackDelaySeconds")
+            )
           )
           OR EXISTS (
             SELECT 1
@@ -130,6 +152,21 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
 
     const firstGame = await transaction.gameDefinition.findUnique({ where: { id: first.gameDefinitionId }, select: { key: true } })
     const dominoQueue = firstGame?.key === "domino" && !isRandomCasualTicket(first)
+    // The ticket stores a snapshot for auditability, but an administrator may
+    // enable or disable casual bot fallback while a ticket is still queued.
+    // Read the active policy again at claim time so an old ticket cannot stay
+    // stuck forever after the setting is enabled, and disabling the setting
+    // takes effect without requiring a database cleanup.
+    const activeBotConfig = first.mode === MatchmakingTicketMode.CASUAL && !isRandomCasualTicket(first)
+      ? await transaction.gameConfig.findFirst({
+          where: { gameDefinitionId: first.gameDefinitionId, active: true },
+          select: { casualBotFallbackEnabled: true, casualBotFallbackDelaySeconds: true },
+        })
+      : null
+    const effectiveBotFallbackEnabled = isRandomCasualTicket(first)
+      ? first.allowBotFallback
+      : activeBotConfig?.casualBotFallbackEnabled === true
+    const effectiveBotFallbackDelaySeconds = activeBotConfig?.casualBotFallbackDelaySeconds ?? first.botFallbackDelaySeconds
     let additional: TicketRow[] = []
     if (dominoQueue && second) {
       additional = await transaction.$queryRaw<TicketRow[]>`
@@ -142,7 +179,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       `
     }
     const realTickets = [first, ...(second ? [second] : []), ...additional]
-    if (!second && !(first.allowBotFallback && elapsedSeconds >= first.botFallbackDelaySeconds))
+    if (!second && !(effectiveBotFallbackEnabled && elapsedSeconds >= effectiveBotFallbackDelaySeconds))
       return null;
     const integrityProfiles = await transaction.fraudProfile.findMany({
       where: { userId: { in: realTickets.map((ticket) => ticket.userId) } },
