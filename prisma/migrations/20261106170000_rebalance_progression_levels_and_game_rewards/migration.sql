@@ -4,7 +4,16 @@
 -- The supplied level table is the single authoritative XP curve for every
 -- LEVEL progression, including the main profile progression and each game's
 -- isolated XP progression.
-CREATE TEMP TABLE "_LevelTierMap" ON COMMIT DROP AS
+--
+-- These are intentionally regular helper tables rather than ON COMMIT DROP
+-- temporary tables. Railway's Prisma migration runner can commit between SQL
+-- statements; an ON COMMIT DROP table would disappear before the next UPDATE.
+-- The tables are removed at the end and also cleared at the start so a retry
+-- after a failed deployment is safe.
+DROP TABLE IF EXISTS "_SmartsLevelTierMap";
+DROP TABLE IF EXISTS "_SmartsLevelThresholds";
+
+CREATE TABLE "_SmartsLevelTierMap" AS
 SELECT
   tier."id",
   tier."progressionId",
@@ -24,15 +33,15 @@ SET
   "step" = 10000 + mapping."ordinal",
   "pointsThreshold" = -1000000000000::BIGINT - mapping."ordinal",
   "updatedAt" = CURRENT_TIMESTAMP
-FROM "_LevelTierMap" mapping
+FROM "_SmartsLevelTierMap" mapping
 WHERE mapping."id" = tier."id";
 
-CREATE TEMP TABLE "_LevelThresholds" (
+CREATE TABLE "_SmartsLevelThresholds" (
   "step" INTEGER PRIMARY KEY,
   "pointsThreshold" BIGINT NOT NULL
-) ON COMMIT DROP;
+);
 
-INSERT INTO "_LevelThresholds" ("step", "pointsThreshold")
+INSERT INTO "_SmartsLevelThresholds" ("step", "pointsThreshold")
 VALUES
   (1, 0),
   (2, 400),
@@ -140,8 +149,8 @@ SET
   "step" = thresholds."step",
   "pointsThreshold" = thresholds."pointsThreshold",
   "updatedAt" = CURRENT_TIMESTAMP
-FROM "_LevelTierMap" mapping
-JOIN "_LevelThresholds" thresholds
+FROM "_SmartsLevelTierMap" mapping
+JOIN "_SmartsLevelThresholds" thresholds
   ON thresholds."step" = mapping."ordinal"
 WHERE mapping."id" = tier."id"
   AND mapping."ordinal" <= 100;
@@ -160,11 +169,11 @@ SELECT
   CASE WHEN thresholds."step" = 1 THEN 'Beginner' ELSE 'Level ' || thresholds."step" END,
   CURRENT_TIMESTAMP
 FROM "ProgressionDefinition" definition
-CROSS JOIN "_LevelThresholds" thresholds
+CROSS JOIN "_SmartsLevelThresholds" thresholds
 WHERE definition."kind" = 'LEVEL'
   AND NOT EXISTS (
     SELECT 1
-    FROM "_LevelTierMap" mapping
+    FROM "_SmartsLevelTierMap" mapping
     WHERE mapping."progressionId" = definition."id"
       AND mapping."ordinal" = thresholds."step"
   );
@@ -251,3 +260,6 @@ WHERE config."gameDefinitionId" = definition."id"
     'similarities', 'follow_the_lead', 'memorize_cards', 'bird_watching',
     'gem_blitz', 'tile_rush', 'word_dash', 'domino', 'perfect_timing', 'bomb_path'
   );
+
+DROP TABLE IF EXISTS "_SmartsLevelTierMap";
+DROP TABLE IF EXISTS "_SmartsLevelThresholds";
