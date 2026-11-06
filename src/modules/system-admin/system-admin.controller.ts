@@ -118,6 +118,7 @@ import { DailyChallengeService } from "../daily-challenges/daily-challenge.servi
 import { GenerateDailyChallengeDto, UpdateDailyChallengeConfigurationDto } from "../daily-challenges/dtos";
 import { CryptoAdminDecisionDto, CryptoPayoutVerificationDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
 import { SystemResourcesService } from "./system-resources.service";
+import { AdminNotificationsService } from "./admin-notifications.service";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -135,6 +136,7 @@ export class SystemAdminController {
     private readonly analyticsReportingService: AnalyticsReportingService,
     private readonly dailyChallengeService: DailyChallengeService,
     private readonly systemResourcesService: SystemResourcesService,
+    private readonly adminNotificationsService: AdminNotificationsService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -1322,6 +1324,38 @@ export class SystemAdminController {
   @ApiOperation({ summary: "List global notification broadcasts" })
   notificationBroadcasts() {
     return this.notificationsService.listBroadcasts();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/notifications/admin")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Read operational alerts for system administrators" })
+  adminNotifications(@Query("limit") limit?: string) {
+    return this.adminNotificationsService.feed(Number(limit) || 100);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/notifications/admin/read-all")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Mark all open system administrator alerts as read" })
+  markAllAdminNotificationsRead() {
+    return this.adminNotificationsService.markAllRead();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/notifications/admin/:notificationId/read")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Mark one system administrator alert as read" })
+  markAdminNotificationRead(@Param("notificationId", ParseUUIDPipe) notificationId: string) {
+    return this.adminNotificationsService.markRead(notificationId);
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/notifications/admin/:notificationId/resolve")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Resolve one system administrator alert" })
+  resolveAdminNotification(@Param("notificationId", ParseUUIDPipe) notificationId: string) {
+    return this.adminNotificationsService.resolve(notificationId);
   }
 
   @UseGuards(SystemAdminGuard)

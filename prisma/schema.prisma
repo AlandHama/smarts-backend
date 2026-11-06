@@ -260,6 +260,12 @@ enum NotificationPushStatus {
   SKIPPED
 }
 
+enum AdminNotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
 enum WalletTransactionDirection {
   CREDIT
   DEBIT
@@ -4088,6 +4094,27 @@ model NotificationBroadcast {
   notifications   Notification[]
 
   @@index([createdAt])
+}
+
+/// Durable operational alerts for system administrators. These are separate
+/// from player inbox notifications and are intentionally shared across the
+/// admin team.
+model AdminNotification {
+  id          String                    @id @default(uuid()) @db.Uuid
+  dedupeKey   String                    @unique @db.VarChar(255)
+  category    String                    @db.VarChar(60)
+  severity    AdminNotificationSeverity @default(INFO)
+  title       String                    @db.VarChar(160)
+  body        String                    @db.Text
+  data        Json?
+  readAt      DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@index([readAt, resolvedAt, createdAt])
+  @@index([category, resolvedAt, createdAt])
+  @@index([severity, resolvedAt, createdAt])
 }
 
 /// Independent, free player support configuration. Live chat pricing is stored
