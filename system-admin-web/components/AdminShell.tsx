@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
 import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
@@ -48,6 +48,9 @@ import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
+import Badge from "@mui/material/Badge";
+
+import { api } from "../lib/api";
 
 export type AdminView =
   | "overview"
@@ -258,6 +261,19 @@ export function AdminShell({
   children: ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadUnread = () => {
+      void api<{ unreadCount: number }>("/notifications/admin?limit=1")
+        .then((result) => { if (mounted) setUnreadNotifications(result.unreadCount || 0); })
+        .catch(() => undefined);
+    };
+    loadUnread();
+    const refresh = window.setInterval(loadUnread, 60_000);
+    return () => { mounted = false; window.clearInterval(refresh); };
+  }, []);
   const drawer = (
     <Box
       sx={{
@@ -428,6 +444,11 @@ export function AdminShell({
             </Typography>
           </Box>
           <Stack direction="row" spacing={1.5} alignItems="center">
+            <IconButton aria-label="Open notifications" onClick={() => onViewChange("notifications")} color={unreadNotifications ? "warning" : "inherit"}>
+              <Badge badgeContent={unreadNotifications > 99 ? "99+" : unreadNotifications} color="error">
+                <NotificationsRoundedIcon />
+              </Badge>
+            </IconButton>
             <Box
               sx={{ textAlign: "right", display: { xs: "none", sm: "block" } }}
             >
