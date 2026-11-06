@@ -283,6 +283,44 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
       amount = BigInt(amountDecimal.floor().toFixed(0));
     }
     const hasReward = currencyCode === "GLD" ? amountDecimal.gt(0) : amount > 0n;
+    if (currencyCode === "GLD" && !hasReward) {
+      const reason = emission?.reason === "emissions-paused"
+        ? "GLD ad rewards are temporarily paused"
+        : emission?.reason === "daily-ad-limit-reached"
+          ? "Daily ad reward limit reached"
+          : "No GLD reward is available for this ad";
+      const rejected = await transaction.adRewardClaim.update({
+        where: { id: claim.id },
+        data: {
+          providerEventId,
+          countryCode: country ?? null,
+          status: "REJECTED",
+          rejectionReason: reason,
+          verificationPayload: {
+            providerVerified: input.trustedVerification?.source === "ADMOB_SSV",
+            clientEventAccepted: input.trustedVerification?.source === "CLIENT_EVENT",
+            verificationSource: input.trustedVerification?.source ?? "HMAC",
+            ...(emission ? { rewarded: false, reason: emission.reason } : {}),
+          },
+          verifiedAt: now,
+        },
+      });
+      return {
+        claimId: rejected.id,
+        status: rejected.status,
+        amount: "0",
+        currencyCode,
+        grantedAt: null,
+        rewarded: false,
+        ...(emission
+          ? {
+              remainingDailyAds: emission.remainingDailyAds,
+              remainingDailyGldCap: emission.remainingDailyGldCap.toString(),
+              reason: emission.reason,
+            }
+          : { reason }),
+      };
+    }
     const ledger =
       hasReward
         ? await this.creditWallet.runWithinTransaction(

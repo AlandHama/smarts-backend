@@ -119,6 +119,8 @@ import { GenerateDailyChallengeDto, UpdateDailyChallengeConfigurationDto } from 
 import { CryptoAdminDecisionDto, CryptoPayoutVerificationDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
 import { SystemResourcesService } from "./system-resources.service";
 import { AdminNotificationsService } from "./admin-notifications.service";
+import { DailyHintsService } from "../daily-hints/daily-hints.service";
+import { CreateDailyHintDto, UpdateDailyHintDto } from "../daily-hints/dtos";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -137,6 +139,7 @@ export class SystemAdminController {
     private readonly dailyChallengeService: DailyChallengeService,
     private readonly systemResourcesService: SystemResourcesService,
     private readonly adminNotificationsService: AdminNotificationsService,
+    private readonly dailyHintsService: DailyHintsService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -376,6 +379,26 @@ export class SystemAdminController {
   @Post("api/daily-challenge/challenges/:dateKey/publish")
   @ApiBearerAuth("access-token")
   publishDailyChallenge(@Param("dateKey") dateKey: string) { return this.dailyChallengeService.adminPublish(dateKey); }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/daily-hints")
+  @ApiBearerAuth("access-token")
+  dailyHints(@Query("limit") limit?: string) { return this.dailyHintsService.adminList(Number(limit) || 60); }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/daily-hints")
+  @ApiBearerAuth("access-token")
+  createDailyHint(@Body() dto: CreateDailyHintDto) { return this.dailyHintsService.adminCreate(dto); }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/daily-hints/:id")
+  @ApiBearerAuth("access-token")
+  updateDailyHint(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateDailyHintDto) { return this.dailyHintsService.adminUpdate(id, dto); }
+
+  @UseGuards(SystemAdminGuard)
+  @Delete("api/daily-hints/:id")
+  @ApiBearerAuth("access-token")
+  archiveDailyHint(@Param("id", ParseUUIDPipe) id: string) { return this.dailyHintsService.adminArchive(id); }
 
   @UseGuards(SystemAdminGuard)
   @Get("api/analytics/export.csv")

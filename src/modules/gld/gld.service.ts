@@ -316,8 +316,8 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     return this.serialize(
       rows.map((row) => ({
         ...row,
-        rewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount.toString(),
-        effectiveRewardAmount: row.rewardAmountDecimal?.toString() ?? row.rewardAmount.toString(),
+        rewardAmount: row.rewardAmountDecimal && row.rewardAmountDecimal.gt(0) ? row.rewardAmountDecimal.toString() : row.rewardAmount.toString(),
+        effectiveRewardAmount: row.rewardAmountDecimal && row.rewardAmountDecimal.gt(0) ? row.rewardAmountDecimal.toString() : row.rewardAmount.toString(),
       })),
     );
   }
@@ -328,6 +328,9 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     const regionCode = dto.regionCode.trim().toUpperCase();
     const configuredAmount = dto.rewardAmount.trim();
     const rewardAmountDecimal = new Prisma.Decimal(configuredAmount);
+    if (rewardAmountDecimal.lte(0)) {
+      throw new BadRequestException("Ad reward amount must be greater than zero");
+    }
     const rewardAmount = BigInt(rewardAmountDecimal.floor().toFixed(0));
     const row = await this.prisma.$transaction(async (tx) => {
       const policy = await tx.gldAdRewardPolicy.upsert({
@@ -429,7 +432,15 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
           select: { adRewardBonusPercent: true },
         })
       : null;
-    const rewardAmountDecimal = policy.rewardAmountDecimal ?? new Prisma.Decimal(policy.rewardAmount.toString());
+    // Keep older rows usable if the fractional column was never backfilled or
+    // was accidentally written as zero. A zero policy must not silently turn
+    // a verified ad into a successful 0 GLD claim.
+    const rewardAmountDecimal = policy.rewardAmountDecimal && policy.rewardAmountDecimal.gt(0)
+      ? policy.rewardAmountDecimal
+      : new Prisma.Decimal(policy.rewardAmount.toString());
+    if (rewardAmountDecimal.lte(0)) {
+      throw new NotFoundException("No positive GLD reward is configured for this ad event");
+    }
     const progressionBonusPercent = new Prisma.Decimal(String(reachedTier?.adRewardBonusPercent ?? 0));
     const dailyStreakBonusPercent = await this.streaks.getBonusPercent(userId);
     const winStreakBonusPercent = await this.winStreaks.getBonusPercent(userId);
@@ -515,6 +526,12 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
   }
 
   async updateControls(dto: UpdateGldControlsDto, actorId: string) {
+    if (dto.adDailyGldCap !== undefined && BigInt(dto.adDailyGldCap) <= 0n) {
+      throw new BadRequestException("Daily ad GLD cap must be greater than zero; pause emissions to disable ad rewards");
+    }
+    if (dto.adMaxRewardPerClaim !== undefined && BigInt(dto.adMaxRewardPerClaim) <= 0n) {
+      throw new BadRequestException("Maximum ad reward per claim must be greater than zero; pause emissions to disable ad rewards");
+    }
     return this.prisma.$transaction(async (tx) => {
       const before = await tx.gldAdminControl.upsert({
         where: { singletonKey: "default" },

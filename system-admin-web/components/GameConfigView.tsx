@@ -89,6 +89,12 @@ export function GameConfigView() {
         rankingEloMultiplier: valueOf(form, "rankingEloMultiplier"),
         rankingLevelMultiplier: valueOf(form, "rankingLevelMultiplier"),
         rankingCoinMultiplier: valueOf(form, "rankingCoinMultiplier"),
+        casualBotFallbackEnabled:
+          (form.elements.namedItem("casualBotFallbackEnabled") as HTMLInputElement)
+            .value === "true",
+        casualBotFallbackDelaySeconds: Number(
+          valueOf(form, "casualBotFallbackDelaySeconds"),
+        ),
         settings: JSON.parse(valueOf(form, "settings")),
       };
       numberFields.forEach((field) => {
@@ -269,6 +275,39 @@ export function GameConfigView() {
                   helperText='Example: {"1":100,"2":120,"3":150}'
                 />
                 <Typography variant="subtitle2" fontWeight={800}>
+                  Casual bot matchmaking
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: -2 }}>
+                  When enabled, a casual queue ticket can become a bot match
+                  after the configured wait. Ranked matchmaking never uses this
+                  setting.
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 4 }}>
+                    <Select
+                      fullWidth
+                      size="small"
+                      name="casualBotFallbackEnabled"
+                      defaultValue={String(config.casualBotFallbackEnabled ?? false)}
+                    >
+                      <MenuItem value="true">Enabled</MenuItem>
+                      <MenuItem value="false">Disabled</MenuItem>
+                    </Select>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 4 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="number"
+                      name="casualBotFallbackDelaySeconds"
+                      label="Bot fallback wait (seconds)"
+                      defaultValue={config.casualBotFallbackDelaySeconds ?? 20}
+                      inputProps={{ min: 0, max: 300 }}
+                      helperText="0–300 seconds after no human match is found."
+                    />
+                  </Grid>
+                </Grid>
+                <Typography variant="subtitle2" fontWeight={800}>
                   Currency rewards
                 </Typography>
                 <Grid container spacing={2}>
@@ -279,10 +318,19 @@ export function GameConfigView() {
                         size="small"
                         name={field}
                         label={field
+                          .replace(
+                            "instantSkipPriceGld",
+                            "skipGemFeatureFlag",
+                          )
                           .replace(/[A-Z]/g, (letter) => ` ${letter}`)
                           .replace(/^./, (letter) => letter.toUpperCase())}
                         defaultValue={
                           config[field as keyof typeof config] as string
+                        }
+                        helperText={
+                          field === "instantSkipPriceGld"
+                            ? "Legacy enable flag: any value above 0 enables one-gem question skips; no GLD is charged in-game."
+                            : undefined
                         }
                       />
                     </Grid>

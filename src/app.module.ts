@@ -41,9 +41,10 @@ import { DominoModule } from "./modules/domino/domino.module"
 import { ContentSafetyModule } from "./modules/content-safety/content-safety.module"
 import { PerfectTimingModule } from "./modules/perfect-timing/perfect-timing.module"
 import { BombPathModule } from "./modules/bomb-path/bomb-path.module"
+import { DailyHintsModule } from "./modules/daily-hints/daily-hints.module"
 
 @Module({
-  imports: [ContentSafetyModule, DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, AllyModule, CooperativeModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule, PerfectTimingModule, BombPathModule],
+  imports: [ContentSafetyModule, DatabaseModule, AuthModule, EconomyModule, LeaderboardModule, GameModule, MatchesModule, MatchmakingModule, PlayersModule, ProgressionModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, NotificationsModule, SystemAdminModule, RealtimeModule, AdMobModule, GldModule, GiftsModule, ReferralsModule, RankingModule, MissionsModule, FraudModule, StreaksModule, WinStreaksModule, ChatsModule, SupportModule, AllyModule, CooperativeModule, DailyChallengesModule, DailyHintsModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule, PerfectTimingModule, BombPathModule],
   controllers: [HealthController, NotesController],
 })
 export class AppModule {}

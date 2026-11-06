@@ -137,6 +137,13 @@ export class LeaderboardQueryDto {
   @IsInt()
   @Min(0)
   offset?: number
+
+  @ApiPropertyOptional({ example: "US", description: "Filter a player leaderboard to one country" })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z]{2}$/)
+  @Transform(({ value }) => (value === undefined || value === null || value === "" ? value : String(value).trim().toUpperCase()))
+  countryCode?: string
 }
 
 export class LeaderboardMembersDto {

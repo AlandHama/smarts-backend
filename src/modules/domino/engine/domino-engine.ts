@@ -16,7 +16,9 @@ export type DominoState = {
   participantIds: string[]; hands: Record<string, DominoTile[]>; boneyard: DominoTile[]; chain: DominoPlacedTile[]
   leftOpenValue: number | null; rightOpenValue: number | null; scores: Record<string, number>; roundScores: Record<string, number>
   nextSequence: Record<string, number>; consecutivePasses: number; chainHash: string; startedAt: string; endsAt: string
-  matchEndsAt: string; roundWinnerParticipantId?: string | null; lastRoundResult?: DominoRoundResult; botNextActionAt?: Record<string, number>
+  matchEndsAt: string; roundWinnerParticipantId?: string | null; lastRoundResult?: DominoRoundResult
+  /** Set while the clients display the completed round before dealing again. */
+  nextRoundAt?: string | null; botNextActionAt?: Record<string, number>
 }
 
 const tile = (a: number, b: number): DominoTile => ({ tileKey: `${a}-${b}`, a, b })
@@ -76,7 +78,12 @@ export function createNextRoundState(previous: DominoState, seed: string, policy
   const next = createInitialState(previous.participantIds, seed, policy, now)
   next.roundNumber = previous.roundNumber + 1
   next.scores = { ...previous.scores }
-  next.lastRoundResult = previous.lastRoundResult
+  // The previous round is intentionally exposed only during the transition
+  // window. Keeping it on the new active round makes clients replay the same
+  // winner animation every time they reconnect or poll.
+  next.lastRoundResult = undefined
+  next.roundWinnerParticipantId = undefined
+  next.nextRoundAt = undefined
   next.chainHash = computeChainHash(next)
   return next
 }

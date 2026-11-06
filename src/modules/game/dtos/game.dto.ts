@@ -158,6 +158,18 @@ export class UpdateGameConfigDto {
   @Matches(DECIMAL)
   rankingCoinMultiplier?: string
 
+  @ApiPropertyOptional({ example: true, description: "Allow casual matchmaking to fall back to a bot when no human player is found" })
+  @IsOptional()
+  @IsBoolean()
+  casualBotFallbackEnabled?: boolean
+
+  @ApiPropertyOptional({ example: 20, description: "Seconds a casual player waits before bot fallback is eligible" })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(300)
+  casualBotFallbackDelaySeconds?: number
+
   @ApiPropertyOptional({ type: Object })
   @IsOptional()
   @IsObject()

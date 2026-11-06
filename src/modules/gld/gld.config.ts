@@ -18,6 +18,7 @@ const DEFAULTS = {
   adDailyGldCap: 25n,
   adMaxValidatedAds: 20,
   adMaxRewardPerClaim: 10n,
+  guestAdRewardMultiplierBps: 2_500,
   adHealthMultiplierBps: { VERY_HEALTHY: 10_000, HEALTHY: 10_000, CAUTION: 8_000, RESTRICTED: 5_000, CRITICAL: 2_000 },
   adCurve: [
     { from: 1, to: 5, multiplierBps: 10_000 },
@@ -101,6 +102,7 @@ export function getGldConfig() {
     adDailyGldCap: bigintEnv("GLD_AD_DAILY_CAP", DEFAULTS.adDailyGldCap),
     adMaxValidatedAds: Math.max(1, Number(process.env.GLD_AD_MAX_VALIDATED_ADS) || DEFAULTS.adMaxValidatedAds),
     adMaxRewardPerClaim: bigintEnv("GLD_AD_MAX_REWARD_PER_CLAIM", DEFAULTS.adMaxRewardPerClaim),
+    guestAdRewardMultiplierBps: bpsEnv("GLD_GUEST_AD_REWARD_MULTIPLIER_BPS", DEFAULTS.guestAdRewardMultiplierBps),
     adHealthMultiplierBps: DEFAULTS.adHealthMultiplierBps,
     adCurve: curveEnv(),
     giftBurnBps: bpsEnv("GLD_DIGITAL_GIFT_BURN_BPS", DEFAULTS.giftBurnBps),
@@ -123,6 +125,7 @@ export function applyGldPolicyOverrides<T extends ReturnType<typeof getGldConfig
     admobPlayerRewardAllocationBps?: number | null
     admobReserveAllocationBps?: number | null
     admobCompanyProfitAllocationBps?: number | null
+    guestAdRewardMultiplierBps?: number | null
     giftBurnBps?: number | null
     paidRewardSafetyMarginBps?: number | null
     paidRewardDailyRequestLimit?: number | null
@@ -131,14 +134,16 @@ export function applyGldPolicyOverrides<T extends ReturnType<typeof getGldConfig
   if (!overrides) return config
   const next = {
     ...config,
-    adDailyGldCap: overrides.adDailyGldCap ?? config.adDailyGldCap,
-    adMaxValidatedAds: overrides.adMaxValidatedAds ?? config.adMaxValidatedAds,
-    adMaxRewardPerClaim: overrides.adMaxRewardPerClaim ?? config.adMaxRewardPerClaim,
+    adDailyGldCap: overrides.adDailyGldCap && overrides.adDailyGldCap > 0n ? overrides.adDailyGldCap : config.adDailyGldCap,
+    adMaxValidatedAds: overrides.adMaxValidatedAds && overrides.adMaxValidatedAds > 0 ? overrides.adMaxValidatedAds : config.adMaxValidatedAds,
+    adMaxRewardPerClaim: overrides.adMaxRewardPerClaim && overrides.adMaxRewardPerClaim > 0n ? overrides.adMaxRewardPerClaim : config.adMaxRewardPerClaim,
     playerRewardAllocationBps:
       overrides.admobPlayerRewardAllocationBps ?? config.playerRewardAllocationBps,
     reserveAllocationBps: overrides.admobReserveAllocationBps ?? config.reserveAllocationBps,
     companyAllocationBps:
       overrides.admobCompanyProfitAllocationBps ?? config.companyAllocationBps,
+    guestAdRewardMultiplierBps:
+      overrides.guestAdRewardMultiplierBps ?? config.guestAdRewardMultiplierBps,
     giftBurnBps: overrides.giftBurnBps ?? config.giftBurnBps,
     paidRewardSafetyMarginBps: overrides.paidRewardSafetyMarginBps ?? config.paidRewardSafetyMarginBps,
     paidRewardDailyRequestLimit: overrides.paidRewardDailyRequestLimit ?? config.paidRewardDailyRequestLimit,

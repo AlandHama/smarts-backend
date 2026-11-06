@@ -14,6 +14,7 @@ import {
 import { PrismaService } from "../../prisma.service";
 import { FirebaseMessagingService } from "./firebase-messaging.service";
 import { RegisterDeviceTokenDto, SendGlobalNotificationDto } from "./dtos";
+import { DailyHintsService } from "../daily-hints/daily-hints.service";
 
 @Injectable()
 export class NotificationsService implements OnModuleInit, OnModuleDestroy {
@@ -25,6 +26,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly firebaseMessaging: FirebaseMessagingService,
+    private readonly dailyHints: DailyHintsService,
   ) {}
 
   onModuleInit() {
@@ -201,6 +203,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
   private async processEngagementNotifications() {
     try {
+      await this.processDailyHintNotifications();
       const daily = await this.prisma.dailyChallengeConfiguration.findUnique({ where: { key: "default" } });
       if (daily?.enabled) {
         const local = this.localClock(daily.timezone);
@@ -255,6 +258,43 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       }
     } catch (error) {
       this.logger.warn(`Engagement notification scan failed: ${String(error)}`);
+    }
+  }
+
+  private async processDailyHintNotifications() {
+    const hint = await this.dailyHints.forNotification();
+    if (!hint) return;
+    let cursor: { id: string } | undefined;
+    while (true) {
+      const users = await this.prisma.user.findMany({
+        where: { status: "ACTIVE" },
+        orderBy: { id: "asc" },
+        ...(cursor ? { skip: 1, cursor } : {}),
+        select: {
+          id: true,
+          sessions: {
+            where: { sessionStatus: "ACTIVE" },
+            orderBy: { lastActiveTimestamp: "desc" },
+            take: 1,
+            select: { deviceLocale: true },
+          },
+        },
+        take: 500,
+      });
+      if (!users.length) break;
+      for (const user of users) {
+        const copy = this.dailyHints.selectTranslation(hint.translations, user.sessions[0]?.deviceLocale ?? "en");
+        await this.createPlayerNotification({
+          recipientId: user.id,
+          notificationType: "engagement.daily-hint",
+          title: copy.title,
+          body: copy.body,
+          data: { route: "/daily-hint", dateKey: hint.dateKey, hintId: hint.id },
+          dedupeKey: `daily-hint:${hint.dateKey}:${user.id}`,
+        });
+      }
+      if (users.length < 500) break;
+      cursor = { id: users[users.length - 1].id };
     }
   }
 

@@ -24,7 +24,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     if (randomCasual && mode !== MatchmakingTicketMode.CASUAL) throw new BadRequestException("Random game selection is only available for casual matchmaking")
     const key = dto.idempotencyKey?.trim()
     const scope = `matchmaking:enqueue:${input.userId}`
-    const requestHash = createHash("sha256").update(JSON.stringify({ gameKey: dto.gameKey.trim().toLowerCase(), mode, allowBotFallback: Boolean(dto.allowBotFallback), rankingConfigId: dto.rankingConfigId ?? null, clientVersion: dto.clientVersion?.trim() || null, constraints: dto.constraints ?? null })).digest("hex")
+    const requestHash = createHash("sha256").update(JSON.stringify({ gameKey: dto.gameKey.trim().toLowerCase(), mode, rankingConfigId: dto.rankingConfigId ?? null, clientVersion: dto.clientVersion?.trim() || null, constraints: dto.constraints ?? null })).digest("hex")
     if (key) {
       const existing = await transaction.idempotencyKey.findUnique({ where: { scope_key: { scope, key } } })
       if (existing) {
@@ -147,7 +147,9 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
 
     const idempotency = key ? await transaction.idempotencyKey.create({ data: { userId: input.userId, scope, key, requestHash, status: "PROCESSING" } }) : null
     const expiresAt = new Date(now.getTime() + queueTtlSeconds() * 1000)
-    const configuredBotFallback = mode === MatchmakingTicketMode.CASUAL && (Boolean(dto.allowBotFallback) || game.key === "domino" || (game.key === "perfect_timing" && configuredPolicy?.casualBotEnabled === true) || (game.key === "bomb_path" && configuredPolicy?.casualBotEnabled === true))
+    // Bot fallback is a server-owned per-game policy. Never allow the mobile
+    // client to turn it on for a game that an administrator has disabled.
+    const configuredBotFallback = mode === MatchmakingTicketMode.CASUAL && (randomCasual || config.casualBotFallbackEnabled === true)
     const ticket = await transaction.matchmakingTicket.create({ data: {
       userId: input.userId,
       gameDefinitionId: game.id,
@@ -159,6 +161,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
       constraints: queueConstraints as Prisma.InputJsonValue | undefined,
       clientVersion: dto.clientVersion?.trim() || null,
       allowBotFallback: configuredBotFallback && !rewardsHeld && !rewardsRestricted,
+      botFallbackDelaySeconds: Math.max(0, Math.min(300, config.casualBotFallbackDelaySeconds)),
       rankingConfigId: rankingConfig?.id,
       rankingStakeAmount: rankingConfig?.stakeAmountGld,
       rankingEntryFee: rankingConfig?.entryFeeGld,

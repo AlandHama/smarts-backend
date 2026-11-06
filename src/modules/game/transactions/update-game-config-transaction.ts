@@ -48,6 +48,8 @@ export class UpdateGameConfigTransaction extends PrismaTransaction<{ gameKey: st
       rankingEloMultiplier: dto.rankingEloMultiplier ?? current.rankingEloMultiplier,
       rankingLevelMultiplier: dto.rankingLevelMultiplier ?? current.rankingLevelMultiplier,
       rankingCoinMultiplier: dto.rankingCoinMultiplier ?? current.rankingCoinMultiplier,
+      casualBotFallbackEnabled: dto.casualBotFallbackEnabled ?? current.casualBotFallbackEnabled,
+      casualBotFallbackDelaySeconds: dto.casualBotFallbackDelaySeconds ?? current.casualBotFallbackDelaySeconds,
       settings: dto.settings === undefined ? current.settings as Prisma.InputJsonValue | undefined : dto.settings as Prisma.InputJsonValue,
     }, include: { gameDefinition: true } })
   }

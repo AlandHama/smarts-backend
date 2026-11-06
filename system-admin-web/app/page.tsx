@@ -51,6 +51,7 @@ import { FraudView } from "../components/FraudView";
 import { StreaksView } from "../components/StreaksView";
 import { WinStreaksView } from "../components/WinStreaksView";
 import { DailyChallengeView } from "../components/DailyChallengeView";
+import { DailyHintsView } from "../components/DailyHintsView";
 import { ChatsView } from "../components/ChatsView";
 import { SupportCenterView } from "../components/SupportCenterView";
 import { CooperativeMatchesView } from "../components/CooperativeMatchesView";
@@ -99,6 +100,7 @@ const viewPaths: Record<
   streaks: "/streaks/",
   "win-streaks": "/win-streaks/",
   "daily-challenge": "/daily-challenge/",
+  "daily-hints": "/daily-hints/",
   support: "/support/",
   cooperative: "/cooperative/",
   "gem-blitz": "/gem-blitz/",
@@ -227,6 +229,7 @@ export default function AdminPage() {
           {view === "streaks" && <StreaksView />}
           {view === "win-streaks" && <WinStreaksView />}
           {view === "daily-challenge" && <DailyChallengeView />}
+          {view === "daily-hints" && <DailyHintsView />}
           {view === "support" && <SupportCenterView />}
           {view === "cooperative" && <CooperativeMatchesView />}
           {view === "gem-blitz" && <GemBlitzView />}

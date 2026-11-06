@@ -1,4 +1,5 @@
 const COUNTRY_NAME_ALIASES: Record<string, string> = {
+  kurdistan: "KU",
   "czech republic": "CZ",
   "ivory coast": "CI",
   "republic of the congo": "CG",

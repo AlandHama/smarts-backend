@@ -736,6 +736,7 @@ model User {
   cooperativeParticipants     CooperativeParticipant[]
   cooperativeLedgerOperations CooperativeLedgerOperation[]
   dailyChallengeAttempts      DailyChallengeAttempt[]
+  dailyHintViews              DailyHintView[]
   rematchRequestsSent         RematchRequest[]             @relation("RematchRequester")
   rematchRequestsReceived     RematchRequest[]             @relation("RematchRecipient")
 }
@@ -1774,27 +1775,27 @@ model CryptoPayoutQuote {
 }
 
 model CryptoRewardConfig {
-  id                    String   @id @default(uuid()) @db.Uuid
-  singletonKey          String   @unique @default("default") @db.VarChar(32)
-  enabled               Boolean  @default(false)
-  networkCode           String   @default("SOLANA") @db.VarChar(32)
-  usdtSolGldPerUnit     Decimal  @default(0) @db.Decimal(30, 6)
-  usdcSolGldPerUnit     Decimal  @default(0) @db.Decimal(30, 6)
-  assetRates            Json     @default("{}")
-  rateVersion           String   @default("initial") @db.VarChar(80)
-  platformFeeBps        Int      @default(0)
-  quoteTtlSeconds       Int      @default(300)
-  maxQuoteDriftBps      Int      @default(500)
-  minGld                BigInt   @default(100)
-  maxGldPerRequest      BigInt   @default(100000)
-  dailyGldLimit         BigInt   @default(200000)
-  maxPendingPerUser     Int      @default(1)
-  holdExpiryHours       Int      @default(72)
-  minProviderReserveUsd Decimal? @db.Decimal(30, 6)
-  requireAdminApproval  Boolean  @default(true)
+  id                    String    @id @default(uuid()) @db.Uuid
+  singletonKey          String    @unique @default("default") @db.VarChar(32)
+  enabled               Boolean   @default(false)
+  networkCode           String    @default("SOLANA") @db.VarChar(32)
+  usdtSolGldPerUnit     Decimal   @default(0) @db.Decimal(30, 6)
+  usdcSolGldPerUnit     Decimal   @default(0) @db.Decimal(30, 6)
+  assetRates            Json      @default("{}")
+  rateVersion           String    @default("initial") @db.VarChar(80)
+  platformFeeBps        Int       @default(0)
+  quoteTtlSeconds       Int       @default(300)
+  maxQuoteDriftBps      Int       @default(500)
+  minGld                BigInt    @default(100)
+  maxGldPerRequest      BigInt    @default(100000)
+  dailyGldLimit         BigInt    @default(200000)
+  maxPendingPerUser     Int       @default(1)
+  holdExpiryHours       Int       @default(72)
+  minProviderReserveUsd Decimal?  @db.Decimal(30, 6)
+  requireAdminApproval  Boolean   @default(true)
   rewardsOpeningAt      DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 }
 
 model Purchase {
@@ -2684,41 +2685,43 @@ model GameDefinition {
 }
 
 model GameConfig {
-  id                         String         @id @default(uuid()) @db.Uuid
-  gameDefinitionId           String         @db.Uuid
-  version                    Int            @default(1)
-  active                     Boolean        @default(true)
-  mainProgressionKey         String         @db.VarChar(64)
-  eloProgressionKey          String         @db.VarChar(64)
-  rewardCurrencyCode         String         @db.VarChar(32)
-  scoreMultiplierForXp       Decimal        @db.Decimal(20, 8)
-  maxEloDelta                Int
-  soloEloScoreDivisor        Int
-  soloEloMaxDelta            Int
-  winnerBaseReward           BigInt
-  loserBaseReward            BigInt
-  drawReward                 BigInt
-  scoreRewardDivisor         Int
-  scoreRewardCap             BigInt
-  winnerRewardBonusMax       BigInt
-  loserRewardBonusMax        BigInt
-  multiplayerRewardReference BigInt
-  correctAnswerPoints        Json
-  wrongAnswerPenaltyPercent  Int
-  maxAnswerTimeSeconds       Int
-  maxMatchDurationSeconds    Int
-  maxQuestions               Int
-  minimumPlayerLevel         Int            @default(1)
-  instantSkipPriceGld        BigInt         @default(10)
-  rankingEnabled             Boolean        @default(false)
-  rankingEloMultiplier       Decimal        @db.Decimal(20, 8)
-  rankingLevelMultiplier     Decimal        @db.Decimal(20, 8)
-  rankingCoinMultiplier      Decimal        @db.Decimal(20, 8)
-  settings                   Json?
-  createdAt                  DateTime       @default(now())
-  updatedAt                  DateTime       @updatedAt
-  gameDefinition             GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
-  matches                    Match[]
+  id                            String         @id @default(uuid()) @db.Uuid
+  gameDefinitionId              String         @db.Uuid
+  version                       Int            @default(1)
+  active                        Boolean        @default(true)
+  mainProgressionKey            String         @db.VarChar(64)
+  eloProgressionKey             String         @db.VarChar(64)
+  rewardCurrencyCode            String         @db.VarChar(32)
+  scoreMultiplierForXp          Decimal        @db.Decimal(20, 8)
+  maxEloDelta                   Int
+  soloEloScoreDivisor           Int
+  soloEloMaxDelta               Int
+  winnerBaseReward              BigInt
+  loserBaseReward               BigInt
+  drawReward                    BigInt
+  scoreRewardDivisor            Int
+  scoreRewardCap                BigInt
+  winnerRewardBonusMax          BigInt
+  loserRewardBonusMax           BigInt
+  multiplayerRewardReference    BigInt
+  correctAnswerPoints           Json
+  wrongAnswerPenaltyPercent     Int
+  maxAnswerTimeSeconds          Int
+  maxMatchDurationSeconds       Int
+  maxQuestions                  Int
+  minimumPlayerLevel            Int            @default(1)
+  instantSkipPriceGld           BigInt         @default(10)
+  rankingEnabled                Boolean        @default(false)
+  rankingEloMultiplier          Decimal        @db.Decimal(20, 8)
+  rankingLevelMultiplier        Decimal        @db.Decimal(20, 8)
+  rankingCoinMultiplier         Decimal        @db.Decimal(20, 8)
+  casualBotFallbackEnabled      Boolean        @default(false)
+  casualBotFallbackDelaySeconds Int            @default(20)
+  settings                      Json?
+  createdAt                     DateTime       @default(now())
+  updatedAt                     DateTime       @updatedAt
+  gameDefinition                GameDefinition @relation(fields: [gameDefinitionId], references: [id], onDelete: Cascade)
+  matches                       Match[]
 
   @@unique([gameDefinitionId, version])
   @@index([gameDefinitionId, active, version])
@@ -2787,36 +2790,37 @@ model MatchRound {
 }
 
 model MatchmakingTicket {
-  id                    String                  @id @default(uuid()) @db.Uuid
-  userId                String                  @db.Uuid
-  gameDefinitionId      String                  @db.Uuid
-  mode                  MatchmakingTicketMode
-  status                MatchmakingTicketStatus @default(SEARCHING)
-  isRankingMatch        Boolean                 @default(false)
-  rankingSeriesId       String?                 @db.Uuid
-  rankingConfigId       String?                 @db.Uuid
-  rankingStakeAmount    BigInt?
-  rankingEntryFee       BigInt?
-  rankingEntryFeeMicros BigInt?
-  rankingRefundedAt     DateTime?
-  levelSnapshot         Int
-  eloSnapshot           BigInt
-  countryCodeSnapshot   String?                 @db.Char(2)
-  constraints           Json?
-  clientVersion         String?                 @db.VarChar(32)
-  allowBotFallback      Boolean                 @default(false)
-  createdAt             DateTime                @default(now())
-  expiresAt             DateTime
-  lastHeartbeatAt       DateTime
-  matchedAt             DateTime?
-  cancelledAt           DateTime?
-  matchId               String?                 @db.Uuid
-  idempotencyKeyId      String?                 @db.Uuid
-  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  gameDefinition        GameDefinition          @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
-  match                 Match?                  @relation(fields: [matchId], references: [id], onDelete: SetNull)
-  idempotencyKey        IdempotencyKey?         @relation(fields: [idempotencyKeyId], references: [id], onDelete: SetNull)
-  rankingConfig         RankingMatchConfig?     @relation(fields: [rankingConfigId], references: [id], onDelete: SetNull)
+  id                      String                  @id @default(uuid()) @db.Uuid
+  userId                  String                  @db.Uuid
+  gameDefinitionId        String                  @db.Uuid
+  mode                    MatchmakingTicketMode
+  status                  MatchmakingTicketStatus @default(SEARCHING)
+  isRankingMatch          Boolean                 @default(false)
+  rankingSeriesId         String?                 @db.Uuid
+  rankingConfigId         String?                 @db.Uuid
+  rankingStakeAmount      BigInt?
+  rankingEntryFee         BigInt?
+  rankingEntryFeeMicros   BigInt?
+  rankingRefundedAt       DateTime?
+  levelSnapshot           Int
+  eloSnapshot             BigInt
+  countryCodeSnapshot     String?                 @db.Char(2)
+  constraints             Json?
+  clientVersion           String?                 @db.VarChar(32)
+  allowBotFallback        Boolean                 @default(false)
+  botFallbackDelaySeconds Int                     @default(20)
+  createdAt               DateTime                @default(now())
+  expiresAt               DateTime
+  lastHeartbeatAt         DateTime
+  matchedAt               DateTime?
+  cancelledAt             DateTime?
+  matchId                 String?                 @db.Uuid
+  idempotencyKeyId        String?                 @db.Uuid
+  user                    User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameDefinition          GameDefinition          @relation(fields: [gameDefinitionId], references: [id], onDelete: Restrict)
+  match                   Match?                  @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  idempotencyKey          IdempotencyKey?         @relation(fields: [idempotencyKeyId], references: [id], onDelete: SetNull)
+  rankingConfig           RankingMatchConfig?     @relation(fields: [rankingConfigId], references: [id], onDelete: SetNull)
 
   @@index([status, gameDefinitionId, mode, createdAt])
   @@index([userId, status])
@@ -3539,6 +3543,33 @@ model DailyChallengeAnswer {
   @@index([attemptId, answeredAt])
 }
 
+/// One server-authored hint published for a calendar day. Translations are
+/// stored together so changing the app language never requires a client build.
+model DailyHint {
+  id           String          @id @default(uuid()) @db.Uuid
+  dateKey      String          @unique @db.VarChar(10)
+  active       Boolean         @default(true)
+  translations Json
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  views        DailyHintView[]
+
+  @@index([active, dateKey])
+}
+
+/// Idempotent per-player acknowledgement for the daily hint dialog.
+model DailyHintView {
+  id       String    @id @default(uuid()) @db.Uuid
+  hintId   String    @db.Uuid
+  userId   String    @db.Uuid
+  viewedAt DateTime  @default(now())
+  hint     DailyHint @relation(fields: [hintId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([hintId, userId])
+  @@index([userId, viewedAt])
+}
+
 model MatchContentAssignment {
   id                  String           @id @default(uuid()) @db.Uuid
   matchId             String           @db.Uuid
@@ -3799,28 +3830,28 @@ model GldEconomyState {
 
 /// Persisted emergency switches for the server-owned GLD economy.
 model GldAdminControl {
-  id                          String   @id @default(uuid()) @db.Uuid
-  singletonKey                String   @unique @default("default") @db.VarChar(32)
-  emissionsPaused             Boolean  @default(false)
-  catalogSinksPaused          Boolean  @default(false)
-  giftsPaused                 Boolean  @default(false)
-  paidRewardsPaused           Boolean  @default(false)
-  gldTransferFeeBps           Int      @default(0)
-  adDailyGldCap               BigInt?
-  adMaxValidatedAds           Int?
-  adMaxRewardPerClaim         BigInt?
-  admobPlayerRewardAllocationBps Int?
-  admobReserveAllocationBps   Int?
+  id                              String   @id @default(uuid()) @db.Uuid
+  singletonKey                    String   @unique @default("default") @db.VarChar(32)
+  emissionsPaused                 Boolean  @default(false)
+  catalogSinksPaused              Boolean  @default(false)
+  giftsPaused                     Boolean  @default(false)
+  paidRewardsPaused               Boolean  @default(false)
+  gldTransferFeeBps               Int      @default(0)
+  adDailyGldCap                   BigInt?
+  adMaxValidatedAds               Int?
+  adMaxRewardPerClaim             BigInt?
+  admobPlayerRewardAllocationBps  Int?
+  admobReserveAllocationBps       Int?
   admobCompanyProfitAllocationBps Int?
-  guestAdRewardMultiplierBps   Int      @default(2500)
-  giftBurnBps                 Int?
-  paidRewardSafetyMarginBps   Int?
-  paidRewardDailyRequestLimit Int?
-  reason                      String?  @db.VarChar(500)
-  updatedById                 String?  @db.Uuid
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
-  updatedBy                   User?    @relation("GldControlUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  guestAdRewardMultiplierBps      Int      @default(2500)
+  giftBurnBps                     Int?
+  paidRewardSafetyMarginBps       Int?
+  paidRewardDailyRequestLimit     Int?
+  reason                          String?  @db.VarChar(500)
+  updatedById                     String?  @db.Uuid
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+  updatedBy                       User?    @relation("GldControlUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 }
 
 /// Server-owned GLD reward for a client-reported ad event. Region codes are
@@ -4100,17 +4131,17 @@ model NotificationBroadcast {
 /// from player inbox notifications and are intentionally shared across the
 /// admin team.
 model AdminNotification {
-  id          String                    @id @default(uuid()) @db.Uuid
-  dedupeKey   String                    @unique @db.VarChar(255)
-  category    String                    @db.VarChar(60)
-  severity    AdminNotificationSeverity @default(INFO)
-  title       String                    @db.VarChar(160)
-  body        String                    @db.Text
-  data        Json?
-  readAt      DateTime?
-  resolvedAt  DateTime?
-  createdAt   DateTime                  @default(now())
-  updatedAt   DateTime                  @updatedAt
+  id         String                    @id @default(uuid()) @db.Uuid
+  dedupeKey  String                    @unique @db.VarChar(255)
+  category   String                    @db.VarChar(60)
+  severity   AdminNotificationSeverity @default(INFO)
+  title      String                    @db.VarChar(160)
+  body       String                    @db.Text
+  data       Json?
+  readAt     DateTime?
+  resolvedAt DateTime?
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
 
   @@index([readAt, resolvedAt, createdAt])
   @@index([category, resolvedAt, createdAt])

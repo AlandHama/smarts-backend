@@ -9,6 +9,7 @@ WHERE s."userId" = p."userId"
 
 WITH country_names("name", "code") AS (
 VALUES
+  ('kurdistan', 'KU'),
   ('united states', 'US'),
   ('united kingdom', 'GB'),
   ('canada', 'CA'),

@@ -235,6 +235,16 @@ export class RealtimeGateway implements OnModuleDestroy {
       } catch (error) { this.send(client, "bomb_path.error", { matchId, code: "ACTION_REJECTED", message: this.errorMessage(error) }) }
       return
     }
+    if (event === "bomb_path.ready") {
+      const matchId = this.string(data.matchId)
+      if (!matchId || !state.matchIds.has(matchId)) return this.send(client, "bomb_path.error", { code: "NOT_SUBSCRIBED", message: "Subscribe to the match first" })
+      try {
+        const snapshot = await this.bombPath.ready(state.userId, matchId)
+        this.send(client, "bomb_path.ready.accepted", snapshot)
+        await this.broadcastBombPath(matchId)
+      } catch (error) { this.send(client, "bomb_path.error", { matchId, code: "READY_REJECTED", message: this.errorMessage(error) }) }
+      return
+    }
     if (event === "subscribe_player") {
       if (typeof data.userId === "string" && data.userId.trim()) {
         const playerId = data.userId.trim()

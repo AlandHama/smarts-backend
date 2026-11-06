@@ -35,6 +35,7 @@ import WhatshotRoundedIcon from "@mui/icons-material/WhatshotRounded";
 import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
 import CasinoRoundedIcon from "@mui/icons-material/CasinoRounded";
+import LightbulbRoundedIcon from "@mui/icons-material/LightbulbRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import Box from "@mui/material/Box";
@@ -89,6 +90,7 @@ export type AdminView =
   | "streaks"
   | "win-streaks"
   | "daily-challenge"
+  | "daily-hints"
   | "support"
   | "cooperative"
   | "gem-blitz"
@@ -152,6 +154,7 @@ const navigation = [
   { key: "streaks" as const, label: "Daily streaks", icon: <LocalFireDepartmentRoundedIcon /> },
   { key: "win-streaks" as const, label: "Win streaks", icon: <WhatshotRoundedIcon /> },
   { key: "daily-challenge" as const, label: "Daily challenge", icon: <PsychologyRoundedIcon /> },
+  { key: "daily-hints" as const, label: "Daily hints", icon: <LightbulbRoundedIcon /> },
   { key: "support" as const, label: "Support center", icon: <SupportAgentRoundedIcon /> },
   { key: "cooperative" as const, label: "Cooperative matches", icon: <GroupsRoundedIcon /> },
   { key: "gem-blitz" as const, label: "Gem Blitz", icon: <AutoAwesomeRoundedIcon /> },

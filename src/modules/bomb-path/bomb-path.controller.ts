@@ -14,6 +14,7 @@ export class BombPathController {
   @Get("clock") clock() { return this.service.clock() }
   @Get("matches/:matchId") snapshot(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto) { return this.service.snapshot(user.id, matchId) }
   @Post("matches/:matchId/start") start(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto) { return this.service.start(user.id, matchId) }
+  @Post("matches/:matchId/ready") ready(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto) { return this.service.ready(user.id, matchId) }
   @Post("matches/:matchId/actions/step") step(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto, @Body() dto: BombPathStepDto) { return this.service.step(user.id, matchId, dto) }
   @Post("matches/:matchId/actions/complete") complete(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto, @Body() dto: BombPathCompleteDto) { return this.service.complete(user.id, matchId, dto) }
   @Post("matches/:matchId/reconcile") reconcile(@Param("matchId", ParseUUIDPipe) matchId: string, @CurrentUser() user: UserResponseDto) { return this.service.snapshot(user.id, matchId) }

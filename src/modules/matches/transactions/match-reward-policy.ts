@@ -18,12 +18,34 @@ export type RewardPolicy = {
 }
 
 const EXPECTED_SCORE: Record<string, number> = {
+  // Legacy ten-question games award roughly 100–200 points per answer. Their
+  // old fallback was 100, which made almost every completed match hit the XP
+  // ceiling and made those games dramatically faster for leveling.
+  trivia: 1500,
+  math: 1500,
+  flick_master: 1500,
+  high_low: 1500,
+  stacking: 1500,
+  similarities: 1500,
+  follow_the_lead: 1500,
+  memorize_cards: 1500,
+  bird_watching: 1500,
   gem_blitz: 15000,
   tile_rush: 15000,
   word_dash: 2000,
   domino: 100,
   perfect_timing: 1000,
   bomb_path: 1000,
+}
+
+const DEFAULT_MATCH_XP = {
+  maximum: 240n,
+  minimumCompletion: 25n,
+  participation: 25n,
+  winner: 35n,
+  loser: 15n,
+  draw: 25n,
+  timeout: 8n,
 }
 
 function numberSetting(settings: Record<string, unknown>, key: string, fallback: number): number {
@@ -51,13 +73,13 @@ export function rewardPolicy(config: { settings: Prisma.JsonValue | null; scoreR
   const expectedScore = numberSetting(configured, "expectedScore", EXPECTED_SCORE[gameKey] ?? 100)
   return {
     scoreNormalizationFactor: numberSetting(configured, "scoreNormalizationFactor", 1 / Math.max(1, expectedScore)),
-    maximumMatchXp: bigintSetting(configured, "maximumMatchXp", 250n),
-    minimumCompletionXp: bigintSetting(configured, "minimumCompletionXp", 10n),
-    participationXp: bigintSetting(configured, "participationXp", 10n),
-    winnerXpBonus: bigintSetting(configured, "winnerXpBonus", 25n),
-    loserXpBonus: bigintSetting(configured, "loserXpBonus", 10n),
-    drawXpBonus: bigintSetting(configured, "drawXpBonus", 15n),
-    timeoutXp: bigintSetting(configured, "timeoutXp", 5n),
+    maximumMatchXp: bigintSetting(configured, "maximumMatchXp", DEFAULT_MATCH_XP.maximum),
+    minimumCompletionXp: bigintSetting(configured, "minimumCompletionXp", DEFAULT_MATCH_XP.minimumCompletion),
+    participationXp: bigintSetting(configured, "participationXp", DEFAULT_MATCH_XP.participation),
+    winnerXpBonus: bigintSetting(configured, "winnerXpBonus", DEFAULT_MATCH_XP.winner),
+    loserXpBonus: bigintSetting(configured, "loserXpBonus", DEFAULT_MATCH_XP.loser),
+    drawXpBonus: bigintSetting(configured, "drawXpBonus", DEFAULT_MATCH_XP.draw),
+    timeoutXp: bigintSetting(configured, "timeoutXp", DEFAULT_MATCH_XP.timeout),
     botXpMultiplier: Math.min(1, numberSetting(configured, "botXpMultiplier", 0.25)),
     dailyGameXpCap: bigintSetting(configured, "dailyGameXpCap", 1000n),
     dailyAccountXpCap: bigintSetting(configured, "dailyAccountXpCap", 3000n),

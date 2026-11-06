@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { LeaderboardPeriod, Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../prisma.service";
 import {
@@ -95,16 +95,20 @@ export class LeaderboardService {
     const limit = Math.min(Math.max(query.limit ?? 25, 1), 100);
     const offset = Math.max(query.offset ?? 0, 0);
     const order = board.direction === "ASCENDING" ? "ASC" : "DESC";
+    const countryCode = board.memberType === "PLAYER" ? query.countryCode?.trim().toUpperCase() : undefined;
+    const countFilter = countryCode
+      ? Prisma.sql` FROM "LeaderboardEntry" e INNER JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${board.id} AND e."seasonId" = ${season.id} AND p."countryCode" = ${countryCode}`
+      : Prisma.sql` FROM "LeaderboardEntry" WHERE "leaderboardId" = ${board.id} AND "seasonId" = ${season.id}`;
     const [countRows, rows] = await Promise.all([
       this.prisma.$queryRaw<Array<{ count: bigint }>>(
-        Prisma.sql`SELECT COUNT(*)::bigint AS count FROM "LeaderboardEntry" WHERE "leaderboardId" = ${board.id} AND "seasonId" = ${season.id}`,
+        Prisma.sql`SELECT COUNT(*)::bigint AS count${countFilter}`,
       ),
-      this.entryRows(board.id, season.id, order, limit, offset),
+      this.entryRows(board.id, season.id, order, limit, offset, undefined, board.memberType, countryCode, board.period),
     ]);
     const total = Number(countRows[0]?.count ?? 0n);
     const currentUserRank =
       userId && board.memberType === "PLAYER"
-        ? await this.memberRank(board.id, season.id, userId, order)
+        ? await this.memberRank(board.id, season.id, userId, order, countryCode)
         : null;
     return this.serialize({
       leaderboard: {
@@ -269,6 +273,9 @@ export class LeaderboardService {
       100,
       0,
       keys,
+      board.memberType,
+      undefined,
+      board.period,
     );
     return this.serialize({
       leaderboard: {
@@ -364,13 +371,22 @@ export class LeaderboardService {
     limit: number,
     offset: number,
     memberKeys?: string[],
+    memberType?: string,
+    countryCode?: string,
+    period?: LeaderboardPeriod,
   ) {
     const filter = memberKeys?.length
       ? Prisma.sql`AND e."memberKey" IN (${Prisma.join(memberKeys)})`
       : Prisma.empty;
+    const countryFilter = countryCode
+      ? Prisma.sql`AND p."countryCode" = ${countryCode}`
+      : Prisma.empty;
+    const countryPlayerCounts = memberType === "COUNTRY"
+      ? await this.countryPlayerCounts(period)
+      : new Map<string, number>();
     return this.prisma
       .$queryRaw<Array<any>>(
-        Prisma.sql`SELECT e."id", e."memberKey", e."playerId", e."score", e."metadata", e."createdAt", e."updatedAt", RANK() OVER (ORDER BY e."score" ${Prisma.raw(order)})::bigint AS "rank", u."username", p."displayName", p."avatarUrl", p."avatarFrameKey", p."nameEffectKey", p."countryCode", p."elo", COALESCE((SELECT pt."name" FROM "ProgressionTier" pt INNER JOIN "ProgressionDefinition" pd ON pd."id" = pt."progressionId" WHERE pd."key" = 'elo' AND pd."active" = true AND pt."name" IS NOT NULL AND pt."pointsThreshold" <= COALESCE(p."elo", 0) ORDER BY pt."pointsThreshold" DESC, pt."step" DESC LIMIT 1), 'Unranked') AS "eloRankName", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg WHERE pg."recipientUserId" = e."playerId"), 0)::bigint AS "giftReceivedCount", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg LEFT JOIN "CatalogItem" ci ON ci."id" = pg."catalogItemId" LEFT JOIN "SocialGiftDefinition" sg ON sg."id" = pg."socialGiftDefinitionId" WHERE pg."recipientUserId" = e."playerId" AND (LOWER(COALESCE(ci."key", sg."key", '')) LIKE '%rose%' OR LOWER(COALESCE(ci."name", sg."name", '')) LIKE '%rose%')), 0)::bigint AS "roseCount", COALESCE((SELECT SUM(pg2."gldPriceDecimal") FROM "PlayerGift" pg2 WHERE pg2."recipientUserId" = e."playerId"), 0)::numeric AS "giftValueReceived" FROM "LeaderboardEntry" e LEFT JOIN "User" u ON u."id" = e."playerId" LEFT JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} ${filter} ORDER BY e."score" ${Prisma.raw(order)}, e."updatedAt" ASC, e."memberKey" ASC LIMIT ${limit} OFFSET ${offset}`,
+        Prisma.sql`SELECT e."id", e."memberKey", e."playerId", e."score", e."metadata", e."createdAt", e."updatedAt", RANK() OVER (ORDER BY e."score" ${Prisma.raw(order)})::bigint AS "rank", u."username", p."displayName", p."avatarUrl", p."avatarFrameKey", p."nameEffectKey", p."countryCode", p."elo", COALESCE((SELECT pt."name" FROM "ProgressionTier" pt INNER JOIN "ProgressionDefinition" pd ON pd."id" = pt."progressionId" WHERE pd."key" = 'elo' AND pd."active" = true AND pt."name" IS NOT NULL AND pt."pointsThreshold" <= COALESCE(p."elo", 0) ORDER BY pt."pointsThreshold" DESC, pt."step" DESC LIMIT 1), 'Unranked') AS "eloRankName", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg WHERE pg."recipientUserId" = e."playerId"), 0)::bigint AS "giftReceivedCount", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg LEFT JOIN "CatalogItem" ci ON ci."id" = pg."catalogItemId" LEFT JOIN "SocialGiftDefinition" sg ON sg."id" = pg."socialGiftDefinitionId" WHERE pg."recipientUserId" = e."playerId" AND (LOWER(COALESCE(ci."key", sg."key", '')) LIKE '%rose%' OR LOWER(COALESCE(ci."name", sg."name", '')) LIKE '%rose%')), 0)::bigint AS "roseCount", COALESCE((SELECT SUM(pg2."gldPriceDecimal") FROM "PlayerGift" pg2 WHERE pg2."recipientUserId" = e."playerId"), 0)::numeric AS "giftValueReceived" FROM "LeaderboardEntry" e LEFT JOIN "User" u ON u."id" = e."playerId" LEFT JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} ${countryFilter} ${filter} ORDER BY e."score" ${Prisma.raw(order)}, e."updatedAt" ASC, e."memberKey" ASC LIMIT ${limit} OFFSET ${offset}`,
       )
       .then((rows) =>
         rows.map((row) => ({
@@ -379,6 +395,7 @@ export class LeaderboardService {
           playerId: row.playerId,
           score: row.score,
           rank: row.rank,
+          playerCount: memberType === "COUNTRY" ? countryPlayerCounts.get(String(row.memberKey).toUpperCase()) ?? 0 : null,
           metadata: row.metadata,
           player: row.playerId
             ? {
@@ -403,14 +420,33 @@ export class LeaderboardService {
       );
   }
 
+  private async countryPlayerCounts(period?: LeaderboardPeriod) {
+    const playerBoard = await this.prisma.leaderboard.findFirst({
+      where: { active: true, memberType: "PLAYER", ...(period ? { period } : {}) },
+      orderBy: { key: "asc" },
+      select: { id: true, period: true },
+    });
+    if (!playerBoard) return new Map<string, number>();
+    const season = await this.activeSeason(playerBoard.id);
+    if (!season) return new Map<string, number>();
+    const rows = await this.prisma.$queryRaw<Array<{ countryCode: string; count: bigint }>>(
+      Prisma.sql`SELECT p."countryCode" AS "countryCode", COUNT(DISTINCT e."playerId")::bigint AS count FROM "LeaderboardEntry" e INNER JOIN "PlayerProfile" p ON p."userId" = e."playerId" INNER JOIN "User" u ON u."id" = e."playerId" WHERE e."leaderboardId" = ${playerBoard.id} AND e."seasonId" = ${season.id} AND e."playerId" IS NOT NULL AND p."countryCode" IS NOT NULL AND u."status" = 'ACTIVE' GROUP BY p."countryCode"`,
+    );
+    return new Map(rows.map((row) => [row.countryCode.trim().toUpperCase(), Number(row.count)]));
+  }
+
   private async memberRank(
     leaderboardId: string,
     seasonId: string,
     memberKey: string,
     order: "ASC" | "DESC",
+    countryCode?: string,
   ) {
+    const countryFilter = countryCode
+      ? Prisma.sql`AND p."countryCode" = ${countryCode}`
+      : Prisma.empty;
     const rows = await this.prisma.$queryRaw<Array<{ rank: bigint }>>(
-      Prisma.sql`SELECT "rank" FROM (SELECT e."memberKey", RANK() OVER (ORDER BY e."score" ${Prisma.raw(order)})::bigint AS "rank" FROM "LeaderboardEntry" e WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId}) ranked WHERE "memberKey" = ${memberKey} LIMIT 1`,
+      Prisma.sql`SELECT "rank" FROM (SELECT e."memberKey", RANK() OVER (ORDER BY e."score" ${Prisma.raw(order)})::bigint AS "rank" FROM "LeaderboardEntry" e LEFT JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} ${countryFilter}) ranked WHERE "memberKey" = ${memberKey} LIMIT 1`,
     );
     return rows[0]?.rank ?? null;
   }

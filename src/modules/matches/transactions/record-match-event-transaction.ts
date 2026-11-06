@@ -1,12 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { createHash } from "node:crypto"
-import { Prisma, MatchEventType, WalletTransactionSourceType } from "@prisma/client"
+import { Prisma, MatchEventType } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { MatchEventDto } from "../dtos"
 import { BotGameplayService } from "../bot-gameplay.service"
-import { DebitWalletTransaction } from "../../economy/transactions/debit-wallet-transaction"
 import { hashMatchEventRequest, jsonByteLength, randomizeAnswerOptions } from "../utilities/server-content"
 import { emotePreset } from "../../commerce/emote-presets"
 
@@ -16,10 +15,11 @@ const ANSWER_KEYS = new Set(["assignmentId", "assignmentToken", "selectedAnswerI
 const LEGACY_LOCAL_GAME_KEYS = new Set(["bird_watching", "similarities", "high_low", "memorize_cards", "flick_master", "follow_the_lead", "stacking"])
 const SKIP_KEYS = new Set(["assignmentId", "assignmentToken", "timeTakenMs"])
 const EMOTE_KEYS = new Set(["emoteKey"])
+const SKIP_GEM_ASSET_KEY = "consumable:skip_gem"
 
 @Injectable()
 export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: string; userId: string; dto: MatchEventDto }, any> {
-  constructor(prisma: PrismaService, private readonly botGameplay: BotGameplayService, private readonly debitWallet: DebitWalletTransaction) { super(prisma) }
+  constructor(prisma: PrismaService, private readonly botGameplay: BotGameplayService) { super(prisma) }
 
   protected async execute(input: { matchId: string; userId: string; dto: MatchEventDto }, transaction: Prisma.TransactionClient) {
     const clientEventId = input.dto.clientEventId.trim()
@@ -175,24 +175,31 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     if (assignment.position !== answeredCount) return this.reject(transaction, base, "Assignments must be answered in order")
     const pointsConfig = (match.gameConfig?.correctAnswerPoints ?? {}) as Record<string, unknown>
     const correctPoints = Number(pointsConfig[String(assignment.contentItem.difficulty)] ?? pointsConfig["1"] ?? 0)
-    const price = BigInt(match.gameConfig?.instantSkipPriceGld ?? 0)
     if (!Number.isSafeInteger(correctPoints) || correctPoints <= 0) return this.reject(transaction, base, "Game scoring is not configured")
-    if (price <= 0n) return this.reject(transaction, base, "Instant skip is not enabled for this game")
+    // instantSkipPriceGld remains the server-side feature flag for older game
+    // configs, but the player now pays with one owned Skip Gem rather than a
+    // direct GLD debit. This keeps the consumable auditable and prevents the
+    // client from ever choosing the price.
+    if (Number(match.gameConfig?.instantSkipPriceGld ?? 0) <= 0) return this.reject(transaction, base, "Instant skip is not enabled for this game")
     if (!Number.isInteger(match.gameConfig?.wrongAnswerPenaltyPercent) || match.gameConfig.wrongAnswerPenaltyPercent < 0 || match.gameConfig.wrongAnswerPenaltyPercent > 100) return this.reject(transaction, base, "Game scoring is not configured")
 
     const locked = await transaction.matchParticipant.findUniqueOrThrow({ where: { id: participant.id } })
     const before = BigInt(locked.finalScore ?? 0)
     const after = before + BigInt(correctPoints)
     if (after > 2147483647n) return this.reject(transaction, base, "Score exceeds the game limit")
-    await this.debitWallet.runWithinTransaction({
-      userId: participant.userId,
-      currencyCode: "GLD",
-      amount: price,
-      sourceId: `match-skip:${match.id}:${participant.id}:${assignment.id}`,
-      sourceType: WalletTransactionSourceType.PURCHASE,
-      metadata: { reason: "INSTANT_SKIP", matchId: match.id, assignmentId: assignment.id, priceGld: price.toString() },
-    }, transaction)
-    const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, correct: true, skipped: true, verified: true, pointsEarned: correctPoints.toString(), timeTakenMs, gldPrice: price.toString() } } })
+    const skipGem = await transaction.assetDefinition.findUnique({ where: { key: SKIP_GEM_ASSET_KEY }, select: { id: true, active: true } })
+    if (!skipGem?.active) return this.reject(transaction, base, "Skip Gems are not configured")
+    const stackKey = `${participant.userId}:${skipGem.id}:base`
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${stackKey}))`
+    const inventoryItem = await transaction.inventoryItem.findFirst({
+      where: { userId: participant.userId, assetDefinitionId: skipGem.id, assetVariationId: null, quantity: { gt: 0 } },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, quantity: true },
+    })
+    if (!inventoryItem) return this.reject(transaction, base, "You do not have a Skip Gem")
+    const remainingSkipGems = inventoryItem.quantity - 1
+    await transaction.inventoryItem.update({ where: { id: inventoryItem.id }, data: { quantity: { decrement: 1 } } })
+    const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { assignmentId, correct: true, skipped: true, verified: true, pointsEarned: correctPoints.toString(), timeTakenMs, consumableKey: SKIP_GEM_ASSET_KEY, skipGemSpent: 1, remainingSkipGems } } })
     await transaction.matchParticipant.update({ where: { id: participant.id }, data: { finalScore: Number(after), answeredCount: { increment: 1 }, lastActivityAt: now } })
     await transaction.matchContentAssignment.update({ where: { id: assignment.id }, data: { answeredAt: now } })
     await this.updateCooperativeScore(transaction, participant.id, true)

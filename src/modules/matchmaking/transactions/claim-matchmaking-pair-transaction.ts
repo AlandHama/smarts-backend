@@ -4,10 +4,7 @@ import { GameMode, MatchmakingTicketMode, Prisma } from "@prisma/client";
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction";
 import { PrismaService } from "../../../prisma.service";
-import {
-  botFallbackSeconds,
-  queueHeartbeatTimeoutSeconds,
-} from "../utilities/matchmaking-policy";
+import { queueHeartbeatTimeoutSeconds } from "../utilities/matchmaking-policy";
 import {
   createAssignmentToken,
   isAuthoritativeBoardGame,
@@ -31,6 +28,7 @@ type TicketRow = {
   constraints: Prisma.JsonValue | null;
   clientVersion: string | null;
   allowBotFallback: boolean;
+  botFallbackDelaySeconds: number;
   createdAt: Date;
 };
 
@@ -54,7 +52,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     if (!locked) return null;
 
     const [first] = await transaction.$queryRaw<TicketRow[]>`
-      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "createdAt"
+      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "botFallbackDelaySeconds", "createdAt"
       FROM "MatchmakingTicket" AS ticket
       WHERE ticket."status" = 'SEARCHING'
         AND ticket."expiresAt" > NOW()
@@ -62,7 +60,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         AND (
           (
             ticket."allowBotFallback" = true
-            AND ticket."createdAt" <= NOW() - make_interval(secs => ${botFallbackSeconds()})
+            AND ticket."createdAt" <= NOW() - make_interval(secs => ticket."botFallbackDelaySeconds")
           )
           OR EXISTS (
             SELECT 1
@@ -98,7 +96,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       Math.floor((Date.now() - first.createdAt.getTime()) / 1000),
     );
     const [second] = await transaction.$queryRaw<TicketRow[]>`
-      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "createdAt"
+      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "botFallbackDelaySeconds", "createdAt"
       FROM "MatchmakingTicket"
       WHERE "status" = 'SEARCHING'
         AND "expiresAt" > NOW()
@@ -135,7 +133,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     let additional: TicketRow[] = []
     if (dominoQueue && second) {
       additional = await transaction.$queryRaw<TicketRow[]>`
-        SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "createdAt"
+        SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "botFallbackDelaySeconds", "createdAt"
         FROM "MatchmakingTicket"
         WHERE "status" = 'SEARCHING' AND "expiresAt" > NOW() AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
           AND "id" NOT IN (${first.id}, ${second.id}) AND "userId" <> ${first.userId} AND "gameDefinitionId" = ${first.gameDefinitionId}
@@ -144,7 +142,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       `
     }
     const realTickets = [first, ...(second ? [second] : []), ...additional]
-    if (!second && !(first.allowBotFallback && elapsedSeconds >= botFallbackSeconds()))
+    if (!second && !(first.allowBotFallback && elapsedSeconds >= first.botFallbackDelaySeconds))
       return null;
     const integrityProfiles = await transaction.fraudProfile.findMany({
       where: { userId: { in: realTickets.map((ticket) => ticket.userId) } },
@@ -175,6 +173,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       const settings = candidate.configs[0]?.settings && typeof candidate.configs[0].settings === "object" && !Array.isArray(candidate.configs[0].settings) ? candidate.configs[0].settings as Record<string, any> : {};
       const policyKey = candidate.key === "word_dash" ? "wordDashPolicy" : candidate.key === "tile_rush" ? "tileRushPolicy" : candidate.key === "domino" ? "dominoPolicy" : candidate.key === "perfect_timing" ? "perfectTimingPolicy" : candidate.key === "bomb_path" ? "bombPathPolicy" : null;
       const policy = policyKey ? settings[policyKey] as Record<string, any> | undefined : undefined;
+      if (!second && first.mode === MatchmakingTicketMode.CASUAL && candidate.configs[0]?.casualBotFallbackEnabled !== true) return false;
       if (candidate.key === "perfect_timing" && policy && (policy.killSwitch === true || !realTickets.every((ticket) => inPerfectTimingRollout(ticket.userId, Number(policy.rolloutPercentage ?? 100))))) return false;
       if (candidate.key === "bomb_path" && policy && (policy.killSwitch === true || !realTickets.every((ticket) => inPerfectTimingRollout(ticket.userId, Number(policy.rolloutPercentage ?? 100))))) return false;
       return !policy || (first.mode === MatchmakingTicketMode.CASUAL ? policy.casualEnabled !== false : policy.rankedEnabled !== false);

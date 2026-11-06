@@ -241,6 +241,8 @@ export interface GameConfigRecord {
     rankingEloMultiplier: string;
     rankingLevelMultiplier: string;
     rankingCoinMultiplier: string;
+    casualBotFallbackEnabled: boolean;
+    casualBotFallbackDelaySeconds: number;
     settings: Record<string, unknown> | null;
   } | null;
   _count?: { matches: number; content: number };
