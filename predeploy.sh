@@ -35,6 +35,19 @@ while :; do
     continue
   fi
 
+  # The progression rebalance migration originally used ON COMMIT DROP helper
+  # tables. That version could fail with 42P01 after Prisma recorded the
+  # migration as failed, which then surfaces on every later deploy as P3009.
+  # Its replacement is retry-safe, so clear only this known failed migration
+  # marker and let the corrected migration run again.
+  if printf '%s' "$output" | grep -q '20261106170000_rebalance_progression_levels_and_game_rewards' \
+    && printf '%s' "$output" | grep -q 'P3009'; then
+    echo "resolving the known rolled-back progression rebalance migration failure" >&2
+    npx prisma migrate resolve --rolled-back 20261106170000_rebalance_progression_levels_and_game_rewards
+    attempt=$((attempt + 1))
+    continue
+  fi
+
   # Phase 1 support center was previously able to create its PostgreSQL
   # objects before failing while seeding SupportCategory.updatedAt. If that
   # partially-applied migration is encountered, complete its seed data and
