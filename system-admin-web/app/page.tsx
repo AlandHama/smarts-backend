@@ -36,6 +36,7 @@ import { CryptoRewardsView } from "../components/CryptoRewardsView";
 import { StorageView } from "../components/StorageView";
 import { FriendsView } from "../components/FriendsView";
 import { OperationsView } from "../components/OperationsView";
+import { SystemResourcesView } from "../components/SystemResourcesView";
 import { PlayerAuditsView } from "../components/PlayerAuditsView";
 import { MatchesView } from "../components/MatchesView";
 import { Match360View } from "../components/Match360View";
@@ -67,6 +68,7 @@ const viewPaths: Record<
   overview: "/",
   analytics: "/analytics/",
   operations: "/operations/",
+  "system-resources": "/system-resources/",
   players: "/players/",
   sessions: "/sessions/",
   friends: "/friends/",
@@ -196,6 +198,7 @@ export default function AdminPage() {
           {view === "overview" && <OverviewView />}
           {view === "analytics" && <AnalyticsReportsView />}
           {view === "operations" && <OperationsView />}
+          {view === "system-resources" && <SystemResourcesView />}
           {view === "players" && <UsersView onOpenPlayer360={openPlayer360} />}
           {view === "player360" && player360Id && (
             <Player360View

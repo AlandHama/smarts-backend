@@ -19,6 +19,7 @@ import RedeemRoundedIcon from "@mui/icons-material/RedeemRounded";
 import CurrencyBitcoinRoundedIcon from "@mui/icons-material/CurrencyBitcoinRounded";
 import CardGiftcardRoundedIcon from "@mui/icons-material/CardGiftcardRounded";
 import MonitorHeartRoundedIcon from "@mui/icons-material/MonitorHeartRounded";
+import MemoryRoundedIcon from "@mui/icons-material/MemoryRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
@@ -52,6 +53,7 @@ export type AdminView =
   | "overview"
   | "analytics"
   | "operations"
+  | "system-resources"
   | "players"
   | "player360"
   | "sessions"
@@ -106,6 +108,11 @@ const navigation = [
     key: "operations" as const,
     label: "Operations",
     icon: <MonitorHeartRoundedIcon />,
+  },
+  {
+    key: "system-resources" as const,
+    label: "System resources",
+    icon: <MemoryRoundedIcon />,
   },
   { key: "players" as const, label: "Players", icon: <GroupRoundedIcon /> },
   { key: "sessions" as const, label: "Sessions", icon: <DevicesRoundedIcon /> },
