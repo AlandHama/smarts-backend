@@ -263,6 +263,7 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
     // the next state immediately used to make clients miss the round result,
     // and could also make a slow client submit against a hand that no longer
     // existed. The next snapshot after the deadline performs the transition.
+    state.roundWinnerParticipantId = winnerId
     state.status = "ROUND_COMPLETE"
     state.nextRoundAt = new Date(Date.now() + ROUND_TRANSITION_DELAY_MS).toISOString()
     await this.saveState(tx, row, state)
@@ -277,7 +278,7 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
     const nextRoundAt = state.nextRoundAt ? new Date(state.nextRoundAt).getTime() : 0
     if (nextRoundAt > Date.now()) return state
     const row = await tx.dominoMatchState.findUniqueOrThrow({ where: { matchId: match.id } })
-    const next = createNextRoundState(state, `${state.seed}:round:${state.roundNumber + 1}`, policy)
+    const next = createNextRoundState(state, `${state.seed}:round:${state.roundNumber + 1}`, policy, new Date(), state.roundWinnerParticipantId)
     await tx.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt: new Date() } })
     await tx.matchRound.create({ data: { matchId: match.id, roundIndex: next.roundNumber, gameDefinitionId: match.gameDefinitionId, status: "STARTED", challengeSeedHash: next.chainHash, startedAt: new Date(next.startedAt) } })
     await this.saveState(tx, row, next)

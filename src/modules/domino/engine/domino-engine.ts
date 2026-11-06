@@ -74,10 +74,12 @@ export function createInitialState(participantIds: string[], seed: string, polic
   return state
 }
 
-export function createNextRoundState(previous: DominoState, seed: string, policy: DominoPolicy, now = new Date()) {
+export function createNextRoundState(previous: DominoState, seed: string, policy: DominoPolicy, now = new Date(), openingParticipantId?: string | null) {
   const next = createInitialState(previous.participantIds, seed, policy, now)
   next.roundNumber = previous.roundNumber + 1
   next.scores = { ...previous.scores }
+  const openingSeat = openingParticipantId ? previous.participantIds.indexOf(openingParticipantId) : -1
+  if (openingSeat >= 0) next.currentSeat = openingSeat
   // The previous round is intentionally exposed only during the transition
   // window. Keeping it on the new active round makes clients replay the same
   // winner animation every time they reconnect or poll.
