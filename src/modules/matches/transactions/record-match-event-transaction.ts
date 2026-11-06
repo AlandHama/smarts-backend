@@ -16,6 +16,7 @@ const LEGACY_LOCAL_GAME_KEYS = new Set(["bird_watching", "similarities", "high_l
 const SKIP_KEYS = new Set(["assignmentId", "assignmentToken", "timeTakenMs"])
 const EMOTE_KEYS = new Set(["emoteKey"])
 const SKIP_GEM_ASSET_KEY = "consumable:skip_gem"
+const DOMINO_LIFECYCLE_EVENTS: Set<MatchEventType> = new Set([MatchEventType.READY, MatchEventType.HEARTBEAT])
 
 @Injectable()
 export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: string; userId: string; dto: MatchEventDto }, any> {
@@ -43,6 +44,32 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     }
 
     if (match.status !== "STARTED") throw new ConflictException("The match is not accepting events")
+
+    // Domino owns its gameplay journal and sequence counter in DominoAction.
+    // The shared matchmaking provider still sends READY/HEARTBEAT signals for
+    // some app flows, but persisting those signals in MatchEvent would consume
+    // the same sequence numbers as tile actions. Keep the lifecycle signal
+    // observable to the caller while updating presence only; it must not
+    // compete with the authoritative Domino action journal.
+    if (match.gameDefinition.key === "domino" && DOMINO_LIFECYCLE_EVENTS.has(input.dto.eventType)) {
+      const now = new Date()
+      await transaction.matchParticipant.update({ where: { id: participant.id }, data: { lastActivityAt: now, ...(input.dto.eventType === MatchEventType.READY && !participant.readyAt ? { readyAt: now } : {}) } })
+      return {
+        id: `domino-lifecycle:${match.id}:${participant.id}:${clientEventId}`,
+        matchId: match.id,
+        participantId: participant.id,
+        roundId: null,
+        sequence: input.dto.sequence,
+        eventType: input.dto.eventType,
+        clientEventId,
+        payload: { verified: true, lifecycleOnly: true },
+        clientOccurredAt: input.dto.clientOccurredAt ? new Date(input.dto.clientOccurredAt) : null,
+        serverReceivedAt: now,
+        accepted: true,
+        rejectionReason: null,
+      }
+    }
+
     if (participant.result !== "PENDING") throw new ConflictException("This player has already finished the match")
     const round = match.rounds[0]
     if (!round) throw new ConflictException("The match has no active round")
