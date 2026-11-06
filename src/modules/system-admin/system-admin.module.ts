@@ -43,6 +43,7 @@ import { WordDashModule } from "../word-dash/word-dash.module"
 import { WordDashAdminController } from "../word-dash/word-dash-admin.controller"
 import { DominoModule } from "../domino/domino.module"
 import { DominoAdminController } from "../domino/domino-admin.controller"
+import { SystemResourcesService } from "./system-resources.service"
 
 @Module({
   imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule],
@@ -62,6 +63,7 @@ import { DominoAdminController } from "../domino/domino-admin.controller"
     AnalyticsReportingService,
     AnalyticsReportingWorkerService,
     ResourceRetentionWorkerService,
+    SystemResourcesService,
   ],
   exports: [AnalyticsEventService],
 })

@@ -117,6 +117,7 @@ import { AnalyticsAlertRuleDto, AnalyticsPlayerExplorerQueryDto, AnalyticsSavedR
 import { DailyChallengeService } from "../daily-challenges/daily-challenge.service";
 import { GenerateDailyChallengeDto, UpdateDailyChallengeConfigurationDto } from "../daily-challenges/dtos";
 import { CryptoAdminDecisionDto, CryptoPayoutVerificationDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
+import { SystemResourcesService } from "./system-resources.service";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -133,6 +134,7 @@ export class SystemAdminController {
     private readonly configService: ConfigService,
     private readonly analyticsReportingService: AnalyticsReportingService,
     private readonly dailyChallengeService: DailyChallengeService,
+    private readonly systemResourcesService: SystemResourcesService,
   ) {}
 
   @UseGuards(SystemAdminGuard)
@@ -322,6 +324,14 @@ export class SystemAdminController {
   @ApiOperation({ summary: "Get system administrator dashboard counts" })
   overview() {
     return this.systemAdminService.overview();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/system/resources")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Get live server resource and process telemetry" })
+  systemResources() {
+    return this.systemResourcesService.current();
   }
 
   @UseGuards(SystemAdminGuard)
