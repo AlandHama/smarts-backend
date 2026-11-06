@@ -6,6 +6,7 @@ import { PrismaService } from "../../../prisma.service"
 import { UpdateProfileDto } from "../dtos/update-profile.dto"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
 import { ContentSafetyService } from "../../content-safety/content-safety.service"
+import { normalizeCountryCode } from "../country-code"
 
 @Injectable()
 export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string; dto: UpdateProfileDto }, void> {
@@ -27,7 +28,7 @@ export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string
     if (dto.displayName !== undefined) profileData.displayName = dto.displayName.trim()
     if (dto.avatarUrl !== undefined) profileData.avatarUrl = dto.avatarUrl
     if (dto.avatarFrameKey !== undefined) profileData.avatarFrameKey = dto.avatarFrameKey?.trim() || null
-    if (dto.countryCode !== undefined) profileData.countryCode = dto.countryCode?.trim().toUpperCase() ?? null
+    if (dto.countryCode !== undefined) profileData.countryCode = normalizeCountryCode(dto.countryCode)
     if (dto.bio !== undefined) profileData.bio = dto.bio?.trim() || null
     if (dto.isPublic !== undefined) profileData.isPublic = dto.isPublic
 
@@ -48,7 +49,7 @@ export class UpdateProfileTransaction extends PrismaTransaction<{ userId: string
     if (dto.displayName !== undefined) changes.displayName = { old: profile.displayName, new: dto.displayName.trim() }
     if (dto.avatarUrl !== undefined) changes.avatarUrl = { old: profile.avatarUrl, new: dto.avatarUrl }
     if (dto.avatarFrameKey !== undefined) changes.avatarFrameKey = { old: profile.avatarFrameKey, new: dto.avatarFrameKey?.trim() || null }
-    if (dto.countryCode !== undefined) changes.countryCode = { old: profile.countryCode, new: dto.countryCode?.trim().toUpperCase() ?? null }
+    if (dto.countryCode !== undefined) changes.countryCode = { old: profile.countryCode, new: normalizeCountryCode(dto.countryCode) }
     if (dto.bio !== undefined) changes.bio = { old: profile.bio, new: dto.bio?.trim() || null }
     if (dto.isPublic !== undefined) changes.isPublic = { old: profile.isPublic, new: dto.isPublic }
     if (dto.firstName !== undefined) changes.firstName = { old: current?.firstName, new: dto.firstName?.trim() || null }

@@ -5,6 +5,7 @@ import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import type { PlayerStorageItemDto } from "../dtos/storage.dto"
 import { writePlayerAudit } from "../../../common/helpers/player-audit"
+import { normalizeCountryCode } from "../../players/country-code"
 
 const PUBLIC_KEYS = new Set(["player_country", "profile_url", "profile_file_id", "last_seen"])
 const STAT_SUFFIXES = new Set(["games_played", "accuracy", "wins", "losses", "answering_speed", "total_correct", "total_questions", "total_time_ms"])
@@ -31,6 +32,15 @@ export class UpdatePlayerStorageTransaction extends PrismaTransaction<UpdatePlay
         create: { userId: input.userId, key: item.key, value: item.value, visibility: publicItem ? PlayerStorageVisibility.PUBLIC : PlayerStorageVisibility.PRIVATE, valueType: this.valueType(item.key), displayOrder },
         update: { value: item.value, visibility: publicItem ? PlayerStorageVisibility.PUBLIC : PlayerStorageVisibility.PRIVATE, valueType: this.valueType(item.key), displayOrder, version: { increment: 1 } },
       })
+    }
+    // `player_country` was historically stored as a public display name by
+    // the mobile client. Keep that storage key for compatibility, but also
+    // synchronize the authoritative profile field used by matchmaking and
+    // country leaderboards.
+    const countryItem = input.payload.find((item) => item.key === "player_country")
+    const countryCode = normalizeCountryCode(countryItem?.value)
+    if (countryItem && countryCode) {
+      await transaction.playerProfile.update({ where: { userId: input.userId }, data: { countryCode } })
     }
     const items = await transaction.playerStorageItem.findMany({ where: { userId: input.userId }, orderBy: [{ displayOrder: "asc" }, { key: "asc" }], take: 200 })
     await writePlayerAudit(transaction, { userId: input.userId, actorType: PlayerAuditActorType.PLAYER, action: "STORAGE_UPDATED", entityType: "PlayerStorageItem", summary: `Updated ${input.payload.length} player storage entr${input.payload.length === 1 ? "y" : "ies"}`, changes, metadata: { keys } })

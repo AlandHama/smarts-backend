@@ -9,6 +9,7 @@ import { RecordResultTransaction } from "./transactions/record-result-transactio
 import { UpdateEloTransaction } from "./transactions/update-elo-transaction"
 import { UpdateProfileTransaction } from "./transactions/update-profile-transaction"
 import { ContentSafetyService } from "../content-safety/content-safety.service"
+import { normalizeCountryCode } from "./country-code"
 
 @Injectable()
 export class PlayersService {
@@ -46,6 +47,20 @@ export class PlayersService {
     })
     if (!player) throw new NotFoundException("Player not found")
     if (!player.profile || !player.stats || !player.wallet) throw new NotFoundException("Player profile is not initialized")
+    // Repair accounts created by older mobile builds that only wrote the
+    // display name to PlayerStorageItem.player_country. This lazy fallback
+    // also covers records created before the data migration is deployed.
+    if (!player.profile.countryCode) {
+      const legacyCountry = await this.prisma.playerStorageItem.findUnique({
+        where: { userId_key: { userId, key: "player_country" } },
+        select: { value: true },
+      })
+      const countryCode = normalizeCountryCode(legacyCountry?.value)
+      if (countryCode) {
+        await this.prisma.playerProfile.update({ where: { userId }, data: { countryCode } })
+        player.profile.countryCode = countryCode
+      }
+    }
     return this.toCurrentResponse(player)
   }
 
