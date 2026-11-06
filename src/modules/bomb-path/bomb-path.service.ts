@@ -9,7 +9,7 @@ import { BombPathPolicy, BombPathRoundSpec, BombPathRoundStatus, DEFAULT_BOMB_PA
 
 type MatchRow = any
 type BombPathPlayerPhase = "MEMORIZE" | "PLAY" | "RESULT" | "COMPLETE"
-type RuntimePlayer = { participantId: string; score: number; sequence: number; path: BombPathPoint[]; roundStatus: BombPathRoundStatus; roundScore: number; roundElapsedMs: number | null; phase?: BombPathPlayerPhase; phaseStartedAt?: number; phaseDeadlineAt?: number | null; nextBotAt?: number }
+type RuntimePlayer = { participantId: string; roundIndex: number; score: number; sequence: number; path: BombPathPoint[]; roundStatus: BombPathRoundStatus; roundScore: number; roundElapsedMs: number | null; phase?: BombPathPlayerPhase; phaseStartedAt?: number; phaseDeadlineAt?: number | null; nextBotAt?: number }
 type RuntimeRound = { spec: BombPathRoundSpec; field: BombPathField; phase: "MEMORIZE" | "PLAY" | "RESULT" | "COMPLETE"; phaseStartedAt: number; memorizeEndsAt: number; playEndsAt: number; resultEndsAt: number | null; players: Record<string, { status: BombPathRoundStatus; path: BombPathPoint[]; score: number; elapsedMs: number | null; pathLength: number; phase?: BombPathPlayerPhase; phaseStartedAt?: number; phaseDeadlineAt?: number | null; reason?: string }> }
 type BombPathState = { rulesVersion: string; generationVersion: string; policyVersion: number | null; seed: string; status: "ACTIVE" | "FINISHED"; phase: "MEMORIZE" | "PLAY" | "RESULT" | "COMPLETE"; currentRoundIndex: number; startedAt: string; endsAt: string; rounds: RuntimeRound[]; players: Record<string, RuntimePlayer>; replay: Array<Record<string, unknown>>; stateHash: string; winnerParticipantId?: string | null; settlement?: unknown }
 
@@ -87,16 +87,16 @@ export class BombPathService {
         await this.finish(tx, match, state, null, policy)
         return this.project(match, participant.id, state, policy)
       }
-      const round = state.rounds[state.currentRoundIndex]
       const player = state.players[participant.id]
+      const round = player ? state.rounds[player.roundIndex] : undefined
       const roundPlayer = round?.players[participant.id]
       if (!round || !player || !roundPlayer) throw new ConflictException("The Bomb Path round is no longer active")
-      if (state.phase !== "MEMORIZE" || player.roundStatus !== "READY") return this.project(match, participant.id, state, policy)
+      if (player.phase !== "MEMORIZE" || player.roundStatus !== "READY") return this.project(match, participant.id, state, policy)
 
       const now = Date.now()
       this.activatePlayerForRound(state, participant.id, now)
-      state.replay = [...state.replay, { participantId: participant.id, sequence: player.sequence, kind: "READY", roundIndex: state.currentRoundIndex, acceptedAt: new Date(now).toISOString() }].slice(-MAX_REPLAY_EVENTS)
-      await this.persistEvent(tx, match, participant.id, player.sequence, `bomb-path:ready:${state.currentRoundIndex}`, "BOMB_PATH_READY", true, { roundIndex: state.currentRoundIndex, phase: "PLAY" })
+      state.replay = [...state.replay, { participantId: participant.id, sequence: player.sequence, kind: "READY", roundIndex: player.roundIndex, acceptedAt: new Date(now).toISOString() }].slice(-MAX_REPLAY_EVENTS)
+      await this.persistEvent(tx, match, participant.id, player.sequence, `bomb-path:ready:${player.roundIndex}`, "BOMB_PATH_READY", true, { roundIndex: player.roundIndex, phase: "PLAY" })
       await this.saveState(tx, match, state)
       return this.project(match, participant.id, state, policy)
     })
@@ -119,11 +119,13 @@ export class BombPathService {
       const advanced = this.advanceState(state, Date.now(), policy); state = advanced.state
       if (advanced.finished) { await this.finish(tx, match, state, null, policy); return { finalized: true, response: null } }
       const player = state.players[participant.id]
-      if (!player || state.currentRoundIndex !== dto.roundIndex) throw new ConflictException("The Bomb Path round is no longer active")
+      const round = player ? state.rounds[player.roundIndex] : undefined
+      const roundPlayer = round?.players[participant.id]
+      if (!player || !round || !roundPlayer || player.roundIndex !== dto.roundIndex) throw new ConflictException("The Bomb Path round is no longer active")
       if (dto.sequence !== player.sequence + 1) throw new ConflictException("Step sequence is out of date; reconcile the match")
       if (player.roundStatus === "PLAYING") {
-        player.roundStatus = "INCOMPLETE"; player.phase = "RESULT"; player.roundElapsedMs = Math.max(0, Date.now() - (player.phaseStartedAt ?? state.rounds[state.currentRoundIndex].phaseStartedAt))
-        state.rounds[state.currentRoundIndex].players[participant.id].status = "INCOMPLETE"; state.rounds[state.currentRoundIndex].players[participant.id].phase = "RESULT"; player.sequence = dto.sequence
+        player.roundStatus = "INCOMPLETE"; player.phase = "RESULT"; player.roundElapsedMs = Math.max(0, Date.now() - (player.phaseStartedAt ?? round.phaseStartedAt))
+        roundPlayer.status = "INCOMPLETE"; roundPlayer.phase = "RESULT"; player.sequence = dto.sequence
       }
       state.replay = [...state.replay, { participantId: participant.id, sequence: dto.sequence, kind: "COMPLETE", roundIndex: dto.roundIndex, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS)
       await this.persistEvent(tx, match, participant.id, dto.sequence, dto.clientActionId, "BOMB_PATH_COMPLETE", true, { roundIndex: dto.roundIndex, status: player.roundStatus }, dto.clientOccurredAt)
@@ -188,10 +190,10 @@ export class BombPathService {
       const lifecycle = this.advanceState(state, Date.now(), policy); state = lifecycle.state
       if (lifecycle.finished) { await this.finish(tx, match, state, null, policy); return { finalized: true, response: null } }
       const player = state.players[participant.id]
-      const round = state.rounds[state.currentRoundIndex]
+      const round = player ? state.rounds[player.roundIndex] : undefined
       const roundPlayer = round?.players[participant.id]
       const playerCanPlay = player?.roundStatus === "PLAYING" && roundPlayer?.phase === "PLAY"
-      if (!player || !round || !roundPlayer || (state.phase !== "PLAY" && !(state.phase === "MEMORIZE" && playerCanPlay)) || dto.roundIndex !== state.currentRoundIndex || !playerCanPlay) throw new ConflictException("The Bomb Path play phase is not active")
+      if (!player || !round || !roundPlayer || dto.roundIndex !== player.roundIndex || !playerCanPlay) throw new ConflictException("The Bomb Path play phase is not active")
       if (dto.sequence !== player.sequence + 1) throw new ConflictException("Step sequence is out of date; reconcile the match")
       const checked = validateBombPathStep(round.field, player.path, { row: dto.cell.row, column: dto.cell.column }, policy.orthogonalOnly)
       player.sequence = dto.sequence
@@ -231,107 +233,116 @@ export class BombPathService {
     for (let index = 0; index < policy.roundCount; index += 1) {
       const spec = bombPathRoundSpec(policy, index); const field = generateBombPathField(match.serverNonce, spec)
       const round: RuntimeRound = { spec, field, phase: "MEMORIZE", phaseStartedAt: cursor, memorizeEndsAt: cursor + spec.memorizeDurationMs, playEndsAt: cursor + spec.memorizeDurationMs + spec.playDurationMs, resultEndsAt: null, players: {} }
-      for (const participantId of participantIds) round.players[participantId] = { status: "READY", path: [], score: 0, elapsedMs: null, pathLength: 0, phase: "MEMORIZE", phaseStartedAt: cursor, phaseDeadlineAt: null }
+      for (const participantId of participantIds) round.players[participantId] = { status: "READY", path: [], score: 0, elapsedMs: null, pathLength: 0, phase: "MEMORIZE", phaseStartedAt: cursor, phaseDeadlineAt: cursor + spec.memorizeDurationMs }
       rounds.push(round); cursor += spec.memorizeDurationMs + spec.playDurationMs + spec.resultDurationMs
     }
     const players: Record<string, RuntimePlayer> = {}
-    for (const participantId of participantIds) players[participantId] = { participantId, score: 0, sequence: 0, path: [], roundStatus: "READY", roundScore: 0, roundElapsedMs: null, phase: "MEMORIZE", phaseStartedAt: now, phaseDeadlineAt: null }
+    for (const participantId of participantIds) players[participantId] = { participantId, roundIndex: 0, score: 0, sequence: 0, path: [], roundStatus: "READY", roundScore: 0, roundElapsedMs: null, phase: "MEMORIZE", phaseStartedAt: now, phaseDeadlineAt: now + rounds[0].spec.memorizeDurationMs }
     const state: BombPathState = { rulesVersion: policy.rulesVersion, generationVersion: policy.generationVersion, policyVersion: match.gameConfig?.version ?? null, seed: match.serverNonce, status: "ACTIVE", phase: "MEMORIZE", currentRoundIndex: 0, startedAt: new Date(now).toISOString(), endsAt: new Date(now + policy.matchDurationSeconds * 1000).toISOString(), rounds, players, replay: [], stateHash: "" }
     state.stateHash = bombPathStateHash(state); return state
   }
 
   private advanceState(state: BombPathState, now: number, policy: BombPathPolicy): { state: BombPathState; changed: boolean; finished: boolean } {
     if (state.status === "FINISHED") return { state, changed: false, finished: true }
-    let changed = false
     if (now >= Date.parse(state.endsAt)) return { state: this.timeoutState(state), changed: true, finished: true }
-    let guard = policy.roundCount + 3
-    while (guard-- > 0) {
-      const round = state.rounds[state.currentRoundIndex]
-      if (!round) return { state: this.timeoutState(state), changed: true, finished: true }
-      // Normalize matches created before per-player phases were introduced.
-      // This keeps an in-flight match playable during a rolling deployment.
-      for (const [participantId, roundPlayer] of Object.entries(round.players)) {
-        const player = state.players[participantId]
-        if (!player || roundPlayer.phase) continue
-        const phase = state.phase === "PLAY" && player.roundStatus === "PLAYING" ? "PLAY" : state.phase === "RESULT" ? "RESULT" : state.phase === "COMPLETE" ? "COMPLETE" : "MEMORIZE"
-        roundPlayer.phase = phase
-        roundPlayer.phaseStartedAt = phase === "PLAY" ? round.phaseStartedAt : round.phaseStartedAt
-        roundPlayer.phaseDeadlineAt = phase === "PLAY" ? round.playEndsAt : null
-        player.phase = phase
-        player.phaseStartedAt = phase === "PLAY" ? round.phaseStartedAt : round.phaseStartedAt
-        player.phaseDeadlineAt = phase === "PLAY" ? round.playEndsAt : null
-        changed = true
-      }
-      // A player who has already completed the route (or hit a bomb) can
-      // trigger the next challenge while the other participant is still in
-      // the previous challenge. Do not wait for both participants here.
-      for (const [participantId, roundPlayer] of Object.entries(round.players)) {
-        const player = state.players[participantId]
-        if (player && roundPlayer.status === "PLAYING" && roundPlayer.phase === "PLAY" && roundPlayer.phaseDeadlineAt !== null && roundPlayer.phaseDeadlineAt !== undefined && now >= roundPlayer.phaseDeadlineAt) {
-          roundPlayer.status = "TIMEOUT"; roundPlayer.phase = "RESULT"; roundPlayer.reason ??= "TIMEOUT"
-          player.roundStatus = "TIMEOUT"; player.phase = "RESULT"; player.roundElapsedMs = Math.max(0, roundPlayer.phaseDeadlineAt - (roundPlayer.phaseStartedAt ?? round.phaseStartedAt))
+    let changed = false
+    for (const participantId of Object.keys(state.players)) {
+      const player = state.players[participantId]
+      // Older live states do not have a per-player cursor. They were always
+      // on the shared cursor, so migrate them lazily on the first snapshot.
+      player.roundIndex ??= state.currentRoundIndex
+      let guard = state.rounds.length + 2
+      while (guard-- > 0 && player.roundIndex < state.rounds.length) {
+        const round = state.rounds[player.roundIndex]
+        const roundPlayer = round.players[participantId]
+        if (!roundPlayer) {
+          player.roundIndex += 1
+          changed = true
+          continue
+        }
+        if (!roundPlayer.phase) {
+          roundPlayer.phase = player.phase ?? "MEMORIZE"
+          roundPlayer.phaseStartedAt = player.phaseStartedAt ?? round.phaseStartedAt
+          roundPlayer.phaseDeadlineAt = player.phaseDeadlineAt ?? round.memorizeEndsAt
           changed = true
         }
-      }
-      const someoneFinished = Object.values(round.players).some((player) => ["SUCCESS", "BOMB_HIT", "TIMEOUT", "INCOMPLETE", "ABANDONED"].includes(player.status))
-      if (state.phase === "MEMORIZE") {
-        if (someoneFinished) {
-          for (const [participantId, roundPlayer] of Object.entries(round.players)) {
-            if (roundPlayer.status === "READY" || roundPlayer.status === "PLAYING") {
-              roundPlayer.status = "INCOMPLETE"
-              roundPlayer.phase = "RESULT"
-              roundPlayer.reason ??= "INCOMPLETE"
-              const player = state.players[participantId]
-              if (player) { player.roundStatus = "INCOMPLETE"; player.phase = "RESULT"; player.roundElapsedMs = Math.max(0, now - (player.phaseStartedAt ?? round.phaseStartedAt)) }
-            }
-          }
-          state.phase = "RESULT"; round.phase = "RESULT"; round.resultEndsAt = now; changed = true; continue
+        if (!player.phase) {
+          player.phase = roundPlayer.phase
+          player.phaseStartedAt = roundPlayer.phaseStartedAt
+          player.phaseDeadlineAt = roundPlayer.phaseDeadlineAt
+          changed = true
         }
-        if (now >= round.memorizeEndsAt) {
-          state.phase = "PLAY"; round.phase = "PLAY"; round.phaseStartedAt = round.memorizeEndsAt
-          for (const participantId of Object.keys(state.players)) {
-            const player = state.players[participantId]
-            if (player.roundStatus === "READY") this.activatePlayerForRound(state, participantId, round.memorizeEndsAt)
-          }
-          changed = true; continue
+        if (player.phase === "MEMORIZE") {
+          const deadline = player.phaseDeadlineAt ?? roundPlayer.phaseDeadlineAt ?? round.memorizeEndsAt
+          player.phaseDeadlineAt = deadline
+          roundPlayer.phaseDeadlineAt = deadline
+          if (now < deadline) break
+          this.activatePlayerForRound(state, participantId, deadline)
+          changed = true
+          continue
         }
-      }
-      if (state.phase === "PLAY") {
-        // Early-ready players have their own full play window. Resolve that
-        // window independently; the first resolved player still advances the
-        // shared challenge for everyone.
-        const someoneFinishedNow = Object.values(round.players).some((player) => ["SUCCESS", "BOMB_HIT", "TIMEOUT", "INCOMPLETE", "ABANDONED"].includes(player.status))
-        const playExpired = now >= round.playEndsAt
-        if (someoneFinishedNow || playExpired) {
-          // A player who resolves the route has finished this challenge. Do
-          // not hold that player at the result screen while the opponent is
-          // still thinking; advance the shared challenge immediately. Any
-          // player who was still moving is recorded as incomplete for this
-          // round and can continue from the next field.
-          const unresolvedStatus: BombPathRoundStatus = someoneFinishedNow ? "INCOMPLETE" : "TIMEOUT"
-          for (const player of Object.values(round.players)) {
-            if (player.status === "PLAYING" || player.status === "READY") {
-              player.status = unresolvedStatus
-              player.phase = "RESULT"
-              player.reason ??= unresolvedStatus
-            }
-          }
-          state.players = this.mapPlayers(state.players, (player) => player.roundStatus === "PLAYING" || player.roundStatus === "READY" ? { ...player, roundStatus: unresolvedStatus, phase: "RESULT", roundElapsedMs: Math.max(0, Math.min(now, round.playEndsAt) - (player.phaseStartedAt ?? round.phaseStartedAt)) } : player)
-          state.phase = "RESULT"; round.phase = "RESULT"; round.resultEndsAt = someoneFinishedNow ? now : Math.max(now, round.playEndsAt) + round.spec.resultDurationMs; changed = true; continue
+        if (player.phase === "PLAY") {
+          const deadline = player.phaseDeadlineAt ?? roundPlayer.phaseDeadlineAt ?? round.playEndsAt
+          player.phaseDeadlineAt = deadline
+          roundPlayer.phaseDeadlineAt = deadline
+          if (now < deadline) break
+          roundPlayer.status = "TIMEOUT"
+          roundPlayer.phase = "RESULT"
+          roundPlayer.reason ??= "TIMEOUT"
+          player.roundStatus = "TIMEOUT"
+          player.phase = "RESULT"
+          player.roundElapsedMs = Math.max(0, deadline - (player.phaseStartedAt ?? round.phaseStartedAt))
+          changed = true
         }
+        if (player.phase === "RESULT" || ["SUCCESS", "BOMB_HIT", "TIMEOUT", "INCOMPLETE", "ABANDONED"].includes(player.roundStatus)) {
+          roundPlayer.phase = "COMPLETE"
+          roundPlayer.status = player.roundStatus
+          if (player.roundIndex >= state.rounds.length - 1) {
+            player.roundIndex = state.rounds.length
+            player.phase = "COMPLETE"
+            player.phaseDeadlineAt = null
+            player.roundStatus = player.roundStatus === "SUCCESS" ? "SUCCESS" : player.roundStatus
+            changed = true
+            break
+          }
+          const nextIndex = player.roundIndex + 1
+          const next = state.rounds[nextIndex]
+          const nextPlayer = next.players[participantId]
+          const nextStartedAt = now
+          const nextMemorizeEndsAt = nextStartedAt + next.spec.memorizeDurationMs
+          player.roundIndex = nextIndex
+          player.roundStatus = "READY"
+          player.phase = "MEMORIZE"
+          player.phaseStartedAt = nextStartedAt
+          player.phaseDeadlineAt = nextMemorizeEndsAt
+          player.path = []
+          player.roundScore = 0
+          player.roundElapsedMs = null
+          player.nextBotAt = undefined
+          if (nextPlayer) {
+            nextPlayer.status = "READY"
+            nextPlayer.phase = "MEMORIZE"
+            nextPlayer.phaseStartedAt = nextStartedAt
+            nextPlayer.phaseDeadlineAt = nextMemorizeEndsAt
+            nextPlayer.path = []
+            nextPlayer.score = 0
+            nextPlayer.elapsedMs = null
+            nextPlayer.pathLength = 0
+            nextPlayer.reason = undefined
+          }
+          changed = true
+          continue
+        }
+        break
       }
-      if (state.phase === "RESULT" && round.resultEndsAt !== null && now >= round.resultEndsAt) {
-        round.phase = "COMPLETE"
-        if (state.currentRoundIndex >= state.rounds.length - 1) return { state: this.timeoutState(state), changed: true, finished: true }
-        state.currentRoundIndex += 1; state.phase = "MEMORIZE"
-        const next = state.rounds[state.currentRoundIndex]; next.phase = "MEMORIZE"; next.phaseStartedAt = round.resultEndsAt; next.memorizeEndsAt = next.phaseStartedAt + next.spec.memorizeDurationMs; next.playEndsAt = next.memorizeEndsAt + next.spec.playDurationMs
-        state.players = this.mapPlayers(state.players, (player) => ({ ...player, roundStatus: "READY", phase: "MEMORIZE", phaseStartedAt: next.phaseStartedAt, phaseDeadlineAt: null, path: [], roundScore: 0, roundElapsedMs: null }));
-        for (const player of Object.values(next.players)) Object.assign(player, { status: "READY", phase: "MEMORIZE", phaseStartedAt: next.phaseStartedAt, phaseDeadlineAt: null, path: [], score: 0, elapsedMs: null, pathLength: 0 })
-        changed = true; continue
-      }
-      break
     }
-    state.stateHash = bombPathStateHash(state); return { state, changed, finished: false }
+    const players = Object.values(state.players)
+    const allComplete = players.length > 0 && players.every((player) => player.roundIndex >= state.rounds.length)
+    if (allComplete) return { state: this.timeoutState(state), changed: true, finished: true }
+    state.currentRoundIndex = players.length ? Math.min(...players.map((player) => Math.min(player.roundIndex, Math.max(0, state.rounds.length - 1)))) : 0
+    state.phase = players.some((player) => player.phase === "PLAY") ? "PLAY" : players.some((player) => player.phase === "MEMORIZE") ? "MEMORIZE" : "RESULT"
+    state.stateHash = bombPathStateHash(state)
+    return { state, changed, finished: false }
   }
 
   private timeoutState(state: BombPathState) { const rounds = state.rounds.map((round, index) => index === state.currentRoundIndex ? { ...round, phase: "COMPLETE" as const, players: Object.fromEntries(Object.entries(round.players).map(([id, player]) => [id, player.status === "PLAYING" || player.status === "READY" ? { ...player, status: "TIMEOUT" as const } : player])) } : round); const finished = { ...state, status: "FINISHED" as const, phase: "COMPLETE" as const, rounds, players: this.mapPlayers(state.players, (player) => player.roundStatus === "PLAYING" || player.roundStatus === "READY" ? { ...player, roundStatus: "TIMEOUT" } : player) }; return { ...finished, winnerParticipantId: this.winner(finished), stateHash: bombPathStateHash(finished) } }
@@ -339,8 +350,8 @@ export class BombPathService {
   private mapPlayers(players: Record<string, RuntimePlayer>, map: (player: RuntimePlayer) => RuntimePlayer) { return Object.fromEntries(Object.entries(players).map(([id, player]) => [id, map(player)])) }
 
   private activatePlayerForRound(state: BombPathState, participantId: string, now: number) {
-    const round = state.rounds[state.currentRoundIndex]
     const player = state.players[participantId]
+    const round = player ? state.rounds[player.roundIndex] : undefined
     const roundPlayer = round?.players[participantId]
     if (!round || !player || !roundPlayer || ["SUCCESS", "BOMB_HIT", "TIMEOUT", "INCOMPLETE", "ABANDONED"].includes(roundPlayer.status)) return
     const deadline = now + round.spec.playDurationMs
@@ -351,25 +362,25 @@ export class BombPathService {
   private async advanceBots(tx: Prisma.TransactionClient, match: MatchRow, state: BombPathState, policy: BombPathPolicy, now: number) {
     const bot = match.participants.find((item: any) => item.participantType === "BOT")
     if (!bot || !policy.bot.enabled || state.status === "FINISHED") return state
-    const player = state.players[bot.id]; const round = state.rounds[state.currentRoundIndex]
-    if (!player || !round || state.phase !== "PLAY" || player.roundStatus !== "PLAYING") return state
-    let due = player.nextBotAt ?? round.phaseStartedAt + policy.bot.reactionDelayMs
+    const player = state.players[bot.id]; const round = player ? state.rounds[player.roundIndex] : undefined
+    if (!player || !round || player.phase !== "PLAY" || player.roundStatus !== "PLAYING") return state
+    let due = player.nextBotAt ?? (player.phaseStartedAt ?? round.phaseStartedAt) + policy.bot.reactionDelayMs
     if (now < due) return state
     let moves = 0
     while (moves < 8) {
     const safe = findSafePath(round.field); const target = safe[player.path.length] ?? round.field.trophy
-    const dto: BombPathStepDto = { sequence: player.sequence + 1, roundIndex: state.currentRoundIndex, cell: target, clientActionId: "bot:" + match.id + ":" + state.currentRoundIndex + ":" + (player.sequence + 1) }
+    const dto: BombPathStepDto = { sequence: player.sequence + 1, roundIndex: player.roundIndex, cell: target, clientActionId: "bot:" + match.id + ":" + player.roundIndex + ":" + (player.sequence + 1) }
     if (policy.bot.errorRate > 0 && player.path.length > 1 && this.unit(match.serverNonce + ":bot", player.sequence) < policy.bot.errorRate) {
       const last = player.path[player.path.length - 1]; const bomb = round.field.bombs.find((candidate) => Math.abs(candidate.row - last.row) + Math.abs(candidate.column - last.column) === 1); if (bomb) dto.cell = bomb
     }
     const checked = validateBombPathStep(round.field, player.path, dto.cell, policy.orthogonalOnly)
     player.sequence = dto.sequence; player.nextBotAt = due + policy.bot.stepDelayMs + Math.round(this.unit(match.serverNonce + ":jitter", player.sequence) * policy.bot.jitterMs); due = player.nextBotAt; player.path = checked.path; round.players[bot.id].path = checked.path
-    if (checked.outcome === "BOMB") { player.roundStatus = "BOMB_HIT"; round.players[bot.id].status = "BOMB_HIT" }
-    else if (checked.outcome === "SUCCESS") { player.roundStatus = "SUCCESS"; round.players[bot.id].status = "SUCCESS"; player.roundElapsedMs = now - round.phaseStartedAt; const score = scoreBombPathSuccess("SUCCESS", player.roundElapsedMs, checked.path.length, round.field, round.spec, policy); player.roundScore = score.total; player.score += score.total; round.players[bot.id].score = score.total; round.players[bot.id].elapsedMs = player.roundElapsedMs }
+    if (checked.outcome === "BOMB") { player.roundStatus = "BOMB_HIT"; player.phase = "RESULT"; round.players[bot.id].status = "BOMB_HIT"; round.players[bot.id].phase = "RESULT" }
+    else if (checked.outcome === "SUCCESS") { player.roundStatus = "SUCCESS"; player.phase = "RESULT"; round.players[bot.id].status = "SUCCESS"; round.players[bot.id].phase = "RESULT"; player.roundElapsedMs = now - (player.phaseStartedAt ?? round.phaseStartedAt); const score = scoreBombPathSuccess("SUCCESS", player.roundElapsedMs, checked.path.length, round.field, round.spec, policy); player.roundScore = score.total; player.score += score.total; round.players[bot.id].score = score.total; round.players[bot.id].elapsedMs = player.roundElapsedMs }
     state.replay = [...state.replay, { participantId: bot.id, sequence: dto.sequence, roundIndex: dto.roundIndex, cell: dto.cell, outcome: checked.outcome, bot: true, acceptedAt: new Date().toISOString() }].slice(-MAX_REPLAY_EVENTS)
     await this.persistEvent(tx, match, bot.id, dto.sequence, dto.clientActionId, "BOMB_PATH_STEP", true, { accepted: true, outcome: checked.outcome, sequence: dto.sequence, roundIndex: dto.roundIndex, bot: true, scoreDelta: player.roundScore })
     moves += 1
-    if (player.roundStatus !== "PLAYING" || state.phase !== "PLAY" || !player.nextBotAt || player.nextBotAt > now) return state
+    if (player.roundStatus !== "PLAYING" || player.phase !== "PLAY" || !player.nextBotAt || player.nextBotAt > now) return state
     }
     return state
   }
@@ -396,12 +407,12 @@ export class BombPathService {
 
   private async saveState(tx: Prisma.TransactionClient, match: MatchRow, state: BombPathState) { state.stateHash = bombPathStateHash(state); await tx.match.update({ where: { id: match.id }, data: { metadata: this.metadata(match.metadata, state) } }) }
   private project(match: MatchRow, participantId: string, state: BombPathState | null, policy: BombPathPolicy) {
-    const current = state?.rounds[state.currentRoundIndex]; const self = state?.players[participantId]; const finished = ["FINISHED", "REVIEW", "SETTLED"].includes(match.status) || state?.status === "FINISHED"
+    const self = state?.players[participantId]; const viewerRoundIndex = self?.roundIndex ?? state?.currentRoundIndex ?? 0; const current = state?.rounds[viewerRoundIndex]; const finished = ["FINISHED", "REVIEW", "SETTLED"].includes(match.status) || state?.status === "FINISHED"
     const viewerPhase = self?.phase ?? state?.phase
     const phaseDeadlineMs = current ? (viewerPhase === "MEMORIZE" ? current.memorizeEndsAt : viewerPhase === "PLAY" ? self?.phaseDeadlineAt ?? current.playEndsAt : current.resultEndsAt ?? current.playEndsAt) : null
     const participantProjection = match.participants.map((item: any) => { const player = state?.players[item.id]; return { participantId: item.id, userId: item.userId, participantType: item.participantType, name: item.user?.profile?.displayName ?? item.user?.username ?? "SMARTS bot", username: item.user?.username ?? null, avatarUrl: item.user?.profile?.avatarUrl ?? null, score: player?.score ?? item.finalScore ?? 0, roundStatus: player?.roundStatus ?? "READY", result: item.result } })
     const field = current ? { roundIndex: current.spec.roundIndex, gridSize: current.spec.gridSize, flag: current.field.flag, trophy: current.field.trophy, bombs: viewerPhase === "MEMORIZE" ? current.field.bombs : [], commitment: current.field.commitment, fieldCommitment: current.field.commitment } : null
-    return { matchId: match.id, gameKey: "bomb_path", status: state?.status === "FINISHED" ? match.status === "SETTLED" ? "SETTLED" : "FINISHED" : match.status, mode: match.mode, rulesVersion: state?.rulesVersion ?? policy.rulesVersion, generationVersion: state?.generationVersion ?? policy.generationVersion, policyVersion: state?.policyVersion ?? match.gameConfig?.version ?? null, selfParticipantId: participantId, currentRoundIndex: state?.currentRoundIndex ?? 0, phase: viewerPhase ?? "WAITING", roundCount: state?.rounds.length ?? policy.roundCount, serverNow: new Date().toISOString(), serverNowMs: Date.now(), phaseStartedAt: self?.phaseStartedAt ? new Date(self.phaseStartedAt).toISOString() : current ? new Date(current.phaseStartedAt).toISOString() : null, phaseDeadlineAt: phaseDeadlineMs === null ? null : new Date(phaseDeadlineMs).toISOString(), remainingMilliseconds: phaseDeadlineMs === null ? 0 : Math.max(0, phaseDeadlineMs - Date.now()), matchEndsAt: state?.endsAt ?? null, field, round: current ? { current: current.spec.roundIndex, total: state?.rounds.length ?? policy.roundCount, phase: viewerPhase ?? "WAITING", gridSize: current.spec.gridSize, flag: current.field.flag, trophy: current.field.trophy, bombs: field?.bombs ?? [], fieldCommitment: current.field.commitment, phaseDeadlineAt: phaseDeadlineMs === null ? null : new Date(phaseDeadlineMs).toISOString(), remainingMilliseconds: phaseDeadlineMs === null ? 0 : Math.max(0, phaseDeadlineMs - Date.now()) } : null, self: self ? { participantId, score: self.score, sequence: self.sequence, path: self.path, roundStatus: self.roundStatus, roundScore: self.roundScore, roundElapsedMs: self.roundElapsedMs, phase: self.phase ?? state?.phase, phaseDeadlineAt: self.phaseDeadlineAt ? new Date(self.phaseDeadlineAt).toISOString() : null } : null, players: participantProjection, participants: participantProjection, winnerParticipantId: state?.winnerParticipantId ?? null, replayLength: state?.replay.length ?? 0, result: finished ? { finalScores: participantProjection.map((item: any) => ({ participantId: item.participantId, score: state?.players[item.participantId]?.score ?? item.score, result: item.result })), practice: match.mode === "PRACTICE" } : null, stateHash: state?.stateHash ?? null, policy: { roundCount: policy.roundCount, gridSizeEarly: policy.gridSizeEarly, gridSizeLate: policy.gridSizeLate, bombCountEarly: policy.bombCountEarly, bombCountLate: policy.bombCountLate, memorizeDurationMs: policy.memorizeDurationMs, playDurationMs: policy.playDurationMs, orthogonalOnly: policy.orthogonalOnly } }
+    return { matchId: match.id, gameKey: "bomb_path", status: state?.status === "FINISHED" ? match.status === "SETTLED" ? "SETTLED" : "FINISHED" : match.status, mode: match.mode, rulesVersion: state?.rulesVersion ?? policy.rulesVersion, generationVersion: state?.generationVersion ?? policy.generationVersion, policyVersion: state?.policyVersion ?? match.gameConfig?.version ?? null, selfParticipantId: participantId, currentRoundIndex: viewerRoundIndex, phase: viewerPhase ?? "WAITING", roundCount: state?.rounds.length ?? policy.roundCount, serverNow: new Date().toISOString(), serverNowMs: Date.now(), phaseStartedAt: self?.phaseStartedAt ? new Date(self.phaseStartedAt).toISOString() : current ? new Date(current.phaseStartedAt).toISOString() : null, phaseDeadlineAt: phaseDeadlineMs === null ? null : new Date(phaseDeadlineMs).toISOString(), remainingMilliseconds: phaseDeadlineMs === null ? 0 : Math.max(0, phaseDeadlineMs - Date.now()), matchEndsAt: state?.endsAt ?? null, field, round: current ? { current: current.spec.roundIndex, total: state?.rounds.length ?? policy.roundCount, phase: viewerPhase ?? "WAITING", gridSize: current.spec.gridSize, flag: current.field.flag, trophy: current.field.trophy, bombs: field?.bombs ?? [], fieldCommitment: current.field.commitment, phaseDeadlineAt: phaseDeadlineMs === null ? null : new Date(phaseDeadlineMs).toISOString(), remainingMilliseconds: phaseDeadlineMs === null ? 0 : Math.max(0, phaseDeadlineMs - Date.now()) } : null, self: self ? { participantId, score: self.score, sequence: self.sequence, path: self.path, roundStatus: self.roundStatus, roundScore: self.roundScore, roundElapsedMs: self.roundElapsedMs, phase: self.phase ?? state?.phase, phaseDeadlineAt: self.phaseDeadlineAt ? new Date(self.phaseDeadlineAt).toISOString() : null } : null, players: participantProjection, participants: participantProjection, winnerParticipantId: state?.winnerParticipantId ?? null, replayLength: state?.replay.length ?? 0, result: finished ? { finalScores: participantProjection.map((item: any) => ({ participantId: item.participantId, score: state?.players[item.participantId]?.score ?? item.score, result: item.result })), practice: match.mode === "PRACTICE" } : null, stateHash: state?.stateHash ?? null, policy: { roundCount: policy.roundCount, gridSizeEarly: policy.gridSizeEarly, gridSizeLate: policy.gridSizeLate, bombCountEarly: policy.bombCountEarly, bombCountLate: policy.bombCountLate, memorizeDurationMs: policy.memorizeDurationMs, playDurationMs: policy.playDurationMs, orthogonalOnly: policy.orthogonalOnly } }
   }
 
   private policy(match: MatchRow): BombPathPolicy { const settings = match.gameConfig?.settings && typeof match.gameConfig.settings === "object" && !Array.isArray(match.gameConfig.settings) ? match.gameConfig.settings as Record<string, unknown> : {}; return mergeBombPathPolicy(settings.bombPathPolicy ?? DEFAULT_BOMB_PATH_POLICY) }
