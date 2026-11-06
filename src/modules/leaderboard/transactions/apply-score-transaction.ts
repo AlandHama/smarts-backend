@@ -100,7 +100,7 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
         })
       : []
     await transaction.leaderboardEntry.update({ where: { id: entry.id }, data: { score: scoreAfter, metadata: member.metadata as Prisma.InputJsonValue | undefined } })
-    const event = await transaction.leaderboardScoreEvent.create({ data: { entryId: entry.id, leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey, playerId: member.playerId, delta: appliedDelta, scoreBefore: entry.score, scoreAfter, sourceType: input.sourceType, sourceId, idempotencyKeyId: idempotency.id } })
+    const event = await transaction.leaderboardScoreEvent.create({ data: { entryId: entry.id, leaderboardId: board.id, seasonId: season.id, memberKey: member.memberKey, playerId: member.playerId, countryCode: member.countryCode, delta: appliedDelta, scoreBefore: entry.score, scoreAfter, sourceType: input.sourceType, sourceId, idempotencyKeyId: idempotency.id } })
     const response = { leaderboardKey: board.key, seasonId: season.id, entryId: entry.id, memberKey: member.memberKey, scoreBefore: entry.score.toString(), scoreAfter: scoreAfter.toString(), delta: appliedDelta.toString(), eventId: event.id }
     if (passedEntries.length && member.playerId) {
       await transaction.outboxEvent.create({
@@ -130,11 +130,12 @@ export class ApplyLeaderboardScoreTransaction extends PrismaTransaction<ApplyLea
       const user = await transaction.user.findUnique({ where: { id: input.playerId }, select: { id: true, status: true, username: true, profile: { select: { countryCode: true, displayName: true } } } })
       if (!user) throw new NotFoundException("Player not found")
       if (user.status === "BANNED") throw new BadRequestException("Banned players cannot receive leaderboard score")
-      return { memberKey: user.id, playerId: user.id, playerName: user.profile?.displayName || user.username, metadata: user.profile?.countryCode ? { countryCode: user.profile.countryCode } : undefined }
+      const countryCode = user.profile?.countryCode?.trim().toUpperCase() || null
+      return { memberKey: user.id, playerId: user.id, playerName: user.profile?.displayName || user.username, countryCode, metadata: countryCode ? { countryCode } : undefined }
     }
     if (input.playerId) throw new BadRequestException("Country and generic leaderboards cannot have a player id")
     const memberKey = input.memberKey?.trim().toUpperCase()
     if (!memberKey || (memberType === LeaderboardMemberType.COUNTRY && !/^[A-Z]{2}$/.test(memberKey))) throw new BadRequestException("A normalized ISO country code is required")
-    return { memberKey, playerId: undefined, playerName: undefined, metadata: memberType === LeaderboardMemberType.COUNTRY ? { countryCode: memberKey } : undefined }
+    return { memberKey, playerId: undefined, playerName: undefined, countryCode: null, metadata: memberType === LeaderboardMemberType.COUNTRY ? { countryCode: memberKey } : undefined }
   }
 }

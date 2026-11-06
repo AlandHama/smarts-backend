@@ -96,7 +96,10 @@ export class LeaderboardService {
     const offset = Math.max(query.offset ?? 0, 0);
     const order = board.direction === "ASCENDING" ? "ASC" : "DESC";
     const countryCode = board.memberType === "PLAYER" ? query.countryCode?.trim().toUpperCase() : undefined;
-    const countFilter = countryCode
+    const countryContributionView = board.memberType === "PLAYER" && Boolean(countryCode);
+    const countFilter = countryContributionView
+      ? Prisma.sql` FROM (SELECT e."playerId" FROM "LeaderboardEntry" e INNER JOIN "LeaderboardScoreEvent" se ON se."entryId" = e."id" WHERE e."leaderboardId" = ${board.id} AND e."seasonId" = ${season.id} AND se."countryCode" = ${countryCode} AND e."playerId" IS NOT NULL GROUP BY e."playerId" HAVING SUM(se."delta") > 0) country_players`
+      : countryCode
       ? Prisma.sql` FROM "LeaderboardEntry" e INNER JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${board.id} AND e."seasonId" = ${season.id} AND p."countryCode" = ${countryCode}`
       : Prisma.sql` FROM "LeaderboardEntry" WHERE "leaderboardId" = ${board.id} AND "seasonId" = ${season.id}`;
     const [countRows, rows] = await Promise.all([
@@ -378,15 +381,22 @@ export class LeaderboardService {
     const filter = memberKeys?.length
       ? Prisma.sql`AND e."memberKey" IN (${Prisma.join(memberKeys)})`
       : Prisma.empty;
-    const countryFilter = countryCode
+    const countryContributionView = memberType === "PLAYER" && Boolean(countryCode);
+    const countryFilter = countryCode && !countryContributionView
       ? Prisma.sql`AND p."countryCode" = ${countryCode}`
       : Prisma.empty;
+    const countryContributionJoin = countryContributionView
+      ? Prisma.sql`INNER JOIN (SELECT e2."playerId", SUM(se2."delta")::bigint AS "countryScore" FROM "LeaderboardEntry" e2 INNER JOIN "LeaderboardScoreEvent" se2 ON se2."entryId" = e2."id" WHERE e2."leaderboardId" = ${leaderboardId} AND e2."seasonId" = ${seasonId} AND se2."countryCode" = ${countryCode} AND e2."playerId" IS NOT NULL GROUP BY e2."playerId" HAVING SUM(se2."delta") > 0) country_scores ON country_scores."playerId" = e."playerId"`
+      : Prisma.empty;
+    const scoreExpression = countryContributionView
+      ? Prisma.sql`country_scores."countryScore"`
+      : Prisma.sql`e."score"`;
     const countryPlayerCounts = memberType === "COUNTRY"
       ? await this.countryPlayerCounts(period)
       : new Map<string, number>();
     return this.prisma
       .$queryRaw<Array<any>>(
-        Prisma.sql`SELECT e."id", e."memberKey", e."playerId", e."score", e."metadata", e."createdAt", e."updatedAt", RANK() OVER (ORDER BY e."score" ${Prisma.raw(order)})::bigint AS "rank", u."username", p."displayName", p."avatarUrl", p."avatarFrameKey", p."nameEffectKey", p."countryCode", p."elo", COALESCE((SELECT pt."name" FROM "ProgressionTier" pt INNER JOIN "ProgressionDefinition" pd ON pd."id" = pt."progressionId" WHERE pd."key" = 'elo' AND pd."active" = true AND pt."name" IS NOT NULL AND pt."pointsThreshold" <= COALESCE(p."elo", 0) ORDER BY pt."pointsThreshold" DESC, pt."step" DESC LIMIT 1), 'Unranked') AS "eloRankName", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg WHERE pg."recipientUserId" = e."playerId"), 0)::bigint AS "giftReceivedCount", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg LEFT JOIN "CatalogItem" ci ON ci."id" = pg."catalogItemId" LEFT JOIN "SocialGiftDefinition" sg ON sg."id" = pg."socialGiftDefinitionId" WHERE pg."recipientUserId" = e."playerId" AND (LOWER(COALESCE(ci."key", sg."key", '')) LIKE '%rose%' OR LOWER(COALESCE(ci."name", sg."name", '')) LIKE '%rose%')), 0)::bigint AS "roseCount", COALESCE((SELECT SUM(pg2."gldPriceDecimal") FROM "PlayerGift" pg2 WHERE pg2."recipientUserId" = e."playerId"), 0)::numeric AS "giftValueReceived" FROM "LeaderboardEntry" e LEFT JOIN "User" u ON u."id" = e."playerId" LEFT JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} ${countryFilter} ${filter} ORDER BY e."score" ${Prisma.raw(order)}, e."updatedAt" ASC, e."memberKey" ASC LIMIT ${limit} OFFSET ${offset}`,
+        Prisma.sql`SELECT e."id", e."memberKey", e."playerId", ${scoreExpression} AS "score", e."metadata", e."createdAt", e."updatedAt", RANK() OVER (ORDER BY ${scoreExpression} ${Prisma.raw(order)})::bigint AS "rank", u."username", p."displayName", p."avatarUrl", p."avatarFrameKey", p."nameEffectKey", p."countryCode", p."elo", COALESCE((SELECT pt."name" FROM "ProgressionTier" pt INNER JOIN "ProgressionDefinition" pd ON pd."id" = pt."progressionId" WHERE pd."key" = 'elo' AND pd."active" = true AND pt."name" IS NOT NULL AND pt."pointsThreshold" <= COALESCE(p."elo", 0) ORDER BY pt."pointsThreshold" DESC, pt."step" DESC LIMIT 1), 'Unranked') AS "eloRankName", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg WHERE pg."recipientUserId" = e."playerId"), 0)::bigint AS "giftReceivedCount", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg LEFT JOIN "CatalogItem" ci ON ci."id" = pg."catalogItemId" LEFT JOIN "SocialGiftDefinition" sg ON sg."id" = pg."socialGiftDefinitionId" WHERE pg."recipientUserId" = e."playerId" AND (LOWER(COALESCE(ci."key", sg."key", '')) LIKE '%rose%' OR LOWER(COALESCE(ci."name", sg."name", '')) LIKE '%rose%')), 0)::bigint AS "roseCount", COALESCE((SELECT SUM(pg2."gldPriceDecimal") FROM "PlayerGift" pg2 WHERE pg2."recipientUserId" = e."playerId"), 0)::numeric AS "giftValueReceived" FROM "LeaderboardEntry" e ${countryContributionJoin} LEFT JOIN "User" u ON u."id" = e."playerId" LEFT JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} ${countryFilter} ${filter} ORDER BY ${scoreExpression} ${Prisma.raw(order)}, e."updatedAt" ASC, e."memberKey" ASC LIMIT ${limit} OFFSET ${offset}`,
       )
       .then((rows) =>
         rows.map((row) => ({
@@ -430,7 +440,7 @@ export class LeaderboardService {
     const season = await this.activeSeason(playerBoard.id);
     if (!season) return new Map<string, number>();
     const rows = await this.prisma.$queryRaw<Array<{ countryCode: string; count: bigint }>>(
-      Prisma.sql`SELECT p."countryCode" AS "countryCode", COUNT(DISTINCT e."playerId")::bigint AS count FROM "LeaderboardEntry" e INNER JOIN "PlayerProfile" p ON p."userId" = e."playerId" INNER JOIN "User" u ON u."id" = e."playerId" WHERE e."leaderboardId" = ${playerBoard.id} AND e."seasonId" = ${season.id} AND e."playerId" IS NOT NULL AND p."countryCode" IS NOT NULL AND u."status" = 'ACTIVE' GROUP BY p."countryCode"`,
+      Prisma.sql`SELECT se."countryCode" AS "countryCode", COUNT(DISTINCT e."playerId")::bigint AS count FROM "LeaderboardEntry" e INNER JOIN "LeaderboardScoreEvent" se ON se."entryId" = e."id" INNER JOIN "User" u ON u."id" = e."playerId" WHERE e."leaderboardId" = ${playerBoard.id} AND e."seasonId" = ${season.id} AND e."playerId" IS NOT NULL AND se."countryCode" IS NOT NULL AND u."status" = 'ACTIVE' GROUP BY se."countryCode" HAVING SUM(se."delta") > 0`,
     );
     return new Map(rows.map((row) => [row.countryCode.trim().toUpperCase(), Number(row.count)]));
   }
@@ -442,6 +452,12 @@ export class LeaderboardService {
     order: "ASC" | "DESC",
     countryCode?: string,
   ) {
+    if (countryCode) {
+      const rows = await this.prisma.$queryRaw<Array<{ rank: bigint }>>(
+        Prisma.sql`SELECT "rank" FROM (SELECT e."playerId" AS "memberKey", RANK() OVER (ORDER BY SUM(se."delta") ${Prisma.raw(order)})::bigint AS "rank" FROM "LeaderboardEntry" e INNER JOIN "LeaderboardScoreEvent" se ON se."entryId" = e."id" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} AND e."playerId" IS NOT NULL AND se."countryCode" = ${countryCode} GROUP BY e."playerId" HAVING SUM(se."delta") > 0) ranked WHERE "memberKey" = ${memberKey} LIMIT 1`,
+      );
+      return rows[0]?.rank ?? null;
+    }
     const countryFilter = countryCode
       ? Prisma.sql`AND p."countryCode" = ${countryCode}`
       : Prisma.empty;

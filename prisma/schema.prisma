@@ -2645,6 +2645,7 @@ model LeaderboardScoreEvent {
   seasonId         String                     @db.Uuid
   memberKey        String                     @db.VarChar(128)
   playerId         String?                    @db.Uuid
+  countryCode      String?                    @db.VarChar(16)
   delta            BigInt
   scoreBefore      BigInt
   scoreAfter       BigInt
