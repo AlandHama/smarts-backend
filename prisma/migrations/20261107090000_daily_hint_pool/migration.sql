@@ -9,6 +9,10 @@ CREATE TABLE "DailyHintSelection" (
     CONSTRAINT "DailyHintSelection_pkey" PRIMARY KEY ("id")
 );
 
+-- The backfill below uses ON CONFLICT ("dateKey"). PostgreSQL requires the
+-- matching unique index to exist before that statement is executed.
+CREATE UNIQUE INDEX "DailyHintSelection_dateKey_key" ON "DailyHintSelection"("dateKey");
+
 ALTER TABLE "DailyHintView" ADD COLUMN "dateKey" VARCHAR(10);
 
 UPDATE "DailyHintView" view
@@ -30,7 +34,6 @@ DROP INDEX "DailyHint_dateKey_key";
 DROP INDEX "DailyHint_active_dateKey_idx";
 ALTER TABLE "DailyHint" DROP COLUMN "dateKey";
 
-CREATE UNIQUE INDEX "DailyHintSelection_dateKey_key" ON "DailyHintSelection"("dateKey");
 CREATE INDEX "DailyHintSelection_hintId_dateKey_idx" ON "DailyHintSelection"("hintId", "dateKey");
 
 ALTER TABLE "DailyHintSelection" ADD CONSTRAINT "DailyHintSelection_hintId_fkey"
