@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common"
+import { ConflictException, Injectable, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common"
 import { OAuth2Client } from "google-auth-library"
 import { PlayerAuditActorType } from "@prisma/client"
 
@@ -11,6 +11,7 @@ import { TokenService } from "./token.service"
 import { FraudService } from "../../fraud/fraud.service"
 import { ContentSafetyService } from "../../content-safety/content-safety.service"
 import { SignupPolicyService } from "./signup-policy.service"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
 
 @Injectable()
 export class GoogleAuthService {
@@ -44,6 +45,73 @@ export class GoogleAuthService {
     const deviceFingerprint = [headers["x-device-manufacturer"], headers["x-device-model"], headers["x-device-os"], headers["x-device-os-version"]].filter((value) => typeof value === "string" && value.trim()).join("|") || String(headers["user-agent"] ?? "google")
     void this.fraudService.observe(user.id, { type: "ABNORMAL_SESSION_SWITCHING", sourceType: "GOOGLE_LOGIN", sourceId: `${deviceFingerprint}:${Date.now()}` }).catch(() => undefined)
     void this.fraudService.observeSharedDevice(user.id, deviceFingerprint).catch(() => undefined)
+    return { token, user: this.usersService.toResponse(user) }
+  }
+
+  async upgradeGuest(userId: string, idToken: string, request: any) {
+    await this.signupPolicy.assertEnabled()
+    const claims = await this.withSafeAvatar(await this.verifyIdToken(idToken))
+    const guest = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, accountOrigin: true, status: true },
+    })
+    if (!guest || guest.status !== "ACTIVE") throw new UnauthorizedException("Please login again")
+    if (guest.accountOrigin !== "GUEST") throw new ConflictException("This account has already been upgraded")
+
+    const [identity, emailOwner] = await Promise.all([
+      this.prisma.externalIdentity.findUnique({
+        where: { provider_providerSubject: { provider: "google", providerSubject: claims.subject } },
+        select: { userId: true },
+      }),
+      this.prisma.user.findUnique({ where: { email: claims.email }, select: { id: true } }),
+    ])
+    if (identity && identity.userId !== userId) throw new ConflictException("That Google account is already linked to another player")
+    if (emailOwner && emailOwner.id !== userId) throw new ConflictException("That Google email belongs to another player")
+
+    const displayName = (claims.name || claims.email.split("@", 1)[0] || "Google Player").slice(0, 50)
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          email: claims.email,
+          firstName: claims.firstName,
+          lastName: claims.lastName,
+          accountOrigin: "GOOGLE",
+          profile: {
+            update: {
+              displayName,
+              ...(claims.avatarUrl ? { avatarUrl: claims.avatarUrl } : {}),
+            },
+          },
+        },
+      })
+      if (!identity) {
+        await tx.externalIdentity.create({
+          data: {
+            userId,
+            provider: "google",
+            providerSubject: claims.subject,
+            email: claims.email,
+            displayName: claims.name,
+            avatarUrl: claims.avatarUrl,
+          },
+        })
+      }
+      await writePlayerAudit(tx, {
+        userId,
+        actorType: PlayerAuditActorType.PLAYER,
+        action: "GUEST_GOOGLE_UPGRADED",
+        entityType: "User",
+        entityId: userId,
+        summary: "Upgraded the guest account with Google",
+        changes: { accountOrigin: { old: "GUEST", new: "GOOGLE" } },
+      })
+    })
+
+    const user = await this.usersService.findById(userId)
+    if (!user) throw new UnauthorizedException("Please login again")
+    const token = await this.tokenService.generateAuthToken({ ...user, isSystemAdmin: user.isSystemAdmin }, request, this.isMobile(request))
+    await this.usersService.updateLastOnline(user.id)
     return { token, user: this.usersService.toResponse(user) }
   }
 

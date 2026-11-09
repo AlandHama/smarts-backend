@@ -48,6 +48,13 @@ export class AuthController {
     return this.authService.upgradeGuest(user.id, dto, request)
   }
 
+  @Post("guest/google")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Upgrade the current guest player with a verified Google identity" })
+  upgradeGuestWithGoogle(@CurrentUser() user: UserResponseDto, @Body() dto: GoogleAuthRequestDto, @Req() request: any): Promise<LoginResponseDto> {
+    return this.googleAuthService.upgradeGuest(user.id, dto.idToken, request)
+  }
+
   @SkipAuth()
   @Post("google")
   @ApiOperation({ summary: "Authenticate with a verified Google OpenID Connect ID token" })

@@ -48,6 +48,19 @@ while :; do
     continue
   fi
 
+  # The daily hint pool migration is transactional and has been made
+  # retry-safe. If an earlier release left only its failed Prisma marker,
+  # clear that known marker and retry the corrected migration during predeploy.
+  # This runs in Railway's build/predeploy environment, where npm and npx are
+  # available; the stripped runtime console does not include those CLIs.
+  if printf '%s' "$output" | grep -q '20261107090000_daily_hint_pool' \
+    && printf '%s' "$output" | grep -q 'P3009'; then
+    echo "resolving the known rolled-back daily hint pool migration failure" >&2
+    npx prisma migrate resolve --rolled-back 20261107090000_daily_hint_pool
+    attempt=$((attempt + 1))
+    continue
+  fi
+
   # Phase 1 support center was previously able to create its PostgreSQL
   # objects before failing while seeding SupportCategory.updatedAt. If that
   # partially-applied migration is encountered, complete its seed data and

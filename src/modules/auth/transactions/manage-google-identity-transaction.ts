@@ -11,6 +11,10 @@ type UnlinkInput = { userId: string; actorId: string; actorType: PlayerAuditActo
 
 @Injectable()
 export class LinkGoogleIdentityTransaction extends PrismaTransaction<LinkInput, { linked: true; email: string }> {
+  constructor(prisma: PrismaService) {
+    super(prisma)
+  }
+
   protected async execute(input: LinkInput, transaction: Prisma.TransactionClient) {
     const user = await transaction.user.findUnique({
       where: { id: input.userId },
@@ -52,6 +56,10 @@ export class LinkGoogleIdentityTransaction extends PrismaTransaction<LinkInput, 
 
 @Injectable()
 export class UnlinkGoogleIdentityTransaction extends PrismaTransaction<UnlinkInput, { unlinked: true }> {
+  constructor(prisma: PrismaService) {
+    super(prisma)
+  }
+
   protected async execute(input: UnlinkInput, transaction: Prisma.TransactionClient) {
     const user = await transaction.user.findUnique({
       where: { id: input.userId },
