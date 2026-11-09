@@ -35,6 +35,7 @@ import Typography from "@mui/material/Typography";
 
 import { api, uploadFile } from "../lib/api";
 import { UserSelector, type SelectableUser } from "./UserSelector";
+import { PlayerAvatar } from "./PlayerAvatar";
 import type {
   CommerceAsset,
   CommerceCatalog,
@@ -1640,9 +1641,12 @@ function AssetRedeemCodesPanel({
                           />
                         </TableCell>
                         <TableCell>
-                          {code.assignedUser?.profile?.displayName ||
-                            code.assignedUser?.username ||
-                            "—"}
+                          {code.assignedUser ? (
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <PlayerAvatar name={code.assignedUser.profile?.displayName} username={code.assignedUser.username} avatarUrl={code.assignedUser.profile?.avatarUrl} size={30} />
+                              {code.assignedUser.profile?.displayName || code.assignedUser.username}
+                            </Stack>
+                          ) : "—"}
                         </TableCell>
                         <TableCell>
                           {new Date(code.createdAt).toLocaleString()}
@@ -2079,12 +2083,14 @@ export function CommerceView() {
                 {inventory.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>
-                      <Typography fontWeight={700}>
-                        {row.user.profile?.displayName || row.user.username}
-                      </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <PlayerAvatar name={row.user.profile?.displayName} username={row.user.username} avatarUrl={row.user.profile?.avatarUrl} size={32} />
+                        <Box><Typography fontWeight={700}>{row.user.profile?.displayName || row.user.username}</Typography>
                       <Typography variant="caption" color="text.secondary">
                         {row.user.username}
                       </Typography>
+                        </Box>
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       {row.assetDefinition.name}
@@ -2150,13 +2156,14 @@ export function CommerceView() {
                 {purchases.map((purchase) => (
                   <TableRow key={purchase.id}>
                     <TableCell>
-                      <Typography fontWeight={700}>
-                        {purchase.user.profile?.displayName ||
-                          purchase.user.username}
-                      </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <PlayerAvatar name={purchase.user.profile?.displayName} username={purchase.user.username} avatarUrl={purchase.user.profile?.avatarUrl} size={32} />
+                        <Box><Typography fontWeight={700}>{purchase.user.profile?.displayName || purchase.user.username}</Typography>
                       <Typography variant="caption" color="text.secondary">
                         {purchase.user.username}
                       </Typography>
+                        </Box>
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       {purchase.lines.map((line) => (

@@ -23,6 +23,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { api } from "../lib/api";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 type Transaction = Record<string, any>;
 
@@ -171,7 +172,7 @@ export function TransactionsView() {
                         {item.id}
                       </Typography>
                     </TableCell>
-                    <TableCell>{player}</TableCell>
+                    <TableCell><Stack direction="row" spacing={1} alignItems="center"><PlayerAvatar name={user?.profile?.displayName} username={user?.username} avatarUrl={user?.profile?.avatarUrl} size={32} /><Typography>{player}</Typography></Stack></TableCell>
                     <TableCell>
                       {item.description || item.reason || item.sourceType}
                     </TableCell>

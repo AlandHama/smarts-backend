@@ -440,7 +440,7 @@ export class SystemAdminService implements OnModuleInit {
               id: true,
               username: true,
               email: true,
-              profile: { select: { displayName: true } },
+              profile: { select: { displayName: true, avatarUrl: true } },
             },
           },
         },
@@ -495,7 +495,7 @@ export class SystemAdminService implements OnModuleInit {
             id: true,
             username: true,
             email: true,
-            profile: { select: { displayName: true } },
+            profile: { select: { displayName: true, avatarUrl: true } },
           },
         },
       },
@@ -684,7 +684,7 @@ export class SystemAdminService implements OnModuleInit {
               username: true,
               email: true,
               isSystemAdmin: true,
-              profile: { select: { displayName: true } },
+              profile: { select: { displayName: true, avatarUrl: true } },
             },
           },
         },
@@ -952,7 +952,7 @@ export class SystemAdminService implements OnModuleInit {
                 user: {
                   select: {
                     username: true,
-                    profile: { select: { displayName: true } },
+                    profile: { select: { displayName: true, avatarUrl: true } },
                   },
                 },
               },
@@ -976,7 +976,7 @@ export class SystemAdminService implements OnModuleInit {
                 user: {
                   select: {
                     username: true,
-                    profile: { select: { displayName: true } },
+                    profile: { select: { displayName: true, avatarUrl: true } },
                   },
                 },
               },
@@ -1021,7 +1021,7 @@ export class SystemAdminService implements OnModuleInit {
             user: {
               select: {
                 username: true,
-                profile: { select: { displayName: true } },
+                profile: { select: { displayName: true, avatarUrl: true } },
               },
             },
           },
@@ -1038,14 +1038,14 @@ export class SystemAdminService implements OnModuleInit {
               select: {
                 id: true,
                 username: true,
-                profile: { select: { displayName: true } },
+                profile: { select: { displayName: true, avatarUrl: true } },
               },
             },
             invitee: {
               select: {
                 id: true,
                 username: true,
-                profile: { select: { displayName: true } },
+                profile: { select: { displayName: true, avatarUrl: true } },
               },
             },
           },
@@ -1574,7 +1574,10 @@ export class SystemAdminService implements OnModuleInit {
     return this.gameService.importContent(dto);
   }
   listGameContent(key: string) {
-    return this.gameService.listContent(key, true);
+    // Trivia imports replace the active pool. Keep historical, referenced
+    // questions archived for match/challenge audits, but do not show them as
+    // available questions in the admin pool after a replacement import.
+    return this.gameService.listContent(key, key.trim().toLowerCase() !== "trivia");
   }
   listRewardPolicies() {
     return this.configService.listAdmin();
@@ -1597,7 +1600,7 @@ export class SystemAdminService implements OnModuleInit {
               id: true,
               username: true,
               email: true,
-              profile: { select: { displayName: true } },
+              profile: { select: { displayName: true, avatarUrl: true } },
             },
           },
         },

@@ -34,14 +34,15 @@ export class ReferralsService {
     const effective = this.effectiveConfig(config, override)
     const code = await this.ensureCode(userId)
     const [referrals, referral] = await Promise.all([
-      this.prisma.referral.findMany({ where: { referrerId: userId }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, status: true, referredAdCount: true, totalRewardedGld: true, rewardCount: true, invitedAt: true, qualifiedAt: true, referred: { select: { username: true, profile: { select: { displayName: true } } } } } }),
-      this.prisma.referral.findUnique({ where: { referredId: userId }, select: { id: true, status: true, referrer: { select: { username: true, profile: { select: { displayName: true } } } } } }),
+      this.prisma.referral.findMany({ where: { referrerId: userId }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, status: true, referredAdCount: true, totalRewardedGld: true, rewardCount: true, invitedAt: true, qualifiedAt: true, referred: { select: { username: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
+      this.prisma.referral.findUnique({ where: { referredId: userId }, select: { id: true, status: true, referrer: { select: { username: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
     ])
     const totalRewarded = referrals.reduce((sum, item) => sum + item.totalRewardedGld, 0n)
     const qualified = referrals.filter((item) => item.status === ReferralStatus.QUALIFIED || item.status === ReferralStatus.CAPPED).length
-    const shareBaseUrl = (process.env.SMARTS_SHARE_BASE_URL ?? "https://smarts.app/join").replace(/\/$/, "")
-    const shareLink = `${shareBaseUrl}?ref=${encodeURIComponent(code.code)}`
-    return this.serialize({ enabled: effective.enabled, code: code.code, shareText: `Join SMARTS with referral code ${code.code}`, shareLink, maxInvites: effective.maxInvitesPerUser, invitesUsed: code.inviteCount, invitesRemaining: Math.max(effective.maxInvitesPerUser - code.inviteCount, 0), rewardBps: effective.rewardBps, rewardPercent: effective.rewardBps / 100, maxRewardPerReferral: effective.maxRewardPerReferral, minQualifyingAds: effective.minQualifyingAds, personalized: Boolean(override), settingsSource: override ? "PLAYER" : "GLOBAL", referralsCount: referrals.length, qualifiedCount: qualified, totalRewardedGld: totalRewarded, referredBy: referral ? { referralId: referral.id, status: referral.status, referrerName: referral.referrer.profile?.displayName ?? referral.referrer.username } : null, referrals: referrals.map((item) => ({ id: item.id, name: item.referred.profile?.displayName ?? item.referred.username, status: item.status, referredAdCount: item.referredAdCount, totalRewardedGld: item.totalRewardedGld, rewardCount: item.rewardCount, invitedAt: item.invitedAt, qualifiedAt: item.qualifiedAt })) })
+    const shareLink = this.playStoreReferralLink(code.code)
+    const webShareBaseUrl = (process.env.SMARTS_SHARE_BASE_URL ?? "https://smarts.app/join").replace(/\/$/, "")
+    const webShareLink = `${webShareBaseUrl}?ref=${encodeURIComponent(code.code)}`
+    return this.serialize({ enabled: effective.enabled, code: code.code, shareText: `Join SMARTS on Google Play with my referral link. You both unlock more rewards: ${shareLink}`, shareLink, webShareLink, maxInvites: effective.maxInvitesPerUser, invitesUsed: code.inviteCount, invitesRemaining: Math.max(effective.maxInvitesPerUser - code.inviteCount, 0), rewardBps: effective.rewardBps, rewardPercent: effective.rewardBps / 100, maxRewardPerReferral: effective.maxRewardPerReferral, minQualifyingAds: effective.minQualifyingAds, personalized: Boolean(override), settingsSource: override ? "PLAYER" : "GLOBAL", referralsCount: referrals.length, qualifiedCount: qualified, totalRewardedGld: totalRewarded, referredBy: referral ? { referralId: referral.id, status: referral.status, referrerName: referral.referrer.profile?.displayName ?? referral.referrer.username } : null, referrals: referrals.map((item) => ({ id: item.id, name: item.referred.profile?.displayName ?? item.referred.username, status: item.status, referredAdCount: item.referredAdCount, totalRewardedGld: item.totalRewardedGld, rewardCount: item.rewardCount, invitedAt: item.invitedAt, qualifiedAt: item.qualifiedAt })) })
   }
 
   updateConfig(dto: UpdateReferralConfigDto, adminId: string) { return this.updateConfigTransaction.run({ dto, adminId }).then((config) => this.serialize(config)) }
@@ -54,11 +55,11 @@ export class ReferralsService {
       this.prisma.referral.count({ where: { status: ReferralStatus.QUALIFIED } }),
       this.prisma.referral.count({ where: { status: ReferralStatus.CAPPED } }),
       this.prisma.referralReward.aggregate({ _sum: { rewardAmount: true }, _count: { _all: true } }),
-      this.prisma.referral.findMany({ orderBy: { createdAt: "desc" }, take: 100, select: { id: true, status: true, referredAdCount: true, totalRewardedGld: true, rewardCount: true, createdAt: true, referrer: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, referred: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } }),
+      this.prisma.referral.findMany({ orderBy: { createdAt: "desc" }, take: 100, select: { id: true, status: true, referredAdCount: true, totalRewardedGld: true, rewardCount: true, createdAt: true, referrer: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } }, referred: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
       this.prisma.user.findMany({
         where: search.trim() ? { OR: [{ username: { contains: search.trim(), mode: "insensitive" } }, { email: { contains: search.trim(), mode: "insensitive" } }, { profile: { displayName: { contains: search.trim(), mode: "insensitive" } } }] } : undefined,
         orderBy: { username: "asc" }, take: 50,
-        select: { id: true, username: true, email: true, profile: { select: { displayName: true } }, referralPolicyOverride: true },
+        select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } }, referralPolicyOverride: true },
       }),
     ])
     return this.serialize({ config, stats: { total, active, qualified, capped, rewardCount: rewards._count._all, totalRewardedGld: rewards._sum.rewardAmount ?? 0n }, referrals: recent.map((item) => ({ id: item.id, status: item.status, referredAdCount: item.referredAdCount, totalRewardedGld: item.totalRewardedGld, rewardCount: item.rewardCount, createdAt: item.createdAt, referrer: this.person(item.referrer), referred: this.person(item.referred) })), players: players.map((player) => ({ ...this.person(player), override: player.referralPolicyOverride })) })
@@ -121,7 +122,14 @@ export class ReferralsService {
     throw new NotFoundException("Unable to create referral code")
   }
 
-  private person(person: any) { return { id: person.id, username: person.username, email: person.email, name: person.profile?.displayName ?? person.username } }
+  private person(person: any) { return { id: person.id, username: person.username, email: person.email, name: person.profile?.displayName ?? person.username, avatarUrl: person.profile?.avatarUrl ?? null } }
+  private playStoreReferralLink(code: string) {
+    const configuredStoreUrl = process.env.SMARTS_PLAY_STORE_URL?.trim()
+    const storeUrl = configuredStoreUrl || "https://play.google.com/store/apps/details?id=com.pheonix.gaemverse"
+    const separator = storeUrl.includes("?") ? "&" : "?"
+    const referrer = new URLSearchParams({ referral_code: code, source: "smarts" }).toString()
+    return `${storeUrl}${separator}referrer=${encodeURIComponent(referrer)}`
+  }
   private effectiveConfig(config: any, override: any) {
     return {
       enabled: override?.enabled ?? config?.enabled ?? true,

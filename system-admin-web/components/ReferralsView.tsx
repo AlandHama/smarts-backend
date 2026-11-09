@@ -30,6 +30,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { api } from "../lib/api";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 type ReferralState = {
   config: {
@@ -54,14 +55,15 @@ type ReferralState = {
     totalRewardedGld: string;
     rewardCount: number;
     createdAt: string;
-    referrer: { name: string; username: string; email: string | null };
-    referred: { name: string; username: string; email: string | null };
+    referrer: { name: string; username: string; email: string | null; avatarUrl?: string | null };
+    referred: { name: string; username: string; email: string | null; avatarUrl?: string | null };
   }>;
   players: Array<{
     id: string;
     name: string;
     username: string;
     email: string | null;
+    avatarUrl?: string | null;
     override: {
       enabled: boolean | null;
       maxInvitesPerUser: number | null;
@@ -534,15 +536,10 @@ export function ReferralsView() {
                         data.players.map((player) => (
                           <TableRow key={player.id} hover>
                             <TableCell>
-                              <Typography fontWeight={700}>
-                                {player.name}
-                              </Typography>
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {player.email || player.username}
-                              </Typography>
+                              <Stack direction="row" spacing={1} alignItems="center">
+                                <PlayerAvatar name={player.name} username={player.username} avatarUrl={player.avatarUrl} size={34} />
+                                <Box><Typography fontWeight={700}>{player.name}</Typography><Typography variant="caption" color="text.secondary">{player.email || player.username}</Typography></Box>
+                              </Stack>
                             </TableCell>
                             <TableCell>
                               {player.override ? (
@@ -616,26 +613,16 @@ export function ReferralsView() {
                         data.referrals.map((item) => (
                           <TableRow key={item.id} hover>
                             <TableCell>
-                              <Typography fontWeight={700}>
-                                {item.referrer.name}
-                              </Typography>
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {item.referrer.email || item.referrer.username}
-                              </Typography>
+                              <Stack direction="row" spacing={1} alignItems="center">
+                                <PlayerAvatar name={item.referrer.name} username={item.referrer.username} avatarUrl={item.referrer.avatarUrl} size={34} />
+                                <Box><Typography fontWeight={700}>{item.referrer.name}</Typography><Typography variant="caption" color="text.secondary">{item.referrer.email || item.referrer.username}</Typography></Box>
+                              </Stack>
                             </TableCell>
                             <TableCell>
-                              <Typography fontWeight={700}>
-                                {item.referred.name}
-                              </Typography>
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {item.referred.email || item.referred.username}
-                              </Typography>
+                              <Stack direction="row" spacing={1} alignItems="center">
+                                <PlayerAvatar name={item.referred.name} username={item.referred.username} avatarUrl={item.referred.avatarUrl} size={34} />
+                                <Box><Typography fontWeight={700}>{item.referred.name}</Typography><Typography variant="caption" color="text.secondary">{item.referred.email || item.referred.username}</Typography></Box>
+                              </Stack>
                             </TableCell>
                             <TableCell>
                               <Chip

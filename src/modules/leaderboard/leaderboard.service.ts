@@ -391,12 +391,15 @@ export class LeaderboardService {
     const scoreExpression = countryContributionView
       ? Prisma.sql`country_scores."countryScore"`
       : Prisma.sql`e."score"`;
+    const countryScoreExpression = countryContributionView
+      ? Prisma.sql`country_scores."countryScore"`
+      : Prisma.sql`NULL::bigint`;
     const countryPlayerCounts = memberType === "COUNTRY"
       ? await this.countryPlayerCounts(period)
       : new Map<string, number>();
     return this.prisma
       .$queryRaw<Array<any>>(
-        Prisma.sql`SELECT e."id", e."memberKey", e."playerId", ${scoreExpression} AS "score", e."metadata", e."createdAt", e."updatedAt", RANK() OVER (ORDER BY ${scoreExpression} ${Prisma.raw(order)})::bigint AS "rank", u."username", p."displayName", p."avatarUrl", p."avatarFrameKey", p."nameEffectKey", p."countryCode", p."elo", COALESCE((SELECT pt."name" FROM "ProgressionTier" pt INNER JOIN "ProgressionDefinition" pd ON pd."id" = pt."progressionId" WHERE pd."key" = 'elo' AND pd."active" = true AND pt."name" IS NOT NULL AND pt."pointsThreshold" <= COALESCE(p."elo", 0) ORDER BY pt."pointsThreshold" DESC, pt."step" DESC LIMIT 1), 'Unranked') AS "eloRankName", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg WHERE pg."recipientUserId" = e."playerId"), 0)::bigint AS "giftReceivedCount", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg LEFT JOIN "CatalogItem" ci ON ci."id" = pg."catalogItemId" LEFT JOIN "SocialGiftDefinition" sg ON sg."id" = pg."socialGiftDefinitionId" WHERE pg."recipientUserId" = e."playerId" AND (LOWER(COALESCE(ci."key", sg."key", '')) LIKE '%rose%' OR LOWER(COALESCE(ci."name", sg."name", '')) LIKE '%rose%')), 0)::bigint AS "roseCount", COALESCE((SELECT SUM(pg2."gldPriceDecimal") FROM "PlayerGift" pg2 WHERE pg2."recipientUserId" = e."playerId"), 0)::numeric AS "giftValueReceived" FROM "LeaderboardEntry" e ${countryContributionJoin} LEFT JOIN "User" u ON u."id" = e."playerId" LEFT JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} ${countryFilter} ${filter} ORDER BY ${scoreExpression} ${Prisma.raw(order)}, e."updatedAt" ASC, e."memberKey" ASC LIMIT ${limit} OFFSET ${offset}`,
+        Prisma.sql`SELECT e."id", e."memberKey", e."playerId", ${scoreExpression} AS "score", ${countryScoreExpression} AS "countryScore", e."metadata", e."createdAt", e."updatedAt", RANK() OVER (ORDER BY ${scoreExpression} ${Prisma.raw(order)})::bigint AS "rank", u."username", p."displayName", p."avatarUrl", p."avatarFrameKey", p."nameEffectKey", p."countryCode", p."elo", COALESCE((SELECT pt."name" FROM "ProgressionTier" pt INNER JOIN "ProgressionDefinition" pd ON pd."id" = pt."progressionId" WHERE pd."key" = 'elo' AND pd."active" = true AND pt."name" IS NOT NULL AND pt."pointsThreshold" <= COALESCE(p."elo", 0) ORDER BY pt."pointsThreshold" DESC, pt."step" DESC LIMIT 1), 'Unranked') AS "eloRankName", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg WHERE pg."recipientUserId" = e."playerId"), 0)::bigint AS "giftReceivedCount", COALESCE((SELECT COUNT(*) FROM "PlayerGift" pg LEFT JOIN "CatalogItem" ci ON ci."id" = pg."catalogItemId" LEFT JOIN "SocialGiftDefinition" sg ON sg."id" = pg."socialGiftDefinitionId" WHERE pg."recipientUserId" = e."playerId" AND (LOWER(COALESCE(ci."key", sg."key", '')) LIKE '%rose%' OR LOWER(COALESCE(ci."name", sg."name", '')) LIKE '%rose%')), 0)::bigint AS "roseCount", COALESCE((SELECT SUM(pg2."gldPriceDecimal") FROM "PlayerGift" pg2 WHERE pg2."recipientUserId" = e."playerId"), 0)::numeric AS "giftValueReceived" FROM "LeaderboardEntry" e ${countryContributionJoin} LEFT JOIN "User" u ON u."id" = e."playerId" LEFT JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} ${countryFilter} ${filter} ORDER BY ${scoreExpression} ${Prisma.raw(order)}, e."updatedAt" ASC, e."memberKey" ASC LIMIT ${limit} OFFSET ${offset}`,
       )
       .then((rows) =>
         rows.map((row) => ({
@@ -404,6 +407,7 @@ export class LeaderboardService {
           memberKey: row.memberKey,
           playerId: row.playerId,
           score: row.score,
+          countryScore: row.countryScore,
           rank: row.rank,
           playerCount: memberType === "COUNTRY" ? countryPlayerCounts.get(String(row.memberKey).toUpperCase()) ?? 0 : null,
           metadata: row.metadata,

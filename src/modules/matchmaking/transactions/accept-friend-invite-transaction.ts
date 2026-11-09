@@ -37,7 +37,7 @@ export class AcceptFriendInviteTransaction extends PrismaTransaction<{ inviteId:
             where: { gameDefinitionId: invite.gameDefinitionId, active: true },
             orderBy: { id: "asc" },
             take: MAX_SERVER_CONTENT_PER_MATCH,
-            select: { id: true, contentType: true, prompt: true, options: true, difficulty: true, category: true },
+            select: { id: true, contentType: true, prompt: true, options: true, answerIndex: true, difficulty: true, category: true },
           }),
           config.maxQuestions,
           serverNonce,

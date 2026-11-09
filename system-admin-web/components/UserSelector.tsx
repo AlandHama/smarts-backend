@@ -7,6 +7,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import TextField from "@mui/material/TextField";
 
 import { api } from "../lib/api";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 export interface SelectableUser {
   id: string;
@@ -14,7 +15,7 @@ export interface SelectableUser {
   email: string | null;
   status?: string;
   isSystemAdmin?: boolean;
-  profile?: { displayName: string } | null;
+  profile?: { displayName: string; avatarUrl?: string | null } | null;
 }
 
 export function UserSelector({
@@ -79,14 +80,17 @@ export function UserSelector({
       }
       renderOption={(props, user) => (
         <li {...props} key={user.id}>
-          <span>
-            <strong>{user.profile?.displayName || user.username}</strong>
-            <br />
-            <small>
-              {user.username}
-              {user.email ? ` · ${user.email}` : ""}
-              {user.isSystemAdmin ? " · ADMIN" : ""}
-            </small>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <PlayerAvatar name={user.profile?.displayName} username={user.username} avatarUrl={user.profile?.avatarUrl} size={30} />
+            <span>
+              <strong>{user.profile?.displayName || user.username}</strong>
+              <br />
+              <small>
+                {user.username}
+                {user.email ? ` · ${user.email}` : ""}
+                {user.isSystemAdmin ? " · ADMIN" : ""}
+              </small>
+            </span>
           </span>
         </li>
       )}

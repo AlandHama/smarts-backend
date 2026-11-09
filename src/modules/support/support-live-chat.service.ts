@@ -53,7 +53,7 @@ export class SupportLiveChatService {
       await tx.supportLiveChatEvent.createMany({ data: [{ sessionId, actorId: playerId, type: "CREATED", metadata: { quoteId: quote.id } }, { sessionId, actorId: playerId, type: "PAYMENT_CHARGED", metadata: { amountGld: quote.priceGld.toString(), ledgerId: ledger?.id } }] })
       return tx.supportLiveChatSession.update({ where: { id: created.id }, data: { status: SupportLiveChatStatus.QUEUED, walletLedgerId: ledger?.id }, include: { charge: true } })
     })
-    await this.notifyAvailableAgents(session.id, `Live chat ${session.sessionNumber} is waiting`, "A player paid for live support and is waiting for an agent.", "support.live-chat.queued")
+    await this.notifySupportAgents(session.id, `Live chat ${session.sessionNumber} is waiting`, "A player paid for live support and is waiting for an agent.", "support.live-chat.queued")
     return this.serialize(session)
   }
 
@@ -99,8 +99,33 @@ export class SupportLiveChatService {
   private async requireAdmin(userId: string) { if (!(await this.isAdmin(userId))) throw new ForbiddenException("System administrator access is required") }
   private async isAdmin(userId: string) { const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { isSystemAdmin: true } }); return Boolean(user?.isSystemAdmin) }
   private async config() { const row = await this.prisma.supportConfiguration.findUnique({ where: { key: "default" } }); if (!row) throw new NotFoundException("Support configuration is missing"); return row }
-  private async notifyAvailableAgents(sessionId: string, title: string, body: string, type: string) { const agents = await this.prisma.supportAgent.findMany({ where: { revokedAt: null, status: { in: [SupportAgentStatus.AVAILABLE, SupportAgentStatus.BUSY] } }, select: { userId: true } }); for (const agent of agents) await this.notifications.createSupportNotification({ recipientId: agent.userId, route: `/support/live-chats/${sessionId}`, extraData: { sessionId }, notificationType: type, title, body, enabled: true, pushEnabled: true }) }
-  private async notifyAgent(agentId: string, sessionId: string, title: string, body: string, type: string) { const agent = await this.prisma.supportAgent.findUnique({ where: { id: agentId } }); if (agent) await this.notifications.createSupportNotification({ recipientId: agent.userId, route: `/support/live-chats/${sessionId}`, extraData: { sessionId }, notificationType: type, title, body, enabled: true, pushEnabled: true }) }
+  /**
+   * Queue notifications are durable inbox records as well as push attempts.
+   * Do not filter by presence here: an OFFLINE agent must see the request on
+   * the next app launch and can then claim it from the shared queue. Suspended
+   * and revoked agents are the only agents that must not receive new work.
+   */
+  private async notifySupportAgents(sessionId: string, title: string, body: string, type: string) {
+    const agents = await this.prisma.supportAgent.findMany({
+      where: { revokedAt: null, status: { not: SupportAgentStatus.SUSPENDED } },
+      select: { userId: true },
+    })
+    await Promise.allSettled(
+      agents.map((agent) => this.notifications.createSupportNotification({
+        recipientId: agent.userId,
+        // An unclaimed chat cannot be opened by a normal agent yet. Route the
+        // alert to the queue so the agent can claim it before entering chat.
+        route: type === "support.live-chat.queued" ? "/support" : `/support/live-chats/${sessionId}`,
+        extraData: { sessionId, agent: "true" },
+        notificationType: type,
+        title,
+        body,
+        enabled: true,
+        pushEnabled: true,
+      })),
+    )
+  }
+  private async notifyAgent(agentId: string, sessionId: string, title: string, body: string, type: string) { const agent = await this.prisma.supportAgent.findUnique({ where: { id: agentId } }); if (agent) await this.notifications.createSupportNotification({ recipientId: agent.userId, route: `/support/live-chats/${sessionId}?agent=true`, extraData: { sessionId, agent: "true" }, notificationType: type, title, body, enabled: true, pushEnabled: true }) }
   private async notifyPlayer(sessionId: string, title: string, body: string, type: string, pushEnabled = true) { const row = await this.prisma.supportLiveChatSession.findUnique({ where: { id: sessionId }, select: { playerId: true } }); if (row) await this.notifications.createSupportNotification({ recipientId: row.playerId, route: `/support/live-chats/${sessionId}`, extraData: { sessionId }, notificationType: type, title, body, enabled: true, pushEnabled }) }
   private serialize(row: any, includeInternal = false) { return { id: row.id, sessionNumber: row.sessionNumber, playerId: row.playerId, status: row.status, quotedPriceGld: row.quotedPriceGld?.toString(), chargedAmountGld: row.chargedAmountGld?.toString(), currencyCode: row.currencyCode, assignedAgent: row.assignedAgent ? { id: row.assignedAgent.id, username: row.assignedAgent.user?.username } : null, player: row.player ? { id: row.player.id, username: row.player.username, name: [row.player.firstName, row.player.lastName].filter(Boolean).join(" ") || row.player.username } : undefined, queueEnteredAt: row.queueEnteredAt, assignedAt: row.assignedAt, startedAt: row.startedAt, endedAt: row.endedAt, lastActivityAt: row.lastActivityAt, unread: false, messages: row.messages?.filter((message: any) => includeInternal || !message.internal).map((message: any) => ({ id: message.id, sequence: message.sequence, body: message.body, senderKind: message.senderKind, internal: includeInternal ? message.internal : undefined, createdAt: message.createdAt })) ?? [], charge: row.charge ? { amountGld: row.charge.amountGld.toString(), ledgerId: row.charge.ledgerId } : null, refund: row.refund ? { amountGld: row.refund.amountGld.toString(), reason: row.refund.reason, ledgerId: row.refund.ledgerId } : null } }
   private sessionNumber() { return `LS-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}` }

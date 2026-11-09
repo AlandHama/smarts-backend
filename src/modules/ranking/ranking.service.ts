@@ -185,7 +185,7 @@ export class RankingService implements OnModuleInit {
                 user: {
                   select: {
                     username: true,
-                    profile: { select: { displayName: true } },
+                    profile: { select: { displayName: true, avatarUrl: true } },
                   },
                 },
               },
@@ -196,7 +196,7 @@ export class RankingService implements OnModuleInit {
           select: {
             id: true,
             username: true,
-            profile: { select: { displayName: true } },
+            profile: { select: { displayName: true, avatarUrl: true } },
           },
         },
       },

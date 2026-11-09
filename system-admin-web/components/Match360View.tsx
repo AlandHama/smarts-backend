@@ -25,6 +25,7 @@ import Typography from "@mui/material/Typography";
 
 import { api } from "../lib/api";
 import type { Match360Data } from "../lib/types";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 const date = (value?: string | null) =>
   value ? new Date(value).toLocaleString() : "—";
@@ -297,16 +298,28 @@ export function Match360View({
                 return (
                   <TableRow key={participant.id} hover>
                     <TableCell>
-                      <Typography fontWeight={750}>
-                        {participant.displayName ||
-                          participant.user?.profile?.displayName ||
-                          participant.user?.username ||
-                          "Bot"}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {participant.user?.username ||
-                          participant.participantType}
-                      </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <PlayerAvatar
+                          name={
+                            participant.displayName ||
+                            participant.user?.profile?.displayName
+                          }
+                          username={participant.user?.username || "Bot"}
+                          avatarUrl={participant.user?.profile?.avatarUrl}
+                          size={32}
+                        />
+                        <Box>
+                          <Typography fontWeight={750}>
+                            {participant.displayName ||
+                              participant.user?.profile?.displayName ||
+                              participant.user?.username ||
+                              "Bot"}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {participant.user?.username || participant.participantType}
+                          </Typography>
+                        </Box>
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       <Typography fontWeight={800}>

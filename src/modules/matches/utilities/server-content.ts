@@ -19,6 +19,7 @@ type ContentIdentity = {
   contentType?: unknown
   prompt?: unknown
   options?: unknown
+  answerIndex?: unknown
 }
 
 const MATH_EXPRESSION_PATTERN = /^\s*-?\d+\s*[+*×÷\/-]\s*-?\d+\s*$/
@@ -62,14 +63,24 @@ function localizedPrompt(value: unknown): string {
 export function selectServerContent<T extends ContentIdentity>(items: T[], count: number, serverNonce: string, gameKey?: string): T[] {
   const boundedCount = Math.min(Math.max(Math.trunc(count), 1), MAX_SERVER_CONTENT_PER_MATCH)
   const playableItems = gameKey === "math" ? items.filter(isMathServerContent) : items
-  const ordered = [...playableItems]
+  const uniqueItems: T[] = []
+  const seenContent = new Set<string>()
+  for (const item of playableItems) {
+    const identity = stableJson({ prompt: item.prompt, options: item.options, answerIndex: item.answerIndex })
+    if (seenContent.has(identity)) continue
+    seenContent.add(identity)
+    uniqueItems.push(item)
+  }
+  const ordered = uniqueItems
     .sort((left, right) => {
       const leftRank = createHash("sha256").update(`${serverNonce}:content:${left.id}`).digest("hex")
       const rightRank = createHash("sha256").update(`${serverNonce}:content:${right.id}`).digest("hex")
       return leftRank.localeCompare(rightRank)
     })
   if (!ordered.length) return []
-  return Array.from({ length: boundedCount }, (_, index) => ordered[index % ordered.length])
+  // Never cycle back through the pool. A small or duplicated database pool
+  // must produce fewer unique questions, never repeat one in a match.
+  return ordered.slice(0, boundedCount)
 }
 
 export function createAssignmentToken(serverNonce: string, participantId: string, roundId: string, position: number): string {

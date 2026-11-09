@@ -237,6 +237,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         contentType: true,
         prompt: true,
         options: true,
+        answerIndex: true,
         difficulty: true,
         category: true,
       },

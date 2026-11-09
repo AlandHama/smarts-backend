@@ -140,7 +140,7 @@ export class CryptoRewardsService {
 
   async listAdminRequests(status?: CryptoPayoutRequestStatus) {
     if (status && !(Object.values(CryptoPayoutRequestStatus) as string[]).includes(status)) throw new BadRequestException("Invalid crypto payout status")
-    const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: status ? { status } : {}, include: { user: { select: { id: true, username: true, email: true, status: true, profile: { select: { displayName: true } } } }, hold: true }, orderBy: { createdAt: "asc" }, take: 200 })
+    const rows = await this.prisma.cryptoPayoutRequest.findMany({ where: status ? { status } : {}, include: { user: { select: { id: true, username: true, email: true, status: true, profile: { select: { displayName: true, avatarUrl: true } } } }, hold: true }, orderBy: { createdAt: "asc" }, take: 200 })
     return rows.map((row) => ({ ...this.serializeRequest(row), adminDecision: row.adminDecision, adminNote: row.adminNote, providerUniqueExternalId: row.providerUniqueExternalId, providerBatchWithdrawalId: row.providerBatchWithdrawalId, providerPayoutId: row.providerPayoutId, providerStatusRaw: row.providerStatusRaw, submissionAttempts: row.submissionAttempts, pollAttempts: row.pollAttempts, user: row.user, hold: row.hold ? { status: row.hold.status, amount: row.hold.amount.toString(), released: row.hold.released.toString(), expiresAt: row.hold.expiresAt } : null }))
   }
 

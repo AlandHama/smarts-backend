@@ -28,6 +28,7 @@ import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 
 import { api } from "../lib/api";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 type CryptoConfig = {
   enabled: boolean;
@@ -98,7 +99,7 @@ type CryptoRequest = {
     username?: string;
     email: string | null;
     status: string;
-    profile: { displayName: string } | null;
+    profile: { displayName: string; avatarUrl?: string | null } | null;
   };
   hold: {
     status: string;
@@ -438,7 +439,7 @@ export function CryptoRewardsView({
             <Divider />
             {loading ? <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={28} /></Stack> : <TableContainer sx={{ overflowX: "auto" }}><Table size="small" sx={{ minWidth: 1200 }}><TableHead><TableRow><TableCell>Player</TableCell><TableCell>Request</TableCell><TableCell>Destination</TableCell><TableCell>GLD</TableCell><TableCell>Payout</TableCell><TableCell>Status</TableCell><TableCell align="right">Actions</TableCell></TableRow></TableHead><TableBody>
               {requests.map((request) => <TableRow key={request.id} hover>
-                <TableCell><Button size="small" onClick={() => onOpenPlayer360?.(request.user.id)} sx={{ textTransform: "none", fontWeight: 800, p: 0 }}>{playerName(request)}</Button><Typography variant="caption" display="block" color="text.secondary">{request.user.email || request.user.id}</Typography><Chip size="small" variant="outlined" label={request.user.status} sx={{ mt: 0.5 }} /></TableCell>
+                <TableCell><Button size="small" onClick={() => onOpenPlayer360?.(request.user.id)} sx={{ textTransform: "none", fontWeight: 800, p: 0 }}><Stack direction="row" spacing={1} alignItems="center"><PlayerAvatar name={request.user.profile?.displayName} username={request.user.username} avatarUrl={request.user.profile?.avatarUrl} size={32} />{playerName(request)}</Stack></Button><Typography variant="caption" display="block" color="text.secondary">{request.user.email || request.user.id}</Typography><Chip size="small" variant="outlined" label={request.user.status} sx={{ mt: 0.5 }} /></TableCell>
                 <TableCell><Typography variant="body2">{date(request.requestedAt)}</Typography><Typography variant="caption" color="text.secondary">{request.id.slice(0, 8)} · {request.providerEnvironment || "—"}</Typography></TableCell>
                 <TableCell><Typography fontWeight={700}>{request.currencyCode}</Typography><Typography variant="caption" display="block" color="text.secondary">{request.networkCode} · {request.destinationAddressMasked}</Typography><Typography variant="caption" display="block" color="text.secondary">Validated {date(request.addressValidatedAt)}</Typography></TableCell>
                 <TableCell><Typography fontWeight={750}>{request.gldRequested}</Typography><Typography variant="caption" display="block" color="text.secondary">Held {request.gldHeld}</Typography>{request.gldReleased !== "0" && <Typography variant="caption" display="block" color="success.main">Released {request.gldReleased}</Typography>}</TableCell>

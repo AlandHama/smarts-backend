@@ -31,6 +31,7 @@ import Typography from "@mui/material/Typography";
 import { api } from "../lib/api";
 import type { LeaderboardDefinition, LeaderboardEntry, LeaderboardReward } from "../lib/types";
 import { UserSelector, type SelectableUser } from "./UserSelector";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 const valueOf = (form: HTMLFormElement, name: string) =>
   String(
@@ -347,19 +348,10 @@ export function LeaderboardView() {
                           />
                         </TableCell>
                         <TableCell>
-                          <Typography fontWeight={700}>
-                            {entry.player?.displayName ||
-                              entry.player?.username ||
-                              entry.memberKey}
-                          </Typography>
-                          {entry.player?.username && (
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              {entry.player.username}
-                            </Typography>
-                          )}
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            {entry.player && <PlayerAvatar name={entry.player.displayName} username={entry.player.username} avatarUrl={entry.player.avatarUrl} size={30} />}
+                            <Box><Typography fontWeight={700}>{entry.player?.displayName || entry.player?.username || entry.memberKey}</Typography>{entry.player?.username && <Typography variant="caption" color="text.secondary">{entry.player.username}</Typography>}</Box>
+                          </Stack>
                         </TableCell>
                         <TableCell>{entry.score}</TableCell>
                         <TableCell>

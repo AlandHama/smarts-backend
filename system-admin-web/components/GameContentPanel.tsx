@@ -95,12 +95,17 @@ export function GameContentPanel({ gameKey }: { gameKey: string }) {
         created: number;
         updated: number;
         skipped: number;
+        replaced?: boolean;
+        removed?: number;
+        activeQuestions?: number;
       }>("/game-content/import", {
         method: "POST",
         body: JSON.stringify({ gameKey, language: importLanguage, questions }),
       });
       setImportMessage(
-        `Imported ${result.created} new questions, updated ${result.updated}, skipped ${result.skipped} duplicates.`,
+        result.replaced
+          ? `Trivia pool replaced with ${result.activeQuestions ?? 0} active questions. Removed ${result.removed ?? 0} old questions; skipped ${result.skipped} duplicates.`
+          : `Imported ${result.created} new questions, updated ${result.updated}, skipped ${result.skipped} duplicates.`,
       );
       load();
     } catch (e) {
@@ -134,8 +139,9 @@ export function GameContentPanel({ gameKey }: { gameKey: string }) {
             <Box sx={{ flex: 1 }}>
               <Typography fontWeight={800}>Import questions.json</Typography>
               <Typography variant="body2" color="text.secondary">
-                Duplicates are removed by question identity, options, and
-                answer. Select the language stored in this file.
+                {gameKey === "trivia"
+                  ? "Trivia imports replace the active pool. Duplicates are removed by question identity, options, and answer."
+                  : "Duplicates are removed by question identity, options, and answer."} Select the language stored in this file.
               </Typography>
             </Box>
             <Select

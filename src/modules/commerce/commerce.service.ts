@@ -150,7 +150,7 @@ export class CommerceService {
   listInventory(query: InventoryQueryDto) {
     const page = query.page ?? 1; const limit = query.limit ?? 25
     const where: Prisma.InventoryItemWhereInput = query.userId ? { userId: query.userId } : query.search ? { user: { OR: [{ username: { contains: query.search, mode: "insensitive" } }, { email: { contains: query.search, mode: "insensitive" } }, { profile: { displayName: { contains: query.search, mode: "insensitive" } } }] } } : {}
-    return this.prisma.$transaction([this.prisma.inventoryItem.count({ where }), this.prisma.inventoryItem.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, assetDefinition: true, assetVariation: true } })]).then(([total, items]) => ({ items: this.serialize(items), pagination: { page, limit, total, pages: Math.ceil(total / limit) } }))
+    return this.prisma.$transaction([this.prisma.inventoryItem.count({ where }), this.prisma.inventoryItem.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } }, assetDefinition: true, assetVariation: true } })]).then(([total, items]) => ({ items: this.serialize(items), pagination: { page, limit, total, pages: Math.ceil(total / limit) } }))
   }
 
   async listPlayerInventory(userId: string) {
@@ -179,7 +179,7 @@ export class CommerceService {
     return this.serialize({ nameEffectKey: profile.nameEffectKey, effect: nameEffectPreset(effectKey) })
   }
   listPlayerEntitlements(userId: string) { return this.prisma.entitlement.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 500, include: { assetDefinition: true } }).then((value) => this.serialize(value)) }
-  listPurchases(userId?: string) { return this.prisma.purchase.findMany({ where: userId ? { userId } : undefined, orderBy: { createdAt: "desc" }, take: 500, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, currency: { select: { code: true, name: true } }, lines: true } }).then((value) => this.serialize(value)) }
+  listPurchases(userId?: string) { return this.prisma.purchase.findMany({ where: userId ? { userId } : undefined, orderBy: { createdAt: "desc" }, take: 500, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } }, currency: { select: { code: true, name: true } }, lines: true } }).then((value) => this.serialize(value)) }
 
   purchase(userId: string, input: { catalogKey?: string; catalogItemKey: string; currencyCode: string; quantity: number; idempotencyKey: string }) { return this.createPurchaseTransaction.run({ userId, ...input }) }
   grantInventory(userId: string, dto: InventoryMutationDto, actorId: string) { return this.grantInventoryTransaction.run({ userId, assetKey: dto.assetKey, variationKey: dto.variationKey, quantity: dto.quantity, source: dto.source ?? "ADMIN", sourceId: dto.sourceId, metadata: { actorId, reason: dto.reason } }) }
@@ -262,7 +262,7 @@ export class CommerceService {
   async listAdminPaidRewardRequests(status?: string) {
     const normalized = status?.trim().toUpperCase()
     if (normalized && !["PENDING", "FULFILLED", "REFUSED"].includes(normalized)) throw new BadRequestException("Paid reward request status is invalid")
-    const rows = await this.prisma.paidRewardRequest.findMany({ where: normalized ? { status: normalized as any } : undefined, orderBy: { requestedAt: "desc" }, take: 500, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true, metadata: true } }, assetVariation: { select: { id: true, key: true, name: true } }, redeemCode: { select: { id: true, code: true, status: true, assignedAt: true } }, decidedBy: { select: { id: true, username: true } } } })
+    const rows = await this.prisma.paidRewardRequest.findMany({ where: normalized ? { status: normalized as any } : undefined, orderBy: { requestedAt: "desc" }, take: 500, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } }, assetDefinition: { select: { id: true, key: true, name: true, imageUrl: true, metadata: true } }, assetVariation: { select: { id: true, key: true, name: true } }, redeemCode: { select: { id: true, code: true, status: true, assignedAt: true } }, decidedBy: { select: { id: true, username: true } } } })
     const normalizedRows = await this.normalizeLegacyPaidRewardRows(rows)
     return normalizedRows.map((row) => this.adminPaidReward(row))
   }
@@ -270,7 +270,7 @@ export class CommerceService {
   async decidePaidRewardRequest(id: string, dto: PaidRewardDecisionDto, actorId: string) {
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT "id" FROM "PaidRewardRequest" WHERE "id" = ${id} FOR UPDATE`
-      const request = await tx.paidRewardRequest.findUnique({ where: { id }, include: { user: { select: { id: true, username: true, email: true, status: true, profile: { select: { displayName: true } } } }, assetDefinition: true, assetVariation: true, redeemCode: true } })
+      const request = await tx.paidRewardRequest.findUnique({ where: { id }, include: { user: { select: { id: true, username: true, email: true, status: true, profile: { select: { displayName: true, avatarUrl: true } } } }, assetDefinition: true, assetVariation: true, redeemCode: true } })
       if (!request) throw new NotFoundException("Paid reward request not found")
       if (request.status !== "PENDING") return this.adminPaidReward(request)
       const now = new Date()
@@ -279,7 +279,7 @@ export class CommerceService {
         if (refundable > 0n) {
           await this.creditWallet.runWithinTransaction({ userId: request.userId, currencyCode: "GLD", amount: refundable, sourceId: `paid-reward-refund:${id}`, sourceType: WalletTransactionSourceType.REFUND, rewardGrantKey: `GLD_PAID_REWARD_REFUND:${id}`, metadata: { reason: "GLD_PAID_REWARD_REFUSED", paidRewardRequestId: id, assetKey: request.assetDefinition.key } }, tx)
         }
-        const updated = await tx.paidRewardRequest.update({ where: { id }, data: { status: "REFUSED", gldRefundedAmount: { increment: refundable }, adminNote: dto.adminNote?.trim() || undefined, decidedById: actorId, decidedAt: now }, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, assetDefinition: true, assetVariation: true, redeemCode: true, decidedBy: { select: { id: true, username: true } } } })
+      const updated = await tx.paidRewardRequest.update({ where: { id }, data: { status: "REFUSED", gldRefundedAmount: { increment: refundable }, adminNote: dto.adminNote?.trim() || undefined, decidedById: actorId, decidedAt: now }, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } }, assetDefinition: true, assetVariation: true, redeemCode: true, decidedBy: { select: { id: true, username: true } } } })
         await writeAdminAudit(tx, { actorId, action: "PAID_REWARD_REFUSED", entityType: "PaidRewardRequest", entityId: id, reason: dto.adminNote, metadata: { userId: request.userId, assetKey: request.assetDefinition.key } })
         await writePlayerAudit(tx, { userId: request.userId, actorType: PlayerAuditActorType.ADMIN, action: "PAID_REWARD_REFUSED", entityType: "PaidRewardRequest", entityId: id, summary: `Paid reward request for ${request.assetDefinition.name} was refused${refundable > 0n ? `; ${refundable.toString()} GLD was refunded` : ""}`, changes: { status: { old: "PENDING", new: "REFUSED" }, gldRefundedAmount: { old: request.gldRefundedAmount, new: request.gldRefundedAmount + refundable } }, metadata: { assetKey: request.assetDefinition.key, adminNote: dto.adminNote, refundedGld: refundable.toString() } })
         await tx.outboxEvent.create({ data: { eventType: "commerce.paid-reward.refused", aggregateType: "PaidRewardRequest", aggregateId: id, payload: { userId: request.userId, requestId: id, assetKey: request.assetDefinition.key, refundedGld: refundable.toString() } as Prisma.InputJsonValue } })
@@ -327,7 +327,7 @@ export class CommerceService {
         ? await this.attachRedeemCodeToInventory(tx, targetInventoryId, request.userId, id, code.code, actorId, dto.adminNote)
         : await this.grantInventoryTransaction.runWithinTransaction({ userId: request.userId, assetKey: request.assetDefinition.key, variationKey: request.assetVariation?.key, quantity: 1, source: "PAID_REWARD", sourceId: `paid-reward-request:${id}`, metadata: { requestId: id, redemptionKey: code.code, redeemCode: code.code, actorId, reason: dto.adminNote?.trim() || "Paid reward request approved" } }, tx)
       await tx.assetRedeemCode.update({ where: { id: code.id }, data: { status: "ASSIGNED", assignedUserId: request.userId, assignedAt: now, requestId: id } })
-      const updated = await tx.paidRewardRequest.update({ where: { id }, data: { status: "FULFILLED", gldChargedAmount: effectiveGldPrice ?? undefined, adminNote: dto.adminNote?.trim() || undefined, inventoryItemId: inventory.id, decidedById: actorId, decidedAt: now }, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, assetDefinition: true, assetVariation: true, redeemCode: true, decidedBy: { select: { id: true, username: true } } } })
+      const updated = await tx.paidRewardRequest.update({ where: { id }, data: { status: "FULFILLED", gldChargedAmount: effectiveGldPrice ?? undefined, adminNote: dto.adminNote?.trim() || undefined, inventoryItemId: inventory.id, decidedById: actorId, decidedAt: now }, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } }, assetDefinition: true, assetVariation: true, redeemCode: true, decidedBy: { select: { id: true, username: true } } } })
       if ((effectiveGldPrice ?? 0n) > 0n) {
         const existingBurn = await tx.gldBurnEvent.findFirst({ where: { sourceType: "PAID_REWARD_FULFILLMENT", sourceId: id }, select: { id: true } })
         if (!existingBurn) {
@@ -364,7 +364,7 @@ export class CommerceService {
   async listRedeemCodes(assetKey?: string, status?: string) {
     const normalizedStatus = status?.trim().toUpperCase()
     if (normalizedStatus && !["AVAILABLE", "ASSIGNED", "VOID"].includes(normalizedStatus)) throw new BadRequestException("Redeem code status is invalid")
-    const rows = await this.prisma.assetRedeemCode.findMany({ where: { ...(assetKey ? { assetDefinition: { key: assetKey.trim().toLowerCase() } } : {}), ...(normalizedStatus ? { status: normalizedStatus as any } : {}) }, orderBy: { createdAt: "desc" }, take: 1000, include: { assetDefinition: { select: { id: true, key: true, name: true } }, assetVariation: { select: { id: true, key: true, name: true } }, assignedUser: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } }, request: { select: { id: true, status: true, requestedAt: true } } } })
+    const rows = await this.prisma.assetRedeemCode.findMany({ where: { ...(assetKey ? { assetDefinition: { key: assetKey.trim().toLowerCase() } } : {}), ...(normalizedStatus ? { status: normalizedStatus as any } : {}) }, orderBy: { createdAt: "desc" }, take: 1000, include: { assetDefinition: { select: { id: true, key: true, name: true } }, assetVariation: { select: { id: true, key: true, name: true } }, assignedUser: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } }, request: { select: { id: true, status: true, requestedAt: true } } } })
     return rows.map((row) => ({ ...row, code: row.code }))
   }
 

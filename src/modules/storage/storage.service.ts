@@ -173,8 +173,8 @@ export class StorageService {
     const [storageTotal, fileTotal, storageItems, files] = await this.prisma.$transaction([
       this.prisma.playerStorageItem.count({ where: storageWhere }),
       this.prisma.storedFile.count({ where: fileWhere }),
-      this.prisma.playerStorageItem.findMany({ where: storageWhere, orderBy: [{ updatedAt: "desc" }, { key: "asc" }], skip: (page - 1) * limit, take: limit, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } }),
-      this.prisma.storedFile.findMany({ where: fileWhere, orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } }),
+      this.prisma.playerStorageItem.findMany({ where: storageWhere, orderBy: [{ updatedAt: "desc" }, { key: "asc" }], skip: (page - 1) * limit, take: limit, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
+      this.prisma.storedFile.findMany({ where: fileWhere, orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit, include: { user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
     ])
     return this.serialize({ storageItems, files, pagination: { page, limit, storageTotal, fileTotal, storagePages: Math.ceil(storageTotal / limit), filePages: Math.ceil(fileTotal / limit) } })
   }
@@ -203,7 +203,7 @@ export class StorageService {
     const where: Prisma.PlayerFeedbackWhereInput = { ...(query.entity ? { entity: query.entity } : {}), ...(query.status ? { status: query.status } : {}) }
     const [total, items] = await this.prisma.$transaction([
       this.prisma.playerFeedback.count({ where }),
-      this.prisma.playerFeedback.findMany({ where, orderBy: { createdAt: "desc" }, skip: (query.page - 1) * query.limit, take: query.limit, include: { category: true, user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true } } } } } }),
+      this.prisma.playerFeedback.findMany({ where, orderBy: { createdAt: "desc" }, skip: (query.page - 1) * query.limit, take: query.limit, include: { category: true, user: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
     ])
     return { items, pagination: { page: query.page, limit: query.limit, total, pages: Math.ceil(total / query.limit) } }
   }

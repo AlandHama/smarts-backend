@@ -1,10 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { DailyChallengeAttemptStatus, DailyChallengeStatus, Prisma } from "@prisma/client";
-import { createHash } from "node:crypto";
 
 import { PrismaService } from "../../prisma.service";
 import { GenerateDailyChallengeDto, UpdateDailyChallengeConfigurationDto } from "./dtos";
-import { randomizeAnswerOptions } from "../matches/utilities/server-content";
+import { randomizeAnswerOptions, selectServerContent } from "../matches/utilities/server-content";
 
 const challengeInclude = {
   gameDefinition: { select: { key: true, name: true } },
@@ -216,9 +215,9 @@ export class DailyChallengeService {
     }
     const game = await this.prisma.gameDefinition.findUnique({ where: { key: config.gameKey.trim().toLowerCase() }, select: { id: true, key: true, name: true, active: true } });
     if (!game || !game.active) throw new NotFoundException("Daily challenge game is not active");
-    const content = await this.prisma.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, select: { id: true } });
-    if (content.length < config.questionsPerDay) throw new ConflictException("Daily challenge does not have enough active questions");
-    const selected = [...content].sort((a, b) => this.seed(dateKey, a.id).localeCompare(this.seed(dateKey, b.id))).slice(0, config.questionsPerDay);
+    const content = await this.prisma.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, select: { id: true, prompt: true, options: true, answerIndex: true } });
+    const selected = selectServerContent(content, config.questionsPerDay, dateKey, game.key);
+    if (selected.length < config.questionsPerDay) throw new ConflictException("Daily challenge does not have enough unique active questions");
     try {
       return await this.prisma.dailyChallenge.create({
         data: { dateKey, gameDefinitionId: game.id, status: publish ? DailyChallengeStatus.PUBLISHED : DailyChallengeStatus.DRAFT, questionCount: selected.length, durationSeconds: config.durationSeconds, pointsPerCorrect: config.pointsPerCorrect, publishedAt: publish ? new Date() : null, questions: { create: selected.map((item, position) => ({ position, contentItemId: item.id })) } },
@@ -259,10 +258,6 @@ export class DailyChallengeService {
 
   private options(value: unknown) {
     return Array.isArray(value) ? value.map((item) => this.prompt(item)) : [];
-  }
-
-  private seed(dateKey: string, id: string) {
-    return createHash("sha256").update(dateKey + ":" + id).digest("hex");
   }
 
   private todayKey(timezone: string) {

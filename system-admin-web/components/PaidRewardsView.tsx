@@ -20,6 +20,7 @@ import Button from "@mui/material/Button";
 
 import { api } from "../lib/api";
 import type { PaidRewardRequest } from "../lib/types";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 const formatUsdMicros = (value: string | null | undefined) => {
   if (!value) return null;
@@ -199,7 +200,10 @@ export function PaidRewardsView({
                             p: 0,
                           }}
                         >
-                          {playerName(request)}
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <PlayerAvatar name={request.user.profile?.displayName} username={request.user.username} avatarUrl={request.user.profile?.avatarUrl} size={32} />
+                            {playerName(request)}
+                          </Stack>
                         </Button>
                         <Typography
                           variant="caption"

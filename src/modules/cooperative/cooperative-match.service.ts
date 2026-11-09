@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { GameMode, MatchParticipantType, Prisma, WalletTransactionSourceType } from "@prisma/client"
 import { createHash, randomBytes } from "node:crypto"
-import { createAssignmentToken, isAuthoritativeBoardGame } from "../matches/utilities/server-content"
+import { createAssignmentToken, isAuthoritativeBoardGame, MAX_SERVER_CONTENT_PER_MATCH, selectServerContent } from "../matches/utilities/server-content"
 
 import { PrismaService } from "../../prisma.service"
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
@@ -247,12 +247,12 @@ export class CooperativeMatchService {
     const game = eligibleGames[Math.floor(Math.random() * eligibleGames.length)]
     const gameConfig = game?.configs[0]
     if (!game || !gameConfig) return null
-    const content = await tx.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: Math.max(1, gameConfig.maxQuestions) })
     const boardAuthoritative = isAuthoritativeBoardGame(game.key)
-    if (!content.length && !boardAuthoritative) return null
-
     const now = new Date()
     const serverNonce = randomBytes(32).toString("base64url")
+    const content = await tx.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH })
+    const selectedContent = selectServerContent(content, gameConfig.maxQuestions, serverNonce, game.key)
+    if (!selectedContent.length && !boardAuthoritative) return null
     const match = await tx.match.create({ data: { gameDefinitionId: game.id, gameConfigId: gameConfig.id, mode: GameMode.BOT, status: "CREATED", serverNonce, createdByUserId: first.party.hostUserId, metadata: { cooperative: true, source: ranked ? "COOPERATIVE_RANKED" : "COOPERATIVE_RANDOM", partyIds: [first.partyId, ...(second ? [second.partyId] : [])], botFilled: !second } as Prisma.InputJsonValue } })
     const round = await tx.matchRound.create({ data: { matchId: match.id, roundIndex: 1, gameDefinitionId: game.id, status: "CREATED", challengeSeedHash: createHash("sha256").update(`${serverNonce}:1`).digest("hex") } })
     const realMemberCount = first.party.members.length + (second ? second.party.members.length : 0)
@@ -270,10 +270,10 @@ export class CooperativeMatchService {
       const profile = member?.user?.profile
       await tx.cooperativeParticipant.create({ data: { cooperativeMatchId: cooperative.id, teamId: team.id, matchParticipantId: participant.id, userId: member?.userId, participantType: participant.participantType, displayName: member ? profile?.displayName || member.user.username : `SMARTS bot ${index + 1}`, avatarUrl: member ? profile?.avatarUrl ?? null : null, levelSnapshot: member ? profile?.level ?? 1 : 1, eloSnapshot: member ? profile?.elo ?? 0 : 0, confirmedAt: participant.participantType === MatchParticipantType.BOT ? now : null } })
       if (participant.participantType !== MatchParticipantType.BOT) {
-        for (let position = 0; position < Math.min(content.length, gameConfig.maxQuestions); position += 1) {
+        for (let position = 0; position < selectedContent.length; position += 1) {
           const token = createAssignmentToken(serverNonce, participant.id, round.id, position)
           const tokenHash = createHash("sha256").update(token).digest("hex")
-          await tx.matchContentAssignment.create({ data: { matchId: match.id, roundId: round.id, participantId: participant.id, contentItemId: content[position].id, position, assignmentTokenHash: tokenHash, expiresAt: new Date(now.getTime() + gameConfig.maxMatchDurationSeconds * 1000) } })
+          await tx.matchContentAssignment.create({ data: { matchId: match.id, roundId: round.id, participantId: participant.id, contentItemId: selectedContent[position].id, position, assignmentTokenHash: tokenHash, expiresAt: new Date(now.getTime() + gameConfig.maxMatchDurationSeconds * 1000) } })
         }
       }
     }

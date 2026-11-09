@@ -54,25 +54,32 @@ export class GameService {
     if (!Array.isArray(dto.questions) || dto.questions.length === 0) throw new BadRequestException("The question file contains no questions")
 
     const parsed = dto.questions.map((value, index) => this.parseImportedQuestion(value, language, index)).filter((value): value is NonNullable<typeof value> => value !== null)
-    if (!parsed.length) throw new BadRequestException("No valid multiple-choice questions were found")
+    const uniqueParsed = Array.from(new Map(parsed.map((question) => [this.importIdentity(question), question])).values())
+    if (!uniqueParsed.length) throw new BadRequestException("No valid multiple-choice questions were found")
 
     return this.prisma.$transaction(async (transaction) => {
+      // Serialize imports for one game so two administrators cannot create
+      // duplicate active questions at the same time.
+      await transaction.$executeRaw`SELECT "id" FROM "GameDefinition" WHERE "id" = ${game.id} FOR UPDATE`
       const existing = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id }, select: { id: true, sourceKey: true, prompt: true, options: true, answerIndex: true, category: true, difficulty: true, active: true } })
       const bySourceKey = new Map(existing.filter((item) => item.sourceKey).map((item) => [item.sourceKey as string, item]))
       let nextVersion = ((await transaction.gameContentItem.findFirst({ where: { gameDefinitionId: game.id }, orderBy: { version: "desc" }, select: { version: true } }))?.version ?? 0) + 1
       let created = 0
       let updated = 0
-      let skipped = dto.questions.length - parsed.length
+      let skipped = dto.questions.length - uniqueParsed.length
+      const importedItemIds = new Set<string>()
+      let removedChallenges = 0
 
-      for (const question of parsed) {
+      for (const question of uniqueParsed) {
         let match = bySourceKey.get(question.sourceKey)
         if (!match) {
           match = existing.find((item) => this.sameContent(item, question, language))
         }
         if (match) {
+          importedItemIds.add(match.id)
           const prompt = this.mergePrompt(match.prompt, language, question.prompt)
           const currentPrompt = this.promptForLanguage(match.prompt, language)
-          if (currentPrompt !== question.prompt || JSON.stringify(match.options) !== JSON.stringify(question.options)) {
+          if (currentPrompt !== question.prompt || JSON.stringify(match.options) !== JSON.stringify(question.options) || match.answerIndex !== question.answerIndex || match.category !== question.category || match.difficulty !== question.difficulty || match.active !== question.active) {
             await transaction.gameContentItem.update({ where: { id: match.id }, data: { prompt, options: question.options as Prisma.InputJsonValue, answerIndex: question.answerIndex, answerHash: question.answerHash, difficulty: question.difficulty, category: question.category, active: question.active, sourceKey: match.sourceKey ?? question.sourceKey } })
             updated += 1
           } else {
@@ -84,9 +91,45 @@ export class GameService {
         const createdItem = await transaction.gameContentItem.create({ data: { gameDefinitionId: game.id, version: nextVersion++, contentType: "multiple_choice", sourceKey: question.sourceKey, prompt: { [language]: question.prompt } as Prisma.InputJsonValue, options: question.options as Prisma.InputJsonValue, difficulty: question.difficulty, answerIndex: question.answerIndex, answerHash: question.answerHash, category: question.category, active: question.active }, select: { id: true, sourceKey: true, prompt: true, options: true, answerIndex: true, category: true, difficulty: true, active: true } })
         existing.push(createdItem)
         bySourceKey.set(question.sourceKey, createdItem)
+        importedItemIds.add(createdItem.id)
         created += 1
       }
-      return this.serialize({ gameKey, language, received: dto.questions.length, valid: parsed.length, created, updated, skipped })
+
+      let removed = 0
+      if (gameKey === "trivia") {
+        // A challenge with no attempts is only a generated snapshot. Remove
+        // it so the next request regenerates it from the newly imported pool.
+        // Challenges with attempts remain immutable historical records.
+        const deletedChallenges = await transaction.dailyChallenge.deleteMany({ where: { gameDefinitionId: game.id, attempts: { none: {} } } })
+        removedChallenges = deletedChallenges.count
+        const staleItems = existing.filter((item) => !importedItemIds.has(item.id))
+        const staleIds = staleItems.map((item) => item.id)
+        if (staleIds.length) {
+          // Historical assignments and daily challenges keep a restricted
+          // reference to their old content. Delete unreferenced stale rows,
+          // and archive referenced rows so history remains readable while no
+          // old question can enter a new match.
+          const referenced = await transaction.gameContentItem.findMany({
+            where: {
+              id: { in: staleIds },
+              OR: [{ assignments: { some: {} } }, { dailyChallengeQuestions: { some: {} } }],
+            },
+            select: { id: true },
+          })
+          const referencedIds = new Set(referenced.map((item) => item.id))
+          const deletableIds = staleIds.filter((id) => !referencedIds.has(id))
+          if (deletableIds.length) {
+            await transaction.gameContentItem.deleteMany({ where: { id: { in: deletableIds } } })
+            removed += deletableIds.length
+          }
+          if (referencedIds.size) {
+            const archived = await transaction.gameContentItem.updateMany({ where: { id: { in: [...referencedIds] }, active: true }, data: { active: false } })
+            removed += archived.count
+          }
+        }
+      }
+
+      return this.serialize({ gameKey, language, received: dto.questions.length, valid: uniqueParsed.length, created, updated, skipped, replaced: gameKey === "trivia", removed, removedChallenges, activeQuestions: uniqueParsed.filter((question) => question.active).length })
     })
   }
 
@@ -128,6 +171,10 @@ export class GameService {
 
   private sameContent(existing: { prompt: Prisma.JsonValue; options: Prisma.JsonValue; answerIndex: number; category: string | null }, question: { prompt: string; options: string[]; answerIndex: number; category: string | null }, language: string) {
     return existing.answerIndex === question.answerIndex && existing.category === question.category && this.promptForLanguage(existing.prompt, language).toLowerCase() === question.prompt.toLowerCase() && JSON.stringify(existing.options) === JSON.stringify(question.options)
+  }
+
+  private importIdentity(question: { prompt: string; options: string[]; answerIndex: number }) {
+    return createHash("sha256").update(JSON.stringify({ prompt: question.prompt.toLowerCase(), options: question.options, answerIndex: question.answerIndex })).digest("hex")
   }
 
   async listContent(gameKey: string, includeInactive = false) {

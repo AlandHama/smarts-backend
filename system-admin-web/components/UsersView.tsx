@@ -30,6 +30,7 @@ import Typography from "@mui/material/Typography";
 import { api } from "../lib/api";
 import type { AdminUser, WalletLedgerEntry } from "../lib/types";
 import { PlayerDetailsDialog } from "./PlayerDetailsDialog";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 type AppConfiguration = {
   productionVersion: string;
@@ -271,22 +272,11 @@ export function UsersView({
                   <TableRow key={user.id} hover>
                     <TableCell>
                       <Stack direction="row" spacing={1.5} alignItems="center">
-                        <Box
-                          sx={{
-                            width: 38,
-                            height: 38,
-                            borderRadius: 2.5,
-                            display: "grid",
-                            placeItems: "center",
-                            bgcolor: "rgba(82,199,245,.14)",
-                            color: "secondary.light",
-                            fontWeight: 800,
-                          }}
-                        >
-                          {(user.profile?.displayName || user.username)
-                            .slice(0, 1)
-                            .toUpperCase()}
-                        </Box>
+                        <PlayerAvatar
+                          name={user.profile?.displayName}
+                          username={user.username}
+                          avatarUrl={user.profile?.avatarUrl}
+                        />
                         <Box>
                           <Typography fontWeight={700}>
                             {user.profile?.displayName || user.username}

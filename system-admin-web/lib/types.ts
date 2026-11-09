@@ -556,7 +556,7 @@ export interface AdminAuditEvent {
     id: string;
     username: string;
     email: string | null;
-    profile: { displayName: string } | null;
+    profile: { displayName: string; avatarUrl?: string | null } | null;
   };
 }
 export interface PlayerAuditChange {
@@ -673,7 +673,7 @@ export interface CommerceInventoryItem {
   user: {
     username: string;
     email: string | null;
-    profile: { displayName: string } | null;
+    profile: { displayName: string; avatarUrl?: string | null } | null;
   };
   assetDefinition: {
     key: string;
@@ -692,7 +692,7 @@ export interface CommercePurchase {
   user: {
     username: string;
     email: string | null;
-    profile: { displayName: string } | null;
+    profile: { displayName: string; avatarUrl?: string | null } | null;
   };
   currency: { code: string; name: string };
   lines: Array<{
@@ -723,7 +723,7 @@ export interface PaidRewardRequest {
     id: string;
     username: string;
     email: string | null;
-    profile: { displayName: string } | null;
+    profile: { displayName: string; avatarUrl?: string | null } | null;
   };
   asset: { id: string; key: string; name: string; imageUrl: string | null };
   variation: { id: string; key: string; name: string | null } | null;
@@ -747,7 +747,7 @@ export interface AssetRedeemCode {
     id: string;
     username: string;
     email: string | null;
-    profile: { displayName: string } | null;
+    profile: { displayName: string; avatarUrl?: string | null } | null;
   } | null;
   request: { id: string; status: string; requestedAt: string } | null;
 }
@@ -1091,7 +1091,7 @@ export interface Match360Data extends Omit<
       participantType: string;
       user: {
         username: string;
-        profile: { displayName: string } | null;
+        profile: { displayName: string; avatarUrl?: string | null } | null;
       } | null;
     };
   }>;
@@ -1118,7 +1118,7 @@ export interface Match360Data extends Omit<
       userId: string | null;
       user: {
         username: string;
-        profile: { displayName: string } | null;
+        profile: { displayName: string; avatarUrl?: string | null } | null;
       } | null;
     };
     contentItem: {
@@ -1150,7 +1150,7 @@ export interface Match360Data extends Omit<
     createdAt: string;
     matchedAt: string | null;
     cancelledAt: string | null;
-    user: { username: string; profile: { displayName: string } | null };
+    user: { username: string; profile: { displayName: string; avatarUrl?: string | null } | null };
   }>;
   matchmakingInvite: {
     id: string;
@@ -1162,12 +1162,12 @@ export interface Match360Data extends Omit<
     inviter: {
       id: string;
       username: string;
-      profile: { displayName: string } | null;
+      profile: { displayName: string; avatarUrl?: string | null } | null;
     };
     invitee: {
       id: string;
       username: string;
-      profile: { displayName: string } | null;
+      profile: { displayName: string; avatarUrl?: string | null } | null;
     };
   } | null;
 }
@@ -1200,6 +1200,6 @@ export interface AdminSession {
     username: string;
     email: string | null;
     isSystemAdmin: boolean;
-    profile: { displayName: string } | null;
+    profile: { displayName: string; avatarUrl?: string | null } | null;
   };
 }

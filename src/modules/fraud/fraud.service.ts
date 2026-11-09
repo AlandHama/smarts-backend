@@ -201,7 +201,7 @@ export class FraudService {
       this.prisma.session.findMany({ where: { userId }, orderBy: { lastActiveTimestamp: "desc" }, take: 50, select: { id: true, sessionStatus: true, platform: true, osName: true, osVersion: true, deviceType: true, deviceModel: true, deviceManufacturer: true, deviceInfo: true, ipAddress: true, loginTimestamp: true, lastActiveTimestamp: true } }),
     ])
     const deviceKeys = [...new Set(sessions.map((session) => session.deviceInfo).filter((value): value is string => Boolean(value)))]
-    const related = deviceKeys.length ? await this.prisma.session.findMany({ where: { userId: { not: userId }, deviceInfo: { in: deviceKeys } }, distinct: ["userId"], take: 50, select: { userId: true, user: { select: { username: true, profile: { select: { displayName: true } } } } } }) : []
+    const related = deviceKeys.length ? await this.prisma.session.findMany({ where: { userId: { not: userId }, deviceInfo: { in: deviceKeys } }, distinct: ["userId"], take: 50, select: { userId: true, user: { select: { username: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }) : []
     return this.serialize({ profile, signals, cases, sessions, relatedAccounts: related })
   }
 

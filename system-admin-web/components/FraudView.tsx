@@ -18,6 +18,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { api } from "../lib/api";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 type Risk = "NORMAL" | "LOW" | "SUSPICIOUS" | "HIGH" | "CRITICAL";
 type ProfileStatus = "CLEAR" | "WATCH" | "RESTRICTED" | "SUSPENDED";
@@ -165,7 +166,7 @@ export function FraudView() {
         {profiles.length === 0 && <Alert severity="info">No fraud profiles match these filters yet.</Alert>}
         {profiles.map((item) => <Button key={item.userId} onClick={() => void openProfile(item.userId)} sx={{ textTransform: "none", textAlign: "left", justifyContent: "flex-start", color: "text.primary", p: 2, border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "background.paper" }}>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }} sx={{ width: "100%" }}>
-            <Box sx={{ flex: 1 }}><Typography fontWeight={800}>{item.user?.profile?.displayName || item.user?.username || item.userId}</Typography><Typography variant="body2" color="text.secondary">{item.user?.email || "No email"} · Last signal {date(item.lastSignalAt)}</Typography></Box>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1 }}><PlayerAvatar name={item.user?.profile?.displayName} username={item.user?.username || item.userId} avatarUrl={item.user?.profile?.avatarUrl} size={36} /><Box><Typography fontWeight={800}>{item.user?.profile?.displayName || item.user?.username || item.userId}</Typography><Typography variant="body2" color="text.secondary">{item.user?.email || "No email"} · Last signal {date(item.lastSignalAt)}</Typography></Box></Stack>
             <Chip size="small" color={riskColor(item.riskLevel)} label={`${item.riskLevel} · ${item.score}/100`} />
             <Chip size="small" variant="outlined" label={item.status} />
           </Stack>
