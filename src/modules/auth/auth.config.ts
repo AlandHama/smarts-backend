@@ -63,7 +63,7 @@ export function getAuthConfig(): AuthConfig {
   const adminAccessExpiresIn =
     process.env.SYSTEM_ADMIN_ACCESS_TOKEN_EXPIRES_IN ??
     process.env.JWT_ADMIN_ACCESS_EXPIRES_IN ??
-    "1h"
+    "30d"
 
   return {
     accessSecret,

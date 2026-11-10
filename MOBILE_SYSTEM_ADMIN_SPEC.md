@@ -17,7 +17,7 @@ The mobile mode is an operational console, not a second player account. Entering
 This specification covers:
 
 - The hidden entry gesture and admin login flow.
-- Admin session storage, refresh, expiration, locking, and exit behavior.
+- Admin session storage, refresh, expiration, persistence, and exit behavior.
 - The mobile admin shell, navigation, visual language, responsive layouts, and localization.
 - Mobile equivalents of every current system-admin web area.
 - API mapping to the existing NestJS system-admin routes.
@@ -43,7 +43,7 @@ Phase 1 is complete when the mobile app provides:
 - A localized administrator login sheet using the existing `POST /system-admin/api/auth/login` contract.
 - Dedicated secure admin token storage and a separate admin API client using the existing refresh contract.
 - No replacement, mutation, or clearing of the player session when entering or leaving admin mode.
-- Admin inactivity timeout, background lock, explicit lock, re-authentication, exit, and local admin sign-out.
+- Persistent admin session restoration after app restarts, token refresh/expiration handling, exit, and local admin sign-out. The Control Center does not impose an inactivity lock or require a separate unlock step by default.
 - A distinct SMARTS Control Center shell with admin identity, admin badge, drawer, overview navigation, refresh, and responsive cards.
 - A server-authoritative, read-only Overview page backed by `GET /system-admin/api/overview`.
 - Localized English, Arabic, Kurdish, and Turkish Phase 1 strings.
@@ -93,7 +93,7 @@ When the control is held for approximately 1.2–1.5 seconds:
 
 The hold gesture is only a discovery mechanism. It is not a security boundary.
 
-### Admin unlock sheet
+### Admin login sheet
 
 Use the current SMARTS dialog language: dark navy/purple surface, rounded corners, gold or violet accent, clear icon, concise labels, and a visible loading state.
 
@@ -132,22 +132,14 @@ Use a dedicated admin auth scope in the mobile app:
 
 The app must never overwrite the player token when entering admin mode. Exiting admin mode returns to the same player screen and player session that was active before authentication.
 
-### Locking and exit
+### Persistence and exit
 
 The admin shell must provide:
 
-- **Lock admin mode**: leaves the admin shell visible only behind an unlock screen and keeps the admin token subject to normal expiry policy.
 - **Exit admin mode**: returns to the player app without signing the player out.
 - **Sign out admin**: clears admin access and refresh tokens, cached admin data, notification previews, and local admin navigation state.
 
-Lock the admin workspace when:
-
-- The app moves to the background for the configured inactivity period.
-- The device is locked.
-- The admin explicitly locks the workspace.
-- An admin token is revoked or refresh fails.
-
-The default inactivity timeout should be 15 minutes, configurable later by policy. Re-authentication must be required after timeout.
+After a successful login, persist the dedicated admin access and refresh tokens in platform secure storage and restore the session when the app is reopened. The mobile client must validate the restored session through the guarded backend before showing admin data. A revoked or expired session is cleared and requires a fresh login. The default admin access-token lifetime is 30 days and remains configurable through the backend environment; the refresh token remains revocable by the server.
 
 ## Mobile admin shell
 
@@ -160,7 +152,7 @@ Use a responsive `AdminShell` with:
 - A top app bar labeled **SMARTS Control Center**.
 - An **ADMIN** badge and the signed-in administrator identifier.
 - Unread admin-notification count.
-- Lock and exit controls.
+- Exit control.
 - A compact menu button on phones.
 - A left rail or drawer on large phones, tablets, and landscape layouts.
 - A breadcrumb or section title for deep pages.
@@ -472,7 +464,7 @@ The implementation must verify exact DTOs and response shapes from the backend b
 
 Add a separate admin feature boundary rather than embedding admin state throughout the player screens:
 
-- `AdminAuthState` for login, refresh, lock, exit, and sign-out.
+- `AdminAuthState` for login, restore, refresh, exit, and sign-out.
 - `AdminApiClient` or a scoped client that adds the admin bearer token.
 - `AdminRepository` grouped by domain: overview, analytics, users, economy, rewards, content, support, and games.
 - `AdminShell` with a strongly typed section/navigation model.
@@ -490,7 +482,7 @@ The following are mandatory:
 3. Keep admin tokens separate from player tokens and never include them in player analytics.
 4. Redact authorization headers, passwords, provider secrets, crypto addresses where sensitive, and personal data from logs.
 5. Refresh at most once after a `401`; if refresh fails, clear admin state and require login.
-6. Apply a visible lock state after inactivity/background timeout.
+6. Restore the dedicated admin session after an app restart and show a login prompt only when the stored session is missing, expired, revoked, or invalid.
 7. Require an explicit confirmation and reason for bans, deletes, wallet mutations, GLD actions, reward approvals, crypto actions, rollbacks, settlement retries, config changes, broadcasts, and file deletion.
 8. Show the target, current value, proposed value, and expected impact before a destructive or financial action.
 9. Use server-side idempotency for money, reward, settlement, and retry operations. Disable duplicate taps while pending.
@@ -504,7 +496,7 @@ The following are mandatory:
 - Label stale data with the last successful update time.
 - Provide retry at page and request level.
 - On offline mode, allow read-only display of explicitly cached, non-sensitive summaries only; do not queue financial or destructive mutations silently.
-- On `401`, refresh once, then show the admin unlock screen.
+- On `401`, refresh once, then return to the admin login flow only if the refresh token is invalid or revoked.
 - On `403`, show “You do not have permission for this area” and hide mutation controls.
 - On `409`, show the server conflict and reload the authoritative record.
 - On rate limiting, show a retry-after message and avoid aggressive polling.
@@ -527,16 +519,15 @@ All new strings must use the existing localization system for English, Arabic, K
 Phase 1 is considered complete only when:
 
 - Normal tap on Profile → Sign out keeps the existing player sign-out flow.
-- Holding Profile → Sign out opens the localized admin unlock sheet without signing out the player.
+- Holding Profile → Sign out opens the localized admin login sheet without signing out the player.
 - The login request uses `identifier` and `password` at `/system-admin/api/auth/login`.
 - Incorrect credentials show a generic error and never expose admin content.
 - Admin access and player access use separate secure token stores and separate API clients.
 - The admin refresh path uses `/system-admin/api/auth/refresh` and retries a protected overview read once after a valid refresh.
 - A successful login loads the server overview before showing the authenticated shell.
-- Entering, locking, exiting, or signing out admin mode never replaces or clears the player session.
-- Backgrounding the app or reaching the inactivity timeout locks the admin shell.
-- Re-authentication is required after a lock.
-- The shell provides the admin identity, ADMIN badge, lock, exit, refresh, drawer, and responsive read-only overview cards.
+- Entering, restoring, exiting, or signing out admin mode never replaces or clears the player session.
+- Closing and reopening the app preserves the admin session without requiring another login while the backend session remains valid.
+- The shell provides the admin identity, ADMIN badge, exit, refresh, drawer, and responsive read-only overview cards.
 - The overview reads server-owned counts from `GET /system-admin/api/overview` and exposes no Phase 2/3 mutation controls.
 - English, Arabic, Kurdish, and Turkish strings are generated and used by the Phase 1 UI.
 - Static analysis reports no Phase 1 errors, and the focused Railway API client test passes.
@@ -561,11 +552,11 @@ Phase 2 is considered complete only when:
 
 The implementation is complete only when:
 
-- Holding Profile → Sign out opens the admin unlock flow, while a normal tap retains normal sign-out behavior.
+- Holding Profile → Sign out opens the admin login flow, while a normal tap retains normal sign-out behavior.
 - Correct admin credentials enter the Control Center without replacing the player session.
 - Incorrect credentials do not disclose account details and do not expose admin content.
 - Admin access and player access use separate tokens, clients, state, and logout paths.
-- Token refresh, expiration, lock, exit, and admin sign-out all behave correctly.
+- Token refresh, expiration, persistence, exit, and admin sign-out all behave correctly.
 - The admin shell is clearly distinct from the player shell and works on portrait, landscape, and tablet layouts.
 - Every system-admin web area listed in this document has a mobile destination or a documented permission-gated empty state.
 - Existing backend routes are used with server-authoritative responses.
@@ -594,7 +585,7 @@ The implementation is complete only when:
 - Admin shell drawer/rail and responsive layouts.
 - Overview metric cards and stale state.
 - Filter sheets, dense rows, confirmation sheets, and error states.
-- Locked admin state after background/inactivity.
+- Restored admin state after an app restart and expired/revoked-session handling.
 - Exit admin mode preserving the player screen.
 
 ### Integration and contract tests
@@ -611,7 +602,7 @@ The implementation is complete only when:
 - A forged local admin flag does not unlock content.
 - Tokens are not present in ordinary logs or analytics payloads.
 - Admin state is cleared on explicit admin sign-out and failed refresh.
-- Sensitive pages lock after the configured timeout.
+- Admin access is cleared when the backend rejects the stored session.
 - Destructive actions cannot be triggered twice by repeated taps.
 
 ## Rollout plan
