@@ -6,11 +6,16 @@ import { Injectable } from "@nestjs/common"
 type TrieNode = { terminal: boolean; children: Map<string, TrieNode> }
 export type WordDashBoardWord = { word: string; path: number[] }
 
+// Explicitly reviewed everyday words that are useful on a 5x5 board but are
+// not present in the original compact list. Keep this an allowlist: no broad
+// word-frequency dump, proper nouns, abbreviations, or technical vocabulary.
+const REVIEWED_COMMON_WORDS = `able ago agree ahead alive among anyone arrive autumn aware baby become before believe below between better beyond body chance choose city class common complete continue correct country course crowd current decide enough example family final future great happen health hello hope human idea important inside instead issue keep know later learn leave life listen little maybe meaning member money morning move music never number often order other people place point possible power problem question quick really remember result right school second should simple since small someone something sound space start still story study sure team thing think thought together toward travel under until voice watching water where while whole without world would write year young`.split(' ')
+
 function node(): TrieNode { return { terminal: false, children: new Map<string, TrieNode>() } }
 
 @Injectable()
 export class WordDashDictionary {
-  readonly version = "english.v3"
+  readonly version = "english.v4"
   readonly sha256: string
   private readonly words = new Set<string>()
   private readonly root: TrieNode = node()
@@ -30,6 +35,21 @@ export class WordDashDictionary {
       const word = raw.trim().toUpperCase()
       if (!/^[A-Z]{3,25}$/.test(word)) continue
       if (this.words.has(word)) continue
+      this.words.add(word)
+      let current = this.root
+      for (const letter of word) {
+        let next = current.children.get(letter)
+        if (!next) { next = node(); current.children.set(letter, next) }
+        current = next
+      }
+      current.terminal = true
+    }
+    // Add only the reviewed common-word allowlist after the file is loaded.
+    // Keeping it code-side preserves the deployed dictionary file checksum
+    // while still making these words available to generation and validation.
+    for (const raw of REVIEWED_COMMON_WORDS) {
+      const word = raw.trim().toUpperCase()
+      if (!/^[A-Z]{3,25}$/.test(word) || this.words.has(word)) continue
       this.words.add(word)
       let current = this.root
       for (const letter of word) {

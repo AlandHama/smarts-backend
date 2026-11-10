@@ -65,7 +65,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     // MatchmakingTicket keeps a required game relation for legacy/reporting
     // compatibility. Random casual tickets use a valid active game as a
     // placeholder; the matcher replaces it with a server-selected game after
-    // two random tickets are paired.
+    // the compatible random group is assembled.
     const game = randomCasual
       ? await transaction.gameDefinition.findFirst({
           where: { active: true, configs: { some: { active: true, minimumPlayerLevel: { lte: playerLevel } } }, OR: [{ key: "gem_blitz" }, { key: "tile_rush" }, { key: "word_dash" }, { key: "domino" }, { key: "perfect_timing" }, { key: "bomb_path" }, { content: { some: { active: true } } }] },
@@ -149,7 +149,8 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const expiresAt = new Date(now.getTime() + queueTtlSeconds() * 1000)
     // Bot fallback is a server-owned per-game policy. Never allow the mobile
     // client to turn it on for a game that an administrator has disabled.
-    const configuredBotFallback = mode === MatchmakingTicketMode.CASUAL && (randomCasual || config.casualBotFallbackEnabled === true)
+    const dominoBotFallback = game.key === "domino" && configuredPolicy?.botFillEnabled !== false
+    const configuredBotFallback = mode === MatchmakingTicketMode.CASUAL && (randomCasual || config.casualBotFallbackEnabled === true || dominoBotFallback)
     const ticket = await transaction.matchmakingTicket.create({ data: {
       userId: input.userId,
       gameDefinitionId: game.id,
@@ -161,7 +162,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
       constraints: queueConstraints as Prisma.InputJsonValue | undefined,
       clientVersion: dto.clientVersion?.trim() || null,
       allowBotFallback: configuredBotFallback && !rewardsHeld && !rewardsRestricted,
-      botFallbackDelaySeconds: Math.max(0, Math.min(300, config.casualBotFallbackDelaySeconds)),
+      botFallbackDelaySeconds: dominoBotFallback ? 10 : Math.max(0, Math.min(300, config.casualBotFallbackDelaySeconds)),
       rankingConfigId: rankingConfig?.id,
       rankingStakeAmount: rankingConfig?.stakeAmountGld,
       rankingEntryFee: rankingConfig?.entryFeeGld,

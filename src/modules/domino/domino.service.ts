@@ -289,6 +289,15 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
     if (nextRoundAt > Date.now()) return state
     const row = await tx.dominoMatchState.findUniqueOrThrow({ where: { matchId: match.id } })
     const next = createNextRoundState(state, `${state.seed}:round:${state.roundNumber + 1}`, policy, new Date(), state.roundWinnerParticipantId)
+    const openingParticipantId = next.participantIds[next.currentSeat]
+    const openingParticipant = match.participants.find((item: any) => item.id === openingParticipantId)
+    if (openingParticipant?.participantType === "BOT") {
+      // Keep the round opener authoritative and give a bot the same human-
+      // readable delay as every other bot turn. Without this explicit
+      // schedule, a bot-winning round could leave clients showing WAITING
+      // while no bot action was queued after the hand reset.
+      next.botNextActionAt = { ...(next.botNextActionAt ?? {}), [openingParticipantId]: Date.now() + BOT_TURN_DELAY_MS }
+    }
     await tx.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt: new Date() } })
     await tx.matchRound.create({ data: { matchId: match.id, roundIndex: next.roundNumber, gameDefinitionId: match.gameDefinitionId, status: "STARTED", challengeSeedHash: next.chainHash, startedAt: new Date(next.startedAt) } })
     await this.saveState(tx, row, next)

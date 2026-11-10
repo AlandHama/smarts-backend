@@ -100,6 +100,23 @@ export class MatchmakingService {
               userId: true,
               participantType: true,
               result: true,
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  profile: {
+                    select: {
+                      displayName: true,
+                      avatarUrl: true,
+                      avatarFrameKey: true,
+                      nameEffectKey: true,
+                      level: true,
+                      elo: true,
+                      countryCode: true,
+                    },
+                  },
+                },
+              },
             },
           },
           gameDefinition: { select: { key: true, name: true } },
@@ -149,6 +166,23 @@ export class MatchmakingService {
                 userId: true,
                 participantType: true,
                 result: true,
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                    profile: {
+                      select: {
+                        displayName: true,
+                        avatarUrl: true,
+                        avatarFrameKey: true,
+                        nameEffectKey: true,
+                        level: true,
+                        elo: true,
+                        countryCode: true,
+                      },
+                    },
+                  },
+                },
               },
             },
             gameDefinition: { select: { key: true, name: true } },

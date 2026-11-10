@@ -36,6 +36,9 @@ function isRandomCasualTicket(ticket: Pick<TicketRow, "constraints" | "isRanking
   return !ticket.isRankingMatch && Boolean(ticket.constraints && typeof ticket.constraints === "object" && !Array.isArray(ticket.constraints) && (ticket.constraints as Record<string, unknown>).randomGame === true);
 }
 
+const DOMINO_SEAT_COUNT = 4;
+const DOMINO_BOT_FALLBACK_DELAY_SECONDS = 10;
+
 @Injectable()
 export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
   void,
@@ -84,6 +87,24 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
                 AND ticket."createdAt" <= NOW() - make_interval(secs => bot_config."casualBotFallbackDelaySeconds")
             )
           )
+          OR (
+            ticket."allowBotFallback" = true
+            AND ticket."mode"::text = ${MatchmakingTicketMode.CASUAL}
+            AND EXISTS (
+              SELECT 1
+              FROM "GameDefinition" AS domino_definition
+              JOIN "GameConfig" AS domino_config
+                ON domino_config."gameDefinitionId" = domino_definition."id"
+               AND domino_config."active" = true
+               AND (
+                 domino_config."casualBotFallbackEnabled" = true
+                 OR COALESCE(domino_config."settings"->'dominoPolicy'->>'botFillEnabled', 'true') = 'true'
+               )
+              WHERE domino_definition."id" = ticket."gameDefinitionId"
+                AND domino_definition."key" = 'domino'
+            )
+            AND ticket."createdAt" <= NOW() - make_interval(secs => ${DOMINO_BOT_FALLBACK_DELAY_SECONDS})
+          )
           OR EXISTS (
             SELECT 1
             FROM "MatchmakingTicket" AS candidate
@@ -97,8 +118,13 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
               AND (
                 ticket."isRankingMatch" = true
                 OR (
-                  (ticket."constraints"->>'randomGame' = 'true' AND candidate."constraints"->>'randomGame' = 'true')
-                  OR (COALESCE(ticket."constraints"->>'randomGame', 'false') <> 'true' AND COALESCE(candidate."constraints"->>'randomGame', 'false') <> 'true' AND candidate."gameDefinitionId" = ticket."gameDefinitionId")
+                  ticket."constraints"->>'randomGame' = 'true'
+                  OR candidate."constraints"->>'randomGame' = 'true'
+                  OR (
+                    COALESCE(ticket."constraints"->>'randomGame', 'false') <> 'true'
+                    AND COALESCE(candidate."constraints"->>'randomGame', 'false') <> 'true'
+                    AND candidate."gameDefinitionId" = ticket."gameDefinitionId"
+                  )
                 )
               )
               AND (
@@ -127,11 +153,12 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         AND "userId" <> ${first.userId}
         -- Ranked matches can be entered from different client-selected game
         -- cards. Random casual tickets form their own server-wide pool; the
-        -- game is selected only after two random players are paired.
+        -- game is selected only after the compatible random group is paired.
         AND (
           ${first.isRankingMatch} = true
           OR (
-            (${isRandomCasualTicket(first)} AND "constraints"->>'randomGame' = 'true')
+            ${isRandomCasualTicket(first)}
+            OR "constraints"->>'randomGame' = 'true'
             OR (${!isRandomCasualTicket(first)} AND COALESCE("constraints"->>'randomGame', 'false') <> 'true' AND "gameDefinitionId" = ${first.gameDefinitionId})
           )
         )
@@ -151,36 +178,69 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     `;
 
     const firstGame = await transaction.gameDefinition.findUnique({ where: { id: first.gameDefinitionId }, select: { key: true } })
-    const dominoQueue = firstGame?.key === "domino" && !isRandomCasualTicket(first)
+    const secondGame = second && second.gameDefinitionId !== first.gameDefinitionId
+      ? await transaction.gameDefinition.findUnique({ where: { id: second.gameDefinitionId }, select: { key: true } })
+      : firstGame
+    const specificDominoTicket = !isRandomCasualTicket(first) && firstGame?.key === "domino"
+      ? first
+      : second && !isRandomCasualTicket(second) && secondGame?.key === "domino"
+        ? second
+        : null
+    const dominoQueue = specificDominoTicket !== null
+    const dominoGameDefinitionId = specificDominoTicket?.gameDefinitionId ?? first.gameDefinitionId
     // The ticket stores a snapshot for auditability, but an administrator may
     // enable or disable casual bot fallback while a ticket is still queued.
     // Read the active policy again at claim time so an old ticket cannot stay
     // stuck forever after the setting is enabled, and disabling the setting
     // takes effect without requiring a database cleanup.
-    const activeBotConfig = first.mode === MatchmakingTicketMode.CASUAL && !isRandomCasualTicket(first)
+    const activeBotConfig = first.mode === MatchmakingTicketMode.CASUAL && (dominoQueue || !isRandomCasualTicket(first))
       ? await transaction.gameConfig.findFirst({
-          where: { gameDefinitionId: first.gameDefinitionId, active: true },
-          select: { casualBotFallbackEnabled: true, casualBotFallbackDelaySeconds: true },
+          where: { gameDefinitionId: dominoGameDefinitionId, active: true },
+          select: { casualBotFallbackEnabled: true, casualBotFallbackDelaySeconds: true, settings: true },
         })
       : null
-    const effectiveBotFallbackEnabled = isRandomCasualTicket(first)
-      ? first.allowBotFallback
-      : activeBotConfig?.casualBotFallbackEnabled === true
+    const activeDominoPolicy = activeBotConfig?.settings && typeof activeBotConfig.settings === "object" && !Array.isArray(activeBotConfig.settings)
+      ? (activeBotConfig.settings as Record<string, any>).dominoPolicy
+      : null
+    const effectiveBotFallbackEnabled = dominoQueue
+      ? activeBotConfig?.casualBotFallbackEnabled === true || activeDominoPolicy?.botFillEnabled !== false
+      : !isRandomCasualTicket(first)
+        ? activeBotConfig?.casualBotFallbackEnabled === true
+        : first.allowBotFallback
     const effectiveBotFallbackDelaySeconds = activeBotConfig?.casualBotFallbackDelaySeconds ?? first.botFallbackDelaySeconds
     let additional: TicketRow[] = []
-    if (dominoQueue && second) {
+    if (dominoQueue) {
+      const alreadySelected = second ? [first.id, second.id] : [first.id]
+      const remainingSeats = Math.max(0, DOMINO_SEAT_COUNT - alreadySelected.length)
       additional = await transaction.$queryRaw<TicketRow[]>`
         SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "botFallbackDelaySeconds", "createdAt"
         FROM "MatchmakingTicket"
         WHERE "status" = 'SEARCHING' AND "expiresAt" > NOW() AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
-          AND "id" NOT IN (${first.id}, ${second.id}) AND "userId" <> ${first.userId} AND "gameDefinitionId" = ${first.gameDefinitionId}
+          AND "id" NOT IN (${Prisma.join(alreadySelected)}) AND "userId" <> ${first.userId}
+          AND (
+            "constraints"->>'randomGame' = 'true'
+            OR (COALESCE("constraints"->>'randomGame', 'false') <> 'true' AND "gameDefinitionId" = ${dominoGameDefinitionId})
+          )
           AND "mode"::text = ${first.mode} AND "isRankingMatch" = ${first.isRankingMatch}
-        ORDER BY "createdAt" ASC FOR UPDATE SKIP LOCKED LIMIT 2
+        ORDER BY "createdAt" ASC FOR UPDATE SKIP LOCKED LIMIT ${remainingSeats}
       `
     }
-    const realTickets = [first, ...(second ? [second] : []), ...additional]
-    if (!second && !(effectiveBotFallbackEnabled && elapsedSeconds >= effectiveBotFallbackDelaySeconds))
-      return null;
+    let realTickets = [first, ...(second ? [second] : []), ...additional]
+    const dominoNeedsBots = dominoQueue && realTickets.length < DOMINO_SEAT_COUNT
+    const dominoBotFallbackReady =
+      dominoQueue &&
+      effectiveBotFallbackEnabled &&
+      elapsedSeconds >= DOMINO_BOT_FALLBACK_DELAY_SECONDS
+    if (dominoQueue) {
+      // Keep partial Domino groups in the queue until the ten-second
+      // deadline, then fill only the seats that are still missing.
+      if (dominoNeedsBots && !dominoBotFallbackReady) return null
+    } else if (
+      !second &&
+      !(effectiveBotFallbackEnabled && elapsedSeconds >= effectiveBotFallbackDelaySeconds)
+    ) {
+      return null
+    }
     const integrityProfiles = await transaction.fraudProfile.findMany({
       where: { userId: { in: realTickets.map((ticket) => ticket.userId) } },
       select: { userId: true, status: true, score: true },
@@ -194,13 +254,17 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     // the queue). Settlement already applies the same-opponent fraud signal
     // and reward dampening, so matchmaking must remain available here.
     const now = new Date();
-    const gameCandidates = isRandomCasualTicket(first)
+    const randomPair = isRandomCasualTicket(first) || (second ? isRandomCasualTicket(second) : false)
+    const specificTicket = isRandomCasualTicket(first)
+      ? (second && !isRandomCasualTicket(second) ? second : null)
+      : first
+    const gameCandidates = randomPair && !specificTicket
       ? await transaction.gameDefinition.findMany({
           where: { active: true, configs: { some: { active: true } }, OR: [{ key: "gem_blitz" }, { key: "tile_rush" }, { key: "word_dash" }, { key: "domino" }, { key: "perfect_timing" }, { key: "bomb_path" }, { content: { some: { active: true } } }] },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })
       : [await transaction.gameDefinition.findUnique({
-          where: { id: first.gameDefinitionId },
+          where: { id: specificTicket?.gameDefinitionId ?? first.gameDefinitionId },
           include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } },
         })].filter((value): value is NonNullable<typeof value> => value !== null);
     const eligibleLevel = Math.min(...realTickets.map((ticket) => ticket.levelSnapshot));
@@ -220,6 +284,34 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       : null;
     const config = game?.configs[0];
     if (!game || !config) return null;
+    if (game.key === "domino" && randomPair && !specificTicket && realTickets.length < DOMINO_SEAT_COUNT) {
+      const remainingSeats = DOMINO_SEAT_COUNT - realTickets.length
+      const randomTickets = await transaction.$queryRaw<TicketRow[]>`
+        SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "botFallbackDelaySeconds", "createdAt"
+        FROM "MatchmakingTicket"
+        WHERE "status" = 'SEARCHING'
+          AND "expiresAt" > NOW()
+          AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
+          AND "id" NOT IN (${Prisma.join(realTickets.map((ticket) => ticket.id))})
+          AND "userId" <> ${first.userId}
+          AND "mode"::text = ${first.mode}
+          AND "isRankingMatch" = ${first.isRankingMatch}
+          AND "constraints"->>'randomGame' = 'true'
+        ORDER BY "createdAt" ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT ${remainingSeats}
+      `
+      realTickets = [...realTickets, ...randomTickets]
+      if (
+        realTickets.length < DOMINO_SEAT_COUNT &&
+        !(effectiveBotFallbackEnabled && elapsedSeconds >= DOMINO_BOT_FALLBACK_DELAY_SECONDS)
+      ) {
+        // The random pool also observes the four-seat Domino barrier. If it
+        // cannot fill the remaining seats yet, leave all tickets searchable
+        // so the next matcher tick can try another compatible player.
+        return null
+      }
+    }
     const configuredPolicy = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? (config.settings as Record<string, any>)[game.key === "word_dash" ? "wordDashPolicy" : game.key === "tile_rush" ? "tileRushPolicy" : game.key === "domino" ? "dominoPolicy" : game.key === "perfect_timing" ? "perfectTimingPolicy" : game.key === "bomb_path" ? "bombPathPolicy" : ""] : null;
     if (!second && first.mode === MatchmakingTicketMode.RANKED && (game.key === "tile_rush" || game.key === "word_dash" || game.key === "perfect_timing" || game.key === "bomb_path") && configuredPolicy?.rankedBotFallback !== true) return null;
     const isBoardAuthoritative = isAuthoritativeBoardGame(game.key);
@@ -291,7 +383,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
             occurredAt: now,
             matchId: match.id,
             playerId,
-            properties: { mode: matchMode, botFallback: !second, ranked: first.isRankingMatch } as Prisma.InputJsonValue,
+            properties: { mode: matchMode, botFallback: realTickets.length < (game.key === "domino" ? DOMINO_SEAT_COUNT : 2), ranked: first.isRankingMatch } as Prisma.InputJsonValue,
           },
         });
       }
@@ -349,13 +441,10 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     });
     const participants = [];
     for (const ticket of realTickets) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: ticket.userId, participantType: "PLAYER" } }));
-    // A real two-player queue match must contain exactly the two queued
-    // players. The previous `participants.length + 1` rule added a bot even
-    // when two humans had already been paired; unordered participant reads
-    // could then make clients show that bot and its zero score as the rival.
-    // Keep bot filling only for a genuinely solo fallback, while Domino
-    // still fills its four seats as required by its rules.
-    const requiredSeats = game.key === "domino" ? 4 : 2;
+    // Standard games use two seats. Domino searches for four real players;
+    // when the ten-second queue deadline is reached, only the missing seats
+    // are filled with bots.
+    const requiredSeats = game.key === "domino" ? DOMINO_SEAT_COUNT : 2;
     while (participants.length < requiredSeats) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, participantType: "BOT", result: "PENDING" } }));
 
     const expiresAt = new Date(

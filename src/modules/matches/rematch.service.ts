@@ -7,8 +7,8 @@ import { CreateMatchTransaction } from "./transactions/create-match-transaction"
 
 const REQUEST_TTL_MS = 2 * 60 * 1000;
 const requestInclude = {
-  requester: { select: { id: true, username: true, profile: { select: { displayName: true } } } },
-  recipient: { select: { id: true, username: true, profile: { select: { displayName: true } } } },
+  requester: { select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true, avatarFrameKey: true, nameEffectKey: true } } } },
+  recipient: { select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true, avatarFrameKey: true, nameEffectKey: true } } } },
   gameDefinition: { select: { key: true, name: true } },
 };
 

@@ -337,8 +337,13 @@ export class BombPathService {
       }
     }
     const players = Object.values(state.players)
-    const allComplete = players.length > 0 && players.every((player) => player.roundIndex >= state.rounds.length)
-    if (allComplete) return { state: this.timeoutState(state), changed: true, finished: true }
+    // Bomb Path is a race: once any participant completes the final round the
+    // match is over. Waiting for every participant here allowed the winner to
+    // advance to roundIndex === rounds.length while the other player was still
+    // active, which projected as an impossible 6/5 round and left both clients
+    // waiting forever.
+    const anyComplete = players.length > 0 && players.some((player) => player.roundIndex >= state.rounds.length)
+    if (anyComplete) return { state: this.timeoutState(state), changed: true, finished: true }
     state.currentRoundIndex = players.length ? Math.min(...players.map((player) => Math.min(player.roundIndex, Math.max(0, state.rounds.length - 1)))) : 0
     state.phase = players.some((player) => player.phase === "PLAY") ? "PLAY" : players.some((player) => player.phase === "MEMORIZE") ? "MEMORIZE" : "RESULT"
     state.stateHash = bombPathStateHash(state)
@@ -421,7 +426,11 @@ export class BombPathService {
 
   private async saveState(tx: Prisma.TransactionClient, match: MatchRow, state: BombPathState) { state.stateHash = bombPathStateHash(state); await tx.match.update({ where: { id: match.id }, data: { metadata: this.metadata(match.metadata, state) } }) }
   private project(match: MatchRow, participantId: string, state: BombPathState | null, policy: BombPathPolicy) {
-    const self = state?.players[participantId]; const viewerRoundIndex = self?.roundIndex ?? state?.currentRoundIndex ?? 0; const current = state?.rounds[viewerRoundIndex]; const finished = ["FINISHED", "REVIEW", "SETTLED"].includes(match.status) || state?.status === "FINISHED"
+    const self = state?.players[participantId]
+    const lastRoundIndex = Math.max(0, (state?.rounds.length ?? policy.roundCount) - 1)
+    const viewerRoundIndex = Math.min(self?.roundIndex ?? state?.currentRoundIndex ?? 0, lastRoundIndex)
+    const current = state?.rounds[viewerRoundIndex]
+    const finished = ["FINISHED", "REVIEW", "SETTLED"].includes(match.status) || state?.status === "FINISHED"
     const viewerPhase = self?.phase ?? state?.phase
     const phaseDeadlineMs = current ? (viewerPhase === "MEMORIZE" ? current.memorizeEndsAt : viewerPhase === "PLAY" ? self?.phaseDeadlineAt ?? current.playEndsAt : current.resultEndsAt ?? current.playEndsAt) : null
     const participantProjection = match.participants.map((item: any) => { const player = state?.players[item.id]; return { participantId: item.id, userId: item.userId, participantType: item.participantType, name: item.user?.profile?.displayName ?? item.user?.username ?? "SMARTS bot", username: item.user?.username ?? null, avatarUrl: item.user?.profile?.avatarUrl ?? null, score: player?.score ?? item.finalScore ?? 0, roundStatus: player?.roundStatus ?? "READY", result: item.result } })

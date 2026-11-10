@@ -78,15 +78,20 @@ export function createPerfectTimingSchedule(seed: string, policy: PerfectTimingP
 }
 
 export function markerPositionAt(round: PerfectTimingRoundSpec, serverTimeMs: number, roundStartedAtServerMs: number): number {
-  const elapsed = cycleElapsedMs(serverTimeMs, roundStartedAtServerMs, round.durationMs)
-  const progress = elapsed / round.durationMs
+  // A round has one continuous timeline. Using cycleElapsedMs here made a
+  // non-integer speedCycles value jump back to startPhase when the round
+  // duration boundary was crossed, which was visible as a marker teleport.
+  // Keep the modulo helper for tap scoring, but render the authoritative
+  // motion from the unwrapped elapsed time and freeze it at the deadline.
+  const elapsed = Math.max(0, serverTimeMs - roundStartedAtServerMs)
+  const progress = Math.min(1, elapsed / round.durationMs)
   const wave = ease(round.movementModel, triangleWave(round.startPhase + progress * round.speedCycles))
   return round.railStart + (round.railEnd - round.railStart) * clamp(wave, 0, 1)
 }
 
 export function targetCenterAt(round: PerfectTimingRoundSpec, serverTimeMs: number, roundStartedAtServerMs: number): number {
   if (round.movementModel !== "TARGET_DRIFT") return round.targetCenter
-  const elapsed = cycleElapsedMs(serverTimeMs, roundStartedAtServerMs, round.durationMs)
+  const elapsed = Math.max(0, Math.min(round.durationMs, serverTimeMs - roundStartedAtServerMs))
   const drift = Math.sin((elapsed / round.durationMs) * Math.PI * 2 + round.startPhase * Math.PI * 2) * 0.12
   return clamp(round.targetCenter + drift, round.railStart + round.targetWidth / 2, round.railEnd - round.targetWidth / 2)
 }
