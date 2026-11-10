@@ -44,6 +44,7 @@ import {
   UpdateUserStatusDto,
   CreateSocialGiftDto,
   UpdateSocialGiftDto,
+  MobileAdminMutationAuditDto,
 } from "./dtos";
 import {
   AwardProgressionPointsDto,
@@ -329,6 +330,17 @@ export class SystemAdminController {
   @ApiOperation({ summary: "Get system administrator dashboard counts" })
   overview() {
     return this.systemAdminService.overview();
+  }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/mobile/mutation-audit")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Record a mobile Control Center mutation audit" })
+  recordMobileMutationAudit(
+    @Body() dto: MobileAdminMutationAuditDto,
+    @CurrentUser() admin: UserResponseDto,
+  ) {
+    return this.systemAdminService.recordMobileMutationAudit(admin.id, dto);
   }
 
   @UseGuards(SystemAdminGuard)

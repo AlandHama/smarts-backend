@@ -2,7 +2,7 @@
 
 ## Status
 
-Design and implementation specification only. This document does not implement the mobile admin mode, change backend behavior, or change the existing player experience.
+Final implementation specification. Phases 1, 2, and 3 are implemented in the mobile app and backend.
 
 ## Objective
 
@@ -29,7 +29,41 @@ This specification does not authorize:
 - Storing an administrator password on the device.
 - Giving ordinary players access to system-admin data.
 - Replacing the current system-admin website.
-- Implementing any code in this document until the design is approved.
+- Implementing Phase 2 or Phase 3 before the corresponding phase is approved.
+
+## Three-phase delivery boundary
+
+The original system-admin scope is deliberately split so each release is safe and independently usable.
+
+### Phase 1 — Secure entry, session isolation, shell, and read-only overview
+
+Phase 1 is complete when the mobile app provides:
+
+- A long-press-only discovery path on Profile → Sign out while normal tap behavior remains unchanged.
+- A localized administrator login sheet using the existing `POST /system-admin/api/auth/login` contract.
+- Dedicated secure admin token storage and a separate admin API client using the existing refresh contract.
+- No replacement, mutation, or clearing of the player session when entering or leaving admin mode.
+- Admin inactivity timeout, background lock, explicit lock, re-authentication, exit, and local admin sign-out.
+- A distinct SMARTS Control Center shell with admin identity, admin badge, drawer, overview navigation, refresh, and responsive cards.
+- A server-authoritative, read-only Overview page backed by `GET /system-admin/api/overview`.
+- Localized English, Arabic, Kurdish, and Turkish Phase 1 strings.
+- No financial mutation, player mutation, configuration, support, fraud, analytics, game-operation, or other write controls exposed in Phase 1.
+
+Phase 1 implementation files are limited to the mobile admin feature, its secure transport/session wiring, the profile entry point, and generated/localized strings. No new backend endpoint or database migration is required because the existing admin login, refresh, guard, and overview routes already satisfy this phase.
+
+### Phase 2 — Read-only operational workspaces
+
+Phase 2 is complete. The mobile Control Center now provides permission-gated, read-only pages for analytics, system resources, operations, players, Player 360, sessions, friends/presence, chats, audits, matches, Match 360, notifications, support, fraud review, and game-operation inspection. It uses the existing guarded NestJS routes, server-side aggregates, bounded list requests, filters, report selectors, telemetry process sorting, and refresh states. Phase 3 mutations are kept in a separate controlled workspace.
+
+Phase 2 implementation uses the existing backend contracts; no database migration or new authorization path is required. The backend specification is updated here so the mobile and backend repositories share the same delivery boundary.
+
+### Phase 3 — Controlled administration and mutations
+
+Phase 3 is complete. The mobile Control Center now exposes an explicit, allow-listed mutation catalog grouped by the same operational domains as the web console: players and storage, progression, economy and wallets, GLD, leaderboards and ranking, game configuration and game-operation policy, content, daily operations, analytics automation, notifications, AdMob, paid/crypto rewards, commerce, referrals, support, chats, fraud, missions, streaks, settlement integrity, and cooperative operations.
+
+Every mutation is sent through the existing guarded NestJS route family. The mobile UI requires target identifiers where applicable, validates JSON before submission, requires a human reason, shows a non-dismissible final confirmation, and disables duplicate submission. Mobile writes carry a stable `Idempotency-Key`; the backend interceptor reserves the key in the existing `IdempotencyKey` table, rejects a conflicting reuse, replays a completed response, and releases failed attempts for retry. A supplemental `POST /system-admin/api/mobile/mutation-audit` record stores the action, target, reason, source, path, sensitivity, and idempotency key without storing passwords, tokens, provider secrets, or private answer keys.
+
+Phase 3 controls remain server-authorized: the allow-list is only a client navigation boundary and `SystemAdminGuard`, DTO validation, existing service authorization, and transaction-level audits remain authoritative. Secrets and file uploads are not accepted by the generic JSON mutation editor; those operations stay available through their existing dedicated web workflows.
 
 ## Existing system contracts
 
@@ -488,7 +522,42 @@ All new strings must use the existing localization system for English, Arabic, K
 - Do not encode meaning using color alone.
 - Support large text without clipping titles such as “System resources” or “Paid reward requests”.
 
-## Acceptance criteria
+## Phase 1 acceptance criteria
+
+Phase 1 is considered complete only when:
+
+- Normal tap on Profile → Sign out keeps the existing player sign-out flow.
+- Holding Profile → Sign out opens the localized admin unlock sheet without signing out the player.
+- The login request uses `identifier` and `password` at `/system-admin/api/auth/login`.
+- Incorrect credentials show a generic error and never expose admin content.
+- Admin access and player access use separate secure token stores and separate API clients.
+- The admin refresh path uses `/system-admin/api/auth/refresh` and retries a protected overview read once after a valid refresh.
+- A successful login loads the server overview before showing the authenticated shell.
+- Entering, locking, exiting, or signing out admin mode never replaces or clears the player session.
+- Backgrounding the app or reaching the inactivity timeout locks the admin shell.
+- Re-authentication is required after a lock.
+- The shell provides the admin identity, ADMIN badge, lock, exit, refresh, drawer, and responsive read-only overview cards.
+- The overview reads server-owned counts from `GET /system-admin/api/overview` and exposes no Phase 2/3 mutation controls.
+- English, Arabic, Kurdish, and Turkish strings are generated and used by the Phase 1 UI.
+- Static analysis reports no Phase 1 errors, and the focused Railway API client test passes.
+
+## Phase 2 acceptance criteria
+
+Phase 2 is considered complete only when:
+
+- The admin session remains isolated from the player session and all data requests use the dedicated admin client.
+- Overview, analytics, resources, operations, players, Player 360, sessions, friends/presence, chats, audits, matches, Match 360, notifications, support, fraud, and game operations are reachable from the mobile admin shell.
+- Each page reads from the existing authenticated NestJS system-admin endpoint family and handles loading, refresh, empty, error, 401, and 403 states.
+- Analytics exposes report filters, KPI values, trend samples, quality checks, definitions, player explorer, saved/scheduled reports, and alert history without mutation controls.
+- System resources displays server memory, CPU, network, health samples, and processes sorted by resident memory.
+- Players show bounded search/status results, guest state, level/ELO, last-seen/session context, and profile pictures where the server supplies them.
+- Player 360 and Match 360 open only after selecting a server-provided UUID and display the returned server-owned details without private answer-key fabrication.
+- Sessions, friends, chats, audits, notifications, support, and fraud are read-only and bounded; no reply, assignment, ban, resolve, delete, broadcast, or rule action is exposed.
+- Game operations covers cooperative, Gem Blitz, Tile Rush, Word Dash, Domino, Bomb Path, and Perfect Timing read-only policy/operations data using the existing guarded controllers.
+- The Phase 3 Control Center is reachable as an enabled, grouped mutation workspace; every exposed command maps to an allow-listed existing backend route and no arbitrary method or URL can be entered.
+- Static analysis reports no Phase 2 compile errors and the focused admin transport tests remain green.
+
+## Final acceptance criteria (after Phase 3)
 
 The implementation is complete only when:
 
@@ -501,6 +570,8 @@ The implementation is complete only when:
 - Every system-admin web area listed in this document has a mobile destination or a documented permission-gated empty state.
 - Existing backend routes are used with server-authoritative responses.
 - All financial, destructive, configuration, reward, and settlement actions have confirmation, idempotency, and audit handling.
+- Mutation requests from mobile use a database-backed idempotency reservation and completed-response replay; duplicate keys with a different request hash are rejected.
+- Every mobile mutation has a required operator reason and a supplemental mobile-origin audit record; sensitive request bodies are never written to that record.
 - Player pictures, guest indicators, country/locale, and sensitive data follow the same privacy rules as the web console.
 - Admin notifications, support requests, fraud alerts, and pending rewards are visible without excessive polling.
 - All strings are localized and RTL-safe.
@@ -557,6 +628,6 @@ Suggested phases:
 
 The mobile admin feature must remain removable or disableable through configuration without requiring a player-app release.
 
-## Explicit implementation boundary
+## Current implementation boundary
 
-This file is the complete design/technical specification requested by the product owner. No Flutter code, NestJS code, database migration, route, configuration, or existing worktree change should be made as part of writing this document.
+The current code implements all three phases. Phase 3 adds the mobile allow-listed mutation workspace, the backend mobile-origin audit endpoint, and database-backed idempotency enforcement using the existing `IdempotencyKey` model; it adds no database migration. The existing guarded routes, DTO validation, service authorization, transaction audits, and web console remain unchanged as the authoritative control plane.

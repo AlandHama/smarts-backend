@@ -102,11 +102,31 @@ import { UpdateGoogleAuthConfigDto } from "../auth/dtos/google-auth.dto";
 import { CryptoRewardsService } from "../crypto-rewards/crypto-rewards.service";
 import { CryptoAdminDecisionDto, CryptoPayoutVerificationDto, UpdateCryptoRewardConfigDto } from "../crypto-rewards/dtos";
 import { ContentSafetyService } from "../content-safety/content-safety.service";
+import { writeAdminAudit } from "../../common/helpers/admin-audit";
+import { MobileAdminMutationAuditDto } from "./dtos/mobile-admin-mutation-audit.dto";
 
 @Injectable()
 export class SystemAdminService implements OnModuleInit {
   private readonly logger = new Logger(SystemAdminService.name);
   private dummyPasswordHash?: string;
+
+  async recordMobileMutationAudit(actorId: string, dto: MobileAdminMutationAuditDto) {
+    const metadata = {
+      ...(dto.metadata ?? {}),
+      source: "mobile-control-center",
+      idempotencyKey: dto.idempotencyKey,
+    };
+    return this.prisma.$transaction((tx) =>
+      writeAdminAudit(tx, {
+        actorId,
+        action: dto.action,
+        entityType: dto.entityType,
+        entityId: dto.entityId,
+        reason: dto.reason,
+        metadata,
+      }),
+    );
+  }
 
   constructor(
     private readonly prisma: PrismaService,
