@@ -497,10 +497,34 @@ export class ChatsService implements OnModuleInit, OnModuleDestroy {
   async listAdminConversations(query: AdminChatsQueryDto) {
     const take = query.limit + 1
     const search = query.search?.trim()
+    const between = [...new Set((query.between ?? '').split(',').map((value) => value.trim()).filter(Boolean))].slice(0, 2)
     const isUuid = Boolean(search && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(search))
     const where: Prisma.ChatConversationWhereInput = {
       ...(query.cursor ? { id: { lt: query.cursor } } : {}),
       ...(query.userId ? { participants: { some: { userId: query.userId } } } : {}),
+      ...(between.length
+        ? {
+            AND: between.map((player) => ({
+              participants: {
+                some: {
+                  user: {
+                    OR: [
+                      { username: { contains: player, mode: "insensitive" } },
+                      {
+                        profile: {
+                          displayName: {
+                            contains: player,
+                            mode: "insensitive",
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            })),
+          }
+        : {}),
       ...(search ? { OR: [
         ...(isUuid ? [{ id: search }] : []),
         ...(isUuid ? [{ participants: { some: { userId: search } } }] : []),

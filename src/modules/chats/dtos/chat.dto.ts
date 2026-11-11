@@ -138,6 +138,8 @@ export class ReportChatMessageDto {
 
 export class AdminChatsQueryDto {
   @IsOptional() @IsString() @MaxLength(120) search?: string
+  /** Comma-separated player usernames/display names; every value must be in the conversation. */
+  @IsOptional() @IsString() @MaxLength(240) between?: string
   @IsOptional() @IsString() @MaxLength(30) status?: string
   @IsOptional() @IsUUID() userId?: string
   @IsOptional() @IsUUID() cursor?: string
