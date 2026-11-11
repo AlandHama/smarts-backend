@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import { AdminNotificationSeverity, CryptoPayoutRequestStatus, FraudCaseStatus, FraudProfileStatus, FraudRiskLevel, PaidRewardRequestStatus, Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../prisma.service";
+import { FirebaseMessagingService } from "../notifications/firebase-messaging.service";
 import { SystemResourcesService } from "./system-resources.service";
 
 const SYNC_INTERVAL_MS = 60_000;
@@ -19,6 +20,7 @@ export class AdminNotificationsService implements OnModuleInit, OnModuleDestroy 
   constructor(
     private readonly prisma: PrismaService,
     private readonly resources: SystemResourcesService,
+    private readonly firebaseMessaging: FirebaseMessagingService,
   ) {}
 
   onModuleInit() {
@@ -173,11 +175,43 @@ export class AdminNotificationsService implements OnModuleInit, OnModuleDestroy 
   }
 
   private async upsert(input: { dedupeKey: string; category: string; severity: AdminNotificationSeverity; title: string; body: string; data?: AdminNotificationData }) {
+    const existing = await this.prisma.adminNotification.findUnique({
+      where: { dedupeKey: input.dedupeKey },
+      select: { id: true, resolvedAt: true },
+    });
     await this.prisma.adminNotification.upsert({
       where: { dedupeKey: input.dedupeKey },
       create: { dedupeKey: input.dedupeKey, category: input.category, severity: input.severity, title: input.title, body: input.body, data: input.data as Prisma.InputJsonValue },
       update: { category: input.category, severity: input.severity, title: input.title, body: input.body, data: input.data as Prisma.InputJsonValue, resolvedAt: null },
     });
+    // The durable admin inbox is still authoritative, but newly-created
+    // alerts also need to reach an administrator while the app is backgrounded.
+    // Do this only for a new or previously resolved alert so the 60-second
+    // synchronizer cannot create a push storm.
+    if (!existing || existing.resolvedAt) {
+      void this.pushToAdministrators(input).catch((error) => {
+        this.logger.warn(`Admin alert push failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+  }
+
+  private async pushToAdministrators(input: { dedupeKey: string; category: string; severity: AdminNotificationSeverity; title: string; body: string; data?: AdminNotificationData }) {
+    const administrators = await this.prisma.user.findMany({
+      where: { isSystemAdmin: true, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!administrators.length) return;
+    await this.firebaseMessaging.sendToUsers(administrators.map((admin) => admin.id), {
+      notificationType: "admin.alert",
+      title: input.title,
+      body: input.body,
+      data: {
+        route: "/system-admin",
+        category: input.category,
+        severity: input.severity,
+        dedupeKey: input.dedupeKey,
+      },
+    }, { throwOnTransientFailure: false });
   }
 
   private async resolveInactive(category: string, activeKeys: string[]) {
