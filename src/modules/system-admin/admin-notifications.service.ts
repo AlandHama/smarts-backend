@@ -225,12 +225,19 @@ export class AdminNotificationsService implements OnModuleInit, OnModuleDestroy 
       select: { id: true },
     });
     if (!administrators.length) return;
+    const notificationData = Object.fromEntries(
+      Object.entries(input.data ?? {}).map(([key, value]) => [
+        key,
+        value == null ? "" : String(value),
+      ]),
+    );
     await this.firebaseMessaging.sendToUsers(administrators.map((admin) => admin.id), {
       notificationType: "admin.alert",
       title: input.title,
       body: input.body,
       data: {
-        route: "/system-admin",
+        route: notificationData.route || "/system-admin",
+        ...notificationData,
         category: input.category,
         severity: input.severity,
         dedupeKey: input.dedupeKey,
