@@ -4,7 +4,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger"
 import { CurrentUser } from "../../common/decorators/current-user.decorator"
 import { UserResponseDto } from "../auth/dtos/user-response.dto"
 import { SystemAdminGuard } from "../system-admin/system-admin.guard"
-import { CreateSupportArticleDto, CreateSupportCategoryDto, CreateSupportCannedReplyDto, GrantSupportAgentDto, LiveChatListQueryDto, LiveChatRefundDto, SupportArticleListQueryDto, SupportListQueryDto, SupportTicketMessageDto, SupportTicketStatusUpdateDto, UpdateSupportAgentDto, UpdateSupportCategoryDto, UpdateSupportConfigurationDto } from "./dtos"
+import { CreateSupportArticleDto, CreateSupportCategoryDto, CreateSupportCannedReplyDto, GrantSupportAgentDto, LiveChatListQueryDto, LiveChatMessageDto, LiveChatRefundDto, LiveChatStatusUpdateDto, SupportArticleListQueryDto, SupportListQueryDto, SupportTicketMessageDto, SupportTicketStatusUpdateDto, UpdateSupportAgentDto, UpdateSupportCategoryDto, UpdateSupportConfigurationDto } from "./dtos"
 import { SupportService } from "./support.service"
 import { SupportLiveChatService } from "./support-live-chat.service"
 
@@ -42,6 +42,9 @@ export class SupportAdminController {
   @Post("retention/run") retention(@CurrentUser() admin: UserResponseDto) { return this.support.runRetentionCleanup(admin.id) }
   @Get("live-chats") liveChats(@Query() query: LiveChatListQueryDto) { return this.liveChat.adminList(query) }
   @Get("live-chats/:sessionId") liveChatDetail(@CurrentUser() admin: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string) { return this.liveChat.get(admin.id, sessionId, true) }
+  @Post("live-chats/:sessionId/claim") claimLive(@CurrentUser() admin: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string) { return this.liveChat.adminClaim(admin.id, sessionId) }
+  @Post("live-chats/:sessionId/messages") liveMessage(@CurrentUser() admin: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string, @Body() dto: LiveChatMessageDto) { return this.liveChat.adminSendMessage(admin.id, sessionId, dto) }
+  @Patch("live-chats/:sessionId/status") liveStatus(@CurrentUser() admin: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string, @Body() dto: LiveChatStatusUpdateDto) { return this.liveChat.adminUpdateStatus(admin.id, sessionId, dto) }
   @Post("live-chats/:sessionId/refund") refund(@CurrentUser() admin: UserResponseDto, @Param("sessionId", ParseUUIDPipe) sessionId: string, @Body() dto: LiveChatRefundDto) { return this.liveChat.adminRefund(admin.id, sessionId, dto) }
   @Post("live-chats/refund-sweep") refundSweep(@CurrentUser() admin: UserResponseDto) { return this.liveChat.runNoAgentRefunds(admin.id) }
 }

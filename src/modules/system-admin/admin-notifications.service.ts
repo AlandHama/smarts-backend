@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { AdminNotificationSeverity, CryptoPayoutRequestStatus, FraudCaseStatus, FraudProfileStatus, FraudRiskLevel, PaidRewardRequestStatus, Prisma } from "@prisma/client";
+import { AdminNotificationSeverity, CryptoPayoutRequestStatus, FraudCaseStatus, FraudProfileStatus, FraudRiskLevel, PaidRewardRequestStatus, Prisma, SupportLiveChatStatus } from "@prisma/client";
 
 import { PrismaService } from "../../prisma.service";
 import { FirebaseMessagingService } from "../notifications/firebase-messaging.service";
@@ -69,15 +69,27 @@ export class AdminNotificationsService implements OnModuleInit, OnModuleDestroy 
     return { updated: result.count > 0 };
   }
 
+  async notifyLiveChatOpened(input: { sessionId: string; sessionNumber: string; playerId: string; username: string }) {
+    await this.upsert({
+      dedupeKey: `live-chat:${input.sessionId}`,
+      category: "SUPPORT",
+      severity: AdminNotificationSeverity.WARNING,
+      title: "Player requested live chat",
+      body: `${input.username} is waiting for an administrator in live chat (${input.sessionNumber}).`,
+      data: { route: `/system-admin?section=liveChat&liveChatId=${input.sessionId}`, section: "liveChat", liveChatId: input.sessionId, playerId: input.playerId },
+    });
+  }
+
   private async sync() {
     if (this.syncing) return;
     this.syncing = true;
     try {
-      const [fraudCases, suspiciousProfiles, paidRewards, cryptoRewards, failedOutbox, failedPurchases, failedPushes, openFeedback, reviewMatches] = await Promise.all([
+      const [fraudCases, suspiciousProfiles, paidRewards, cryptoRewards, liveChats, failedOutbox, failedPurchases, failedPushes, openFeedback, reviewMatches] = await Promise.all([
         this.prisma.fraudCase.findMany({ where: { status: { in: OPEN_FRAUD_CASES } }, orderBy: { openedAt: "desc" }, take: 100, select: { id: true, userId: true, status: true, scoreAtOpen: true, reason: true, openedAt: true, user: { select: { username: true } } } }),
         this.prisma.fraudProfile.findMany({ where: { OR: [{ riskLevel: { in: SUSPICIOUS_RISK_LEVELS } }, { status: { in: [FraudProfileStatus.WATCH, FraudProfileStatus.RESTRICTED, FraudProfileStatus.SUSPENDED] } }] }, orderBy: [{ score: "desc" }, { updatedAt: "desc" }], take: 100, select: { userId: true, score: true, riskLevel: true, status: true, lastSignalAt: true, user: { select: { username: true } } } }),
         this.prisma.paidRewardRequest.findMany({ where: { status: PaidRewardRequestStatus.PENDING }, orderBy: { requestedAt: "asc" }, take: 100, select: { id: true, userId: true, gldPrice: true, requestedAt: true, user: { select: { username: true } }, assetDefinition: { select: { name: true, key: true } } } }),
         this.prisma.cryptoPayoutRequest.findMany({ where: { status: CryptoPayoutRequestStatus.PENDING_ADMIN_APPROVAL }, orderBy: { requestedAt: "asc" }, take: 100, select: { id: true, userId: true, gldRequested: true, currencyCode: true, networkCode: true, requestedAt: true, user: { select: { username: true } } } }),
+        this.prisma.supportLiveChatSession.findMany({ where: { status: { in: [SupportLiveChatStatus.QUEUED, SupportLiveChatStatus.ASSIGNED, SupportLiveChatStatus.ACTIVE, SupportLiveChatStatus.PAUSED, SupportLiveChatStatus.WAITING_FOR_PLAYER] } }, orderBy: { queueEnteredAt: "asc" }, take: 100, select: { id: true, sessionNumber: true, playerId: true, status: true, player: { select: { username: true } } } }),
         this.prisma.outboxEvent.count({ where: { status: "FAILED" } }),
         this.prisma.purchase.count({ where: { status: "FAILED" } }),
         this.prisma.notification.count({ where: { pushStatus: "FAILED", createdAt: { gte: this.dayStart() } } }),
@@ -89,6 +101,7 @@ export class AdminNotificationsService implements OnModuleInit, OnModuleDestroy 
       const activeFraudProfileKeys = suspiciousProfiles.map((row) => `fraud-profile:${row.userId}`);
       const activePaidRewardKeys = paidRewards.map((row) => `paid-reward:${row.id}`);
       const activeCryptoRewardKeys = cryptoRewards.map((row) => `crypto-reward:${row.id}`);
+      const activeLiveChatKeys = liveChats.map((row) => `live-chat:${row.id}`);
 
       for (const row of fraudCases) {
         await this.upsert({
@@ -130,9 +143,20 @@ export class AdminNotificationsService implements OnModuleInit, OnModuleDestroy 
           data: { route: "/crypto-rewards", requestId: row.id, userId: row.userId, currencyCode: row.currencyCode, networkCode: row.networkCode, gldRequested: row.gldRequested.toString() },
         });
       }
+      for (const row of liveChats) {
+        await this.upsert({
+          dedupeKey: `live-chat:${row.id}`,
+          category: "SUPPORT",
+          severity: row.status === SupportLiveChatStatus.QUEUED ? AdminNotificationSeverity.WARNING : AdminNotificationSeverity.INFO,
+          title: row.status === SupportLiveChatStatus.QUEUED ? "Player requested live chat" : "Live chat is active",
+          body: `${row.player.username} · ${row.sessionNumber} · ${row.status.toLowerCase().replaceAll("_", " ")}.`,
+          data: { route: `/system-admin?section=liveChat&liveChatId=${row.id}`, section: "liveChat", liveChatId: row.id, playerId: row.playerId, status: row.status },
+        });
+      }
 
       await this.resolveInactive("FRAUD", [...activeFraudCaseKeys, ...activeFraudProfileKeys]);
       await this.resolveInactive("REWARD_REQUEST", [...activePaidRewardKeys, ...activeCryptoRewardKeys]);
+      await this.resolveInactive("SUPPORT", activeLiveChatKeys);
       await this.syncOperationalAlert("ops:failed-outbox", "OPERATIONS", failedOutbox > 0 ? AdminNotificationSeverity.CRITICAL : null, "Failed outbox events need attention", `${failedOutbox} outbox event${failedOutbox === 1 ? " is" : "s are"} currently failed.`, { route: "/operations", count: failedOutbox });
       await this.syncOperationalAlert("ops:failed-purchases", "OPERATIONS", failedPurchases > 0 ? AdminNotificationSeverity.WARNING : null, "Failed purchases detected", `${failedPurchases} purchase${failedPurchases === 1 ? " is" : "s are"} currently failed.`, { route: "/commerce", count: failedPurchases });
       await this.syncOperationalAlert("ops:failed-pushes", "OPERATIONS", failedPushes > 0 ? AdminNotificationSeverity.WARNING : null, "Push delivery failures", `${failedPushes} notification push${failedPushes === 1 ? " has" : "es have"} failed today.`, { route: "/notifications", count: failedPushes });

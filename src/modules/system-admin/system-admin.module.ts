@@ -71,6 +71,6 @@ import { MobileAdminIdempotencyInterceptor } from "./mobile-admin-idempotency.in
     AdminNotificationsService,
     { provide: APP_INTERCEPTOR, useClass: MobileAdminIdempotencyInterceptor },
   ],
-  exports: [AnalyticsEventService],
+  exports: [AnalyticsEventService, AdminNotificationsService],
 })
 export class SystemAdminModule {}

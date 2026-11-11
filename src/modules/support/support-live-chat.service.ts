@@ -6,13 +6,14 @@ import { PrismaService } from "../../prisma.service"
 import { CreditWalletTransaction } from "../economy/transactions/credit-wallet-transaction"
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
 import { NotificationsService } from "../notifications/notifications.service"
+import { AdminNotificationsService } from "../system-admin/admin-notifications.service"
 import { LiveChatListQueryDto, LiveChatMessageDto, LiveChatRefundDto, LiveChatStatusUpdateDto, StartLiveChatDto, UpdateSupportConfigurationDto } from "./dtos"
 
 const ACTIVE_STATUSES = [SupportLiveChatStatus.QUEUED, SupportLiveChatStatus.ASSIGNED, SupportLiveChatStatus.ACTIVE, SupportLiveChatStatus.PAUSED, SupportLiveChatStatus.WAITING_FOR_PLAYER]
 
 @Injectable()
 export class SupportLiveChatService {
-  constructor(private readonly prisma: PrismaService, private readonly credit: CreditWalletTransaction, private readonly debit: DebitWalletTransaction, private readonly notifications: NotificationsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly credit: CreditWalletTransaction, private readonly debit: DebitWalletTransaction, private readonly notifications: NotificationsService, private readonly adminNotifications: AdminNotificationsService) {}
 
   async quote(playerId: string) {
     const config = await this.config()
@@ -54,6 +55,8 @@ export class SupportLiveChatService {
       return tx.supportLiveChatSession.update({ where: { id: created.id }, data: { status: SupportLiveChatStatus.QUEUED, walletLedgerId: ledger?.id }, include: { charge: true } })
     })
     await this.notifySupportAgents(session.id, `Live chat ${session.sessionNumber} is waiting`, "A player paid for live support and is waiting for an agent.", "support.live-chat.queued")
+    const player = await this.prisma.user.findUnique({ where: { id: playerId }, select: { username: true } })
+    await this.adminNotifications.notifyLiveChatOpened({ sessionId: session.id, sessionNumber: session.sessionNumber, playerId, username: player?.username ?? "A player" }).catch(() => undefined)
     return this.serialize(session)
   }
 
@@ -79,11 +82,38 @@ export class SupportLiveChatService {
   async agentMe(userId: string) { const agent = await this.requireAgent(userId); const active = await this.prisma.supportLiveChatSession.count({ where: { assignedAgentId: agent.id, status: { in: [SupportLiveChatStatus.ASSIGNED, SupportLiveChatStatus.ACTIVE, SupportLiveChatStatus.PAUSED, SupportLiveChatStatus.WAITING_FOR_PLAYER] } } }); return { id: agent.id, level: agent.level, status: agent.status, maxConcurrentLiveChats: agent.maxConcurrentLiveChats, activeLiveChats: active } }
   async agentQueue(userId: string, query: LiveChatListQueryDto) { await this.requireAgent(userId); const rows = await this.prisma.supportLiveChatSession.findMany({ where: { ...(query.status ? { status: query.status as SupportLiveChatStatus } : { status: { in: [SupportLiveChatStatus.QUEUED, SupportLiveChatStatus.ASSIGNED, SupportLiveChatStatus.ACTIVE, SupportLiveChatStatus.WAITING_FOR_PLAYER] } }) }, include: { player: { select: { id: true, username: true, firstName: true, lastName: true } }, assignedAgent: { include: { user: { select: { username: true } } } }, messages: { orderBy: { sequence: "desc" }, take: 1 } }, orderBy: { queueEnteredAt: "asc" }, take: query.limit, skip: query.offset }); return rows.map((row) => this.serialize(row)) }
   async claim(userId: string, sessionId: string) { const agent = await this.requireAgent(userId); const config = await this.config(); const count = await this.prisma.supportLiveChatSession.count({ where: { assignedAgentId: agent.id, status: { in: [SupportLiveChatStatus.ASSIGNED, SupportLiveChatStatus.ACTIVE, SupportLiveChatStatus.PAUSED, SupportLiveChatStatus.WAITING_FOR_PLAYER] } } }); if (count >= agent.maxConcurrentLiveChats) throw new ConflictException("Your live-chat capacity is full"); const updated = await this.prisma.$transaction(async (tx) => { const claimed = await tx.supportLiveChatSession.updateMany({ where: { id: sessionId, assignedAgentId: null, status: SupportLiveChatStatus.QUEUED }, data: { assignedAgentId: agent.id, status: SupportLiveChatStatus.ASSIGNED, assignedAt: new Date(), lastActivityAt: new Date() } }); if (!claimed.count) throw new ConflictException("This live chat has already been claimed"); await tx.supportLiveChatEvent.create({ data: { sessionId, actorId: userId, type: "ASSIGNED", metadata: { agentId: agent.id } } }); return tx.supportLiveChatSession.findUnique({ where: { id: sessionId } }) }); if (!updated) throw new NotFoundException("Live chat not found"); await this.notifyPlayer(updated.id, "A support agent joined your live chat", "Your live chat is ready.", "support.live-chat.assigned", config.pushNotificationsEnabled); return this.get(userId, sessionId, true) }
+  async adminClaim(userId: string, sessionId: string) { const agent = await this.ensureAdminAgent(userId); return this.claimWithAgent(userId, sessionId, agent) }
+  async adminSendMessage(userId: string, sessionId: string, dto: LiveChatMessageDto) { const agent = await this.ensureAdminAgent(userId); const row = await this.getRaw(sessionId, true); if (row.assignedAgentId !== agent.id) throw new ConflictException("Claim this live chat before replying"); return this.addMessage(row, userId, SupportMessageSenderKind.AGENT, dto, false) }
   async updateAgentStatus(userId: string, status: SupportAgentStatus) { const agent = await this.requireAgent(userId); const updated = await this.prisma.supportAgent.update({ where: { id: agent.id }, data: { status, lastSeenAt: new Date() } }); return { id: updated.id, status: updated.status, level: updated.level } }
   async updateStatus(userId: string, sessionId: string, dto: LiveChatStatusUpdateDto, admin = false) { const nextStatus = dto.status as SupportLiveChatStatus; if (!([SupportLiveChatStatus.ASSIGNED, SupportLiveChatStatus.ACTIVE, SupportLiveChatStatus.PAUSED, SupportLiveChatStatus.WAITING_FOR_PLAYER, SupportLiveChatStatus.ENDED] as SupportLiveChatStatus[]).includes(nextStatus)) throw new ConflictException("Use the refund action for financial status changes"); if (admin) await this.requireAdmin(userId); const row = await this.getRaw(sessionId); if (!admin) { const agent = await this.requireAgent(userId); if (row.assignedAgentId !== agent.id && agent.level !== SupportAgentLevel.SUPERVISOR) throw new ForbiddenException("You are not assigned to this live chat") } await this.endStatus(row, nextStatus, userId); return this.get(userId, sessionId, true) }
 
-  async adminList(query: LiveChatListQueryDto) { const rows = await this.prisma.supportLiveChatSession.findMany({ where: query.status ? { status: query.status as SupportLiveChatStatus } : undefined, include: { player: { select: { id: true, username: true } }, assignedAgent: { include: { user: { select: { username: true } } } }, charge: true, refund: true, messages: { orderBy: { sequence: "desc" }, take: 1 } }, orderBy: { updatedAt: "desc" }, take: query.limit, skip: query.offset }); return rows.map((row) => this.serialize(row, true)) }
+  async adminList(query: LiveChatListQueryDto) { const rows = await this.prisma.supportLiveChatSession.findMany({ where: query.status ? { status: query.status as SupportLiveChatStatus } : undefined, include: { player: { select: { id: true, username: true } }, assignedAgent: { include: { user: { select: { id: true, username: true } } } }, charge: true, refund: true, messages: { orderBy: { sequence: "desc" }, take: 1 } }, orderBy: { updatedAt: "desc" }, take: query.limit, skip: query.offset }); return rows.map((row) => this.serialize(row, true)) }
   async adminRefund(adminId: string, sessionId: string, dto: LiveChatRefundDto) { await this.requireAdmin(adminId); await this.refundInternal(sessionId, dto.reason); return this.get(adminId, sessionId, true) }
+  async adminUpdateStatus(adminId: string, sessionId: string, dto: LiveChatStatusUpdateDto) { return this.updateStatus(adminId, sessionId, dto, true) }
+
+  private async claimWithAgent(userId: string, sessionId: string, agent: any) {
+    const config = await this.config()
+    const count = await this.prisma.supportLiveChatSession.count({ where: { assignedAgentId: agent.id, status: { in: ACTIVE_STATUSES } } })
+    if (count >= agent.maxConcurrentLiveChats) throw new ConflictException("Your live-chat capacity is full")
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.supportLiveChatSession.updateMany({ where: { id: sessionId, assignedAgentId: null, status: SupportLiveChatStatus.QUEUED }, data: { assignedAgentId: agent.id, status: SupportLiveChatStatus.ASSIGNED, assignedAt: new Date(), lastActivityAt: new Date() } })
+      if (!claimed.count) throw new ConflictException("This live chat has already been claimed")
+      await tx.supportLiveChatEvent.create({ data: { sessionId, actorId: userId, type: "ASSIGNED", metadata: { agentId: agent.id } } })
+      return tx.supportLiveChatSession.findUnique({ where: { id: sessionId } })
+    })
+    if (!updated) throw new NotFoundException("Live chat not found")
+    await this.notifyPlayer(updated.id, "A support agent joined your live chat", "Your live chat is ready.", "support.live-chat.assigned", config.pushNotificationsEnabled)
+    return this.get(userId, sessionId, true)
+  }
+
+  private async ensureAdminAgent(userId: string) {
+    await this.requireAdmin(userId)
+    return this.prisma.supportAgent.upsert({
+      where: { userId },
+      create: { userId, level: SupportAgentLevel.SUPERVISOR, status: SupportAgentStatus.AVAILABLE, maxConcurrentLiveChats: 10 },
+      update: { level: SupportAgentLevel.SUPERVISOR, status: SupportAgentStatus.AVAILABLE, revokedAt: null },
+    })
+  }
   async runNoAgentRefunds(adminId: string) { await this.requireAdmin(adminId); const config = await this.config(); if (!config.refundOnNoAgentConnection) return { refunded: 0 }; const cutoff = new Date(Date.now() - config.liveChatGraceMinutes * 60 * 1000); const rows = await this.prisma.supportLiveChatSession.findMany({ where: { status: SupportLiveChatStatus.QUEUED, queueEnteredAt: { lt: cutoff } }, select: { id: true } }); let refunded = 0; for (const row of rows) { try { await this.refundInternal(row.id, "No agent connected within the configured guarantee window"); refunded += 1 } catch (_) { /* another worker or an admin may have handled it */ } } return { refunded } }
 
   async authorizeSocket(userId: string, sessionId: string) { const row = await this.getRaw(sessionId); await this.authorize(userId, row); return row }
@@ -127,7 +157,7 @@ export class SupportLiveChatService {
   }
   private async notifyAgent(agentId: string, sessionId: string, title: string, body: string, type: string) { const agent = await this.prisma.supportAgent.findUnique({ where: { id: agentId } }); if (agent) await this.notifications.createSupportNotification({ recipientId: agent.userId, route: `/support/live-chats/${sessionId}?agent=true`, extraData: { sessionId, agent: "true" }, notificationType: type, title, body, enabled: true, pushEnabled: true }) }
   private async notifyPlayer(sessionId: string, title: string, body: string, type: string, pushEnabled = true) { const row = await this.prisma.supportLiveChatSession.findUnique({ where: { id: sessionId }, select: { playerId: true } }); if (row) await this.notifications.createSupportNotification({ recipientId: row.playerId, route: `/support/live-chats/${sessionId}`, extraData: { sessionId }, notificationType: type, title, body, enabled: true, pushEnabled }) }
-  private serialize(row: any, includeInternal = false) { return { id: row.id, sessionNumber: row.sessionNumber, playerId: row.playerId, status: row.status, quotedPriceGld: row.quotedPriceGld?.toString(), chargedAmountGld: row.chargedAmountGld?.toString(), currencyCode: row.currencyCode, assignedAgent: row.assignedAgent ? { id: row.assignedAgent.id, username: row.assignedAgent.user?.username } : null, player: row.player ? { id: row.player.id, username: row.player.username, name: [row.player.firstName, row.player.lastName].filter(Boolean).join(" ") || row.player.username } : undefined, queueEnteredAt: row.queueEnteredAt, assignedAt: row.assignedAt, startedAt: row.startedAt, endedAt: row.endedAt, lastActivityAt: row.lastActivityAt, unread: false, messages: row.messages?.filter((message: any) => includeInternal || !message.internal).map((message: any) => ({ id: message.id, sequence: message.sequence, body: message.body, senderKind: message.senderKind, internal: includeInternal ? message.internal : undefined, createdAt: message.createdAt })) ?? [], charge: row.charge ? { amountGld: row.charge.amountGld.toString(), ledgerId: row.charge.ledgerId } : null, refund: row.refund ? { amountGld: row.refund.amountGld.toString(), reason: row.refund.reason, ledgerId: row.refund.ledgerId } : null } }
+  private serialize(row: any, includeInternal = false) { return { id: row.id, sessionNumber: row.sessionNumber, playerId: row.playerId, status: row.status, quotedPriceGld: row.quotedPriceGld?.toString(), chargedAmountGld: row.chargedAmountGld?.toString(), currencyCode: row.currencyCode, assignedAgent: row.assignedAgent ? { id: row.assignedAgent.id, userId: row.assignedAgent.user?.id, username: row.assignedAgent.user?.username } : null, player: row.player ? { id: row.player.id, username: row.player.username, name: [row.player.firstName, row.player.lastName].filter(Boolean).join(" ") || row.player.username } : undefined, queueEnteredAt: row.queueEnteredAt, assignedAt: row.assignedAt, startedAt: row.startedAt, endedAt: row.endedAt, lastActivityAt: row.lastActivityAt, unread: false, messages: row.messages?.filter((message: any) => includeInternal || !message.internal).map((message: any) => ({ id: message.id, sequence: message.sequence, body: message.body, senderKind: message.senderKind, internal: includeInternal ? message.internal : undefined, createdAt: message.createdAt })) ?? [], charge: row.charge ? { amountGld: row.charge.amountGld.toString(), ledgerId: row.charge.ledgerId } : null, refund: row.refund ? { amountGld: row.refund.amountGld.toString(), reason: row.refund.reason, ledgerId: row.refund.ledgerId } : null } }
   private sessionNumber() { return `LS-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}` }
   private hasBlockedWords(value: string) { return /\b(fuck|shit|bitch|cunt|nigger|whore)\b/i.test(value) }
   private redact(value: string) { return value.replace(/\b(fuck|shit|bitch|cunt|nigger|whore)\b/gi, "•••") }
