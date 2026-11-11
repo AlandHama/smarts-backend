@@ -328,8 +328,8 @@ export class SystemAdminController {
   @Get("api/overview")
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "Get system administrator dashboard counts" })
-  overview() {
-    return this.systemAdminService.overview();
+  overview(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.systemAdminService.overview(from, to);
   }
 
   @UseGuards(SystemAdminGuard)

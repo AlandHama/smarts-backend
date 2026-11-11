@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -311,8 +312,9 @@ export class SystemAdminService implements OnModuleInit {
     };
   }
 
-  async overview() {
+  async overview(from?: string, to?: string) {
     const now = new Date();
+    const revenueWindow = this.resolveOverviewRevenueWindow(from, to, now);
     const onlineSince = new Date(now.getTime() - this.presenceWindowMs());
     const [total, active, banned, admins, sessions, onlinePlayers] =
       await this.prisma.$transaction([
@@ -339,6 +341,7 @@ export class SystemAdminService implements OnModuleInit {
       pendingOutbox,
       failedPurchases,
       openFeedback,
+      revenueTotals,
     ] = await this.prisma.$transaction([
       this.prisma.matchmakingTicket.count({
         where: { status: "SEARCHING", expiresAt: { gt: now } },
@@ -357,6 +360,22 @@ export class SystemAdminService implements OnModuleInit {
       this.prisma.playerFeedback.count({
         where: { status: { in: ["OPEN", "IN_REVIEW"] } },
       }),
+      this.prisma.gldRevenueSnapshot.aggregate({
+        where: {
+          periodStart: {
+            gte: revenueWindow.from,
+            lt: revenueWindow.to,
+          },
+          recognitionStatus: { in: ["RECOGNIZED", "RESTATED"] },
+        },
+        _sum: {
+          grossAdRevenueUsdMicros: true,
+          rewardBackingUsdMicros: true,
+          reserveAddedUsdMicros: true,
+          companyShareUsdMicros: true,
+        },
+        _count: { id: true },
+      }),
     ]);
     return {
       totalUsers: total,
@@ -371,7 +390,39 @@ export class SystemAdminService implements OnModuleInit {
       pendingOutbox,
       failedPurchases,
       openFeedback,
+      revenue: {
+        from: revenueWindow.from.toISOString(),
+        to: revenueWindow.to.toISOString(),
+        grossAdRevenueUsdMicros:
+          revenueTotals._sum.grossAdRevenueUsdMicros ?? 0n,
+        rewardBackingUsdMicros:
+          revenueTotals._sum.rewardBackingUsdMicros ?? 0n,
+        reserveAddedUsdMicros: revenueTotals._sum.reserveAddedUsdMicros ?? 0n,
+        companyProfitUsdMicros: revenueTotals._sum.companyShareUsdMicros ?? 0n,
+        snapshots: revenueTotals._count.id,
+      },
     };
+  }
+
+  private resolveOverviewRevenueWindow(
+    from: string | undefined,
+    to: string | undefined,
+    now: Date,
+  ) {
+    const defaultTo = now;
+    const defaultFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const parsedFrom = from ? new Date(from) : defaultFrom;
+    const parsedTo = to ? new Date(to) : defaultTo;
+    if (
+      Number.isNaN(parsedFrom.getTime()) ||
+      Number.isNaN(parsedTo.getTime()) ||
+      parsedFrom >= parsedTo
+    ) {
+      throw new BadRequestException(
+        "Overview revenue date range must contain valid from and to dates.",
+      );
+    }
+    return { from: parsedFrom, to: parsedTo };
   }
 
   analytics(query: SystemAdminAnalyticsQueryDto, actorId?: string) {
