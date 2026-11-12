@@ -194,7 +194,9 @@ export class FraudService {
   }
 
   async detail(userId: string) {
-    const profile = await this.recalculate(userId)
+    await this.recalculate(userId)
+    const profile = await this.prisma.fraudProfile.findUnique({ where: { userId }, include: { user: { select: { id: true, username: true, email: true, status: true, profile: { select: { displayName: true, avatarUrl: true } } } } } })
+    if (!profile) throw new NotFoundException("Fraud profile not found")
     const [signals, cases, sessions] = await Promise.all([
       this.prisma.fraudSignal.findMany({ where: { userId }, orderBy: { occurredAt: "desc" }, take: 200, include: { rule: { select: { key: true, name: true, decayDays: true } } } }),
       this.prisma.fraudCase.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, include: { assignedAdmin: { select: { id: true, username: true } }, actions: { orderBy: { createdAt: "desc" }, take: 50, include: { actor: { select: { username: true } } } } } }),
