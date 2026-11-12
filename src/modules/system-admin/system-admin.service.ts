@@ -377,7 +377,7 @@ export class SystemAdminService implements OnModuleInit {
         _count: { id: true },
       }),
     ]);
-    return {
+    return this.serialize({
       totalUsers: total,
       activeUsers: active,
       bannedUsers: banned,
@@ -401,7 +401,7 @@ export class SystemAdminService implements OnModuleInit {
         companyProfitUsdMicros: revenueTotals._sum.companyShareUsdMicros ?? 0n,
         snapshots: revenueTotals._count.id,
       },
-    };
+    });
   }
 
   private resolveOverviewRevenueWindow(
