@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client"
 
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
-import { createAssignmentToken, isAuthoritativeBoardGame, MAX_SERVER_CONTENT_PER_MATCH, selectServerContent } from "../../matches/utilities/server-content"
+import { createAssignmentToken, isAuthoritativeBoardGame, MAX_SERVER_CONTENT_POOL, selectServerContent } from "../../matches/utilities/server-content"
 
 @Injectable()
 export class AcceptFriendInviteTransaction extends PrismaTransaction<{ inviteId: string; userId: string }, any> {
@@ -36,7 +36,7 @@ export class AcceptFriendInviteTransaction extends PrismaTransaction<{ inviteId:
           await transaction.gameContentItem.findMany({
             where: { gameDefinitionId: invite.gameDefinitionId, active: true },
             orderBy: { id: "asc" },
-            take: MAX_SERVER_CONTENT_PER_MATCH,
+            take: MAX_SERVER_CONTENT_POOL,
             select: { id: true, contentType: true, prompt: true, options: true, answerIndex: true, difficulty: true, category: true },
           }),
           config.maxQuestions,

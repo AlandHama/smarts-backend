@@ -1243,6 +1243,9 @@ model Referral {
   status           ReferralStatus   @default(ACTIVE)
   referredAdCount  Int              @default(0)
   totalRewardedGld BigInt           @default(0)
+  /// Exact referral earnings. The legacy integer column remains for older
+  /// consumers, while GLD ad rewards can now contain fractional amounts.
+  totalRewardedGldDecimal Decimal    @default(0) @db.Decimal(30, 6)
   rewardCount      Int              @default(0)
   invitedAt        DateTime         @default(now())
   qualifiedAt      DateTime?
@@ -1269,6 +1272,9 @@ model ReferralReward {
   referredId      String               @db.Uuid
   grossAdReward   BigInt
   rewardAmount    BigInt
+  /// Exact values are authoritative; the BigInt columns are legacy floors.
+  grossAdRewardDecimal Decimal          @default(0) @db.Decimal(30, 6)
+  rewardAmountDecimal Decimal           @default(0) @db.Decimal(30, 6)
   status          ReferralRewardStatus @default(GRANTED)
   createdAt       DateTime             @default(now())
   referral        Referral             @relation(fields: [referralId], references: [id], onDelete: Cascade)
@@ -1285,6 +1291,9 @@ model PlayerProfile {
   id             String   @id @default(uuid()) @db.Uuid
   userId         String   @unique @db.Uuid
   displayName    String   @db.VarChar(50)
+  usernameChangeCount Int @default(0)
+  displayNameChangeCount Int @default(0)
+  countryChangeCount Int @default(0)
   avatarUrl      String?  @db.Text
   avatarFrameKey String?  @db.VarChar(80)
   nameEffectKey  String?  @db.VarChar(80)
@@ -3861,6 +3870,9 @@ model GldAdminControl {
   giftBurnBps                     Int?
   paidRewardSafetyMarginBps       Int?
   paidRewardDailyRequestLimit     Int?
+  usernameChangeCostGld           BigInt?
+  displayNameChangeCostGld        BigInt?
+  countryChangeCostGld            BigInt?
   reason                          String?  @db.VarChar(500)
   updatedById                     String?  @db.Uuid
   createdAt                       DateTime @default(now())

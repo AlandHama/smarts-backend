@@ -53,6 +53,9 @@ type GldData = {
     giftBurnBps: number | null;
     paidRewardSafetyMarginBps: number | null;
     paidRewardDailyRequestLimit: number | null;
+    usernameChangeCostGld: string | null;
+    displayNameChangeCostGld: string | null;
+    countryChangeCostGld: string | null;
   };
   revenueSnapshots: Array<{
     id: string;
@@ -180,6 +183,9 @@ export function GldEconomyView() {
     admobReserveAllocationPercent: "33.33",
     admobCompanyProfitAllocationPercent: "33.34",
     guestAdRewardMultiplierPercent: "25",
+    usernameChangeCostGld: "100",
+    displayNameChangeCostGld: "10",
+    countryChangeCostGld: "25",
   });
   const [policySaving, setPolicySaving] = useState(false);
   const [adRewardPolicies, setAdRewardPolicies] = useState<GldAdRewardPolicy[]>(
@@ -254,6 +260,15 @@ export function GldEconomyView() {
         guestAdRewardMultiplierPercent: (
           Number(next.controls.guestAdRewardMultiplierBps ?? 2500) / 100
         ).toString(),
+        usernameChangeCostGld: String(
+          next.controls.usernameChangeCostGld ?? next.config.usernameChangeCostGld ?? "100",
+        ),
+        displayNameChangeCostGld: String(
+          next.controls.displayNameChangeCostGld ?? next.config.displayNameChangeCostGld ?? "10",
+        ),
+        countryChangeCostGld: String(
+          next.controls.countryChangeCostGld ?? next.config.countryChangeCostGld ?? "25",
+        ),
       });
     } catch (reason) {
       setError(
@@ -348,6 +363,9 @@ export function GldEconomyView() {
       !whole(policy.giftBurnBps) ||
       !whole(policy.paidRewardSafetyMarginBps) ||
       !whole(policy.paidRewardDailyRequestLimit) ||
+      !whole(policy.usernameChangeCostGld) ||
+      !whole(policy.displayNameChangeCostGld) ||
+      !whole(policy.countryChangeCostGld) ||
       !percent(policy.admobPlayerRewardAllocationPercent) ||
       !percent(policy.admobReserveAllocationPercent) ||
       !percent(policy.admobCompanyProfitAllocationPercent) ||
@@ -428,6 +446,9 @@ export function GldEconomyView() {
           guestAdRewardMultiplierBps: Math.round(
             Number(policy.guestAdRewardMultiplierPercent) * 100,
           ),
+          usernameChangeCostGld: policy.usernameChangeCostGld.trim(),
+          displayNameChangeCostGld: policy.displayNameChangeCostGld.trim(),
+          countryChangeCostGld: policy.countryChangeCostGld.trim(),
         }),
       });
       setData((current) => (current ? { ...current, controls } : current));
@@ -885,6 +906,9 @@ export function GldEconomyView() {
                   ["Gift burn (BPS)", "giftBurnBps"],
                   ["Paid reward margin (BPS)", "paidRewardSafetyMarginBps"],
                   ["Paid reward daily limit", "paidRewardDailyRequestLimit"],
+                  ["Username change cost (GLD)", "usernameChangeCostGld"],
+                  ["Display name change cost (GLD)", "displayNameChangeCostGld"],
+                  ["Country change cost (GLD)", "countryChangeCostGld"],
                   [
                     "AdMob player GLD allocation (%)",
                     "admobPlayerRewardAllocationPercent",

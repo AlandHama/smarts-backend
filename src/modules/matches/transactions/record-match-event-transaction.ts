@@ -70,17 +70,32 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
       }
     }
 
-    if (participant.result !== "PENDING") throw new ConflictException("This player has already finished the match")
+    // A FINISH can arrive just after a stale lifecycle cleanup submitted
+    // /forfeit. Keep the authoritative completion signal recoverable while
+    // the match is still STARTED: the player has already submitted a valid
+    // result, and treating that race as a permanent FORFEIT produces a
+    // contradictory result such as a higher score labelled "Keep training".
+    // Explicit FORFEIT/LEAVE events remain terminal unless the same player
+    // subsequently sends this authoritative FINISH signal.
+    const lateFinishRecovery =
+      participant.result === "FORFEIT" && input.dto.eventType === MatchEventType.FINISH
+    if (participant.result !== "PENDING" && !lateFinishRecovery) throw new ConflictException("This player has already finished the match")
     const round = match.rounds[0]
     if (!round) throw new ConflictException("The match has no active round")
     const previous = await transaction.matchEvent.findFirst({ where: { matchId: match.id, participantId: participant.id }, orderBy: { sequence: "desc" }, select: { sequence: true } })
-    if (previous && input.dto.sequence <= previous.sequence) throw new ConflictException("Event sequence must increase")
+    if (!lateFinishRecovery && previous && input.dto.sequence <= previous.sequence) throw new ConflictException("Event sequence must increase")
 
     const base = {
       matchId: match.id,
       participantId: participant.id,
       roundId: round.id,
-      sequence: input.dto.sequence,
+      // The server-generated FORFEIT event may already occupy the sequence
+      // the client reserved for FINISH. Give the recovered completion the
+      // next journal position rather than rejecting a valid terminal signal
+      // because of that server-side race.
+      sequence: lateFinishRecovery
+        ? Math.max(input.dto.sequence, (previous?.sequence ?? 0) + 1)
+        : input.dto.sequence,
       eventType: input.dto.eventType,
       clientEventId,
       requestHash,
@@ -98,7 +113,7 @@ export class RecordMatchEventTransaction extends PrismaTransaction<{ matchId: st
     if (input.dto.eventType === MatchEventType.FINISH) {
       const now = new Date()
       const event = await transaction.matchEvent.create({ data: { ...base, accepted: true, payload: { submitted: true, verified: true } } })
-      await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "COMPLETED", submittedAt: now, lastActivityAt: now, disconnectGraceUntil: null } })
+      await transaction.matchParticipant.update({ where: { id: participant.id }, data: { result: "COMPLETED", submittedAt: now, lastActivityAt: now, disconnectGraceUntil: null, terminationReason: null } })
       await this.botGameplay.completeWithinTransaction({ matchId: match.id, userId: input.userId }, transaction)
       await this.closeIfAllHumanParticipantsFinished(transaction, match.id)
       return event

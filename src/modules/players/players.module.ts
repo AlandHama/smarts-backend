@@ -7,11 +7,12 @@ import { RecordResultTransaction } from "./transactions/record-result-transactio
 import { UpdateEloTransaction } from "./transactions/update-elo-transaction"
 import { UpdateProfileTransaction } from "./transactions/update-profile-transaction"
 import { ProgressionModule } from "../progression/progression.module"
+import { EconomyModule } from "../economy/economy.module"
 import { PlayersController } from "./players.controller"
 import { PlayersService } from "./players.service"
 
 @Module({
-  imports: [DatabaseModule, UsersModule, ProgressionModule],
+  imports: [DatabaseModule, UsersModule, ProgressionModule, EconomyModule],
   controllers: [PlayersController],
   providers: [
     PlayersService,

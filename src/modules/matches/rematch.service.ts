@@ -4,6 +4,7 @@ import { GameMode, Prisma, RematchRequestStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { CreateMatchTransaction } from "./transactions/create-match-transaction";
+import { MAX_DAILY_REMATCHES_PER_OPPONENT } from "./rematch-policy";
 
 const REQUEST_TTL_MS = 2 * 60 * 1000;
 const requestInclude = {
@@ -43,7 +44,7 @@ export class RematchService {
         select: { matchId: true },
         distinct: ["matchId"],
       });
-      if (recentPairMatches.length >= 3) throw new ConflictException("Rematch limit reached for this opponent today");
+      if (recentPairMatches.length >= MAX_DAILY_REMATCHES_PER_OPPONENT) throw new ConflictException(`Rematch limit reached for this opponent today (${MAX_DAILY_REMATCHES_PER_OPPONENT} rematches)`);
 
       const pendingReverse = await tx.rematchRequest.findFirst({
         where: { originalMatchId, requesterId: opponent.userId, recipientId: userId, status: RematchRequestStatus.PENDING },
@@ -121,7 +122,10 @@ export class RematchService {
         select: { matchId: true },
         distinct: ["matchId"],
       });
-      if (recentPairMatches.length >= 3) throw new ConflictException("Rematch limit reached for this opponent today");
+      // The original match is excluded from this query. Keep the acceptance
+      // guard aligned with request(), so an already-created request cannot
+      // bypass the ten-rematch daily allowance.
+      if (recentPairMatches.length >= MAX_DAILY_REMATCHES_PER_OPPONENT) throw new ConflictException(`Rematch limit reached for this opponent today (${MAX_DAILY_REMATCHES_PER_OPPONENT} rematches)`);
       const activeMatch = await tx.matchParticipant.findFirst({
         where: { userId: { in: [request.requesterId, request.recipientId] }, match: { status: { in: ["CREATED", "STARTED"] } } },
         select: { id: true },

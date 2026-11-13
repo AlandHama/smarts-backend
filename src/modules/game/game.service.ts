@@ -6,6 +6,7 @@ import { PrismaService } from "../../prisma.service"
 import { CreateGameContentDto, ImportGameContentDto, UpdateGameConfigDto } from "./dtos"
 import { CreateGameContentTransaction } from "./transactions/create-game-content-transaction"
 import { UpdateGameConfigTransaction } from "./transactions/update-game-config-transaction"
+import { isFastTriviaContent, normalizeTriviaText } from "../matches/utilities/server-content"
 
 @Injectable()
 export class GameService {
@@ -53,8 +54,8 @@ export class GameService {
     if (!game || !game.active) throw new NotFoundException("Game definition not found")
     if (!Array.isArray(dto.questions) || dto.questions.length === 0) throw new BadRequestException("The question file contains no questions")
 
-    const parsed = dto.questions.map((value, index) => this.parseImportedQuestion(value, language, index)).filter((value): value is NonNullable<typeof value> => value !== null)
-    const uniqueParsed = Array.from(new Map(parsed.map((question) => [this.importIdentity(question), question])).values())
+    const parsed = dto.questions.map((value, index) => this.parseImportedQuestion(value, language, index, gameKey)).filter((value): value is NonNullable<typeof value> => value !== null)
+    const uniqueParsed = Array.from(new Map(parsed.map((question) => [this.importIdentity(question, gameKey), question])).values())
     if (!uniqueParsed.length) throw new BadRequestException("No valid multiple-choice questions were found")
 
     return this.prisma.$transaction(async (transaction) => {
@@ -133,7 +134,7 @@ export class GameService {
     })
   }
 
-  private parseImportedQuestion(value: unknown, language: string, index: number) {
+  private parseImportedQuestion(value: unknown, language: string, index: number, gameKey: string) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null
     const raw = value as Record<string, unknown>
     const promptValue = raw.question ?? raw.prompt ?? raw.text
@@ -150,7 +151,11 @@ export class GameService {
     const difficulty = Math.max(1, Math.min(10, Number(difficultyValue) || 1))
     const category = typeof raw.category === "string" && raw.category.trim() ? raw.category.trim() : null
     const active = raw.isActive !== false && raw.active !== false
-    return { sourceKey, prompt, options, answerIndex, difficulty, category, active, answerHash: createHash("sha256").update(`${answerIndex}:${JSON.stringify(options)}`).digest("hex"), index }
+    const parsed = { sourceKey, prompt, options, answerIndex, difficulty, category, active, answerHash: createHash("sha256").update(`${answerIndex}:${JSON.stringify(options)}`).digest("hex"), index }
+    // Invalid/slow trivia must not enter the active pool. This also makes
+    // admin imports and runtime assignment selection agree on the same rules.
+    if (gameKey === "trivia" && !isFastTriviaContent(parsed)) return null
+    return parsed
   }
 
   private promptForLanguage(value: unknown, language: string): string {
@@ -173,7 +178,8 @@ export class GameService {
     return existing.answerIndex === question.answerIndex && existing.category === question.category && this.promptForLanguage(existing.prompt, language).toLowerCase() === question.prompt.toLowerCase() && JSON.stringify(existing.options) === JSON.stringify(question.options)
   }
 
-  private importIdentity(question: { prompt: string; options: string[]; answerIndex: number }) {
+  private importIdentity(question: { prompt: string; options: string[]; answerIndex: number }, gameKey = "") {
+    if (gameKey === "trivia") return `trivia:${normalizeTriviaText(question.prompt)}`
     return createHash("sha256").update(JSON.stringify({ prompt: question.prompt.toLowerCase(), options: question.options, answerIndex: question.answerIndex })).digest("hex")
   }
 

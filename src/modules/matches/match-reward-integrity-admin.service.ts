@@ -78,7 +78,12 @@ export class MatchRewardIntegrityAdminService {
       const hold = await transaction.matchRewardHold.findUnique({ where: { id: holdId }, include: { match: { include: { gameConfig: true } }, matchParticipant: true } })
       if (!hold) throw new NotFoundException("Reward hold not found")
       if (hold.status !== "HELD") return hold
-      if (hold.heldXp > 0n) await this.awardProgression.runWithinTransaction({ userId: hold.userId, progressionKey: hold.match.gameConfig.mainProgressionKey, amount: hold.heldXp, sourceId: `${hold.id}:release:xp`, sourceType: ProgressionEventSourceType.ADMIN, actorId: adminId, reason: dto.reason, metadata: { matchId: hold.matchId, holdId, integrityReview: "RELEASED" } }, transaction)
+      if (hold.heldXp > 0n) {
+        await this.awardProgression.runWithinTransaction({ userId: hold.userId, progressionKey: hold.match.gameConfig.mainProgressionKey, amount: hold.heldXp, sourceId: `${hold.id}:release:xp`, sourceType: ProgressionEventSourceType.ADMIN, actorId: adminId, reason: dto.reason, metadata: { matchId: hold.matchId, holdId, integrityReview: "RELEASED" } }, transaction)
+        if (hold.match.gameConfig.mainProgressionKey.trim().toLowerCase() !== "main") {
+          await this.awardProgression.runWithinTransaction({ userId: hold.userId, progressionKey: "main", amount: hold.heldXp, sourceId: `${hold.id}:release:global-xp`, sourceType: ProgressionEventSourceType.ADMIN, actorId: adminId, reason: dto.reason, metadata: { matchId: hold.matchId, holdId, integrityReview: "RELEASED", mirroredFrom: hold.match.gameConfig.mainProgressionKey } }, transaction)
+        }
+      }
       if (hold.heldGld > 0n) await this.creditWallet.runWithinTransaction({ userId: hold.userId, currencyCode: hold.match.gameConfig.rewardCurrencyCode, amount: hold.heldGld, sourceId: `${hold.id}:release:gld`, sourceType: WalletTransactionSourceType.ADMIN, actorId: adminId, reason: dto.reason, metadata: { matchId: hold.matchId, holdId, integrityReview: "RELEASED" } }, transaction)
       if (hold.heldElo !== 0n) await this.awardProgression.runWithinTransaction({ userId: hold.userId, progressionKey: hold.match.gameConfig.eloProgressionKey, amount: hold.heldElo, sourceId: `${hold.id}:release:elo`, sourceType: ProgressionEventSourceType.ADMIN, actorId: adminId, reason: dto.reason, metadata: { matchId: hold.matchId, holdId, integrityReview: "RELEASED" } }, transaction)
       await transaction.matchRewardHold.update({ where: { id: hold.id }, data: { status: "RELEASED", reviewedById: adminId, reviewedAt: new Date(), reviewNote: dto.reason } })

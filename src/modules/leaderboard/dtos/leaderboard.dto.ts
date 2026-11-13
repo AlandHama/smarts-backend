@@ -228,4 +228,10 @@ export class GameLeaderboardQueryDto {
   @Min(1)
   @Max(100)
   limit = 50
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  offset?: number
 }

@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto"
 
 export const MAX_SERVER_CONTENT_PER_MATCH = 100
+// Read enough of the active pool to remove imported option-order variants
+// before applying the per-match limit. A query limited to 100 rows could be
+// made entirely of duplicates and starve a 44-question trivia match.
+export const MAX_SERVER_CONTENT_POOL = 10_000
 
 /** Games whose board/challenge is generated and verified by its own engine. */
 export function isAuthoritativeBoardGame(gameKey: string): boolean {
@@ -20,6 +24,45 @@ type ContentIdentity = {
   prompt?: unknown
   options?: unknown
   answerIndex?: unknown
+}
+
+/**
+ * Trivia is intentionally a rapid-read game. Keep this validation in the
+ * shared selection helper as a final safety net: imports, manually-created
+ * admin content, and old rows must all follow the same limits before they can
+ * become playable.
+ */
+export const MAX_TRIVIA_PROMPT_CHARACTERS = 180
+export const MAX_TRIVIA_OPTION_CHARACTERS = 80
+
+export function normalizeTriviaText(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+}
+
+export function isFastTriviaContent(item: {
+  prompt?: unknown
+  options?: unknown
+  answerIndex?: unknown
+}): boolean {
+  const prompt = localizedPrompt(item.prompt)
+  const options = item.options
+  if (
+    !prompt ||
+    prompt.length > MAX_TRIVIA_PROMPT_CHARACTERS ||
+    !Array.isArray(options) ||
+    options.length < 2 ||
+    options.length > 8 ||
+    !Number.isSafeInteger(item.answerIndex) ||
+    Number(item.answerIndex) < 0 ||
+    Number(item.answerIndex) >= options.length
+  ) return false
+  const normalizedOptions = options.map((option) => normalizeTriviaText(option))
+  return normalizedOptions.every((option) => option.length > 0 && option.length <= MAX_TRIVIA_OPTION_CHARACTERS) &&
+    new Set(normalizedOptions).size === normalizedOptions.length
 }
 
 const MATH_EXPRESSION_PATTERN = /^\s*-?\d+\s*[+*×÷\/-]\s*-?\d+\s*$/
@@ -62,11 +105,21 @@ function localizedPrompt(value: unknown): string {
  */
 export function selectServerContent<T extends ContentIdentity>(items: T[], count: number, serverNonce: string, gameKey?: string): T[] {
   const boundedCount = Math.min(Math.max(Math.trunc(count), 1), MAX_SERVER_CONTENT_PER_MATCH)
-  const playableItems = gameKey === "math" ? items.filter(isMathServerContent) : items
+  const normalizedGameKey = gameKey?.trim().toLowerCase()
+  const playableItems = normalizedGameKey === "math"
+    ? items.filter(isMathServerContent)
+    : normalizedGameKey === "trivia"
+      ? items.filter(isFastTriviaContent)
+      : items
   const uniqueItems: T[] = []
   const seenContent = new Set<string>()
   for (const item of playableItems) {
-    const identity = stableJson({ prompt: item.prompt, options: item.options, answerIndex: item.answerIndex })
+    // The same trivia prompt is frequently stored with several option orders.
+    // Treat those variants as one question, otherwise a match can show the
+    // same question more than once even though the row IDs differ.
+    const identity = normalizedGameKey === "trivia"
+      ? `trivia:${normalizeTriviaText(localizedPrompt(item.prompt))}`
+      : stableJson({ prompt: item.prompt, options: item.options, answerIndex: item.answerIndex })
     if (seenContent.has(identity)) continue
     seenContent.add(identity)
     uniqueItems.push(item)

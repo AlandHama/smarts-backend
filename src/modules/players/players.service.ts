@@ -10,6 +10,7 @@ import { UpdateEloTransaction } from "./transactions/update-elo-transaction"
 import { UpdateProfileTransaction } from "./transactions/update-profile-transaction"
 import { ContentSafetyService } from "../content-safety/content-safety.service"
 import { normalizeCountryCode } from "./country-code"
+import { applyGldPolicyOverrides, getGldConfig } from "../gld/gld.config"
 
 @Injectable()
 export class PlayersService {
@@ -62,6 +63,21 @@ export class PlayersService {
       }
     }
     return this.toCurrentResponse(player)
+  }
+
+  async profileChangePolicy(userId: string) {
+    const profile = await this.prisma.playerProfile.findUnique({
+      where: { userId },
+      select: { countryChangeCount: true },
+    })
+    if (!profile) throw new NotFoundException("Player profile not found")
+    const controls = await this.prisma.gldAdminControl.findUnique({ where: { singletonKey: "default" } })
+    const config = applyGldPolicyOverrides(getGldConfig(), controls)
+    return {
+      countryChangeCount: profile.countryChangeCount,
+      countryChangeCostGld: config.countryChangeCostGld.toString(),
+      countryChangeIsFree: profile.countryChangeCount === 0,
+    }
   }
 
   async findPublicProfile(userId: string): Promise<PublicPlayerResponseDto> {
@@ -477,6 +493,7 @@ export class PlayersService {
     avatarFrameKey: string | null
     nameEffectKey: string | null
     countryCode: string | null
+    countryChangeCount: number
     bio: string | null
     level: number
     xp: bigint
@@ -488,6 +505,7 @@ export class PlayersService {
       avatarFrameKey: profile.avatarFrameKey,
       nameEffectKey: profile.nameEffectKey,
       countryCode: profile.countryCode,
+      countryChangeCount: profile.countryChangeCount,
       bio: profile.bio,
       level: profile.level,
       xp: profile.xp.toString(),

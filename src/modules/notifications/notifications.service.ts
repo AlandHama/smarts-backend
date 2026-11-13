@@ -673,6 +673,29 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
                                     : event.eventType === "engagement.streak.expiring"
                                       ? `Play one match today to keep your ${String(payload.streakDays ?? "")}‑day streak alive.`
                               : "A server event was processed for your account.";
+    // Keep enough routing metadata with every notification for both the
+    // in-app list and a notification opened from the operating system tray.
+    // The wallet event aggregate is the immutable WalletTransaction/ledger
+    // id, so the client can open the exact transaction instead of only the
+    // wallet overview. Referral events use the referral tab as their target.
+    const notificationRoute =
+      typeof payload.route === "string"
+        ? payload.route
+        : event.eventType === "wallet.gld.updated"
+          ? `/wallet/transactions/${event.aggregateId}`
+          : event.eventType === "referral.joined" ||
+              event.eventType === "referral.rewarded"
+            ? "/friends?tab=referral"
+            : event.eventType === "leaderboard.reward.granted" ||
+                event.eventType === "leaderboard.rival-passed"
+              ? "/leaderboards"
+              : undefined;
+    const notificationData = {
+      ...notificationPayload,
+      aggregateId: event.aggregateId,
+      ...(notificationRoute ? { route: notificationRoute } : {}),
+      outboxEventId: event.id,
+    } as Prisma.InputJsonValue;
     await this.prisma.notification.createMany({
       data: [...userIds].map((userId) => ({
         userId,
@@ -680,7 +703,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         notificationType: event.eventType,
         title,
         body,
-        data: { ...notificationPayload, outboxEventId: event.id } as Prisma.InputJsonValue,
+        data: notificationData,
         status: NotificationStatus.DISPATCHED,
         pushStatus: NotificationPushStatus.PENDING,
         dispatchedAt: new Date(),
@@ -693,14 +716,13 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       notificationType: event.eventType,
       outboxEventId: event.id,
     };
-    for (const [key, value] of Object.entries(notificationPayload)) {
+    for (const [key, value] of Object.entries(notificationData as Record<string, Prisma.JsonValue>)) {
       if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
         pushData[key] = String(value);
       }
     }
-    if (typeof payload.route === "string") pushData.route = payload.route;
+    if (notificationRoute) pushData.route = notificationRoute;
     else if (event.eventType === "matchmaking.friend-invite.created") pushData.route = "/notifications";
-    else if (event.eventType === "leaderboard.rival-passed") pushData.route = "/leaderboards";
     else if (event.eventType === "ally.nearby-rank") pushData.route = "/cooperative/party";
     else if (event.eventType === "engagement.daily-challenge.ready") pushData.route = "/daily-challenge";
     else if (event.eventType === "engagement.streak.expiring") pushData.route = "/notifications";

@@ -5,8 +5,9 @@ import { Prisma, GameMode, MatchParticipantType } from "@prisma/client"
 import { PrismaTransaction } from "../../../common/helpers/prisma-transaction"
 import { PrismaService } from "../../../prisma.service"
 import { CreateMatchDto } from "../dtos"
-import { createAssignmentToken, isAuthoritativeBoardGame, MAX_SERVER_CONTENT_PER_MATCH, randomizeAnswerOptions, selectServerContent } from "../utilities/server-content"
+import { createAssignmentToken, isAuthoritativeBoardGame, MAX_SERVER_CONTENT_POOL, randomizeAnswerOptions, selectServerContent } from "../utilities/server-content"
 import { MatchIntegrityPolicyService } from "../match-integrity-policy.service"
+import { MAX_DAILY_CASUAL_PAIR_MATCHES, MAX_DAILY_REMATCHES_PER_OPPONENT } from "../rematch-policy"
 
 @Injectable()
 export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; dto: CreateMatchDto }, any> {
@@ -16,7 +17,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
     const game = await transaction.gameDefinition.findUnique({ where: { key: input.dto.gameKey.trim().toLowerCase() }, include: { configs: { where: { active: true }, orderBy: { version: "desc" }, take: 1 } } })
     const config = game?.configs[0]
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
-    const progressionKeys = [...new Set([config.mainProgressionKey, config.eloProgressionKey])]
+    const progressionKeys = [...new Set([config.mainProgressionKey, config.eloProgressionKey, "main"])]
     const validProgressions = await transaction.progressionDefinition.findMany({ where: { key: { in: progressionKeys }, active: true, tiers: { some: { step: 1, pointsThreshold: 0n } } }, select: { key: true } })
     if (validProgressions.length !== progressionKeys.length) throw new ConflictException("This game reward configuration is incomplete")
     const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { id: true, status: true, profile: { select: { level: true } } } })
@@ -41,9 +42,9 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
         },
         distinct: ["matchId"],
         select: { matchId: true },
-        take: 3,
+        take: MAX_DAILY_CASUAL_PAIR_MATCHES,
       })
-      if (recentPairMatches.length >= 3) throw new ConflictException("This opponent pair has reached the daily casual match limit")
+      if (recentPairMatches.length >= MAX_DAILY_CASUAL_PAIR_MATCHES) throw new ConflictException(`This opponent pair has reached the daily casual match limit (${MAX_DAILY_REMATCHES_PER_OPPONENT} rematches)`)
     }
     const isBoardAuthoritative = isAuthoritativeBoardGame(game.key)
     const activeContentCount = isBoardAuthoritative ? 1 : await transaction.gameContentItem.count({ where: { gameDefinitionId: game.id, active: true } })
@@ -59,7 +60,7 @@ export class CreateMatchTransaction extends PrismaTransaction<{ userId: string; 
     else if (input.dto.opponentUserId) participants.push(await transaction.matchParticipant.create({ data: { matchId: match.id, userId: input.dto.opponentUserId, participantType: MatchParticipantType.PLAYER } }))
 
     if (isBoardAuthoritative) return { match: { ...match, participants }, currentParticipantId: participants[0].id, assignments: [] }
-    const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH, select: { id: true, contentType: true, prompt: true, options: true, answerIndex: true, difficulty: true, category: true } })
+    const items = await transaction.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_POOL, select: { id: true, contentType: true, prompt: true, options: true, answerIndex: true, difficulty: true, category: true } })
     const selectedItems = selectServerContent(items, config.maxQuestions, match.serverNonce, input.dto.gameKey.trim().toLowerCase())
     if (!selectedItems.length) throw new ConflictException("No active server content is configured for this game")
     const assignments: Array<Record<string, unknown>> = []

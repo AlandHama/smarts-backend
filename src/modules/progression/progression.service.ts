@@ -90,7 +90,7 @@ export class ProgressionService {
   }
 
   resetAdmin(userId: string, progressionKey: string, sourceId: string, actorId?: string, reason?: string) {
-    return this.resetTransaction.run({ userId, progressionKey, sourceId, actorId, reason })
+    return this.resetTransaction.run({ userId, progressionKey, sourceId, actorId, reason, adminOverride: true })
   }
 
   async topPlayers(key: string, limit = 10) {

@@ -37,10 +37,14 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const now = new Date()
     const user = await transaction.user.findUnique({ where: { id: input.userId }, select: { id: true, status: true, profile: { select: { level: true, elo: true, countryCode: true } } } })
     if (!user || user.status !== "ACTIVE") throw new BadRequestException("Player is not active")
-    const fraudProfile = await transaction.fraudProfile.findUnique({ where: { userId: input.userId }, select: { status: true, score: true } })
-    const rewardsHeld = Boolean(fraudProfile && fraudProfile.score >= 60)
+    const fraudProfile = await transaction.fraudProfile.findUnique({ where: { userId: input.userId }, select: { status: true } })
+    // A score of 60+ is a review signal, not a matchmaking ban. Players in
+    // CLEAR/WATCH may still have earned that score from multiple low-severity
+    // observations and should be able to play ranked while their rewards are
+    // evaluated at settlement. Only an explicit account restriction blocks a
+    // ranked queue entry.
     const rewardsRestricted = fraudProfile?.status === "RESTRICTED" || fraudProfile?.status === "SUSPENDED"
-    if (mode === MatchmakingTicketMode.RANKED && (rewardsHeld || rewardsRestricted)) throw new ConflictException("Ranked matchmaking is unavailable while reward integrity is under review")
+    if (mode === MatchmakingTicketMode.RANKED && rewardsRestricted) throw new ConflictException("Ranked matchmaking is unavailable while this account is restricted")
     const strikeThreshold = forfeitStrikeThreshold()
     const forfeits = await transaction.matchParticipant.findMany({
       where: {
@@ -76,7 +80,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
     const config = game?.configs[0]
     if (!game || !game.active || !config) throw new NotFoundException("Game definition or configuration is inactive")
     await this.integrityPolicy.assertAvailable(game.key, mode as unknown as GameMode, [input.userId], transaction)
-    const progressionKeys = [...new Set([config.mainProgressionKey, config.eloProgressionKey])]
+    const progressionKeys = [...new Set([config.mainProgressionKey, config.eloProgressionKey, "main"])]
     const validProgressions = await transaction.progressionDefinition.findMany({ where: { key: { in: progressionKeys }, active: true, tiers: { some: { step: 1, pointsThreshold: 0n } } }, select: { key: true } })
     if (validProgressions.length !== progressionKeys.length) throw new ConflictException("This game reward configuration is incomplete")
     if (playerLevel < config.minimumPlayerLevel) throw new ConflictException(`Reach level ${config.minimumPlayerLevel} to unlock ${game.name}`)
@@ -161,7 +165,7 @@ export class EnqueuePlayerTransaction extends PrismaTransaction<{ userId: string
       countryCodeSnapshot: user.profile?.countryCode?.trim().toUpperCase() || null,
       constraints: queueConstraints as Prisma.InputJsonValue | undefined,
       clientVersion: dto.clientVersion?.trim() || null,
-      allowBotFallback: configuredBotFallback && !rewardsHeld && !rewardsRestricted,
+      allowBotFallback: configuredBotFallback && !rewardsRestricted,
       botFallbackDelaySeconds: dominoBotFallback ? 10 : Math.max(0, Math.min(300, config.casualBotFallbackDelaySeconds)),
       rankingConfigId: rankingConfig?.id,
       rankingStakeAmount: rankingConfig?.stakeAmountGld,

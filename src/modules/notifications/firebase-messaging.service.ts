@@ -23,8 +23,11 @@ export type PushDeliveryResult = {
 @Injectable()
 export class FirebaseMessagingService {
   private readonly logger = new Logger(FirebaseMessagingService.name);
-  private static readonly generalChannelId = "smarts_notifications_v2";
-  private static readonly chatChannelId = "smarts_chat_messages_v1";
+  // Keep these IDs in sync with the Android channels created by the mobile
+  // app. The previous channels were created silently on some devices and
+  // Android permanently persisted those settings.
+  private static readonly generalChannelId = "smarts_notifications_v3";
+  private static readonly chatChannelId = "smarts_chat_messages_v2";
   private app?: App;
 
   constructor(private readonly prisma: PrismaService) {}

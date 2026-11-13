@@ -432,10 +432,49 @@ export class WalletService {
         })
       : [];
     const byId = new Map(users.map((user) => [user.id, user]));
-    return items.map((item) => this.enrichTransaction(item, byId));
+    const referralRewardIds = [
+      ...new Set(
+        items
+          .filter((item) => item.sourceType === "REFERRAL")
+          .map((item) => item.sourceId)
+          .filter((id): id is string =>
+            typeof id === "string" &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id),
+          ),
+      ),
+    ];
+    const referralRewards = referralRewardIds.length
+      ? await this.prisma.referralReward.findMany({
+          where: { id: { in: referralRewardIds } },
+          select: {
+            id: true,
+            referralId: true,
+            referredId: true,
+            grossAdRewardDecimal: true,
+            rewardAmountDecimal: true,
+            referred: {
+              select: {
+                id: true,
+                username: true,
+                profile: { select: { displayName: true, avatarUrl: true } },
+              },
+            },
+          },
+        })
+      : [];
+    const referralById = new Map(
+      referralRewards.map((reward) => [reward.id, reward]),
+    );
+    return items.map((item) =>
+      this.enrichTransaction(item, byId, referralById),
+    );
   }
 
-  private enrichTransaction(item: any, users: Map<string, any>) {
+  private enrichTransaction(
+    item: any,
+    users: Map<string, any>,
+    referralRewards: Map<string, any> = new Map(),
+  ) {
     const metadata =
       item.metadata && typeof item.metadata === "object"
         ? (item.metadata as Record<string, unknown>)
@@ -449,14 +488,31 @@ export class WalletService {
       typeof counterpartyId === "string"
         ? (users.get(counterpartyId) ?? null)
         : null;
+    const referralReward =
+      item.sourceType === "REFERRAL"
+        ? referralRewards.get(item.sourceId) ?? null
+        : null;
+    const referralPlayer = referralReward?.referred ?? null;
+    const referralPlayerName = referralPlayer
+      ? referralPlayer.profile?.displayName || referralPlayer.username
+      : null;
+    const metadataLabel = this.metadataLabel(item, metadata);
+    const counterpartyName =
+      counterparty?.profile?.displayName || counterparty?.username || "player";
     // Transfer metadata contains the other user's UUID. Resolve it below in
     // the batch-independent form used by both mobile and admin responses.
     const title =
-      reason === "GLD_PLAYER_TRANSFER"
+      referralPlayerName
+        ? `Referral reward from ${referralPlayerName}`
+        : reason === "GLD_PLAYER_TRANSFER"
         ? item.direction === "DEBIT"
-          ? `Sent to ${counterparty?.profile?.displayName || counterparty?.username || "player"}`
-          : `Received from ${counterparty?.profile?.displayName || counterparty?.username || "player"}`
-        : this.transactionTitle(item.sourceType, item.direction);
+          ? `Sent to ${counterpartyName}`
+          : `Received from ${counterpartyName}`
+        : reason === "GLD_SOCIAL_GIFT_RECEIVED"
+          ? `Gift from ${counterpartyName}`
+          : reason === "GLD_SOCIAL_GIFT_SENT"
+            ? `Gift to ${counterpartyName}`
+            : metadataLabel || this.transactionTitle(item.sourceType, item.direction);
     // `amount` is retained as the legacy whole-unit BIGINT field. Expose the
     // exact decimal ledger value explicitly for mobile and admin consumers.
     const exactAmount =
@@ -468,18 +524,73 @@ export class WalletService {
       transactionId: item.id,
       title,
       description:
-        reason === "GLD_PLAYER_TRANSFER"
+        referralPlayerName
+          ? `Verified ad reward share from ${referralPlayerName}`
+          : reason === "GLD_PLAYER_TRANSFER"
           ? item.direction === "DEBIT"
-            ? `GLD sent to ${counterparty?.profile?.displayName || counterparty?.username || "another player"}`
-            : `GLD received from ${counterparty?.profile?.displayName || counterparty?.username || "another player"}`
-          : reason ||
+            ? `GLD sent to ${counterpartyName}`
+            : `GLD received from ${counterpartyName}`
+          : reason === "GLD_SOCIAL_GIFT_RECEIVED"
+            ? `Social gift received from ${counterpartyName}`
+            : reason === "GLD_SOCIAL_GIFT_SENT"
+              ? `Social gift sent to ${counterpartyName}`
+          : metadataLabel ||
             `${this.transactionTitle(item.sourceType, item.direction)} transaction`,
       reason,
+      sourceLabel:
+        metadataLabel || this.transactionTitle(item.sourceType, item.direction),
+      sourceReference: item.sourceId,
+      referralId: referralReward?.referralId ?? metadata.referralId ?? null,
+      referralPlayer,
+      referralGrossAdReward: referralReward?.grossAdRewardDecimal ?? null,
+      referralRewardAmount: referralReward?.rewardAmountDecimal ?? null,
       counterpartyUserId:
         typeof counterpartyId === "string" ? counterpartyId : null,
       counterparty,
       user: item.wallet?.user ?? null,
     };
+  }
+
+  private metadataLabel(item: any, metadata: Record<string, unknown>) {
+    const sourceType = String(item.sourceType ?? "");
+    const reason = typeof metadata.reason === "string" ? metadata.reason : null;
+    const gameKey = typeof metadata.gameKey === "string" ? metadata.gameKey : null;
+    const adFormat = typeof metadata.adFormat === "string" ? metadata.adFormat : null;
+    const provider = typeof metadata.provider === "string" ? metadata.provider : null;
+    if (sourceType === "AD") {
+      return `${provider ? provider.toUpperCase() + " " : ""}${adFormat ?? "rewarded"} ad credit`;
+    }
+    if (sourceType === "MATCH") {
+      return `Reward from ${gameKey ? this.humanize(gameKey) : "completed match"}`;
+    }
+    if (sourceType === "RANKING_MATCH_PAYOUT") return "Ranked match payout";
+    if (sourceType === "RANKING_MATCH_ENTRY") return "Ranked match entry fee";
+    if (sourceType === "RANKING_MATCH_REFUND") return "Ranked match refund";
+    if (sourceType === "PURCHASE") {
+      const itemKey =
+        typeof metadata.catalogItemKey === "string"
+          ? metadata.catalogItemKey
+          : typeof metadata.assetKey === "string"
+            ? metadata.assetKey
+            : null;
+      return itemKey ? `Purchase · ${this.humanize(itemKey)}` : "Purchase";
+    }
+    if (sourceType === "REFUND") {
+      return reason ? `Refund · ${this.humanize(reason)}` : "Refund";
+    }
+    if (reason === "ENGAGEMENT_REWARD") {
+      return typeof metadata.label === "string" ? String(metadata.label) : "Engagement reward";
+    }
+    if (reason === "GLD_SOCIAL_GIFT_RECEIVED") return "Social gift received";
+    if (reason === "PROFILE_NAME_CHANGE") return "Profile name change fee";
+    if (reason === "SUPPORT_LIVE_CHAT") return "Live support chat charge";
+    return null;
+  }
+
+  private humanize(value: string) {
+    return value
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
 
   private transactionTitle(sourceType: string, direction: string) {

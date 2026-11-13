@@ -532,6 +532,15 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
     if (dto.adMaxRewardPerClaim !== undefined && BigInt(dto.adMaxRewardPerClaim) <= 0n) {
       throw new BadRequestException("Maximum ad reward per claim must be greater than zero; pause emissions to disable ad rewards");
     }
+    if (dto.usernameChangeCostGld !== undefined && BigInt(dto.usernameChangeCostGld) < 0n) {
+      throw new BadRequestException("Username change cost cannot be negative");
+    }
+    if (dto.displayNameChangeCostGld !== undefined && BigInt(dto.displayNameChangeCostGld) < 0n) {
+      throw new BadRequestException("Display name change cost cannot be negative");
+    }
+    if (dto.countryChangeCostGld !== undefined && BigInt(dto.countryChangeCostGld) < 0n) {
+      throw new BadRequestException("Country change cost cannot be negative");
+    }
     return this.prisma.$transaction(async (tx) => {
       const before = await tx.gldAdminControl.upsert({
         where: { singletonKey: "default" },
@@ -610,6 +619,15 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
           ...(dto.paidRewardDailyRequestLimit === undefined
             ? {}
             : { paidRewardDailyRequestLimit: dto.paidRewardDailyRequestLimit }),
+          ...(dto.usernameChangeCostGld === undefined
+            ? {}
+            : { usernameChangeCostGld: BigInt(dto.usernameChangeCostGld) }),
+          ...(dto.displayNameChangeCostGld === undefined
+            ? {}
+            : { displayNameChangeCostGld: BigInt(dto.displayNameChangeCostGld) }),
+          ...(dto.countryChangeCostGld === undefined
+            ? {}
+            : { countryChangeCostGld: BigInt(dto.countryChangeCostGld) }),
           ...(dto.reason === undefined
             ? {}
             : { reason: dto.reason.trim() || null }),
@@ -635,6 +653,9 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
             admobCompanyProfitAllocationBps:
               before.admobCompanyProfitAllocationBps,
             guestAdRewardMultiplierBps: before.guestAdRewardMultiplierBps,
+            usernameChangeCostGld: before.usernameChangeCostGld?.toString() ?? null,
+            displayNameChangeCostGld: before.displayNameChangeCostGld?.toString() ?? null,
+            countryChangeCostGld: before.countryChangeCostGld?.toString() ?? null,
           },
           after: {
             emissionsPaused: updated.emissionsPaused,
@@ -648,6 +669,9 @@ export class GldService implements OnModuleInit, OnModuleDestroy {
             admobCompanyProfitAllocationBps:
               updated.admobCompanyProfitAllocationBps,
             guestAdRewardMultiplierBps: updated.guestAdRewardMultiplierBps,
+            usernameChangeCostGld: updated.usernameChangeCostGld?.toString() ?? null,
+            displayNameChangeCostGld: updated.displayNameChangeCostGld?.toString() ?? null,
+            countryChangeCostGld: updated.countryChangeCostGld?.toString() ?? null,
           },
         },
       });

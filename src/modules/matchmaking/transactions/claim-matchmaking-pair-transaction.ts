@@ -8,7 +8,7 @@ import { queueHeartbeatTimeoutSeconds } from "../utilities/matchmaking-policy";
 import {
   createAssignmentToken,
   isAuthoritativeBoardGame,
-  MAX_SERVER_CONTENT_PER_MATCH,
+  MAX_SERVER_CONTENT_POOL,
   selectServerContent,
 } from "../../matches/utilities/server-content";
 
@@ -243,9 +243,12 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     }
     const integrityProfiles = await transaction.fraudProfile.findMany({
       where: { userId: { in: realTickets.map((ticket) => ticket.userId) } },
-      select: { userId: true, status: true, score: true },
+      select: { userId: true, status: true },
     })
-    const blockedForCompetitive = integrityProfiles.some((profile) => profile.status === "RESTRICTED" || profile.status === "SUSPENDED" || profile.score >= 60)
+    // Fraud scores are cumulative evidence and are handled during settlement.
+    // Do not turn a WATCH/high-score profile into a permanent matchmaking
+    // deadlock; only explicit account restrictions are hard competitive bans.
+    const blockedForCompetitive = integrityProfiles.some((profile) => profile.status === "RESTRICTED" || profile.status === "SUSPENDED")
     if (blockedForCompetitive && first.isRankingMatch) return null
     if (blockedForCompetitive && !second) return null
     // Do not hard-block a pair because they have recently faced each other.
@@ -323,7 +326,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     const contentItems = await transaction.gameContentItem.findMany({
       where: { gameDefinitionId: game.id, active: true },
       orderBy: { id: "asc" },
-      take: MAX_SERVER_CONTENT_PER_MATCH,
+      take: MAX_SERVER_CONTENT_POOL,
       select: {
         id: true,
         contentType: true,

@@ -19,6 +19,12 @@ export class PlayersController {
     return this.playersService.findById(user.id)
   }
 
+  @Get("me/profile-change-policy")
+  @ApiOperation({ summary: "Get profile-change pricing for the authenticated player" })
+  profileChangePolicy(@CurrentUser() user: UserResponseDto) {
+    return this.playersService.profileChangePolicy(user.id)
+  }
+
   @Get("me/game-stats")
   @ApiOperation({ summary: "Get server-derived per-game statistics for the authenticated player" })
   gameStats(@CurrentUser() user: UserResponseDto) {

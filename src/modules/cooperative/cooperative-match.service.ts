@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common"
 import { GameMode, MatchParticipantType, Prisma, WalletTransactionSourceType } from "@prisma/client"
 import { createHash, randomBytes } from "node:crypto"
-import { createAssignmentToken, isAuthoritativeBoardGame, MAX_SERVER_CONTENT_PER_MATCH, selectServerContent } from "../matches/utilities/server-content"
+import { createAssignmentToken, isAuthoritativeBoardGame, MAX_SERVER_CONTENT_POOL, selectServerContent } from "../matches/utilities/server-content"
 
 import { PrismaService } from "../../prisma.service"
 import { DebitWalletTransaction } from "../economy/transactions/debit-wallet-transaction"
@@ -250,7 +250,7 @@ export class CooperativeMatchService {
     const boardAuthoritative = isAuthoritativeBoardGame(game.key)
     const now = new Date()
     const serverNonce = randomBytes(32).toString("base64url")
-    const content = await tx.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_PER_MATCH })
+    const content = await tx.gameContentItem.findMany({ where: { gameDefinitionId: game.id, active: true }, orderBy: { id: "asc" }, take: MAX_SERVER_CONTENT_POOL })
     const selectedContent = selectServerContent(content, gameConfig.maxQuestions, serverNonce, game.key)
     if (!selectedContent.length && !boardAuthoritative) return null
     const match = await tx.match.create({ data: { gameDefinitionId: game.id, gameConfigId: gameConfig.id, mode: GameMode.BOT, status: "CREATED", serverNonce, createdByUserId: first.party.hostUserId, metadata: { cooperative: true, source: ranked ? "COOPERATIVE_RANKED" : "COOPERATIVE_RANDOM", partyIds: [first.partyId, ...(second ? [second.partyId] : [])], botFilled: !second } as Prisma.InputJsonValue } })

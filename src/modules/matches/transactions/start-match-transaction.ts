@@ -11,7 +11,7 @@ import { PrismaService } from "../../../prisma.service";
 import {
   createAssignmentToken,
   isAuthoritativeBoardGame,
-  MAX_SERVER_CONTENT_PER_MATCH,
+  MAX_SERVER_CONTENT_POOL,
   randomizeAnswerOptions,
   selectServerContent,
 } from "../utilities/server-content";
@@ -145,7 +145,7 @@ export class StartMatchTransaction extends PrismaTransaction<
       const items = await transaction.gameContentItem.findMany({
         where: { gameDefinitionId: match.gameDefinitionId, active: true },
         orderBy: { id: "asc" },
-        take: MAX_SERVER_CONTENT_PER_MATCH,
+        take: MAX_SERVER_CONTENT_POOL,
         select: {
           id: true,
           contentType: true,

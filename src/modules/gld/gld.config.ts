@@ -31,6 +31,9 @@ const DEFAULTS = {
   paidRewardDailyRequestLimit: 3,
   paidRewardPauseOnCritical: true,
   paidRewardDefaultCostUsdMicros: 50_000n,
+  usernameChangeCostGld: 100n,
+  displayNameChangeCostGld: 10n,
+  countryChangeCostGld: 25n,
   recalculationIntervalMinutes: 30,
 }
 
@@ -110,6 +113,9 @@ export function getGldConfig() {
     paidRewardDailyRequestLimit: Math.max(1, Number(process.env.GLD_PAID_REWARD_DAILY_REQUEST_LIMIT) || DEFAULTS.paidRewardDailyRequestLimit),
     paidRewardPauseOnCritical: process.env.GLD_PAID_REWARD_PAUSE_ON_CRITICAL !== "false",
     paidRewardDefaultCostUsdMicros: bigintEnv("GLD_PAID_REWARD_DEFAULT_COST_USD_MICROS", DEFAULTS.paidRewardDefaultCostUsdMicros),
+    usernameChangeCostGld: bigintEnv("GLD_USERNAME_CHANGE_COST_GLD", DEFAULTS.usernameChangeCostGld),
+    displayNameChangeCostGld: bigintEnv("GLD_DISPLAY_NAME_CHANGE_COST_GLD", DEFAULTS.displayNameChangeCostGld),
+    countryChangeCostGld: bigintEnv("GLD_COUNTRY_CHANGE_COST_GLD", DEFAULTS.countryChangeCostGld),
     recalculationIntervalMinutes: intervalMinutesEnv("GLD_RECALCULATION_INTERVAL_MINUTES", DEFAULTS.recalculationIntervalMinutes),
     fxRateUrl: process.env.GLD_FX_RATE_URL?.trim() || "https://api.frankfurter.dev/v2/rate",
     fxRateCacheMinutes: Math.max(5, Number(process.env.GLD_FX_RATE_CACHE_MINUTES) || 30),
@@ -129,6 +135,9 @@ export function applyGldPolicyOverrides<T extends ReturnType<typeof getGldConfig
     giftBurnBps?: number | null
     paidRewardSafetyMarginBps?: number | null
     paidRewardDailyRequestLimit?: number | null
+    usernameChangeCostGld?: bigint | null
+    displayNameChangeCostGld?: bigint | null
+    countryChangeCostGld?: bigint | null
   } | null | undefined,
 ): T {
   if (!overrides) return config
@@ -147,6 +156,9 @@ export function applyGldPolicyOverrides<T extends ReturnType<typeof getGldConfig
     giftBurnBps: overrides.giftBurnBps ?? config.giftBurnBps,
     paidRewardSafetyMarginBps: overrides.paidRewardSafetyMarginBps ?? config.paidRewardSafetyMarginBps,
     paidRewardDailyRequestLimit: overrides.paidRewardDailyRequestLimit ?? config.paidRewardDailyRequestLimit,
+    usernameChangeCostGld: overrides.usernameChangeCostGld ?? config.usernameChangeCostGld,
+    displayNameChangeCostGld: overrides.displayNameChangeCostGld ?? config.displayNameChangeCostGld,
+    countryChangeCostGld: overrides.countryChangeCostGld ?? config.countryChangeCostGld,
   }
   const allocationTotal =
     next.playerRewardAllocationBps +

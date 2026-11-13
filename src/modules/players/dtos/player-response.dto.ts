@@ -10,6 +10,9 @@ export class PlayerProfileResponseDto {
   @ApiProperty({ nullable: true })
   countryCode!: string | null
 
+  @ApiProperty({ description: "Number of country assignments/changes already made" })
+  countryChangeCount!: number
+
   @ApiProperty({ nullable: true })
   bio!: string | null
 

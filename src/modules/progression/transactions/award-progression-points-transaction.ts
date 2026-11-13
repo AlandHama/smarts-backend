@@ -51,7 +51,13 @@ export class AwardProgressionPointsTransaction extends PrismaTransaction<AwardPr
     if (!progression) throw new NotFoundException("Progression definition not found")
     if (!progression.active) throw new BadRequestException("Progression is inactive")
     if (!progression.tiers.length) throw new BadRequestException("Progression has no tiers")
-    if (!progression.allowNegative && input.amount < 0n) throw new BadRequestException("This progression does not allow negative points")
+    // Administrators can make audited downward corrections even when normal
+    // progression policy disallows negative awards. The balance still cannot
+    // go below zero in applyPoints; regular player/system awards remain
+    // subject to the progression's allowNegative policy.
+    if (!progression.allowNegative && input.amount < 0n && !input.actorId) {
+      throw new BadRequestException("This progression does not allow negative points")
+    }
 
     const idemScope = `progression-award:${input.userId}:${key}`
     const idemKey = input.sourceId.trim()

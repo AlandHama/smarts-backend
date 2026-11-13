@@ -74,6 +74,14 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
         // poll transitions it atomically, so both players see the same result
         // and countdown before a new hand is dealt.
         state = await this.advanceRoundIfReady(tx, match, state, policy)
+        // The transition can happen in this second pass after the first pass
+        // observed the round-result countdown. Previously that returned a new
+        // hand with a bot as the current seat, but did not run the bot until a
+        // later worker tick. If that tick was delayed, every client remained
+        // on WAITING FOR TURN. The result countdown already supplied the
+        // visible pause, so process an opening bot turn in this same locked
+        // request.
+        if (state.status === "ACTIVE") state = await this.advanceBot(tx, match, state, policy)
         if (state.status === "ACTIVE" && (Date.now() >= new Date(state.endsAt).getTime() || Date.now() >= new Date(state.matchEndsAt).getTime())) await this.finishMatch(tx, match, state, null, policy)
       }
       match = await this.loadMatch(tx, matchId)
@@ -288,15 +296,19 @@ export class DominoService implements OnModuleInit, OnModuleDestroy {
     const nextRoundAt = state.nextRoundAt ? new Date(state.nextRoundAt).getTime() : 0
     if (nextRoundAt > Date.now()) return state
     const row = await tx.dominoMatchState.findUniqueOrThrow({ where: { matchId: match.id } })
-    const next = createNextRoundState(state, `${state.seed}:round:${state.roundNumber + 1}`, policy, new Date(), state.roundWinnerParticipantId)
+    // Older scored states may only have the winner inside lastRoundResult.
+    // Accept both representations so a previously completed bot round still
+    // starts from that exact winner after a deployment or reconnect.
+    const winnerParticipantId = state.roundWinnerParticipantId ?? state.lastRoundResult?.winnerParticipantId ?? null
+    const next = createNextRoundState(state, `${state.seed}:round:${state.roundNumber + 1}`, policy, new Date(), winnerParticipantId)
     const openingParticipantId = next.participantIds[next.currentSeat]
     const openingParticipant = match.participants.find((item: any) => item.id === openingParticipantId)
     if (openingParticipant?.participantType === "BOT") {
-      // Keep the round opener authoritative and give a bot the same human-
-      // readable delay as every other bot turn. Without this explicit
-      // schedule, a bot-winning round could leave clients showing WAITING
-      // while no bot action was queued after the hand reset.
-      next.botNextActionAt = { ...(next.botNextActionAt ?? {}), [openingParticipantId]: Date.now() + BOT_TURN_DELAY_MS }
+      // The three-second round-result countdown already provides the bot's
+      // visible pause. Queue the winner's opening move immediately when the
+      // new hand is persisted, so a bot-winning round cannot reset into a
+      // permanent WAITING FOR TURN state if a worker tick is delayed.
+      next.botNextActionAt = { ...(next.botNextActionAt ?? {}), [openingParticipantId]: Date.now() }
     }
     await tx.matchRound.updateMany({ where: { matchId: match.id, status: { in: ["CREATED", "STARTED"] } }, data: { status: "FINISHED", endedAt: new Date() } })
     await tx.matchRound.create({ data: { matchId: match.id, roundIndex: next.roundNumber, gameDefinitionId: match.gameDefinitionId, status: "STARTED", challengeSeedHash: next.chainHash, startedAt: new Date(next.startedAt) } })

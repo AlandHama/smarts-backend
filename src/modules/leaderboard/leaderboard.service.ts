@@ -129,6 +129,7 @@ export class LeaderboardService {
         total,
         limit,
         offset,
+        previousOffset: offset > 0 ? Math.max(offset - limit, 0) : null,
         nextOffset: offset + limit < total ? offset + limit : null,
       },
       currentUserRank,
@@ -139,6 +140,7 @@ export class LeaderboardService {
     const normalizedKey = gameKey.trim().toLowerCase()
     const scope = query.scope ?? GameLeaderboardScope.GLOBAL
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 100)
+    const offset = Math.max(query.offset ?? 0, 0)
     const game = await this.prisma.gameDefinition.findUnique({
       where: { key: normalizedKey },
       select: { id: true, key: true, name: true, active: true },
@@ -166,6 +168,7 @@ export class LeaderboardService {
       where: statsWhere,
       orderBy: [{ bestScore: "desc" }, { updatedAt: "asc" }, { userId: "asc" }],
       take: limit,
+      skip: offset,
       select: {
         userId: true,
         bestScore: true,
@@ -198,7 +201,7 @@ export class LeaderboardService {
     let previousScore: bigint | null = null
     let previousRank = 0
     const items = rows.map((row, index) => {
-      const rank = previousScore === row.bestScore ? previousRank : index + 1
+      const rank = previousScore === row.bestScore ? previousRank : offset + index + 1
       previousScore = row.bestScore
       previousRank = rank
       const profile = row.user.profile
@@ -247,7 +250,13 @@ export class LeaderboardService {
       },
       season: null,
       items,
-      pagination: { total, limit, offset: 0, nextOffset: null },
+      pagination: {
+        total,
+        limit,
+        offset,
+        previousOffset: offset > 0 ? Math.max(offset - limit, 0) : null,
+        nextOffset: offset + limit < total ? offset + limit : null,
+      },
       currentUserRank,
     })
   }
@@ -408,6 +417,10 @@ export class LeaderboardService {
           playerId: row.playerId,
           score: row.score,
           countryScore: row.countryScore,
+          // Keep the country contribution explicit in the public response.
+          // In a country detail query `score` is also scoped to this value,
+          // but clients must not have to infer that from the query shape.
+          countryContributionScore: row.countryScore,
           rank: row.rank,
           playerCount: memberType === "COUNTRY" ? countryPlayerCounts.get(String(row.memberKey).toUpperCase()) ?? 0 : null,
           metadata: row.metadata,

@@ -2,6 +2,14 @@ import { ApiProperty } from "@nestjs/swagger"
 import { IsBoolean, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength } from "class-validator"
 
 export class UpdateProfileDto {
+  @ApiProperty({ example: "aland_khalid", required: false, minLength: 3, maxLength: 50 })
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(50)
+  @Matches(/^[A-Za-z0-9._-]+$/)
+  readonly username?: string
+
   @ApiProperty({ example: "Aland", required: false, minLength: 2, maxLength: 50 })
   @IsOptional()
   @IsString()

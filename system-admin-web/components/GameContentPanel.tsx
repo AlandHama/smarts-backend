@@ -140,7 +140,7 @@ export function GameContentPanel({ gameKey }: { gameKey: string }) {
               <Typography fontWeight={800}>Import questions.json</Typography>
               <Typography variant="body2" color="text.secondary">
                 {gameKey === "trivia"
-                  ? "Trivia imports replace the active pool. Duplicates are removed by question identity, options, and answer."
+                  ? "Trivia imports replace the active pool. Long answers are skipped, and repeated prompts are imported only once."
                   : "Duplicates are removed by question identity, options, and answer."} Select the language stored in this file.
               </Typography>
             </Box>

@@ -74,7 +74,9 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     // against that frozen configuration; other games keep the legacy guard.
     if (!config || (!config.active && !isBoardAuthoritative)) throw new BadRequestException("Game reward configuration is inactive")
     if (!isPractice) {
-      const progressionKeys = [...new Set([config.mainProgressionKey, config.eloProgressionKey])]
+      // The shared `main` level is updated alongside isolated game
+      // progressions, so it is part of the settlement configuration contract.
+      const progressionKeys = [...new Set([config.mainProgressionKey, config.eloProgressionKey, "main"])]
       const validProgressions = await transaction.progressionDefinition.findMany({ where: { key: { in: progressionKeys }, active: true, tiers: { some: { step: 1, pointsThreshold: 0n } } }, select: { key: true } })
       if (validProgressions.length !== progressionKeys.length) {
         await transaction.match.update({ where: { id: lockedMatch.id }, data: { status: "REVIEW", endedAt: new Date() } })
@@ -335,8 +337,17 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
       }
 
       const progression = xp > 0n ? await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.mainProgressionKey, amount: xp, sourceId: `${lockedMatch.id}:xp:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, rewardEligibility } }, transaction) : null
+      // Authoritative games use isolated progression keys (for example
+      // `domino_xp`) so each game's profile can be shown independently. The
+      // mobile app's shared Level and the legacy PlayerProfile.level are
+      // backed by the global `main` progression, however. Keep that level in
+      // sync for every eligible match, including guests, without changing the
+      // game's own progression or its reward eligibility.
+      const globalProgression = xp > 0n && config.mainProgressionKey.trim().toLowerCase() !== "main"
+        ? await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: "main", amount: xp, sourceId: `${lockedMatch.id}:global-xp:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, rewardEligibility, mirroredFrom: config.mainProgressionKey } }, transaction)
+        : null
       const eloProgression = eloDelta !== 0n ? await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.eloProgressionKey, amount: eloDelta, sourceId: `${lockedMatch.id}:elo:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, rewardEligibility } }, transaction) : null
-      const wallet = coinReward > 0n ? await this.creditWallet.runWithinTransaction({ userId: player.id, currencyCode: config.rewardCurrencyCode, amount: coinReward, sourceId: `${lockedMatch.id}:currency:${player.id}`, sourceType: WalletTransactionSourceType.MATCH, metadata: { matchId: lockedMatch.id, result, policyVersion, rewardEligibility } }, transaction) : null
+      const wallet = coinReward > 0n ? await this.creditWallet.runWithinTransaction({ userId: player.id, currencyCode: config.rewardCurrencyCode, amount: coinReward, sourceId: `${lockedMatch.id}:currency:${player.id}`, sourceType: WalletTransactionSourceType.MATCH, metadata: { matchId: lockedMatch.id, gameKey: lockedMatch.gameDefinition.key, mode: lockedMatch.mode, result, policyVersion, rewardEligibility } }, transaction) : null
       const answerEvents = (acceptedEventsByParticipant.get(item.participant.id) ?? []).filter((event) => isAcceptedScoringEvent(event, isBoardAuthoritative))
       const answerSummary = answerEvents.reduce((summary, event) => {
         const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload as Record<string, unknown> : {}
@@ -398,7 +409,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         if (country) for (const leaderboardKey of [leaderboardKeys.countryWeekly, leaderboardKeys.countryMonthly]) await this.applyLeaderboardScore.runWithinTransaction({ leaderboardKey, memberKey: country, delta: leaderboardDelta, allowFloorAtZero: true, sourceId: `${lockedMatch.id}:leaderboard:${leaderboardKey}:${country}:${player.id}`, sourceType: LeaderboardScoreSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, matchMode: lockedMatch.mode, leaderboardDelta: leaderboardDelta.toString() } }, transaction)
       }
       await writePlayerAudit(transaction, { userId: player.id, actorType: PlayerAuditActorType.SYSTEM, action: "MATCH_SETTLED", entityType: "Match", entityId: lockedMatch.id, summary: `Match settled with result ${result}`, changes: { result: { old: "PENDING", new: result }, scoreEarned: { old: 0n, new: item.score }, eloDelta: { old: 0n, new: eloDelta }, xpAwarded: { old: 0n, new: xp }, currencyReward: { old: 0n, new: coinReward } }, metadata: { gameKey: lockedMatch.gameDefinition.key, policyVersion, rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds } })
-      results.push({ playerId: player.id, participantType: item.participant.participantType, username: player.username, displayName: player.profile?.displayName ?? player.username, avatarUrl: player.profile?.avatarUrl ?? null, result, completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED", terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null, score: item.score.toString(), eloDelta: eloDelta.toString(), rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds, progression, eloProgression, wallet, cognitiveStats, winStreakBefore: winStreak.before, winStreakAfter: winStreak.after })
+      results.push({ playerId: player.id, participantType: item.participant.participantType, username: player.username, displayName: player.profile?.displayName ?? player.username, avatarUrl: player.profile?.avatarUrl ?? null, result, completionState: result === "FORFEIT" ? "FORFEITED" : "COMPLETED", terminationReason: result === "FORFEIT" ? (item.participant.terminationReason ?? "VOLUNTARY_FORFEIT") : null, score: item.score.toString(), eloDelta: eloDelta.toString(), rewardEligibility, rewardHoldReason, acceptedActionCount: evidence.acceptedActionCount, acceptedScoringActionCount: evidence.acceptedScoringActionCount, verifiedPlayMilliseconds: evidence.verifiedPlayMilliseconds, progression, globalProgression, eloProgression, wallet, cognitiveStats, winStreakBefore: winStreak.before, winStreakAfter: winStreak.after })
     }
 
     const endedOpponentStreaks = results

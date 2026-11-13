@@ -267,21 +267,19 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
             referredUserId: claim.userId,
             adRewardClaimId: claim.id,
             grossAmount: amount,
+            grossAmountDecimal: amountDecimal.toString(),
             currencyCode,
           })
         : {
             playerAmount: amount,
+            playerAmountDecimal: amountDecimal.toString(),
             referralRewardAmount: 0n,
+            referralRewardAmountDecimal: "0",
             referralId: null as string | null,
           };
-    amount = referralSplit.playerAmount;
-    if (currencyCode === "GLD" && referralSplit.referralRewardAmount > 0n) {
-      amountDecimal = amountDecimal.sub(
-        new Prisma.Decimal(referralSplit.referralRewardAmount.toString()),
-      );
-      if (amountDecimal.lt(0)) amountDecimal = new Prisma.Decimal(0);
-      amount = BigInt(amountDecimal.floor().toFixed(0));
-    }
+    amountDecimal = new Prisma.Decimal(referralSplit.playerAmountDecimal);
+    if (amountDecimal.lt(0)) amountDecimal = new Prisma.Decimal(0);
+    amount = BigInt(amountDecimal.floor().toFixed(0));
     const hasReward = currencyCode === "GLD" ? amountDecimal.gt(0) : amount > 0n;
     if (currencyCode === "GLD" && !hasReward) {
       const reason = emission?.reason === "emissions-paused"
@@ -390,13 +388,11 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
           amount: amountDecimal.toString(),
           currencyCode,
           ledger,
-          ...(referralSplit.referralRewardAmount > 0n
+          ...(new Prisma.Decimal(referralSplit.referralRewardAmountDecimal).gt(0)
             ? {
-                grossAmount: (
-                  amount + referralSplit.referralRewardAmount
-                ).toString(),
+                grossAmount: amountDecimal.add(new Prisma.Decimal(referralSplit.referralRewardAmountDecimal)).toString(),
                 referralRewardAmount:
-                  referralSplit.referralRewardAmount.toString(),
+                  referralSplit.referralRewardAmountDecimal,
                 referralId: referralSplit.referralId,
               }
             : {}),

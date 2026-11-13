@@ -33,16 +33,19 @@ export class ReferralsService {
     ])
     const effective = this.effectiveConfig(config, override)
     const code = await this.ensureCode(userId)
-    const [referrals, referral] = await Promise.all([
-      this.prisma.referral.findMany({ where: { referrerId: userId }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, status: true, referredAdCount: true, totalRewardedGld: true, rewardCount: true, invitedAt: true, qualifiedAt: true, referred: { select: { username: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
+    const startOfDay = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()))
+    const [referrals, referral, dailyRewards] = await Promise.all([
+      this.prisma.referral.findMany({ where: { referrerId: userId }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, status: true, referredAdCount: true, totalRewardedGld: true, totalRewardedGldDecimal: true, rewardCount: true, invitedAt: true, qualifiedAt: true, referred: { select: { username: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
       this.prisma.referral.findUnique({ where: { referredId: userId }, select: { id: true, status: true, referrer: { select: { username: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
+      this.prisma.referralReward.aggregate({ where: { referrerId: userId, status: "GRANTED", createdAt: { gte: startOfDay } }, _sum: { rewardAmountDecimal: true }, _count: { _all: true } }),
     ])
-    const totalRewarded = referrals.reduce((sum, item) => sum + item.totalRewardedGld, 0n)
+    const totalRewarded = referrals.reduce((sum, item) => sum.add(item.totalRewardedGldDecimal), new Prisma.Decimal(0))
+    const dailyRewarded = dailyRewards._sum.rewardAmountDecimal ?? new Prisma.Decimal(0)
     const qualified = referrals.filter((item) => item.status === ReferralStatus.QUALIFIED || item.status === ReferralStatus.CAPPED).length
     const shareLink = this.playStoreReferralLink(code.code)
     const webShareBaseUrl = (process.env.SMARTS_SHARE_BASE_URL ?? "https://smarts.app/join").replace(/\/$/, "")
     const webShareLink = `${webShareBaseUrl}?ref=${encodeURIComponent(code.code)}`
-    return this.serialize({ enabled: effective.enabled, code: code.code, shareText: `Join SMARTS on Google Play with my referral link. You both unlock more rewards: ${shareLink}`, shareLink, webShareLink, maxInvites: effective.maxInvitesPerUser, invitesUsed: code.inviteCount, invitesRemaining: Math.max(effective.maxInvitesPerUser - code.inviteCount, 0), rewardBps: effective.rewardBps, rewardPercent: effective.rewardBps / 100, maxRewardPerReferral: effective.maxRewardPerReferral, minQualifyingAds: effective.minQualifyingAds, personalized: Boolean(override), settingsSource: override ? "PLAYER" : "GLOBAL", referralsCount: referrals.length, qualifiedCount: qualified, totalRewardedGld: totalRewarded, referredBy: referral ? { referralId: referral.id, status: referral.status, referrerName: referral.referrer.profile?.displayName ?? referral.referrer.username } : null, referrals: referrals.map((item) => ({ id: item.id, name: item.referred.profile?.displayName ?? item.referred.username, status: item.status, referredAdCount: item.referredAdCount, totalRewardedGld: item.totalRewardedGld, rewardCount: item.rewardCount, invitedAt: item.invitedAt, qualifiedAt: item.qualifiedAt })) })
+    return this.serialize({ enabled: effective.enabled, code: code.code, shareText: `Join SMARTS on Google Play with my referral link. You both unlock more rewards: ${shareLink}`, shareLink, webShareLink, maxInvites: effective.maxInvitesPerUser, invitesUsed: code.inviteCount, invitesRemaining: Math.max(effective.maxInvitesPerUser - code.inviteCount, 0), rewardBps: effective.rewardBps, rewardPercent: effective.rewardBps / 100, maxRewardPerReferral: effective.maxRewardPerReferral, minQualifyingAds: effective.minQualifyingAds, personalized: Boolean(override), settingsSource: override ? "PLAYER" : "GLOBAL", referralsCount: referrals.length, qualifiedCount: qualified, totalRewardedGld: totalRewarded, dailyRewardedGld: dailyRewarded, dailyRewardCount: dailyRewards._count._all, dailyRewardDate: startOfDay.toISOString().slice(0, 10), referredBy: referral ? { referralId: referral.id, status: referral.status, referrerName: referral.referrer.profile?.displayName ?? referral.referrer.username } : null, referrals: referrals.map((item) => ({ id: item.id, name: item.referred.profile?.displayName ?? item.referred.username, status: item.status, referredAdCount: item.referredAdCount, totalRewardedGld: item.totalRewardedGldDecimal, rewardCount: item.rewardCount, invitedAt: item.invitedAt, qualifiedAt: item.qualifiedAt })) })
   }
 
   updateConfig(dto: UpdateReferralConfigDto, adminId: string) { return this.updateConfigTransaction.run({ dto, adminId }).then((config) => this.serialize(config)) }
@@ -54,38 +57,42 @@ export class ReferralsService {
       this.prisma.referral.count({ where: { status: ReferralStatus.ACTIVE } }),
       this.prisma.referral.count({ where: { status: ReferralStatus.QUALIFIED } }),
       this.prisma.referral.count({ where: { status: ReferralStatus.CAPPED } }),
-      this.prisma.referralReward.aggregate({ _sum: { rewardAmount: true }, _count: { _all: true } }),
-      this.prisma.referral.findMany({ orderBy: { createdAt: "desc" }, take: 100, select: { id: true, status: true, referredAdCount: true, totalRewardedGld: true, rewardCount: true, createdAt: true, referrer: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } }, referred: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
+      this.prisma.referralReward.aggregate({ _sum: { rewardAmountDecimal: true }, _count: { _all: true } }),
+      this.prisma.referral.findMany({ orderBy: { createdAt: "desc" }, take: 100, select: { id: true, status: true, referredAdCount: true, totalRewardedGld: true, totalRewardedGldDecimal: true, rewardCount: true, createdAt: true, referrer: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } }, referred: { select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } } } } } }),
       this.prisma.user.findMany({
         where: search.trim() ? { OR: [{ username: { contains: search.trim(), mode: "insensitive" } }, { email: { contains: search.trim(), mode: "insensitive" } }, { profile: { displayName: { contains: search.trim(), mode: "insensitive" } } }] } : undefined,
         orderBy: { username: "asc" }, take: 50,
         select: { id: true, username: true, email: true, profile: { select: { displayName: true, avatarUrl: true } }, referralPolicyOverride: true },
       }),
     ])
-    return this.serialize({ config, stats: { total, active, qualified, capped, rewardCount: rewards._count._all, totalRewardedGld: rewards._sum.rewardAmount ?? 0n }, referrals: recent.map((item) => ({ id: item.id, status: item.status, referredAdCount: item.referredAdCount, totalRewardedGld: item.totalRewardedGld, rewardCount: item.rewardCount, createdAt: item.createdAt, referrer: this.person(item.referrer), referred: this.person(item.referred) })), players: players.map((player) => ({ ...this.person(player), override: player.referralPolicyOverride })) })
+    return this.serialize({ config, stats: { total, active, qualified, capped, rewardCount: rewards._count._all, totalRewardedGld: rewards._sum.rewardAmountDecimal ?? new Prisma.Decimal(0) }, referrals: recent.map((item) => ({ id: item.id, status: item.status, referredAdCount: item.referredAdCount, totalRewardedGld: item.totalRewardedGldDecimal, rewardCount: item.rewardCount, createdAt: item.createdAt, referrer: this.person(item.referrer), referred: this.person(item.referred) })), players: players.map((player) => ({ ...this.person(player), override: player.referralPolicyOverride })) })
   }
 
-  async applyAdRewardShare(transaction: Prisma.TransactionClient, input: { referredUserId: string; adRewardClaimId: string; grossAmount: bigint; currencyCode: string }) {
-    if (input.currencyCode.trim().toUpperCase() !== "GLD" || input.grossAmount <= 0n) return { playerAmount: input.grossAmount, referralRewardAmount: 0n, referralId: null as string | null }
+  async applyAdRewardShare(transaction: Prisma.TransactionClient, input: { referredUserId: string; adRewardClaimId: string; grossAmount: bigint; grossAmountDecimal?: string; currencyCode: string }) {
+    const grossAmountDecimal = new Prisma.Decimal(input.grossAmountDecimal ?? input.grossAmount.toString())
+    if (input.currencyCode.trim().toUpperCase() !== "GLD" || grossAmountDecimal.lte(0)) return { playerAmount: input.grossAmount, playerAmountDecimal: grossAmountDecimal.toString(), referralRewardAmount: 0n, referralRewardAmountDecimal: "0", referralId: null as string | null }
     const config = await transaction.referralConfig.findUnique({ where: { singletonKey: "default" } })
-    const referral = await transaction.referral.findUnique({ where: { referredId: input.referredUserId }, select: { id: true, referrerId: true, referredId: true, status: true, referredAdCount: true, totalRewardedGld: true, qualifiedAt: true, cappedAt: true } })
+    const referral = await transaction.referral.findUnique({ where: { referredId: input.referredUserId }, select: { id: true, referrerId: true, referredId: true, status: true, referredAdCount: true, totalRewardedGld: true, totalRewardedGldDecimal: true, qualifiedAt: true, cappedAt: true } })
     const override = referral ? await transaction.referralPlayerOverride.findUnique({ where: { userId: referral.referrerId } }) : null
     const effective = this.effectiveConfig(config, override)
-    if (!effective.enabled || !referral || referral.status === ReferralStatus.REVOKED) return { playerAmount: input.grossAmount, referralRewardAmount: 0n, referralId: referral?.id ?? null }
+    if (!effective.enabled || !referral || referral.status === ReferralStatus.REVOKED) return { playerAmount: input.grossAmount, playerAmountDecimal: grossAmountDecimal.toString(), referralRewardAmount: 0n, referralRewardAmountDecimal: "0", referralId: referral?.id ?? null }
 
     const referredAdCount = referral.referredAdCount + 1
-    const remainingCap = effective.maxRewardPerReferral > referral.totalRewardedGld ? effective.maxRewardPerReferral - referral.totalRewardedGld : 0n
-    let reward = referredAdCount >= effective.minQualifyingAds ? input.grossAmount * BigInt(effective.rewardBps) / 10_000n : 0n
-    if (reward > remainingCap) reward = remainingCap
+    const cap = new Prisma.Decimal(effective.maxRewardPerReferral.toString())
+    const remainingCap = cap.gt(referral.totalRewardedGldDecimal) ? cap.sub(referral.totalRewardedGldDecimal) : new Prisma.Decimal(0)
+    let reward = referredAdCount >= effective.minQualifyingAds ? grossAmountDecimal.mul(effective.rewardBps.toString()).div(10_000) : new Prisma.Decimal(0)
+    if (reward.gt(remainingCap)) reward = remainingCap
     const qualified = referredAdCount >= effective.minQualifyingAds
-    const capped = remainingCap <= 0n || (qualified && reward >= remainingCap)
+    const capped = remainingCap.lte(0) || (qualified && reward.gte(remainingCap))
     const status = capped ? ReferralStatus.CAPPED : qualified ? ReferralStatus.QUALIFIED : ReferralStatus.ACTIVE
-    await transaction.referral.update({ where: { id: referral.id }, data: { referredAdCount, status, ...(qualified && !referral.qualifiedAt ? { qualifiedAt: new Date() } : {}), ...(capped && !referral.cappedAt ? { cappedAt: new Date() } : {}), ...(reward > 0n ? { totalRewardedGld: { increment: reward }, rewardCount: { increment: 1 } } : {}) } })
-    if (reward <= 0n) return { playerAmount: input.grossAmount, referralRewardAmount: 0n, referralId: referral.id }
-    const rewardRow = await transaction.referralReward.create({ data: { referralId: referral.id, adRewardClaimId: input.adRewardClaimId, referrerId: referral.referrerId, referredId: referral.referredId, grossAdReward: input.grossAmount, rewardAmount: reward } })
-    await this.creditWallet.runWithinTransaction({ userId: referral.referrerId, currencyCode: "GLD", amount: reward, sourceId: rewardRow.id, sourceType: WalletTransactionSourceType.REFERRAL, rewardGrantKey: `REFERRAL:${rewardRow.id}`, metadata: { referralId: referral.id, adRewardClaimId: input.adRewardClaimId, grossAdReward: input.grossAmount.toString(), rewardBps: effective.rewardBps } }, transaction)
-    await transaction.outboxEvent.create({ data: { eventType: "referral.rewarded", aggregateType: "ReferralReward", aggregateId: rewardRow.id, payload: { userId: referral.referrerId, referralId: referral.id, referredUserId: referral.referredId, amount: reward.toString(), grossAdReward: input.grossAmount.toString() } as unknown as Prisma.InputJsonValue } })
-    return { playerAmount: input.grossAmount - reward, referralRewardAmount: reward, referralId: referral.id }
+    const rewardLegacy = BigInt(reward.floor().toFixed(0))
+    await transaction.referral.update({ where: { id: referral.id }, data: { referredAdCount, status, ...(qualified && !referral.qualifiedAt ? { qualifiedAt: new Date() } : {}), ...(capped && !referral.cappedAt ? { cappedAt: new Date() } : {}), ...(reward.gt(0) ? { totalRewardedGld: { increment: rewardLegacy }, totalRewardedGldDecimal: { increment: reward }, rewardCount: { increment: 1 } } : {}) } })
+    if (reward.lte(0)) return { playerAmount: input.grossAmount, playerAmountDecimal: grossAmountDecimal.toString(), referralRewardAmount: 0n, referralRewardAmountDecimal: "0", referralId: referral.id }
+    const rewardRow = await transaction.referralReward.create({ data: { referralId: referral.id, adRewardClaimId: input.adRewardClaimId, referrerId: referral.referrerId, referredId: referral.referredId, grossAdReward: input.grossAmount, rewardAmount: rewardLegacy, grossAdRewardDecimal: grossAmountDecimal, rewardAmountDecimal: reward } })
+    await this.creditWallet.runWithinTransaction({ userId: referral.referrerId, currencyCode: "GLD", amount: rewardLegacy, amountDecimal: reward.toString(), sourceId: rewardRow.id, sourceType: WalletTransactionSourceType.REFERRAL, rewardGrantKey: `REFERRAL:${rewardRow.id}`, metadata: { referralId: referral.id, referredUserId: referral.referredId, adRewardClaimId: input.adRewardClaimId, grossAdReward: grossAmountDecimal.toString(), rewardBps: effective.rewardBps } }, transaction)
+    await transaction.outboxEvent.create({ data: { eventType: "referral.rewarded", aggregateType: "ReferralReward", aggregateId: rewardRow.id, payload: { userId: referral.referrerId, referralId: referral.id, referredUserId: referral.referredId, amount: reward.toString(), grossAdReward: grossAmountDecimal.toString() } as unknown as Prisma.InputJsonValue } })
+    const playerAmountDecimal = grossAmountDecimal.sub(reward)
+    return { playerAmount: BigInt(playerAmountDecimal.floor().toFixed(0)), playerAmountDecimal: playerAmountDecimal.toString(), referralRewardAmount: rewardLegacy, referralRewardAmountDecimal: reward.toString(), referralId: referral.id }
   }
 
   async updatePlayerOverride(userId: string, dto: UpdateReferralPlayerOverrideDto, adminId: string) {

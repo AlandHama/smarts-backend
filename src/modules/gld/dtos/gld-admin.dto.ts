@@ -17,5 +17,8 @@ export class UpdateGldControlsDto {
   @ApiPropertyOptional({ description: "Gift burn basis points" }) @IsOptional() @IsInt() @Min(0) @Max(10000) giftBurnBps?: number
   @ApiPropertyOptional({ description: "Paid reward safety margin basis points" }) @IsOptional() @IsInt() @Min(10001) @Max(100000) paidRewardSafetyMarginBps?: number
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(1000) paidRewardDailyRequestLimit?: number
+  @ApiPropertyOptional({ description: "GLD charged for changing a username after its first free change" }) @IsOptional() @IsString() @Matches(/^\d+$/) @MaxLength(32) usernameChangeCostGld?: string
+  @ApiPropertyOptional({ description: "GLD charged for changing a display name after its first free change" }) @IsOptional() @IsString() @Matches(/^\d+$/) @MaxLength(32) displayNameChangeCostGld?: string
+  @ApiPropertyOptional({ description: "GLD charged for changing country after the first free country selection" }) @IsOptional() @IsString() @Matches(/^\d+$/) @MaxLength(32) countryChangeCostGld?: string
   @ApiPropertyOptional({ maxLength: 500 }) @IsOptional() @IsString() @MaxLength(500) reason?: string
 }
