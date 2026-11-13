@@ -117,25 +117,31 @@ export class CooperativeMatchService {
       const partyIds = Array.isArray(metadata.partyIds)
         ? metadata.partyIds.filter((value): value is string => typeof value === "string")
         : []
-      const confirmingParty = partyIds.length
-        ? await tx.party.findFirst({
-            where: { id: { in: partyIds }, hostUserId: userId },
-            select: { members: { where: { leftAt: null }, select: { userId: true } } },
+      const parties = partyIds.length
+        ? await tx.party.findMany({
+            where: { id: { in: partyIds } },
+            select: { id: true, hostUserId: true },
           })
-        : null
+        : []
+      const leaderUserIds = parties.map((party) => party.hostUserId)
+      // Only a party leader can accept a found match. A member's confirmation
+      // must never be enough to commit the party or charge ranked entry fees.
+      if (!leaderUserIds.includes(userId)) {
+        throw new ConflictException("Only the party leader can confirm this match")
+      }
       const humans = match.participants.filter((item) => item.userId)
-      // A party host is the party's ready authority. Once the host starts a
-      // found match, all queued human participants are allowed through the
-      // shared barrier so teammates and opponents do not need a second tap.
-      const userIdsToConfirm = confirmingParty
-        ? humans.map((item) => item.userId!)
-        : [userId]
       await tx.cooperativeParticipant.updateMany({
-        where: { cooperativeMatchId: match.id, userId: { in: userIdsToConfirm } },
+        where: { cooperativeMatchId: match.id, userId },
         data: { confirmedAt: now },
       })
-      const confirmations = await tx.cooperativeParticipant.findMany({ where: { cooperativeMatchId: match.id, userId: { not: null } }, select: { userId: true, confirmedAt: true } })
-      if (confirmations.length < humans.length || confirmations.some((item) => !item.confirmedAt)) return
+      const confirmations = await tx.cooperativeParticipant.findMany({
+        where: { cooperativeMatchId: match.id, userId: { in: leaderUserIds } },
+        select: { userId: true, confirmedAt: true },
+      })
+      // A bot-filled match has one real party and therefore one required
+      // confirmation. A party-vs-party match has one required confirmation
+      // from each party leader; all other members inherit the decision.
+      if (!leaderUserIds.length || confirmations.length < leaderUserIds.length || confirmations.some((item) => !item.confirmedAt)) return
 
       const config = await tx.cooperativeConfiguration.upsert({ where: { key: "default" }, create: { key: "default" }, update: {} })
       const ranked = match.mode === "RANKED"
@@ -236,7 +242,13 @@ export class CooperativeMatchService {
     if ((ranked && !config.cooperativeRankedEnabled) || (!ranked && !config.cooperativeRandomEnabled)) return null
     const elapsed = Math.max(0, Math.floor((Date.now() - first.queuedAt.getTime()) / 1000))
     const windowSize = Math.min(config.maxRatingWindow, config.initialRatingWindow + Math.floor(elapsed / Math.max(1, config.ratingWidenIntervalSeconds)) * config.initialRatingWindow)
-    const second = entries.slice(1).find((candidate) => candidate.mode === first.mode && candidate.partyId !== first.partyId && Math.abs(candidate.ratingSnapshot - first.ratingSnapshot) <= windowSize && candidate.party.members.length > 0 && (candidate.gameKey === "random" || first.gameKey === "random" || candidate.gameKey === first.gameKey))
+    const compatible = entries.slice(1).filter((candidate) => candidate.mode === first.mode && candidate.partyId !== first.partyId && candidate.party.members.length > 0 && (candidate.gameKey === "random" || first.gameKey === "random" || candidate.gameKey === first.gameKey))
+    // Prefer a rating-compatible party, but never convert a real party into a
+    // bot match merely because the rating window is still narrow. Cooperative
+    // queues are explicitly party-vs-party queues; the widening window only
+    // controls preference, while the fallback keeps both waiting parties from
+    // being split into separate bot matches.
+    const second = compatible.find((candidate) => Math.abs(candidate.ratingSnapshot - first.ratingSnapshot) <= windowSize) ?? compatible[0]
     const useBots = !second && (ranked ? config.cooperativeBotFillEnabled : config.cooperativeBotFillEnabled) && elapsed >= config.botFallbackDelaySeconds
     if (!second && !useBots) return null
 

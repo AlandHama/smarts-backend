@@ -118,6 +118,24 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
     if (claim.adFormat !== input.dto.adFormat.trim().toLowerCase())
       throw new BadRequestException("Ad format does not match the claim");
 
+    const claimPayload =
+      claim.verificationPayload &&
+      typeof claim.verificationPayload === "object" &&
+      !Array.isArray(claim.verificationPayload)
+        ? (claim.verificationPayload as Record<string, unknown>)
+        : {};
+    const clientPlacementId =
+      typeof claimPayload.clientPlacementId === "string"
+        ? claimPayload.clientPlacementId
+        : null;
+    const clientEventType =
+      input.trustedVerification?.source === "CLIENT_EVENT"
+        ? input.trustedVerification.payload.eventType
+        : null;
+    const passiveClientImpression =
+      clientEventType === "impression" &&
+      ["banner", "native", "interstitial"].includes(claim.adFormat);
+
     if (claim.status === "GRANTED")
       return this.result(
         claim.rewardAmount,
@@ -228,13 +246,41 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
         "Daily ad reward amount limit reached",
       );
     const latest = await transaction.adRewardClaim.findFirst({
-      where: { userId: claim.userId, status: "GRANTED" },
+      where: {
+        userId: claim.userId,
+        status: "GRANTED",
+        ...(passiveClientImpression
+          ? { adFormat: { in: ["banner", "native", "interstitial"] } }
+          : {}),
+      },
       orderBy: { grantedAt: "desc" },
       select: { grantedAt: true },
     });
+    if (passiveClientImpression && clientPlacementId) {
+      const samePlacement = await transaction.adRewardClaim.findFirst({
+        where: {
+          userId: claim.userId,
+          status: "GRANTED",
+          adFormat: claim.adFormat,
+          verificationPayload: {
+            path: ["clientPlacementId"],
+            equals: clientPlacementId,
+          },
+        },
+        select: { id: true },
+      });
+      if (samePlacement)
+        return this.reject(
+          transaction,
+          claim.id,
+          "This ad placement was already rewarded",
+        );
+    }
     const cooldown =
       input.trustedVerification?.source === "CLIENT_EVENT"
-        ? 0
+        ? passiveClientImpression
+          ? Math.max(600, policy.privateConfig.cooldownSeconds ?? 600)
+          : 0
         : Math.max(0, policy.privateConfig.cooldownSeconds ?? 0);
     if (
       latest?.grantedAt &&
@@ -298,6 +344,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
             providerVerified: input.trustedVerification?.source === "ADMOB_SSV",
             clientEventAccepted: input.trustedVerification?.source === "CLIENT_EVENT",
             verificationSource: input.trustedVerification?.source ?? "HMAC",
+            ...(clientPlacementId ? { clientPlacementId } : {}),
             ...(emission ? { rewarded: false, reason: emission.reason } : {}),
           },
           verifiedAt: now,
@@ -360,6 +407,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
           clientEventAccepted:
             input.trustedVerification?.source === "CLIENT_EVENT",
           verificationSource: input.trustedVerification?.source ?? "HMAC",
+          ...(clientPlacementId ? { clientPlacementId } : {}),
           ...(input.trustedVerification
             ? { providerPayload: input.trustedVerification.payload }
             : {}),

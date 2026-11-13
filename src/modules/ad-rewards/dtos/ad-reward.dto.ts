@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger"
-import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator"
+import { IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from "class-validator"
 
 export class CreateAdImpressionDto {
   @ApiProperty({ example: "startio" })
@@ -11,6 +11,14 @@ export class CreateAdImpressionDto {
   @IsString()
   @MaxLength(40)
   adFormat!: string
+
+  @ApiPropertyOptional({ description: "Client-generated identity for one mounted passive ad placement." })
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(120)
+  @Matches(/^[A-Za-z0-9._:-]+$/)
+  placementId?: string
 }
 
 export class ClaimAdRewardDto {

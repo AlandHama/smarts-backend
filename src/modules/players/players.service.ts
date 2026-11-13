@@ -68,7 +68,11 @@ export class PlayersService {
   async profileChangePolicy(userId: string) {
     const profile = await this.prisma.playerProfile.findUnique({
       where: { userId },
-      select: { countryChangeCount: true },
+      select: {
+        countryChangeCount: true,
+        usernameChangeCount: true,
+        displayNameChangeCount: true,
+      },
     })
     if (!profile) throw new NotFoundException("Player profile not found")
     const controls = await this.prisma.gldAdminControl.findUnique({ where: { singletonKey: "default" } })
@@ -77,6 +81,12 @@ export class PlayersService {
       countryChangeCount: profile.countryChangeCount,
       countryChangeCostGld: config.countryChangeCostGld.toString(),
       countryChangeIsFree: profile.countryChangeCount === 0,
+      usernameChangeCount: profile.usernameChangeCount,
+      usernameChangeCostGld: config.usernameChangeCostGld.toString(),
+      usernameChangeIsFree: profile.usernameChangeCount === 0,
+      displayNameChangeCount: profile.displayNameChangeCount,
+      displayNameChangeCostGld: config.displayNameChangeCostGld.toString(),
+      displayNameChangeIsFree: profile.displayNameChangeCount === 0,
     }
   }
 

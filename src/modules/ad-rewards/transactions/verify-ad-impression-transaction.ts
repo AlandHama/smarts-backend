@@ -77,6 +77,9 @@ export class VerifyAdImpressionTransaction extends PrismaTransaction<
         userId: input.userId,
         provider,
         adFormat,
+        ...(input.dto.placementId
+          ? { verificationPayload: { clientPlacementId: input.dto.placementId } }
+          : {}),
         claimTokenHash: createHash("sha256").update(claimToken).digest("hex"),
         expiresAt: new Date(Date.now() + ttl * 1000),
       },

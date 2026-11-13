@@ -133,10 +133,19 @@ export class PartyService {
   async leave(userId: string, partyId: string) {
     const result = await this.prisma.$transaction(async (tx) => {
       const member = await tx.partyMember.findUnique({ where: { partyId_userId: { partyId, userId } }, include: { party: { include: { members: { where: { leftAt: null }, orderBy: { joinedAt: "asc" } } } } } }); if (!member || member.leftAt) throw new NotFoundException("Party membership not found")
-      await tx.partyMember.update({ where: { id: member.id }, data: { leftAt: new Date(), status: "LEFT" } }); const remaining = member.party.members.filter((row) => row.userId !== userId)
+      await tx.partyMember.update({ where: { id: member.id }, data: { leftAt: new Date(), status: "LEFT" } });
+      // Leaving is the explicit exit action. Remove the party from the active
+      // search immediately so a closed/member-reduced party cannot still be
+      // selected by the matchmaking worker on its next tick.
+      await tx.cooperativeQueueEntry.updateMany({ where: { partyId, status: "SEARCHING" }, data: { status: "CANCELLED", matchId: null } })
+      const remaining = member.party.members.filter((row) => row.userId !== userId)
       const conversation = await tx.chatConversation.findUnique({ where: { partyId }, select: { id: true } }); if (conversation) await tx.chatParticipant.deleteMany({ where: { conversationId: conversation.id, userId } })
       if (!remaining.length) { await tx.party.update({ where: { id: partyId }, data: { status: "CLOSED", closedAt: new Date() } }); if (conversation) await tx.chatConversation.update({ where: { id: conversation.id }, data: { archivedAt: new Date() } }) }
-      else if (member.party.hostUserId === userId) { await tx.party.update({ where: { id: partyId }, data: { hostUserId: remaining[0].userId } }); await tx.partyMember.update({ where: { id: remaining[0].id }, data: { role: "HOST" } }) }
+      else {
+        const wasSearching = member.party.status === "QUEUED"
+        await tx.party.update({ where: { id: partyId }, data: { ...(member.party.hostUserId === userId ? { hostUserId: remaining[0].userId } : {}), ...(wasSearching ? { status: remaining.length > 1 ? "READY" : "CREATED", queuedAt: null } : {}) } })
+        if (member.party.hostUserId === userId) await tx.partyMember.update({ where: { id: remaining[0].id }, data: { role: "HOST" } })
+      }
       return { partyId, closed: !remaining.length }
     }); return result
   }
