@@ -246,6 +246,7 @@ export class BombPathService {
     if (state.status === "FINISHED") return { state, changed: false, finished: true }
     if (now >= Date.parse(state.endsAt)) return { state: this.timeoutState(state), changed: true, finished: true }
     let changed = false
+    const terminalStatuses: BombPathRoundStatus[] = ["SUCCESS", "BOMB_HIT", "TIMEOUT", "INCOMPLETE", "ABANDONED"]
     for (const participantId of Object.keys(state.players)) {
       const player = state.players[participantId]
       // Older live states do not have a per-player cursor. They were always
@@ -272,12 +273,36 @@ export class BombPathService {
           player.phaseDeadlineAt = roundPlayer.phaseDeadlineAt
           changed = true
         }
+
+        // Recover states written during a dropped realtime request or an old
+        // server version. The round status is authoritative; a stale PLAY
+        // phase must never prevent a terminal round from advancing.
+        if (terminalStatuses.includes(roundPlayer.status)) {
+          if (player.roundStatus !== roundPlayer.status) {
+            player.roundStatus = roundPlayer.status
+            changed = true
+          }
+          if (player.phase !== "RESULT" && player.phase !== "COMPLETE") {
+            player.phase = "RESULT"
+            changed = true
+          }
+        } else if (terminalStatuses.includes(player.roundStatus)) {
+          roundPlayer.status = player.roundStatus
+          if (roundPlayer.phase !== "RESULT" && roundPlayer.phase !== "COMPLETE") {
+            roundPlayer.phase = "RESULT"
+          }
+          changed = true
+        }
+
         if (player.phase === "MEMORIZE") {
           const deadline = player.phaseDeadlineAt ?? roundPlayer.phaseDeadlineAt ?? round.memorizeEndsAt
           player.phaseDeadlineAt = deadline
           roundPlayer.phaseDeadlineAt = deadline
           if (now < deadline) break
-          this.activatePlayerForRound(state, participantId, deadline)
+          // Use the actual server time. Using the old deadline here can leave
+          // the next phase already expired after a delayed poll and makes a
+          // player appear to be waiting forever on some reconnects.
+          this.activatePlayerForRound(state, participantId, now)
           changed = true
           continue
         }
@@ -294,7 +319,7 @@ export class BombPathService {
           player.roundElapsedMs = Math.max(0, deadline - (player.phaseStartedAt ?? round.phaseStartedAt))
           changed = true
         }
-        if (player.phase === "RESULT" || ["SUCCESS", "BOMB_HIT", "TIMEOUT", "INCOMPLETE", "ABANDONED"].includes(player.roundStatus)) {
+        if (player.phase === "RESULT" || terminalStatuses.includes(player.roundStatus)) {
           roundPlayer.phase = "COMPLETE"
           roundPlayer.status = player.roundStatus
           if (player.roundIndex >= state.rounds.length - 1) {
@@ -350,7 +375,32 @@ export class BombPathService {
     return { state, changed, finished: false }
   }
 
-  private timeoutState(state: BombPathState) { const rounds = state.rounds.map((round, index) => index === state.currentRoundIndex ? { ...round, phase: "COMPLETE" as const, players: Object.fromEntries(Object.entries(round.players).map(([id, player]) => [id, player.status === "PLAYING" || player.status === "READY" ? { ...player, status: "TIMEOUT" as const } : player])) } : round); const finished = { ...state, status: "FINISHED" as const, phase: "COMPLETE" as const, rounds, players: this.mapPlayers(state.players, (player) => player.roundStatus === "PLAYING" || player.roundStatus === "READY" ? { ...player, roundStatus: "TIMEOUT" } : player) }; return { ...finished, winnerParticipantId: this.winner(finished), stateHash: bombPathStateHash(finished) } }
+  private timeoutState(state: BombPathState) {
+    const rounds = state.rounds.map((round, index) => index === state.currentRoundIndex
+      ? {
+          ...round,
+          phase: "COMPLETE" as const,
+          players: Object.fromEntries(Object.entries(round.players).map(([id, player]) => [
+            id,
+            player.status === "PLAYING" || player.status === "READY"
+              ? { ...player, status: "TIMEOUT" as const, phase: "COMPLETE" as const }
+              : player,
+          ])),
+        }
+      : round)
+    const finished = {
+      ...state,
+      status: "FINISHED" as const,
+      phase: "COMPLETE" as const,
+      rounds,
+      players: this.mapPlayers(state.players, (player) =>
+        player.roundStatus === "PLAYING" || player.roundStatus === "READY"
+          ? { ...player, roundStatus: "TIMEOUT", phase: "COMPLETE", phaseDeadlineAt: null }
+          : player,
+      ),
+    }
+    return { ...finished, winnerParticipantId: this.winner(finished), stateHash: bombPathStateHash(finished) }
+  }
   private winner(state: BombPathState) { const scores = Object.values(state.players).map((player) => player.score); const max = Math.max(...scores, 0); const winners = Object.values(state.players).filter((player) => player.score === max); return winners.length === 1 ? winners[0].participantId : null }
   private mapPlayers(players: Record<string, RuntimePlayer>, map: (player: RuntimePlayer) => RuntimePlayer) { return Object.fromEntries(Object.entries(players).map(([id, player]) => [id, map(player)])) }
 

@@ -347,13 +347,33 @@ export class LeaderboardService {
   }
 
   private async findActiveBoard(key: string) {
-    const board = await this.prisma.leaderboard.findUnique({
-      where: { key: key.trim().toLowerCase() },
+    const requested = key.trim();
+    const normalized = requested.toLowerCase();
+    const aliases = new Set([
+      normalized,
+      normalized.replace(/[\s-]+/g, "_"),
+      normalized.replace(/_/g, ""),
+    ]);
+    if (normalized === "playersmonthly" || normalized === "playermonthly") aliases.add("players_monthly");
+    if (normalized === "playersweekly" || normalized === "playerweekly") aliases.add("players_weekly");
+    if (normalized === "player_monthly") aliases.add("players_monthly");
+    if (normalized === "player_weekly") aliases.add("players_weekly");
+    if (normalized === "countrymonthly") aliases.add("country_monthly");
+    if (normalized === "countryweekly") aliases.add("country_weekly");
+    const lookup = this.isUuid(requested)
+      ? { OR: [{ key: { in: [...aliases] } }, { id: requested }] }
+      : { key: { in: [...aliases] } };
+    const board = await this.prisma.leaderboard.findFirst({
+      where: lookup,
       include: { rewards: this.rewardInclude() },
     });
     if (!board || !board.active)
       throw new NotFoundException("Leaderboard not found");
     return board;
+  }
+
+  private isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 
   private activeSeason(leaderboardId: string) {
