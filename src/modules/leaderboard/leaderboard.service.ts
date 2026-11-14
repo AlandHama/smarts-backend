@@ -98,7 +98,7 @@ export class LeaderboardService {
     const countryCode = board.memberType === "PLAYER" ? query.countryCode?.trim().toUpperCase() : undefined;
     const countryContributionView = board.memberType === "PLAYER" && Boolean(countryCode);
     const countFilter = countryContributionView
-      ? Prisma.sql` FROM (SELECT e."playerId" FROM "LeaderboardEntry" e INNER JOIN "LeaderboardScoreEvent" se ON se."leaderboardId" = e."leaderboardId" AND se."seasonId" = e."seasonId" AND se."memberKey" = e."memberKey" AND (se."entryId" = e."id" OR se."entryId" IS NULL) AND se."playerId" = e."playerId" WHERE e."leaderboardId" = ${board.id} AND e."seasonId" = ${season.id} AND UPPER(se."countryCode") = ${countryCode} AND e."playerId" IS NOT NULL GROUP BY e."playerId" HAVING SUM(se."delta") > 0) country_players`
+      ? Prisma.sql` FROM (SELECT e."playerId" FROM "LeaderboardEntry" e INNER JOIN "LeaderboardScoreEvent" se ON se."leaderboardId" = e."leaderboardId" AND se."seasonId" = e."seasonId" AND se."memberKey" = e."memberKey" AND (se."entryId" = e."id" OR se."entryId" IS NULL) AND se."playerId" = e."playerId" LEFT JOIN "PlayerProfile" contribution_profile ON contribution_profile."userId" = e."playerId" WHERE e."leaderboardId" = ${board.id} AND e."seasonId" = ${season.id} AND UPPER(COALESCE(se."countryCode", contribution_profile."countryCode")) = ${countryCode} AND e."playerId" IS NOT NULL GROUP BY e."playerId" HAVING SUM(se."delta") > 0) country_players`
       : countryCode
       ? Prisma.sql` FROM "LeaderboardEntry" e INNER JOIN "PlayerProfile" p ON p."userId" = e."playerId" WHERE e."leaderboardId" = ${board.id} AND e."seasonId" = ${season.id} AND p."countryCode" = ${countryCode}`
       : Prisma.sql` FROM "LeaderboardEntry" WHERE "leaderboardId" = ${board.id} AND "seasonId" = ${season.id}`;
@@ -109,10 +109,22 @@ export class LeaderboardService {
       this.entryRows(board.id, season.id, order, limit, offset, undefined, board.memberType, countryCode, board.period),
     ]);
     const total = Number(countRows[0]?.count ?? 0n);
-    const currentUserRank =
-      userId && board.memberType === "PLAYER"
-        ? await this.memberRank(board.id, season.id, userId, order, countryCode)
-        : null;
+    let currentUserRank: bigint | null = null;
+    if (userId && board.memberType === "PLAYER") {
+      // A rank is useful metadata, but it must never prevent the selected
+      // country rows from loading if a legacy event is malformed.
+      try {
+        currentUserRank = await this.memberRank(
+          board.id,
+          season.id,
+          userId,
+          order,
+          countryCode,
+        );
+      } catch {
+        currentUserRank = null;
+      }
+    }
     return this.serialize({
       leaderboard: {
         id: board.id,
@@ -399,7 +411,7 @@ export class LeaderboardService {
       ? Prisma.sql`AND p."countryCode" = ${countryCode}`
       : Prisma.empty;
     const countryContributionJoin = countryContributionView
-      ? Prisma.sql`INNER JOIN (SELECT e2."playerId", SUM(se2."delta")::bigint AS "countryScore" FROM "LeaderboardEntry" e2 INNER JOIN "LeaderboardScoreEvent" se2 ON se2."leaderboardId" = e2."leaderboardId" AND se2."seasonId" = e2."seasonId" AND se2."memberKey" = e2."memberKey" AND (se2."entryId" = e2."id" OR se2."entryId" IS NULL) AND se2."playerId" = e2."playerId" WHERE e2."leaderboardId" = ${leaderboardId} AND e2."seasonId" = ${seasonId} AND UPPER(se2."countryCode") = ${countryCode} AND e2."playerId" IS NOT NULL GROUP BY e2."playerId" HAVING SUM(se2."delta") > 0) country_scores ON country_scores."playerId" = e."playerId"`
+      ? Prisma.sql`INNER JOIN (SELECT e2."playerId", SUM(se2."delta")::bigint AS "countryScore" FROM "LeaderboardEntry" e2 INNER JOIN "LeaderboardScoreEvent" se2 ON se2."leaderboardId" = e2."leaderboardId" AND se2."seasonId" = e2."seasonId" AND se2."memberKey" = e2."memberKey" AND (se2."entryId" = e2."id" OR se2."entryId" IS NULL) AND se2."playerId" = e2."playerId" LEFT JOIN "PlayerProfile" contribution_profile ON contribution_profile."userId" = e2."playerId" WHERE e2."leaderboardId" = ${leaderboardId} AND e2."seasonId" = ${seasonId} AND UPPER(COALESCE(se2."countryCode", contribution_profile."countryCode")) = ${countryCode} AND e2."playerId" IS NOT NULL GROUP BY e2."playerId" HAVING SUM(se2."delta") > 0) country_scores ON country_scores."playerId" = e."playerId"`
       : Prisma.empty;
     const scoreExpression = countryContributionView
       ? Prisma.sql`country_scores."countryScore"`
@@ -461,7 +473,7 @@ export class LeaderboardService {
     const season = await this.activeSeason(playerBoard.id);
     if (!season) return new Map<string, number>();
     const rows = await this.prisma.$queryRaw<Array<{ countryCode: string; count: bigint }>>(
-      Prisma.sql`SELECT UPPER(se."countryCode") AS "countryCode", COUNT(DISTINCT e."playerId")::bigint AS count FROM "LeaderboardEntry" e INNER JOIN "LeaderboardScoreEvent" se ON se."leaderboardId" = e."leaderboardId" AND se."seasonId" = e."seasonId" AND se."memberKey" = e."memberKey" AND (se."entryId" = e."id" OR se."entryId" IS NULL) AND se."playerId" = e."playerId" INNER JOIN "User" u ON u."id" = e."playerId" WHERE e."leaderboardId" = ${playerBoard.id} AND e."seasonId" = ${season.id} AND e."playerId" IS NOT NULL AND se."countryCode" IS NOT NULL AND u."status" = 'ACTIVE' GROUP BY UPPER(se."countryCode") HAVING SUM(se."delta") > 0`,
+      Prisma.sql`SELECT UPPER(COALESCE(se."countryCode", contribution_profile."countryCode")) AS "countryCode", COUNT(DISTINCT e."playerId")::bigint AS count FROM "LeaderboardEntry" e INNER JOIN "LeaderboardScoreEvent" se ON se."leaderboardId" = e."leaderboardId" AND se."seasonId" = e."seasonId" AND se."memberKey" = e."memberKey" AND (se."entryId" = e."id" OR se."entryId" IS NULL) AND se."playerId" = e."playerId" LEFT JOIN "PlayerProfile" contribution_profile ON contribution_profile."userId" = e."playerId" INNER JOIN "User" u ON u."id" = e."playerId" WHERE e."leaderboardId" = ${playerBoard.id} AND e."seasonId" = ${season.id} AND e."playerId" IS NOT NULL AND COALESCE(se."countryCode", contribution_profile."countryCode") IS NOT NULL AND u."status" = 'ACTIVE' GROUP BY UPPER(COALESCE(se."countryCode", contribution_profile."countryCode")) HAVING SUM(se."delta") > 0`,
     );
     return new Map(rows.map((row) => [row.countryCode.trim().toUpperCase(), Number(row.count)]));
   }
@@ -475,7 +487,7 @@ export class LeaderboardService {
   ) {
     if (countryCode) {
       const rows = await this.prisma.$queryRaw<Array<{ rank: bigint }>>(
-        Prisma.sql`SELECT "rank" FROM (SELECT e."playerId" AS "memberKey", RANK() OVER (ORDER BY SUM(se."delta") ${Prisma.raw(order)})::bigint AS "rank" FROM "LeaderboardEntry" e INNER JOIN "LeaderboardScoreEvent" se ON se."leaderboardId" = e."leaderboardId" AND se."seasonId" = e."seasonId" AND se."memberKey" = e."memberKey" AND (se."entryId" = e."id" OR se."entryId" IS NULL) AND se."playerId" = e."playerId" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} AND e."playerId" IS NOT NULL AND UPPER(se."countryCode") = ${countryCode} GROUP BY e."playerId" HAVING SUM(se."delta") > 0) ranked WHERE "memberKey" = ${memberKey} LIMIT 1`,
+        Prisma.sql`SELECT "rank" FROM (SELECT e."playerId" AS "memberKey", RANK() OVER (ORDER BY SUM(se."delta") ${Prisma.raw(order)})::bigint AS "rank" FROM "LeaderboardEntry" e INNER JOIN "LeaderboardScoreEvent" se ON se."leaderboardId" = e."leaderboardId" AND se."seasonId" = e."seasonId" AND se."memberKey" = e."memberKey" AND (se."entryId" = e."id" OR se."entryId" IS NULL) AND se."playerId" = e."playerId" LEFT JOIN "PlayerProfile" contribution_profile ON contribution_profile."userId" = e."playerId" WHERE e."leaderboardId" = ${leaderboardId} AND e."seasonId" = ${seasonId} AND e."playerId" IS NOT NULL AND UPPER(COALESCE(se."countryCode", contribution_profile."countryCode")) = ${countryCode} GROUP BY e."playerId" HAVING SUM(se."delta") > 0) ranked WHERE "memberKey" = ${memberKey} LIMIT 1`,
       );
       return rows[0]?.rank ?? null;
     }
