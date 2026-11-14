@@ -7,7 +7,7 @@ import { SessionResponseDto } from "../admin/access/sessions/dtos/session-respon
 import { SessionsService } from "../admin/access/sessions/sessions.service"
 import { AuthService } from "./services/auth.service"
 import { TokenService } from "./services/token.service"
-import { AuthCredentialsRequestDto, ChangePasswordRequestDto, GoogleAuthRequestDto, LoginResponseDto, RefreshTokenRequestDto, RegisterRequestDto, UpgradeGuestRequestDto, UserResponseDto, ValidateTokenRequestDto } from "./dtos"
+import { AuthCredentialsRequestDto, ChangePasswordRequestDto, CloseAccountRequestDto, GoogleAuthRequestDto, LoginResponseDto, RefreshTokenRequestDto, RegisterRequestDto, UpgradeGuestRequestDto, UserResponseDto, ValidateTokenRequestDto } from "./dtos"
 import { GoogleAuthService } from "./services/google-auth.service"
 
 @ApiTags("Auth")
@@ -126,6 +126,13 @@ export class AuthController {
   async logoutAll(@CurrentUser() user: UserResponseDto) {
     await this.sessionsService.terminateAllForUser(user.id)
     return { message: "All sessions terminated" }
+  }
+
+  @Post("close")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Permanently close the authenticated player's account without deleting its records" })
+  closeAccount(@CurrentUser() user: UserResponseDto, @Body() dto: CloseAccountRequestDto) {
+    return this.authService.closeAccount(user.id, dto)
   }
 
   @Get("sessions")

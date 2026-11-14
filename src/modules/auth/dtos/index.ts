@@ -1,5 +1,6 @@
 export { AuthCredentialsRequestDto } from "./auth-credentials-request.dto"
 export { ChangePasswordRequestDto } from "./change-password-request.dto"
+export { CloseAccountRequestDto } from "./close-account-request.dto"
 export { LoginResponseDto } from "./login-response.dto"
 export { RefreshTokenRequestDto } from "./refresh-token-request.dto"
 export { RegisterRequestDto } from "./register-request.dto"

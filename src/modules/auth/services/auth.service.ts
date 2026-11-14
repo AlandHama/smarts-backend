@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common"
 import { randomBytes } from "node:crypto"
+import { PlayerAuditActorType } from "@prisma/client"
 
 import { HashHelper } from "../../../common/helpers/hash.helper"
 import { SessionsService } from "../../admin/access/sessions/sessions.service"
@@ -12,6 +13,8 @@ import { SignupPolicyService } from "./signup-policy.service"
 import { PrismaService } from "../../../prisma.service"
 import { ContentSafetyService } from "../../content-safety/content-safety.service"
 import { CreateUserInput } from "../../admin/access/users/transactions/create-user-transaction"
+import { writePlayerAudit } from "../../../common/helpers/player-audit"
+import { CloseAccountRequestDto } from "../dtos/close-account-request.dto"
 
 @Injectable()
 export class AuthService {
@@ -135,6 +138,58 @@ export class AuthService {
       data: { onboardingCompletedAt: new Date() },
     })
     return { onboardingCompleted: true }
+  }
+
+  async closeAccount(userId: string, dto: CloseAccountRequestDto) {
+    if (dto.confirmation !== "CLOSE") throw new ConflictException("Type CLOSE to confirm account closure")
+
+    const now = new Date()
+    const result = await this.prisma.$transaction(async (transaction) => {
+      const user = await transaction.user.findUnique({
+        where: { id: userId },
+        select: { id: true, status: true, isSystemAdmin: true, accountOrigin: true },
+      })
+      if (!user) throw new UnauthorizedException("Please login again")
+      if (user.isSystemAdmin) throw new ConflictException("System administrator accounts must be closed from the administrator controls")
+      if (user.status !== "ACTIVE") throw new ConflictException("This account is already closed or unavailable")
+
+      // Preserve the user and all related records. ACTIVE is checked by login,
+      // refresh, and JWT validation, so INACTIVE makes this closure permanent.
+      const closed = await transaction.user.update({
+        where: { id: userId },
+        data: { status: "INACTIVE" },
+        select: { id: true, status: true },
+      })
+      const cancelledTickets = await transaction.matchmakingTicket.updateMany({
+        where: { userId, status: "SEARCHING" },
+        data: { status: "CANCELLED", cancelledAt: now },
+      })
+      await transaction.session.updateMany({
+        where: { userId, sessionStatus: "ACTIVE" },
+        data: { sessionStatus: "TERMINATED" },
+      })
+      await transaction.presence.deleteMany({ where: { userId } })
+      await writePlayerAudit(transaction, {
+        userId,
+        actorType: PlayerAuditActorType.PLAYER,
+        action: "ACCOUNT_CLOSED",
+        entityType: "User",
+        entityId: userId,
+        summary: "Player permanently closed their account",
+        changes: { status: { old: user.status, new: closed.status } },
+        metadata: {
+          accountOrigin: user.accountOrigin,
+          cancelledMatchmakingTickets: cancelledTickets.count,
+          recordsRetained: true,
+        },
+      })
+      return { closed: true, cancelledMatchmakingTickets: cancelledTickets.count }
+    })
+
+    return {
+      ...result,
+      message: "Your account has been closed. Your data was retained, but this account cannot be recovered or used again.",
+    }
   }
 
   logout(userId: string, tokenId: string) {

@@ -55,8 +55,9 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
     if (!locked) return null;
 
     const [first] = await transaction.$queryRaw<TicketRow[]>`
-      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "botFallbackDelaySeconds", "createdAt"
+      SELECT ticket."id", ticket."userId", ticket."gameDefinitionId", ticket."mode", ticket."isRankingMatch", ticket."rankingConfigId", ticket."rankingStakeAmount", ticket."rankingEntryFee", ticket."rankingEntryFeeMicros", ticket."levelSnapshot", ticket."eloSnapshot", ticket."countryCodeSnapshot", ticket."constraints", ticket."clientVersion", ticket."allowBotFallback", ticket."botFallbackDelaySeconds", ticket."createdAt"
       FROM "MatchmakingTicket" AS ticket
+      JOIN "User" AS ticket_user ON ticket_user."id" = ticket."userId" AND ticket_user."status" = 'ACTIVE'
       WHERE ticket."status" = 'SEARCHING'
         AND ticket."expiresAt" > NOW()
         AND ticket."lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
@@ -108,6 +109,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
           OR EXISTS (
             SELECT 1
             FROM "MatchmakingTicket" AS candidate
+            JOIN "User" AS candidate_user ON candidate_user."id" = candidate."userId" AND candidate_user."status" = 'ACTIVE'
             WHERE candidate."status" = 'SEARCHING'
               AND candidate."expiresAt" > NOW()
               AND candidate."lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
@@ -144,13 +146,14 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
       Math.floor((Date.now() - first.createdAt.getTime()) / 1000),
     );
     const [second] = await transaction.$queryRaw<TicketRow[]>`
-      SELECT "id", "userId", "gameDefinitionId", "mode", "isRankingMatch", "rankingConfigId", "rankingStakeAmount", "rankingEntryFee", "rankingEntryFeeMicros", "levelSnapshot", "eloSnapshot", "countryCodeSnapshot", "constraints", "clientVersion", "allowBotFallback", "botFallbackDelaySeconds", "createdAt"
-      FROM "MatchmakingTicket"
-      WHERE "status" = 'SEARCHING'
-        AND "expiresAt" > NOW()
-        AND "lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
-        AND "id" <> ${first.id}
-        AND "userId" <> ${first.userId}
+      SELECT candidate_ticket."id", candidate_ticket."userId", candidate_ticket."gameDefinitionId", candidate_ticket."mode", candidate_ticket."isRankingMatch", candidate_ticket."rankingConfigId", candidate_ticket."rankingStakeAmount", candidate_ticket."rankingEntryFee", candidate_ticket."rankingEntryFeeMicros", candidate_ticket."levelSnapshot", candidate_ticket."eloSnapshot", candidate_ticket."countryCodeSnapshot", candidate_ticket."constraints", candidate_ticket."clientVersion", candidate_ticket."allowBotFallback", candidate_ticket."botFallbackDelaySeconds", candidate_ticket."createdAt"
+      FROM "MatchmakingTicket" AS candidate_ticket
+      JOIN "User" AS candidate_user ON candidate_user."id" = candidate_ticket."userId" AND candidate_user."status" = 'ACTIVE'
+      WHERE candidate_ticket."status" = 'SEARCHING'
+        AND candidate_ticket."expiresAt" > NOW()
+        AND candidate_ticket."lastHeartbeatAt" > NOW() - make_interval(secs => ${queueHeartbeatTimeoutSeconds()})
+        AND candidate_ticket."id" <> ${first.id}
+        AND candidate_ticket."userId" <> ${first.userId}
         -- Ranked matches can be entered from different client-selected game
         -- cards. Random casual tickets form their own server-wide pool; the
         -- game is selected only after the compatible random group is paired.
@@ -158,13 +161,13 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
           ${first.isRankingMatch} = true
           OR (
             ${isRandomCasualTicket(first)}
-            OR "constraints"->>'randomGame' = 'true'
-            OR (${!isRandomCasualTicket(first)} AND COALESCE("constraints"->>'randomGame', 'false') <> 'true' AND "gameDefinitionId" = ${first.gameDefinitionId})
+            OR candidate_ticket."constraints"->>'randomGame' = 'true'
+            OR (${!isRandomCasualTicket(first)} AND COALESCE(candidate_ticket."constraints"->>'randomGame', 'false') <> 'true' AND candidate_ticket."gameDefinitionId" = ${first.gameDefinitionId})
           )
         )
-        AND "mode"::text = ${first.mode}
-        AND "isRankingMatch" = ${first.isRankingMatch}
-        AND (${first.isRankingMatch} = false OR "rankingConfigId" = ${first.rankingConfigId})
+        AND candidate_ticket."mode"::text = ${first.mode}
+        AND candidate_ticket."isRankingMatch" = ${first.isRankingMatch}
+        AND (${first.isRankingMatch} = false OR candidate_ticket."rankingConfigId" = ${first.rankingConfigId})
         -- Casual players should be paired whenever they selected the same
         -- game. ELO is a ranked matchmaking constraint only; applying it to
         -- casual queue tickets can leave two real players waiting until both
@@ -172,7 +175,7 @@ export class ClaimMatchmakingPairTransaction extends PrismaTransaction<
         -- A ranking arena is already a narrow stake/config queue. Do not add
         -- ELO as a second hard gate: two eligible players must be able to
         -- pair even when they have very different histories.
-      ORDER BY "createdAt" ASC
+      ORDER BY candidate_ticket."createdAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     `;

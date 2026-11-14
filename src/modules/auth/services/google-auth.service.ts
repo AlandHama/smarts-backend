@@ -32,6 +32,12 @@ export class GoogleAuthService {
   async login(idToken: string, request: any) {
     let claims = await this.verifyIdToken(idToken)
     const existingUser = await this.usersService.findByIdentifier(claims.email)
+    // Do not attach a new identity to an account that was permanently closed.
+    // The account record and its data are retained, but closure must not be
+    // bypassed through a different authentication provider.
+    if (existingUser && existingUser.status !== "ACTIVE") {
+      throw new UnauthorizedException("This account is closed or unavailable")
+    }
     if (!existingUser) await this.signupPolicy.assertEnabled()
     // Google profile pictures are remote user-controlled media. Scan them
     // before allowing a new account to persist the URL.
