@@ -132,6 +132,7 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
       input.trustedVerification?.source === "CLIENT_EVENT"
         ? input.trustedVerification.payload.eventType
         : null;
+    const wheelGate = clientEventType === "wheel_gate";
     const passiveClientImpression =
       clientEventType === "impression" &&
       ["banner", "native", "interstitial"].includes(claim.adFormat);
@@ -211,6 +212,40 @@ export class ClaimAdRewardTransaction extends PrismaTransaction<
     });
     if (duplicate)
       throw new ConflictException("This provider ad event was already claimed");
+    // A wheel GLD reward uses the same server challenge and provider callback
+    // as a rewarded ad, but the ad itself is only a verification gate. Mark
+    // the challenge consumed without issuing a second ordinary ad credit;
+    // the wheel claim transaction grants the exact server-selected segment.
+    if (wheelGate) {
+      const updated = await transaction.adRewardClaim.update({
+        where: { id: claim.id },
+        data: {
+          providerEventId,
+          countryCode: country ?? null,
+          status: "GRANTED",
+          rewardAmount: 0n,
+          rewardAmountDecimal: 0,
+          verificationPayload: {
+            providerVerified: false,
+            clientEventAccepted: true,
+            verificationSource: "CLIENT_EVENT",
+            wheelGate: true,
+            providerPayload: input.trustedVerification?.payload ?? {},
+          },
+          verifiedAt: now,
+          grantedAt: now,
+        },
+      });
+      return {
+        claimId: updated.id,
+        status: updated.status,
+        amount: "0",
+        currencyCode: "GLD",
+        grantedAt: updated.grantedAt,
+        rewarded: false,
+        reason: "wheel-gate-verified",
+      };
+    }
     const startOfDay = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );

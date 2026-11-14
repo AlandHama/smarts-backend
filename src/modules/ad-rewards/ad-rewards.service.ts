@@ -47,7 +47,7 @@ export class AdRewardsService {
     const policy = await this.gldService.resolveAdRewardPolicy(
       userId,
       adFormat,
-      eventType,
+      eventType === "wheel_gate" ? "rewarded" : eventType,
     );
     const result = await this.claimTransaction.run({
       dto: {

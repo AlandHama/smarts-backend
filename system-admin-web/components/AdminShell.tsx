@@ -96,7 +96,8 @@ export type AdminView =
   | "gem-blitz"
   | "tile-rush"
   | "word-dash"
-  | "domino";
+  | "domino"
+  | "spinning-wheels";
 
 const navigation = [
   {
@@ -161,6 +162,7 @@ const navigation = [
   { key: "tile-rush" as const, label: "Tile Rush", icon: <RouteRoundedIcon /> },
   { key: "word-dash" as const, label: "Word Dash", icon: <PsychologyRoundedIcon /> },
   { key: "domino" as const, label: "Domino Duel", icon: <CasinoRoundedIcon /> },
+  { key: "spinning-wheels" as const, label: "Spinning wheels", icon: <CasinoRoundedIcon /> },
   {
     key: "economy" as const,
     label: "Economy",

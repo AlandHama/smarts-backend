@@ -17,6 +17,7 @@ import { deriveParticipantRewardEvidence, isAcceptedScoringEvent, rewardEligibil
 import { normalizedMatchXp, rewardPolicy, type RewardPolicy } from "./match-reward-policy"
 import { AllyService } from "../../ally/ally.service"
 import { isAuthoritativeBoardGame } from "../utilities/server-content"
+import { SpinningWheelService } from "../../spinning-wheel/spinning-wheel.service"
 
 type SettleInput = { matchId: string; userId: string; idempotencyKey: string }
 
@@ -32,6 +33,7 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
     private readonly winStreaks: WinStreaksService,
     private readonly fraud: FraudService,
     private readonly allies: AllyService,
+    private readonly spinningWheels: SpinningWheelService,
   ) { super(prisma) }
 
   protected async execute(input: SettleInput, transaction: Prisma.TransactionClient) {
@@ -347,6 +349,10 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         ? await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: "main", amount: xp, sourceId: `${lockedMatch.id}:global-xp:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, rewardEligibility, mirroredFrom: config.mainProgressionKey } }, transaction)
         : null
       const eloProgression = eloDelta !== 0n ? await this.awardProgression.runWithinTransaction({ userId: player.id, progressionKey: config.eloProgressionKey, amount: eloDelta, sourceId: `${lockedMatch.id}:elo:${player.id}`, sourceType: ProgressionEventSourceType.MATCH, metadata: { matchId: lockedMatch.id, policyVersion, rewardEligibility } }, transaction) : null
+      const grantGameplayCredit = rewardEligibility === "FULL"
+      if (grantGameplayCredit && result === "WIN") await this.spinningWheels.grantTriggerWithinTransaction(transaction, player.id, "MATCH_WIN", lockedMatch.id)
+      if (grantGameplayCredit && progression?.crossedTiers?.length) for (const tier of progression.crossedTiers) await this.spinningWheels.grantTriggerWithinTransaction(transaction, player.id, "LEVEL_UP", `${lockedMatch.id}:level:${player.id}:${tier}`)
+      if (grantGameplayCredit && eloProgression?.crossedTiers?.length) for (const tier of eloProgression.crossedTiers) await this.spinningWheels.grantTriggerWithinTransaction(transaction, player.id, "RANK_UP", `${lockedMatch.id}:rank:${player.id}:${tier}`)
       const wallet = coinReward > 0n ? await this.creditWallet.runWithinTransaction({ userId: player.id, currencyCode: config.rewardCurrencyCode, amount: coinReward, sourceId: `${lockedMatch.id}:currency:${player.id}`, sourceType: WalletTransactionSourceType.MATCH, metadata: { matchId: lockedMatch.id, gameKey: lockedMatch.gameDefinition.key, mode: lockedMatch.mode, result, policyVersion, rewardEligibility } }, transaction) : null
       const answerEvents = (acceptedEventsByParticipant.get(item.participant.id) ?? []).filter((event) => isAcceptedScoringEvent(event, isBoardAuthoritative))
       const answerSummary = answerEvents.reduce((summary, event) => {
@@ -355,7 +361,6 @@ export class SettleMatchTransaction extends PrismaTransaction<SettleInput, any> 
         return { totalQuestions: summary.totalQuestions + 1, totalCorrect: summary.totalCorrect + (isBoardAuthoritative ? 1 : payload.correct === true ? 1 : 0), totalTimeMs: summary.totalTimeMs + BigInt(timeTakenMs) }
       }, { totalQuestions: 0, totalCorrect: 0, totalTimeMs: 0n })
       const engagementPayload = { matchId: lockedMatch.id, gameKey: lockedMatch.gameDefinition.key, mode: lockedMatch.mode, ranking: Boolean(lockedMatch.rankingMatch) }
-      const grantGameplayCredit = rewardEligibility === "FULL"
       if (grantGameplayCredit) {
         await this.missions.recordWithinTransaction({ userId: player.id, eventType: "MATCH_PLAYED", sourceId: `${lockedMatch.id}:${player.id}:played`, payload: engagementPayload }, transaction)
         await this.streaks.recordWithinTransaction({ userId: player.id, sourceId: lockedMatch.id, activityType: "MATCH_COMPLETED" }, transaction)

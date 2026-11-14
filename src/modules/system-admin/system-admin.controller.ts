@@ -122,6 +122,8 @@ import { SystemResourcesService } from "./system-resources.service";
 import { AdminNotificationsService } from "./admin-notifications.service";
 import { DailyHintsService } from "../daily-hints/daily-hints.service";
 import { CreateDailyHintDto, UpdateDailyHintDto } from "../daily-hints/dtos";
+import { SpinningWheelService } from "../spinning-wheel/spinning-wheel.service";
+import { CreateSpinningWheelDto, UpdateSpinningWheelDto } from "../spinning-wheel/dtos";
 
 @ApiTags("System Admin")
 @Controller("system-admin")
@@ -141,7 +143,28 @@ export class SystemAdminController {
     private readonly systemResourcesService: SystemResourcesService,
     private readonly adminNotificationsService: AdminNotificationsService,
     private readonly dailyHintsService: DailyHintsService,
+    private readonly spinningWheelService: SpinningWheelService,
   ) {}
+
+  @UseGuards(SystemAdminGuard)
+  @Get("api/spinning-wheels")
+  @ApiBearerAuth("access-token")
+  listSpinningWheels() { return this.spinningWheelService.adminList() }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/spinning-wheels")
+  @ApiBearerAuth("access-token")
+  createSpinningWheel(@Body() dto: CreateSpinningWheelDto) { return this.spinningWheelService.adminCreate(dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Patch("api/spinning-wheels/:id")
+  @ApiBearerAuth("access-token")
+  updateSpinningWheel(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateSpinningWheelDto) { return this.spinningWheelService.adminUpdate(id, dto) }
+
+  @UseGuards(SystemAdminGuard)
+  @Post("api/spinning-wheels/:id/archive")
+  @ApiBearerAuth("access-token")
+  archiveSpinningWheel(@Param("id", ParseUUIDPipe) id: string) { return this.spinningWheelService.adminArchive(id) }
 
   @UseGuards(SystemAdminGuard)
   @Post("api/uploads")

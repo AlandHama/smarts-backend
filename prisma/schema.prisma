@@ -285,6 +285,7 @@ enum WalletTransactionSourceType {
   ADMIN
   SYSTEM
   CRYPTO_PAYOUT
+  SPINNING_WHEEL
 }
 
 enum CryptoPayoutRequestStatus {
@@ -739,6 +740,9 @@ model User {
   dailyHintViews              DailyHintView[]
   rematchRequestsSent         RematchRequest[]             @relation("RematchRequester")
   rematchRequestsReceived     RematchRequest[]             @relation("RematchRecipient")
+  spinningWheelInventories     SpinningWheelInventory[]
+  spinningWheelSpins           SpinningWheelSpin[]
+  spinningWheelGrants          SpinningWheelGrant[]
 }
 
 /// Persistent cooperative group. Party remains the short-lived match lobby;
@@ -1425,6 +1429,81 @@ model CurrencyDefinition {
   adRewardClaims     AdRewardClaim[]
   leaderboardRewards LeaderboardReward[]
   gldEconomyState    GldEconomyState?
+}
+
+model SpinningWheel {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  key                String                  @unique @db.VarChar(80)
+  name               String                  @db.VarChar(120)
+  description        String?                 @db.Text
+  themeKey           String                  @default("royal_crown") @db.VarChar(40)
+  active             Boolean                 @default(true)
+  purchasePriceGld   BigInt                  @default(0)
+  dailyEnabled       Boolean                 @default(true)
+  dailyQuantity      Int                     @default(1)
+  levelUpEnabled     Boolean                 @default(false)
+  levelUpQuantity    Int                     @default(1)
+  rankUpEnabled      Boolean                 @default(false)
+  rankUpQuantity     Int                     @default(1)
+  matchWinEnabled    Boolean                 @default(false)
+  matchWinQuantity   Int                     @default(1)
+  segments           Json
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  inventories        SpinningWheelInventory[]
+  spins              SpinningWheelSpin[]
+  grants             SpinningWheelGrant[]
+
+  @@index([active, key])
+}
+
+model SpinningWheelInventory {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @db.Uuid
+  wheelId     String       @db.Uuid
+  quantity    Int          @default(0)
+  totalSpins  Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wheel       SpinningWheel @relation(fields: [wheelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, wheelId])
+  @@index([userId, quantity])
+}
+
+model SpinningWheelGrant {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @db.Uuid
+  wheelId     String       @db.Uuid
+  trigger     String       @db.VarChar(30)
+  sourceId    String       @db.VarChar(255)
+  quantity    Int
+  createdAt   DateTime     @default(now())
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wheel       SpinningWheel @relation(fields: [wheelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, wheelId, trigger, sourceId])
+  @@index([userId, createdAt])
+}
+
+model SpinningWheelSpin {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @db.Uuid
+  wheelId        String       @db.Uuid
+  rewardType     String       @db.VarChar(20)
+  rewardAmount   BigInt
+  source         String       @db.VarChar(30)
+  status         String       @default("GRANTED") @db.VarChar(20)
+  claimTokenHash String?      @unique @db.Char(64)
+  expiresAt      DateTime?
+  claimedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wheel          SpinningWheel @relation(fields: [wheelId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
 }
 
 model AssetDefinition {

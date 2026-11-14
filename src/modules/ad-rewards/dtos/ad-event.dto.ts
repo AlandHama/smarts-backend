@@ -12,6 +12,7 @@ export const CLIENT_AD_EVENT_TYPES = [
   "impression",
   "click",
   "rewarded",
+  "wheel_gate",
 ] as const;
 
 export class CompleteClientAdEventDto {

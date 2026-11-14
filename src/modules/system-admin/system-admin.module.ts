@@ -48,9 +48,10 @@ import { AdminNotificationsService } from "./admin-notifications.service"
 import { DailyHintsModule } from "../daily-hints/daily-hints.module"
 import { APP_INTERCEPTOR } from "@nestjs/core"
 import { MobileAdminIdempotencyInterceptor } from "./mobile-admin-idempotency.interceptor"
+import { SpinningWheelModule } from "../spinning-wheel/spinning-wheel.module"
 
 @Module({
-  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, DailyHintsModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule],
+  imports: [DatabaseModule, AuthModule, UsersModule, ProgressionModule, EconomyModule, LeaderboardModule, GameModule, CommerceModule, StorageModule, FriendsModule, ConfigModule, AdRewardsModule, AdMobModule, GldModule, ReferralsModule, NotificationsModule, StreaksModule, WinStreaksModule, DailyChallengesModule, DailyHintsModule, GemBlitzModule, TileRushModule, WordDashModule, DominoModule, CryptoRewardsModule, SpinningWheelModule],
   controllers: [SystemAdminController, GemBlitzAdminController, TileRushAdminController, WordDashAdminController, DominoAdminController],
   providers: [
     SystemAdminService,
